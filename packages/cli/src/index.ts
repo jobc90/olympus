@@ -10,9 +10,10 @@ import { telegramCommand } from './commands/telegram.js';
 import { setupCommand } from './commands/setup.js';
 import { startCommand } from './commands/start.js';
 import { quickstartCommand } from './commands/quickstart.js';
-import { interactiveCommand, launchInteractive } from './commands/interactive.js';
+import { interactiveCommand } from './commands/interactive.js';
+import { launchClaude } from './claude-wrapper.js';
 
-// Check if running with no arguments (interactive mode)
+// Check if running with no arguments (Claude CLI mode)
 // argv: [node, script, ...args]
 const hasArgs = process.argv.length > 2;
 const isHelpOrVersion = process.argv.includes('--help') ||
@@ -21,9 +22,9 @@ const isHelpOrVersion = process.argv.includes('--help') ||
                         process.argv.includes('-V');
 
 if (!hasArgs && !isHelpOrVersion) {
-  // No arguments: launch interactive REPL
-  launchInteractive().catch((err) => {
-    console.error('Failed to start interactive mode:', err.message);
+  // No arguments: launch Claude CLI with Olympus branding
+  launchClaude().catch((err) => {
+    console.error('Failed to start Claude CLI:', err.message);
     process.exit(1);
   });
 } else {
