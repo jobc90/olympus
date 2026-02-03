@@ -8,6 +8,17 @@
   },
   "main": "dist/index.js",
   "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jobc/olympus.git",
+    "directory": "packages/cli"
+  },
+  "author": "jobc",
+  "license": "MIT",
+  "homepage": "https://github.com/jobc/olympus#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -26,6 +37,5 @@
   "engines": {
     "node": ">=18"
   },
-  "keywords": ["ai", "cli", "developer-tools", "gemini", "gpt", "orchestration"],
-  "license": "MIT"
+  "keywords": ["ai", "cli", "developer-tools", "gemini", "gpt", "orchestration"]
 }

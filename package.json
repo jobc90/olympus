@@ -2,6 +2,14 @@
   "name": "olympus-monorepo",
   "private": true,
   "packageManager": "pnpm@9.15.0",
+  "description": "AI-powered development platform with multi-agent orchestration",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jobc/olympus.git"
+  },
+  "author": "jobc",
+  "license": "MIT",
+  "homepage": "https://github.com/jobc/olympus#readme",
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
@@ -9,6 +17,7 @@
     "lint": "turbo run lint"
   },
   "devDependencies": {
+    "@types/node": "^25.2.0",
     "turbo": "^2.5.0",
     "typescript": "^5.8.0"
   }

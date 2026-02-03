@@ -2,6 +2,7 @@
   "name": "@olympus-dev/core",
   "version": "0.1.0",
   "type": "module",
+  "description": "Core library for Olympus AI development platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -9,6 +10,16 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jobc/olympus.git",
+    "directory": "packages/core"
+  },
+  "author": "jobc",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsup",
