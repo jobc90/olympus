@@ -34,9 +34,10 @@ export class GptExecutor implements AgentExecutor {
     const creds = await loadCredentials();
     if (!creds.openai?.apiKey) {
       return {
-        success: false,
+        success: true,
+        skipped: true,
+        reason: 'OpenAI API key not configured. Run: olympus auth openai',
         output: '',
-        error: 'OpenAI API key not configured. Run: olympus auth openai',
         agent: 'gpt',
         model,
         durationMs: Date.now() - start,

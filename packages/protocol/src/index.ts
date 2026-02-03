@@ -17,6 +17,7 @@ export type {
   TaskPayload,
   LogPayload,
   SnapshotPayload,
+  RunsListPayload,
   PongPayload,
   RunStatus,
 } from './messages.js';

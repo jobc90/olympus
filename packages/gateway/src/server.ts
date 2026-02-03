@@ -61,7 +61,10 @@ export class Gateway {
 
     return new Promise((resolve, reject) => {
       // Create HTTP server with API handler
-      const apiHandler = createApiHandler({ runManager: this.runManager });
+      const apiHandler = createApiHandler({
+        runManager: this.runManager,
+        onRunCreated: () => this.broadcastRunsList(),
+      });
 
       this.httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
         // Let API handler take care of routing
@@ -259,6 +262,22 @@ export class Gateway {
     // Send list of all runs as initial snapshot
     const runs = this.runManager.getAllRunStatuses();
     this.send(ws, createMessage('runs:list', { runs }));
+  }
+
+  /**
+   * Broadcast runs:list to ALL authenticated clients
+   * Used when a new run is created or run status changes
+   */
+  broadcastRunsList(): void {
+    const runs = this.runManager.getAllRunStatuses();
+    const message = createMessage('runs:list', { runs });
+    const raw = JSON.stringify(message);
+
+    for (const [, client] of this.clients) {
+      if (client.authenticated && client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(raw);
+      }
+    }
   }
 
   private send(ws: WebSocket, msg: WsMessage): void {

@@ -49,6 +49,7 @@ export type ServerMessage =
   | WsMessage<TaskPayload> & { type: 'task:update' }
   | WsMessage<LogPayload> & { type: 'log' }
   | WsMessage<SnapshotPayload> & { type: 'snapshot' }
+  | WsMessage<RunsListPayload> & { type: 'runs:list' }
   | WsMessage<PongPayload> & { type: 'pong' };
 
 export interface ConnectedPayload {
@@ -106,3 +107,7 @@ export interface SnapshotPayload {
 }
 
 export interface PongPayload {}
+
+export interface RunsListPayload {
+  runs: RunStatus[];
+}

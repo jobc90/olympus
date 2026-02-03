@@ -3,6 +3,8 @@ export interface AgentResult {
   success: boolean;
   output: string;
   error?: string;
+  skipped?: boolean;   // true if agent was skipped (e.g., no API key)
+  reason?: string;     // reason for skipping
   agent: 'gemini' | 'gpt';
   model: string;
   durationMs?: number;

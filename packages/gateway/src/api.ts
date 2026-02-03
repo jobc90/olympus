@@ -2,10 +2,11 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { authMiddleware, loadConfig, validateApiKey } from './auth.js';
 import { handleCorsPrefllight, setCorsHeaders } from './cors.js';
 import type { RunManager, RunOptions } from './run-manager.js';
-import { runParallel } from '@olympus-dev/core';
+import { runParallel, GeminiExecutor } from '@olympus-dev/core';
 
 export interface ApiHandlerOptions {
   runManager: RunManager;
+  onRunCreated?: () => void;  // Callback to broadcast runs:list
 }
 
 /**
@@ -55,7 +56,7 @@ function parseRoute(url: string): { path: string; id?: string } {
  * Create HTTP API request handler
  */
 export function createApiHandler(options: ApiHandlerOptions) {
-  const { runManager } = options;
+  const { runManager, onRunCreated } = options;
 
   return async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Handle CORS
@@ -91,6 +92,30 @@ export function createApiHandler(options: ApiHandlerOptions) {
         return;
       }
 
+      // POST /api/chat - Simple chat (lightweight, no run tracking)
+      if (path === '/api/chat' && method === 'POST') {
+        const body = await parseBody<{ message: string }>(req);
+
+        if (!body.message) {
+          sendJson(res, 400, { error: 'Bad Request', message: 'message is required' });
+          return;
+        }
+
+        try {
+          const gemini = new GeminiExecutor();
+          const result = await gemini.execute(body.message, { timeout: 30000 });
+
+          if (result.success) {
+            sendJson(res, 200, { reply: result.output });
+          } else {
+            sendJson(res, 200, { reply: '죄송합니다. 응답을 생성할 수 없습니다.' });
+          }
+        } catch {
+          sendJson(res, 200, { reply: '죄송합니다. 응답을 생성할 수 없습니다.' });
+        }
+        return;
+      }
+
       // POST /api/runs - Create new run
       if (path === '/api/runs' && method === 'POST') {
         const body = await parseBody<RunOptions>(req);
@@ -107,6 +132,9 @@ export function createApiHandler(options: ApiHandlerOptions) {
           executeRun(run.id, runManager, body);
 
           sendJson(res, 201, { runId: run.id });
+
+          // Broadcast runs:list to all connected clients
+          onRunCreated?.();
         } catch (e) {
           if ((e as Error).message.includes('Maximum concurrent runs')) {
             sendJson(res, 429, { error: 'Too Many Requests', message: (e as Error).message });

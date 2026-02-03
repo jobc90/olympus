@@ -1,4 +1,4 @@
-import { Telegraf, Context, Markup } from 'telegraf';
+import { Telegraf, Context } from 'telegraf';
 import WebSocket from 'ws';
 import {
   parseMessage,
@@ -82,11 +82,13 @@ class OlympusBot {
         `⚡ *Olympus Bot*\n\n` +
         `AI 개발 플랫폼을 원격으로 제어합니다.\n\n` +
         `*명령어:*\n` +
-        `/run <prompt> - 새 작업 실행\n` +
+        `/olympus <prompt> - 🚀 AI 오케스트레이션 실행\n` +
         `/runs - 실행 중인 작업 목록\n` +
         `/status <runId> - 작업 상태 확인\n` +
         `/cancel <runId> - 작업 취소\n` +
         `/health - Gateway 상태 확인\n\n` +
+        `💬 일반 텍스트: 간단한 대화\n` +
+        `🚀 /olympus: 체계적인 AI 작업 실행\n\n` +
         `Gateway: ${this.config.gatewayUrl}`,
         { parse_mode: 'Markdown' }
       );
@@ -142,16 +144,16 @@ class OlympusBot {
       }
     });
 
-    // /run <prompt> - Create new run
-    this.bot.command('run', async (ctx) => {
-      const prompt = ctx.message.text.replace(/^\/run\s*/, '').trim();
+    // /olympus <prompt> - Create new run (full orchestration)
+    this.bot.command('olympus', async (ctx) => {
+      const prompt = ctx.message.text.replace(/^\/olympus\s*/, '').trim();
 
       if (!prompt) {
-        await ctx.reply('사용법: /run <프롬프트>\n\n예: /run TypeScript 코드 분석해줘');
+        await ctx.reply('사용법: /olympus <프롬프트>\n\n예: /olympus TypeScript 코드 분석해줘');
         return;
       }
 
-      const statusMsg = await ctx.reply('🚀 작업 시작 중...');
+      const statusMsg = await ctx.reply('🚀 AI 오케스트레이션 시작 중...');
 
       try {
         const res = await fetch(`${this.config.gatewayUrl}/api/runs`, {
@@ -180,10 +182,11 @@ class OlympusBot {
           ctx.chat.id,
           statusMsg.message_id,
           undefined,
-          `✅ 작업 시작됨\n\n` +
+          `✅ 오케스트레이션 시작됨\n\n` +
           `Run ID: \`${data.runId}\`\n` +
           `프롬프트: ${prompt.slice(0, 100)}\n\n` +
-          `실시간 업데이트를 받습니다...`,
+          `🤖 Gemini + GPT 병렬 실행 중...\n` +
+          `실시간 업데이트를 받습니다.`,
           { parse_mode: 'Markdown' }
         );
       } catch (err) {
@@ -191,9 +194,26 @@ class OlympusBot {
           ctx.chat.id,
           statusMsg.message_id,
           undefined,
-          `❌ 작업 시작 실패: ${(err as Error).message}`
+          `❌ 오케스트레이션 시작 실패: ${(err as Error).message}`
         );
       }
+    });
+
+    // /run - alias for /olympus (backward compatibility)
+    this.bot.command('run', async (ctx) => {
+      const prompt = ctx.message.text.replace(/^\/run\s*/, '').trim();
+
+      if (!prompt) {
+        await ctx.reply('사용법: /run <프롬프트>\n\n💡 Tip: /olympus 명령어도 동일하게 작동합니다.');
+        return;
+      }
+
+      // Redirect to /olympus handler
+      ctx.message.text = `/olympus ${prompt}`;
+      await this.bot.handleUpdate({
+        update_id: Date.now(),
+        message: ctx.message,
+      });
     });
 
     // /status <runId> - Get run status
@@ -269,7 +289,7 @@ class OlympusBot {
       }
     });
 
-    // Handle text messages as prompts
+    // Handle text messages - simple chat response
     this.bot.on('text', async (ctx) => {
       const text = ctx.message.text;
 
@@ -279,31 +299,36 @@ class OlympusBot {
         return;
       }
 
-      // Treat as run prompt
-      await ctx.reply(
-        `💡 이 메시지로 작업을 실행하시겠습니까?\n\n"${text.slice(0, 100)}${text.length > 100 ? '...' : ''}"`,
-        Markup.inlineKeyboard([
-          Markup.button.callback('✅ 실행', `run:${ctx.message.message_id}`),
-          Markup.button.callback('❌ 취소', 'cancel_prompt'),
-        ])
-      );
-    });
+      // Simple chat response (using Gemini for quick answers)
+      try {
+        const res = await fetch(`${this.config.gatewayUrl}/api/chat`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.config.apiKey}`,
+          },
+          body: JSON.stringify({ message: text }),
+        });
 
-    // Callback: Run from inline button
-    this.bot.action(/^run:(\d+)$/, async (ctx) => {
-      const messageId = parseInt(ctx.match[1]);
-      // @ts-ignore - accessing message
-      const originalMessage = ctx.callbackQuery.message?.reply_to_message;
-
-      await ctx.answerCbQuery('작업 시작 중...');
-
-      // Get the original text (this is a workaround - in production you'd store it)
-      await ctx.reply('작업을 시작하려면 /run <프롬프트> 명령어를 사용해주세요.');
-    });
-
-    this.bot.action('cancel_prompt', async (ctx) => {
-      await ctx.answerCbQuery('취소됨');
-      await ctx.deleteMessage();
+        if (res.ok) {
+          const data = await res.json() as { reply: string };
+          await ctx.reply(data.reply);
+        } else {
+          // Fallback: Simple acknowledgment with hint
+          await ctx.reply(
+            `💬 메시지를 받았습니다.\n\n` +
+            `💡 AI 오케스트레이션을 실행하려면:\n` +
+            `/olympus ${text.slice(0, 50)}${text.length > 50 ? '...' : ''}`
+          );
+        }
+      } catch {
+        // Fallback: Simple acknowledgment with hint
+        await ctx.reply(
+          `💬 메시지를 받았습니다.\n\n` +
+          `💡 AI 오케스트레이션을 실행하려면:\n` +
+          `/olympus ${text.slice(0, 50)}${text.length > 50 ? '...' : ''}`
+        );
+      }
     });
   }
 
