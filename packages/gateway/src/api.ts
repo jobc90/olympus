@@ -2,7 +2,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { authMiddleware, loadConfig, validateApiKey } from './auth.js';
 import { handleCorsPrefllight, setCorsHeaders } from './cors.js';
 import type { RunManager, RunOptions } from './run-manager.js';
-import { runParallel, GeminiExecutor } from '@olympus-dev/core';
+import { runParallel, GeminiExecutor, TaskStore } from '@olympus-dev/core';
+import type { CreateTaskInput, UpdateTaskInput } from '@olympus-dev/protocol';
 
 export interface ApiHandlerOptions {
   runManager: RunManager;
@@ -40,16 +41,37 @@ function sendJson(res: ServerResponse, status: number, data: unknown): void {
 /**
  * Parse URL path and extract route info
  */
-function parseRoute(url: string): { path: string; id?: string } {
+function parseRoute(url: string): { path: string; id?: string; query?: Record<string, string> } {
   const urlObj = new URL(url, 'http://localhost');
   const parts = urlObj.pathname.split('/').filter(Boolean);
+  const query: Record<string, string> = {};
+  urlObj.searchParams.forEach((value, key) => {
+    query[key] = value;
+  });
 
   // /api/runs/:id
   if (parts[0] === 'api' && parts[1] === 'runs' && parts[2]) {
-    return { path: '/api/runs/:id', id: parts[2] };
+    return { path: '/api/runs/:id', id: parts[2], query };
   }
 
-  return { path: urlObj.pathname };
+  // /api/tasks/:id
+  if (parts[0] === 'api' && parts[1] === 'tasks' && parts[2]) {
+    // /api/tasks/:id/children
+    if (parts[3] === 'children') {
+      return { path: '/api/tasks/:id/children', id: parts[2], query };
+    }
+    // /api/tasks/:id/context
+    if (parts[3] === 'context') {
+      return { path: '/api/tasks/:id/context', id: parts[2], query };
+    }
+    // /api/tasks/:id/history
+    if (parts[3] === 'history') {
+      return { path: '/api/tasks/:id/history', id: parts[2], query };
+    }
+    return { path: '/api/tasks/:id', id: parts[2], query };
+  }
+
+  return { path: urlObj.pathname, query };
 }
 
 /**
@@ -65,7 +87,7 @@ export function createApiHandler(options: ApiHandlerOptions) {
     }
     setCorsHeaders(req, res);
 
-    const { path, id } = parseRoute(req.url || '/');
+    const { path, id, query } = parseRoute(req.url || '/');
     const method = req.method || 'GET';
 
     try {
@@ -171,6 +193,126 @@ export function createApiHandler(options: ApiHandlerOptions) {
           return;
         }
         sendJson(res, 200, { cancelled: true, runId: id });
+        return;
+      }
+
+      // ============ Task API ============
+
+      // GET /api/tasks - List root tasks or tree
+      if (path === '/api/tasks' && method === 'GET') {
+        const taskStore = TaskStore.getInstance();
+        const format = query?.format;
+
+        if (format === 'tree') {
+          const tree = taskStore.getTree();
+          sendJson(res, 200, { tasks: tree });
+        } else {
+          const roots = taskStore.getRoots();
+          sendJson(res, 200, { tasks: roots });
+        }
+        return;
+      }
+
+      // POST /api/tasks - Create task
+      if (path === '/api/tasks' && method === 'POST') {
+        const body = await parseBody<CreateTaskInput>(req);
+
+        if (!body.name) {
+          sendJson(res, 400, { error: 'Bad Request', message: 'name is required' });
+          return;
+        }
+
+        const taskStore = TaskStore.getInstance();
+        const changedBy = req.headers['x-changed-by'] as string || 'user';
+        const task = taskStore.create(body, changedBy);
+        sendJson(res, 201, { task });
+        return;
+      }
+
+      // GET /api/tasks/:id - Get task
+      if (path === '/api/tasks/:id' && method === 'GET' && id) {
+        const taskStore = TaskStore.getInstance();
+        const task = taskStore.get(id);
+
+        if (!task) {
+          sendJson(res, 404, { error: 'Not Found', message: `Task ${id} not found` });
+          return;
+        }
+        sendJson(res, 200, { task });
+        return;
+      }
+
+      // PATCH /api/tasks/:id - Update task
+      if (path === '/api/tasks/:id' && method === 'PATCH' && id) {
+        const body = await parseBody<UpdateTaskInput>(req);
+        const taskStore = TaskStore.getInstance();
+        const changedBy = req.headers['x-changed-by'] as string || 'user';
+
+        try {
+          const task = taskStore.update(id, body, changedBy);
+          sendJson(res, 200, { task });
+        } catch (e) {
+          if ((e as Error).message.includes('not found')) {
+            sendJson(res, 404, { error: 'Not Found', message: (e as Error).message });
+          } else {
+            throw e;
+          }
+        }
+        return;
+      }
+
+      // DELETE /api/tasks/:id - Delete task (soft)
+      if (path === '/api/tasks/:id' && method === 'DELETE' && id) {
+        const taskStore = TaskStore.getInstance();
+        taskStore.delete(id);
+        sendJson(res, 200, { deleted: true, taskId: id });
+        return;
+      }
+
+      // GET /api/tasks/:id/children - Get children
+      if (path === '/api/tasks/:id/children' && method === 'GET' && id) {
+        const taskStore = TaskStore.getInstance();
+        const children = taskStore.getChildren(id);
+        sendJson(res, 200, { tasks: children });
+        return;
+      }
+
+      // GET /api/tasks/:id/context - Get task with resolved context
+      if (path === '/api/tasks/:id/context' && method === 'GET' && id) {
+        const taskStore = TaskStore.getInstance();
+        const maxLevels = query?.maxLevels ? parseInt(query.maxLevels, 10) : 3;
+        const task = taskStore.getWithContext(id, maxLevels);
+
+        if (!task) {
+          sendJson(res, 404, { error: 'Not Found', message: `Task ${id} not found` });
+          return;
+        }
+        sendJson(res, 200, { task });
+        return;
+      }
+
+      // GET /api/tasks/:id/history - Get context history
+      if (path === '/api/tasks/:id/history' && method === 'GET' && id) {
+        const taskStore = TaskStore.getInstance();
+        const history = taskStore.getContextHistory(id);
+        sendJson(res, 200, { history });
+        return;
+      }
+
+      // GET /api/tasks/search - Search tasks
+      if (path === '/api/tasks/search' && method === 'GET') {
+        const q = query?.q || '';
+        const taskStore = TaskStore.getInstance();
+        const tasks = taskStore.search(q);
+        sendJson(res, 200, { tasks });
+        return;
+      }
+
+      // GET /api/tasks/stats - Get statistics
+      if (path === '/api/tasks/stats' && method === 'GET') {
+        const taskStore = TaskStore.getInstance();
+        const stats = taskStore.getStats();
+        sendJson(res, 200, { stats });
         return;
       }
 

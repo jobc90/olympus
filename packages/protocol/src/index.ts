@@ -1,6 +1,21 @@
 // Protocol version
 export { PROTOCOL_VERSION } from './messages.js';
 
+// Task types (Hierarchical Memory)
+export type {
+  Task,
+  TaskStatus,
+  CreateTaskInput,
+  UpdateTaskInput,
+  TaskWithResolvedContext,
+  ContextVersion,
+  TaskTreeNode,
+  TaskCreatedPayload,
+  TaskUpdatedPayload,
+  TaskDeletedPayload,
+  TaskMovedPayload,
+} from './task.js';
+
 // Message types
 export type {
   WsMessage,

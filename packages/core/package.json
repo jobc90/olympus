@@ -27,9 +27,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@olympus-dev/protocol": "workspace:*"
+    "@olympus-dev/protocol": "workspace:*",
+    "better-sqlite3": "^11.8.1",
+    "nanoid": "^5.1.5"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "tsup": "^8.5.0",
     "vitest": "^3.0.0"
   }

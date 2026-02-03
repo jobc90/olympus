@@ -32,3 +32,9 @@ export { loadHistory, addHistory } from './history.js';
 
 // Events
 export { OlympusBus } from './events.js';
+
+// Task Store
+export { TaskStore } from './taskStore.js';
+
+// Context Resolver
+export { ContextResolver, type ContextResolverOptions } from './contextResolver.js';
