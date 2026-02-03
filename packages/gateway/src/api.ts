@@ -54,21 +54,32 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     return { path: '/api/runs/:id', id: parts[2], query };
   }
 
-  // /api/tasks/:id
-  if (parts[0] === 'api' && parts[1] === 'tasks' && parts[2]) {
-    // /api/tasks/:id/children
-    if (parts[3] === 'children') {
-      return { path: '/api/tasks/:id/children', id: parts[2], query };
+  // /api/tasks special routes (before :id matching)
+  if (parts[0] === 'api' && parts[1] === 'tasks') {
+    // /api/tasks/search
+    if (parts[2] === 'search') {
+      return { path: '/api/tasks/search', query };
     }
-    // /api/tasks/:id/context
-    if (parts[3] === 'context') {
-      return { path: '/api/tasks/:id/context', id: parts[2], query };
+    // /api/tasks/stats
+    if (parts[2] === 'stats') {
+      return { path: '/api/tasks/stats', query };
     }
-    // /api/tasks/:id/history
-    if (parts[3] === 'history') {
-      return { path: '/api/tasks/:id/history', id: parts[2], query };
+    // /api/tasks/:id
+    if (parts[2]) {
+      // /api/tasks/:id/children
+      if (parts[3] === 'children') {
+        return { path: '/api/tasks/:id/children', id: parts[2], query };
+      }
+      // /api/tasks/:id/context
+      if (parts[3] === 'context') {
+        return { path: '/api/tasks/:id/context', id: parts[2], query };
+      }
+      // /api/tasks/:id/history
+      if (parts[3] === 'history') {
+        return { path: '/api/tasks/:id/history', id: parts[2], query };
+      }
+      return { path: '/api/tasks/:id', id: parts[2], query };
     }
-    return { path: '/api/tasks/:id', id: parts[2], query };
   }
 
   return { path: urlObj.pathname, query };
@@ -264,6 +275,11 @@ export function createApiHandler(options: ApiHandlerOptions) {
       // DELETE /api/tasks/:id - Delete task (soft)
       if (path === '/api/tasks/:id' && method === 'DELETE' && id) {
         const taskStore = TaskStore.getInstance();
+        const task = taskStore.get(id);
+        if (!task) {
+          sendJson(res, 404, { error: 'Not Found', message: `Task ${id} not found` });
+          return;
+        }
         taskStore.delete(id);
         sendJson(res, 200, { deleted: true, taskId: id });
         return;
@@ -280,7 +296,8 @@ export function createApiHandler(options: ApiHandlerOptions) {
       // GET /api/tasks/:id/context - Get task with resolved context
       if (path === '/api/tasks/:id/context' && method === 'GET' && id) {
         const taskStore = TaskStore.getInstance();
-        const maxLevels = query?.maxLevels ? parseInt(query.maxLevels, 10) : 3;
+        const parsed = parseInt(query?.maxLevels || '', 10);
+        const maxLevels = Number.isNaN(parsed) ? 3 : Math.min(Math.max(parsed, 1), 10);
         const task = taskStore.getWithContext(id, maxLevels);
 
         if (!task) {

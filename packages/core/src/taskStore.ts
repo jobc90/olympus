@@ -150,51 +150,56 @@ export class TaskStore {
   create(input: CreateTaskInput, changedBy = 'user'): Task {
     const id = nanoid();
     const now = Date.now();
-    let parentPath = '';
-    let depth = 0;
 
-    if (input.parentId) {
-      const parent = this.get(input.parentId);
-      if (!parent) {
-        throw new Error(`Parent task not found: ${input.parentId}`);
+    // Wrap entire create in transaction to prevent race conditions
+    const createTx = this.db.transaction(() => {
+      let parentPath = '';
+      let depth = 0;
+
+      if (input.parentId) {
+        const parent = this.get(input.parentId);
+        if (!parent) {
+          throw new Error(`Parent task not found: ${input.parentId}`);
+        }
+        parentPath = parent.path;
+        depth = parent.depth + 1;
       }
-      parentPath = parent.path;
-      depth = parent.depth + 1;
-    }
 
-    // Calculate sibling order (append at end)
-    const maxOrderStmt = this.db.prepare(`
-      SELECT MAX(sibling_order) as max_order FROM tasks
-      WHERE parent_id IS ?
-    `);
-    const maxOrderResult = maxOrderStmt.get(input.parentId ?? null) as { max_order: number | null };
-    const siblingOrder = (maxOrderResult?.max_order ?? -1) + 1;
+      // Calculate sibling order (append at end) - safe within transaction
+      const maxOrderStmt = this.db.prepare(`
+        SELECT MAX(sibling_order) as max_order FROM tasks
+        WHERE parent_id IS ?
+      `);
+      const maxOrderResult = maxOrderStmt.get(input.parentId ?? null) as { max_order: number | null };
+      const siblingOrder = (maxOrderResult?.max_order ?? -1) + 1;
 
-    const taskPath = parentPath ? `${parentPath}/${id}` : `/${id}`;
+      const taskPath = parentPath ? `${parentPath}/${id}` : `/${id}`;
 
-    const stmt = this.db.prepare(`
-      INSERT INTO tasks (id, parent_id, path, depth, sibling_order, name, context, metadata, status, version, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, ?)
-    `);
+      const stmt = this.db.prepare(`
+        INSERT INTO tasks (id, parent_id, path, depth, sibling_order, name, context, metadata, status, version, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, ?)
+      `);
 
-    stmt.run(
-      id,
-      input.parentId ?? null,
-      taskPath,
-      depth,
-      siblingOrder,
-      input.name,
-      input.context ?? null,
-      input.metadata ? JSON.stringify(input.metadata) : null,
-      now,
-      now
-    );
+      stmt.run(
+        id,
+        input.parentId ?? null,
+        taskPath,
+        depth,
+        siblingOrder,
+        input.name,
+        input.context ?? null,
+        input.metadata ? JSON.stringify(input.metadata) : null,
+        now,
+        now
+      );
 
-    // Record initial context version if context provided
-    if (input.context) {
-      this.recordContextVersion(id, input.context, changedBy);
-    }
+      // Record initial context version if context provided
+      if (input.context) {
+        this.recordContextVersion(id, input.context, changedBy);
+      }
+    });
 
+    createTx();
     return this.get(id)!;
   }
 
@@ -243,6 +248,9 @@ export class TaskStore {
     if (!task || !task.parentId) return [];
 
     // Use recursive CTE for ancestor query
+    // Validate maxLevels to prevent SQL injection
+    const safeMaxLevels = maxLevels ? Math.min(Math.max(Math.floor(maxLevels), 1), 100) : null;
+    const limitClause = safeMaxLevels ? `LIMIT ${safeMaxLevels}` : '';
     const stmt = this.db.prepare(`
       WITH RECURSIVE ancestors AS (
         SELECT * FROM tasks WHERE id = ?
@@ -252,7 +260,7 @@ export class TaskStore {
       )
       SELECT * FROM ancestors WHERE id != ?
       ORDER BY depth DESC
-      ${maxLevels ? `LIMIT ${maxLevels}` : ''}
+      ${limitClause}
     `);
 
     const rows = stmt.all(task.parentId, id) as TaskRow[];
@@ -511,12 +519,14 @@ export class TaskStore {
    * Search tasks by name
    */
   search(query: string, status: TaskStatus = 'active'): Task[] {
+    // Escape LIKE wildcards to prevent unintended matches
+    const escapedQuery = query.replace(/[%_]/g, (char) => `\\${char}`);
     const stmt = this.db.prepare(`
       SELECT * FROM tasks
-      WHERE name LIKE ? AND status = ?
+      WHERE name LIKE ? ESCAPE '\\' AND status = ?
       ORDER BY updated_at DESC
     `);
-    const rows = stmt.all(`%${query}%`, status) as TaskRow[];
+    const rows = stmt.all(`%${escapedQuery}%`, status) as TaskRow[];
     return rows.map(rowToTask);
   }
 

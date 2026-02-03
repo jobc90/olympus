@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Task, TaskTreeNode, CreateTaskInput, UpdateTaskInput } from '@olympus-dev/protocol';
 
 export interface UseTaskTreeOptions {
@@ -19,6 +19,14 @@ export interface UseTaskTreeReturn {
   moveTask: (id: string, newParentId: string | null) => Promise<void>;
 }
 
+async function safeJsonParse(res: Response): Promise<{ message?: string }> {
+  try {
+    return await res.json();
+  } catch {
+    return { message: `HTTP ${res.status}` };
+  }
+}
+
 export function useTaskTree(options: UseTaskTreeOptions = {}): UseTaskTreeReturn {
   const { baseUrl = 'http://localhost:18790', apiKey } = options;
   const [tree, setTree] = useState<TaskTreeNode[]>([]);
@@ -26,10 +34,11 @@ export function useTaskTree(options: UseTaskTreeOptions = {}): UseTaskTreeReturn
   const [error, setError] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
-  const headers: HeadersInit = {
+  // Memoize headers to prevent stale closure issues
+  const headers: HeadersInit = useMemo(() => ({
     'Content-Type': 'application/json',
     ...(apiKey ? { 'x-api-key': apiKey } : {}),
-  };
+  }), [apiKey]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -37,7 +46,8 @@ export function useTaskTree(options: UseTaskTreeOptions = {}): UseTaskTreeReturn
     try {
       const res = await fetch(`${baseUrl}/api/tasks?format=tree`, { headers });
       if (!res.ok) {
-        throw new Error(`Failed to fetch tasks: ${res.status}`);
+        const err = await safeJsonParse(res);
+        throw new Error(err.message || `Failed to fetch tasks: ${res.status}`);
       }
       const data = await res.json();
       setTree(data.tasks || []);
@@ -46,7 +56,7 @@ export function useTaskTree(options: UseTaskTreeOptions = {}): UseTaskTreeReturn
     } finally {
       setLoading(false);
     }
-  }, [baseUrl, apiKey]);
+  }, [baseUrl, headers]);
 
   useEffect(() => {
     refresh();
@@ -59,13 +69,13 @@ export function useTaskTree(options: UseTaskTreeOptions = {}): UseTaskTreeReturn
       body: JSON.stringify(input),
     });
     if (!res.ok) {
-      const err = await res.json();
+      const err = await safeJsonParse(res);
       throw new Error(err.message || 'Failed to create task');
     }
     const data = await res.json();
     await refresh();
     return data.task;
-  }, [baseUrl, apiKey, refresh]);
+  }, [baseUrl, headers, refresh]);
 
   const updateTask = useCallback(async (id: string, input: UpdateTaskInput): Promise<Task> => {
     const res = await fetch(`${baseUrl}/api/tasks/${id}`, {
@@ -74,13 +84,13 @@ export function useTaskTree(options: UseTaskTreeOptions = {}): UseTaskTreeReturn
       body: JSON.stringify(input),
     });
     if (!res.ok) {
-      const err = await res.json();
+      const err = await safeJsonParse(res);
       throw new Error(err.message || 'Failed to update task');
     }
     const data = await res.json();
     await refresh();
     return data.task;
-  }, [baseUrl, apiKey, refresh]);
+  }, [baseUrl, headers, refresh]);
 
   const deleteTask = useCallback(async (id: string): Promise<void> => {
     const res = await fetch(`${baseUrl}/api/tasks/${id}`, {
@@ -88,14 +98,14 @@ export function useTaskTree(options: UseTaskTreeOptions = {}): UseTaskTreeReturn
       headers,
     });
     if (!res.ok) {
-      const err = await res.json();
+      const err = await safeJsonParse(res);
       throw new Error(err.message || 'Failed to delete task');
     }
     await refresh();
     if (selectedTask?.id === id) {
       setSelectedTask(null);
     }
-  }, [baseUrl, apiKey, refresh, selectedTask]);
+  }, [baseUrl, headers, refresh, selectedTask]);
 
   const selectTask = useCallback(async (id: string | null) => {
     if (!id) {
@@ -107,11 +117,17 @@ export function useTaskTree(options: UseTaskTreeOptions = {}): UseTaskTreeReturn
       if (res.ok) {
         const data = await res.json();
         setSelectedTask(data.task);
+      } else {
+        const err = await safeJsonParse(res);
+        setError(err.message || 'Failed to fetch task');
+        setSelectedTask(null);
       }
     } catch (e) {
       console.error('Failed to fetch task:', e);
+      setError((e as Error).message);
+      setSelectedTask(null);
     }
-  }, [baseUrl, apiKey]);
+  }, [baseUrl, headers]);
 
   const moveTask = useCallback(async (id: string, newParentId: string | null): Promise<void> => {
     await updateTask(id, { parentId: newParentId });

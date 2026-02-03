@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   DndContext,
   DragEndEvent,
@@ -54,7 +54,7 @@ function TaskNode({
           setDropRef(el);
         }}
         className={`
-          flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer
+          group flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer
           transition-colors duration-150
           ${isSelected ? 'bg-blue-600 text-white' : 'hover:bg-gray-700'}
           ${isOver ? 'bg-green-900/50 ring-1 ring-green-500' : ''}
@@ -133,7 +133,7 @@ function TaskDetailPanel({ task, onUpdate, onClose }: TaskDetailPanelProps) {
   const [name, setName] = useState(task?.name || '');
   const [context, setContext] = useState(task?.context || '');
 
-  React.useEffect(() => {
+  useEffect(() => {
     setName(task?.name || '');
     setContext(task?.context || '');
   }, [task]);
