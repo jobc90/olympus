@@ -22,10 +22,13 @@ export { GptExecutor } from './agents/gpt.js';
 export { AGENT_METADATA, DELEGATION_TABLE, detectAgent } from './agents/router.js';
 
 // Orchestrator
-export { runParallel, smartRun, checkAuthStatus } from './orchestrator.js';
+export { runParallel, smartRun, checkAuthStatus, type RunParallelOptions } from './orchestrator.js';
 
 // Wisdom
 export { loadWisdom, addWisdom } from './wisdom.js';
 
 // History
 export { loadHistory, addHistory } from './history.js';
+
+// Events
+export { OlympusBus } from './events.js';

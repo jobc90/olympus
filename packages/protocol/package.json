@@ -1,0 +1,21 @@
+{
+  "name": "@olympus-dev/protocol",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "Shared protocol types and WebSocket message schemas for Olympus",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0"
+  }
+}

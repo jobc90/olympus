@@ -1,6 +1,6 @@
 {
   "name": "olympus-dev",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "AI-powered development platform - Multi-agent orchestration CLI",
   "bin": {
@@ -26,11 +26,18 @@
   },
   "dependencies": {
     "@olympus-dev/core": "workspace:*",
+    "@olympus-dev/gateway": "workspace:*",
+    "@olympus-dev/tui": "workspace:*",
+    "@olympus-dev/protocol": "workspace:*",
+    "@olympus-dev/client": "workspace:*",
+    "@olympus-dev/telegram-bot": "workspace:*",
     "chalk": "^5.4.0",
     "commander": "^13.1.0",
-    "ora": "^8.2.0"
+    "ora": "^8.2.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@types/ws": "^8.5.0",
     "tsup": "^8.5.0",
     "vitest": "^3.0.0"
   },

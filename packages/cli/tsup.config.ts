@@ -8,7 +8,7 @@ export default defineConfig({
   dts: false,
   clean: true,
   sourcemap: true,
-  external: [/^node:/, 'readline/promises', 'child_process', 'fs/promises', 'os', 'path', 'crypto'],
+  external: [/^node:/, 'readline/promises', 'child_process', 'fs/promises', 'os', 'path', 'crypto', 'react', 'ink', 'ws'],
   banner: {
     js: '#!/usr/bin/env node',
   },

@@ -36,6 +36,8 @@ export interface ExecuteOptions {
   model?: string;
   usePro?: boolean;
   timeout?: number;
+  signal?: AbortSignal;                    // For cancellation support
+  onChunk?: (chunk: string) => void;       // Streaming callback
 }
 
 /** Agent metadata */

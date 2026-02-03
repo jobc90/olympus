@@ -1,0 +1,30 @@
+{
+  "name": "@olympus-dev/tui",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "Terminal UI for Olympus built with Ink",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "dependencies": {
+    "@olympus-dev/client": "workspace:*",
+    "@olympus-dev/protocol": "workspace:*",
+    "ink": "^5.1.0",
+    "react": "^18.3.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.0",
+    "@types/react": "^18.3.18",
+    "tsup": "^8.5.0"
+  }
+}

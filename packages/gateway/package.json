@@ -1,0 +1,27 @@
+{
+  "name": "@olympus-dev/gateway",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "WebSocket gateway server for Olympus",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "dependencies": {
+    "@olympus-dev/protocol": "workspace:*",
+    "@olympus-dev/core": "workspace:*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.0",
+    "tsup": "^8.5.0"
+  }
+}

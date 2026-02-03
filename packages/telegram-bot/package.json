@@ -1,0 +1,25 @@
+{
+  "name": "@olympus-dev/telegram-bot",
+  "version": "0.2.0",
+  "description": "Telegram bot for Olympus remote control",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "telegraf": "^4.16.3",
+    "ws": "^8.18.1",
+    "@olympus-dev/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "@types/ws": "^8.18.1",
+    "tsup": "^8.5.1",
+    "tsx": "^4.19.4",
+    "typescript": "^5.9.3"
+  }
+}
