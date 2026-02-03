@@ -8,7 +8,11 @@ export default defineConfig({
   dts: false,
   clean: true,
   sourcemap: true,
-  external: [/^node:/, 'readline/promises', 'child_process', 'fs/promises', 'os', 'path', 'crypto', 'react', 'ink', 'ws'],
+  // Keep react and ink external (they're dependencies, not bundled)
+  external: [/^node:/, 'readline/promises', 'child_process', 'fs/promises', 'os', 'path', 'crypto', 'ws', 'react', 'ink', 'react-devtools-core'],
+  esbuildOptions(options) {
+    options.jsx = 'automatic';
+  },
   banner: {
     js: '#!/usr/bin/env node',
   },

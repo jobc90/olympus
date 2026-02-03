@@ -44,13 +44,22 @@ importers:
       commander:
         specifier: ^13.1.0
         version: 13.1.0
+      ink:
+        specifier: ^5.1.0
+        version: 5.2.1(@types/react@18.3.27)(react@18.3.1)
       ora:
         specifier: ^8.2.0
         version: 8.2.0
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
       ws:
         specifier: ^8.18.0
         version: 8.19.0
     devDependencies:
+      '@types/react':
+        specifier: ^18.3.18
+        version: 18.3.27
       '@types/ws':
         specifier: ^8.5.0
         version: 8.18.1

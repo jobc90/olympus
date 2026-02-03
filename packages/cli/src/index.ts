@@ -10,31 +10,50 @@ import { telegramCommand } from './commands/telegram.js';
 import { setupCommand } from './commands/setup.js';
 import { startCommand } from './commands/start.js';
 import { quickstartCommand } from './commands/quickstart.js';
+import { interactiveCommand, launchInteractive } from './commands/interactive.js';
 
-const program = new Command();
+// Check if running with no arguments (interactive mode)
+// argv: [node, script, ...args]
+const hasArgs = process.argv.length > 2;
+const isHelpOrVersion = process.argv.includes('--help') ||
+                        process.argv.includes('-h') ||
+                        process.argv.includes('--version') ||
+                        process.argv.includes('-V');
 
-program
-  .name('olympus')
-  .description('⚡ Olympus - AI-powered development platform')
-  .version('0.2.0');
+if (!hasArgs && !isHelpOrVersion) {
+  // No arguments: launch interactive REPL
+  launchInteractive().catch((err) => {
+    console.error('Failed to start interactive mode:', err.message);
+    process.exit(1);
+  });
+} else {
+  // Has arguments: use commander
+  const program = new Command();
 
-// Main commands (most common)
-program.addCommand(quickstartCommand); // Quick setup + start
-program.addCommand(setupCommand);      // First-time setup only
-program.addCommand(startCommand);      // Start everything
-program.addCommand(runCommand);        // Run a task
+  program
+    .name('olympus')
+    .description('⚡ Olympus - AI-powered development platform')
+    .version('0.2.0');
 
-// Individual services
-program.addCommand(gatewayCommand);
-program.addCommand(telegramCommand);
-program.addCommand(tuiCommand);
-program.addCommand(dashboardCommand);
+  // Main commands (most common)
+  program.addCommand(quickstartCommand); // Quick setup + start
+  program.addCommand(setupCommand);      // First-time setup only
+  program.addCommand(startCommand);      // Start everything
+  program.addCommand(runCommand);        // Run a task
+  program.addCommand(interactiveCommand); // Interactive REPL (explicit)
 
-// Configuration
-program.addCommand(configCommand);
-program.addCommand(authCommand);
+  // Individual services
+  program.addCommand(gatewayCommand);
+  program.addCommand(telegramCommand);
+  program.addCommand(tuiCommand);
+  program.addCommand(dashboardCommand);
 
-// Other
-program.addCommand(patchCommand);
+  // Configuration
+  program.addCommand(configCommand);
+  program.addCommand(authCommand);
 
-program.parse();
+  // Other
+  program.addCommand(patchCommand);
+
+  program.parse();
+}
