@@ -20,25 +20,25 @@
 
 ## What is Olympus?
 
-Olympus는 [Multi-AI Orchestration Protocol v5.0](https://github.com/dear-well/multi-ai-orchestration)의 **완벽한 상위 호환**이자, Claude CLI를 더 강력하게 확장한 플랫폼입니다:
+Olympus는 Claude CLI의 생산성을 극대화하는 **Multi-AI 협업 플랫폼**입니다:
 
-1. **Multi-AI Orchestration**: Claude + Gemini + Codex 협업으로 복잡한 작업 자동화
+1. **Multi-AI Orchestration (AIOS v5.0)**: Claude + Gemini + Codex 협업으로 복잡한 작업 자동화
 2. **Claude CLI 래퍼**: `olympus` 실행 시 Claude CLI가 실행됩니다 (브랜딩만 Olympus)
 3. **원격 접근**: Gateway를 통해 Telegram 봇으로 핸드폰에서 로컬 Claude CLI 사용
 4. **대시보드**: 웹 UI로 작업 현황 모니터링
 
-### Olympus = Multi-AI Orchestration + Gateway + Dashboard
+### 핵심 기능
 
-| 기능 | Multi-AI Orchestration | Olympus |
-|------|----------------------|---------|
-| `/orchestration` 프로토콜 | ✅ | ✅ |
-| MCP 서버 (ai-agents, openapi) | ✅ | ✅ |
-| Skills (frontend-ui-ux, git-master 등) | ✅ | ✅ |
-| Plugins (claude-dashboard) | ✅ | ✅ |
-| **Telegram 봇 원격 접근** | ❌ | ✅ |
-| **웹 대시보드** | ❌ | ✅ |
-| **tmux 세션 관리** | ❌ | ✅ |
-| **통합 CLI** | ❌ | ✅ |
+| 기능 | 설명 |
+|------|------|
+| `/orchestration` 프로토콜 | 10 Phase 워크플로우로 복잡한 작업 체계적 수행 |
+| MCP 서버 | ai-agents (Multi-AI), openapi (Swagger 연동) |
+| Skills | frontend-ui-ux, git-master, agent-browser 등 |
+| Plugins | claude-dashboard (상태줄, 사용량 표시) |
+| **Telegram 봇** | 핸드폰에서 원격으로 Claude CLI 조작 |
+| **웹 대시보드** | 작업 현황 실시간 모니터링 |
+| **tmux 세션 관리** | 안정적인 세션 유지 및 스크롤 지원 |
+| **통합 CLI** | `olympus` 명령어로 모든 기능 접근 |
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -233,7 +233,7 @@ olympus tui
 
 ## Multi-AI Orchestration (AIOS v5.0)
 
-Olympus는 **Multi-AI Orchestration Protocol v5.0**을 완벽하게 내장하고 있습니다. Claude CLI에서 `/orchestration` 명령어를 사용하여 Gemini, Codex 등 여러 AI와 협업할 수 있습니다.
+Olympus는 **Multi-AI Orchestration Protocol v5.0 (AIOS)**을 완벽하게 내장하고 있습니다. Claude CLI에서 `/orchestration` 명령어를 사용하여 Gemini, Codex 등 여러 AI와 협업할 수 있습니다.
 
 > 💡 **모든 플랫폼에서 사용 가능**: `/orchestration` 프로토콜은 macOS, Linux, Windows 모두에서 작동합니다.
 
@@ -247,37 +247,107 @@ Olympus는 **Multi-AI Orchestration Protocol v5.0**을 완벽하게 내장하고
 /orchestration 장바구니 기능 추가
 ```
 
-### 10 Phase 워크플로우
+### AIOS 아키텍처
 
 ```
-Phase -1: Smart Intake (복잡도 평가 + 모드 결정)
-Phase 0:  Contract-First Design (계약 + 전체 설계)
-Phase 1:  Multi-Layer DAG (기능 맵 + Work Items)
-Phase 2:  Plan Review (AI팀 검토 + Devil's Advocate)
-Phase 3:  Plan Lock + Checkpoint (사용자 승인)
-Phase 4:  Code Execution (2-Phase Dev + Shared Surface)
-Phase 5:  Merge & Review (momus + UI 검증)
-Phase 6:  Improvements (수정 + Learning Memory)
-Phase 7:  Final Test (빌드/린트/타입/테스트)
-Phase 8:  Judgment (Quality Gates + 최종 판정)
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           AI Operating System v5.0                               │
+│                        (Claude as CEO/CTO/Orchestrator)                          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                    ┌─────────────────┼─────────────────┐
+                    ▼                 ▼                 ▼
+        ┌───────────────────┐ ┌───────────────┐ ┌──────────────────┐
+        │   Phase -1~3      │ │   Phase 4~6   │ │   Phase 7~8      │
+        │   (Planning)      │ │   (Execution) │ │   (Validation)   │
+        └─────────┬─────────┘ └───────┬───────┘ └────────┬─────────┘
+                  │                   │                   │
+        ┌─────────▼─────────┐ ┌───────▼───────┐ ┌────────▼─────────┐
+        │ prometheus (Plan) │ │ Gemini (Code) │ │ momus (Review)   │
+        │ oracle (Arch)     │ │ Codex (Code)  │ │ qa-tester (Test) │
+        │ explore (Search)  │ │ sisyphus-jr   │ │ document-writer  │
+        └───────────────────┘ └───────────────┘ └──────────────────┘
 ```
+
+### 10 Phase 워크플로우
+
+| Phase | 이름 | 설명 |
+|-------|------|------|
+| -1 | Smart Intake | 복잡도 평가 (IMPACT + CONTEXT + LOGIC) → 모드 결정 |
+| 0 | Contract-First Design | /find-skills + prometheus 전략 + Contract Document |
+| 1 | Multi-Layer DAG | Feature Sets (max 4) + Work Items (4 layers) |
+| 2 | Plan Review | ai_team_analyze + Devil's Advocate + Best Practices |
+| 3 | Plan Lock | 사용자 승인 + Git Checkpoint |
+| 4 | Code Execution | 2-Phase Dev (Coding → TIME_TO_END → Debugging) |
+| 5 | Merge & Review | momus 리뷰 + /agent-browser UI 검증 |
+| 6 | Improvements | Fix Request + Learning Memory 주입 |
+| 7 | Final Test | Build/Lint/Type/Test + Core Scenarios |
+| 8 | Judgment | Quality Gates (Hard/Behavior/Soft) → ACCEPT or LOOP |
+
+### 복잡도 기반 모드 결정
+
+| 점수 | 모드 | 동작 |
+|------|------|------|
+| 0-4 | Silent | Phase 건너뛰고 즉시 실행, Core agents만 |
+| 5-8 | Fast | Phase 0 간소화, Phase 1 생략 |
+| 9-14 | Suggested | 사용자에게 Full Mode 권장, 선택 가능 |
+| 15-20 | Forced | Full Mode 필수, 전체 Phase 실행 |
 
 ### AI 역할 분담
 
-| AI | 역할 | 담당 Phase |
-|----|------|-----------|
-| **Claude** | CEO/CTO/Orchestrator | 전체 조율, 병합, 최종 판정 |
-| **Gemini** | Architect/Frontend | 설계, 리뷰, UI 구현 |
-| **Codex** | Implementer/Backend | API, 인프라, 테스트 |
+| AI | 역할 | 담당 |
+|----|------|------|
+| **Claude** | Orchestrator (CEO/CTO) | Phase 3 승인, Phase 5 병합, Phase 7-8 테스트/판정 |
+| **Gemini** | Architect/Frontend | Phase 0 설계, Phase 2 프론트 리뷰, Phase 4 UI 구현 |
+| **Codex** | Implementer/Backend | Phase 2 백엔드 리뷰, Phase 4 API/Infra 구현 |
+
+### Quality Gates (Phase 8)
+
+```
+🔴 HARD GATES (실패 시 LOOP):
+  □ Build: 100% 성공
+  □ Lint: 0 errors
+  □ Type Check: 100% 성공
+  □ Tests: 100% 통과
+
+🟡 BEHAVIOR GATES (실패 시 LOOP):
+  □ Core Scenario 1-3: Pass
+
+🟢 SOFT GATES (경고만):
+  □ Coverage ≥80%
+  □ Bundle Size
+  □ Complexity
+```
 
 ### 주요 기능
 
-- **Smart Intake**: 복잡도 평가 후 자동 모드 결정 (Silent/Fast/Suggested/Forced)
+- **Smart Intake**: 복잡도 평가 후 자동 모드 결정
 - **Contract Document**: 모든 에이전트가 참조하는 Global Blackboard
-- **Multi-Layer DAG**: UI/Domain/Infra/Integration 4계층 구조
+- **Feature Map (DAG)**: UI/Domain/Infra/Integration 4계층 구조
+- **2-Phase Development**: Coding Phase → TIME_TO_END → Debugging Phase
 - **Shared Surface Detection**: 병렬 실행 전 파일 충돌 자동 감지
-- **Learning Memory**: 실패 Root Cause → Prevention Rule 자동 기록
-- **Checkpoint & Rollback**: Phase별 Git 스냅샷, 3회 실패 시 롤백 옵션
+- **Learning Memory**: 실패 Root Cause → Prevention Rule 자동 기록 (`.sisyphus/learnings.json`)
+- **Checkpoint & Rollback**: Phase 3/4/5 완료 시 Git 스냅샷, 3회 실패 시 롤백 옵션
+- **Partial Success**: Feature Set별 성공/실패 분리, 성공분만 머지 가능
+
+### MCP 서버 설정
+
+`~/.claude/settings.json`에 자동 추가:
+
+```json
+{
+  "mcpServers": {
+    "ai-agents": {
+      "command": "node",
+      "args": ["~/.claude/mcps/ai-agents/server.js"]
+    },
+    "openapi": {
+      "command": "node",
+      "args": ["~/.claude/mcps/openapi/server.js"]
+    }
+  }
+}
+```
 
 ### 인증 설정 (선택)
 
@@ -296,16 +366,21 @@ codex login
 ```
 orchestration/
 ├── commands/
-│   └── orchestration.md    # /orchestration 슬래시 명령어
+│   └── orchestration.md    # /orchestration 슬래시 명령어 (1800+ lines)
 ├── mcps/
 │   ├── ai-agents/          # Multi-AI MCP 서버 (Gemini+Codex 연동)
+│   │   ├── server.js       # MCP 서버 구현
+│   │   └── wisdom.json     # 축적된 지혜 (패턴, 교훈)
 │   └── openapi/            # OpenAPI/Swagger MCP 서버
+│       └── server.js       # Swagger 스펙 로드/호출
 ├── skills/
 │   ├── frontend-ui-ux/     # 프론트엔드 UI/UX 스킬
-│   ├── git-master/         # Git 관리 스킬
+│   ├── git-master/         # Git 관리 스킬 (atomic commits, rebasing)
 │   └── agent-browser/      # 브라우저 자동화 스킬
 └── plugins/
-    └── claude-dashboard/   # 상태줄 플러그인 (Gemini/Codex 사용량 표시)
+    └── claude-dashboard/   # 상태줄 플러그인
+        ├── scripts/        # 위젯 시스템 (17개 위젯)
+        └── dist/index.js   # 빌드된 플러그인
 ```
 
 ### 설치 후 필수 체크리스트
@@ -483,8 +558,9 @@ tmux new-session
 
 ## Related Projects
 
-- [Multi-AI Orchestration](https://github.com/dear-well/multi-ai-orchestration) - 원본 프로토콜
 - [Claude CLI](https://github.com/anthropics/claude-code) - Anthropic 공식 CLI
+- [Gemini CLI](https://github.com/google-gemini/gemini-cli) - Google Gemini CLI
+- [Codex CLI](https://github.com/openai/codex) - OpenAI Codex CLI
 
 ## License
 
