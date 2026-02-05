@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <i>"1인 개발자가 CTO급 퍼포먼스를 내는 AI 운영체제"</i>
+  <i>"Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 도구"</i>
 </p>
 
 ## What is Olympus?
@@ -493,5 +493,5 @@ MIT
 ---
 
 <p align="center">
-  <b>Olympus</b> - 1인 개발자가 CTO급 퍼포먼스를 내는 AI 운영체제
+  <b>Olympus</b> - Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 도구
 </p>

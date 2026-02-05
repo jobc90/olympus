@@ -55,7 +55,7 @@ echo -e "${MAGENTA}║  ╚██████╔╝███████╗█�
 echo -e "${MAGENTA}║   ╚═════╝ ╚══════╝╚═╝   ╚═╝     ╚═╝╚═╝      ╚═════╝ ╚══════╝      ║${NC}"
 echo -e "${MAGENTA}║                                                                    ║${NC}"
 echo -e "${MAGENTA}║          Claude CLI Enhanced Platform + AIOS v5.0                 ║${NC}"
-echo -e "${MAGENTA}║       \"1인 개발자가 CTO급 퍼포먼스를 내는 AI 운영체제\"            ║${NC}"
+echo -e "${MAGENTA}║       \"Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 도구\"            ║${NC}"
 echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -779,7 +779,7 @@ echo -e "   ⚙️ ${CYAN}Codex = Implementer${NC}: 코드 패치, 테스트, �
 echo -e "   🧠 ${CYAN}find-skills 필수${NC}: 모든 작업에서 스킬 검색 필수"
 echo -e "   📊 ${CYAN}Dashboard${NC}: Gemini/Codex 사용량 실시간 표시"
 echo ""
-echo -e "   ${YELLOW}🎯 목표: 1인 개발자가 CTO급 퍼포먼스를 내는 AI 운영체제${NC}"
+echo -e "   ${YELLOW}🎯 목표: Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 도구${NC}"
 echo ""
 echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""

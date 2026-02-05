@@ -1,6 +1,6 @@
 # Multi-AI Orchestration Protocol v5.0 - AI Enterprise Platform
 
-> **"1인 개발자가 CTO급 퍼포먼스를 내는 AI 운영체제"**
+> **"Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 도구"**
 
 **활성화**: `/orchestration "요구사항"`
 
