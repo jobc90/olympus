@@ -5,8 +5,22 @@
   "description": "AI-powered development platform with multi-agent orchestration",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jobc/olympus.git"
+    "url": "git+https://github.com/jobc/olympus.git"
   },
+  "bugs": {
+    "url": "https://github.com/jobc/olympus/issues"
+  },
+  "keywords": [
+    "claude",
+    "ai",
+    "multi-ai",
+    "orchestration",
+    "gemini",
+    "codex",
+    "telegram",
+    "dashboard",
+    "cli"
+  ],
   "author": "jobc",
   "license": "MIT",
   "homepage": "https://github.com/jobc/olympus#readme",

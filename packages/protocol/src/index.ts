@@ -35,6 +35,9 @@ export type {
   RunsListPayload,
   PongPayload,
   RunStatus,
+  SessionInfo,
+  AvailableSession,
+  SessionsListPayload,
 } from './messages.js';
 
 // Constants

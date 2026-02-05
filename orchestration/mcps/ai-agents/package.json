@@ -1,0 +1,25 @@
+{
+  "name": "ai-agents-mcp",
+  "version": "1.0.0",
+  "description": "Multi-AI MCP Server for Gemini and GPT orchestration",
+  "main": "server.js",
+  "type": "module",
+  "bin": {
+    "ai-agents-mcp": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "auth:openai": "node auth-openai.js",
+    "auth:openai:oauth": "node auth-openai-oauth.js",
+    "test": "node test.js"
+  },
+  "keywords": ["mcp", "gemini", "gpt", "ai-agents"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
+    "@modelcontextprotocol/sdk": "^1.25.3",
+    "playwright": "^1.58.0",
+    "zod": "^4.3.6"
+  }
+}

@@ -11,6 +11,7 @@ import { setupCommand } from './commands/setup.js';
 import { startCommand } from './commands/start.js';
 import { quickstartCommand } from './commands/quickstart.js';
 import { interactiveCommand } from './commands/interactive.js';
+import { serverCommand } from './commands/server.js';
 import { launchClaude } from './claude-wrapper.js';
 
 // Check if running with no arguments (Claude CLI mode)
@@ -39,7 +40,8 @@ if (!hasArgs && !isHelpOrVersion) {
   // Main commands (most common)
   program.addCommand(quickstartCommand); // Quick setup + start
   program.addCommand(setupCommand);      // First-time setup only
-  program.addCommand(startCommand);      // Start everything
+  program.addCommand(startCommand);      // Start tmux claude cli
+  program.addCommand(serverCommand);     // Server management (gateway + dashboard + telegram)
   program.addCommand(runCommand);        // Run a task
   program.addCommand(interactiveCommand); // Interactive REPL (explicit)
 

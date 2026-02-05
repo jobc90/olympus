@@ -17,6 +17,7 @@ import {
   type SnapshotPayload,
 } from '@olympus-dev/protocol';
 import { RunManager, type RunOptions } from './run-manager.js';
+import { SessionManager, type SessionEvent } from './session-manager.js';
 import { createApiHandler } from './api.js';
 import { validateWsApiKey, loadConfig } from './auth.js';
 
@@ -33,6 +34,7 @@ interface ClientInfo {
   alive: boolean;
   authenticated: boolean;
   subscribedRuns: Set<string>; // Run IDs this client is subscribed to
+  subscribedSessions: Set<string>; // Session IDs this client is subscribed to
 }
 
 export class Gateway {
@@ -40,7 +42,9 @@ export class Gateway {
   private httpServer: ReturnType<typeof createServer> | null = null;
   private clients = new Map<string, ClientInfo>();
   private runManager: RunManager;
+  private sessionManager: SessionManager;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private sessionCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private port: number;
   private host: string;
 
@@ -53,6 +57,11 @@ export class Gateway {
       maxConcurrentRuns: options.maxConcurrentRuns ?? 5,
       onEvent: (runId, event) => this.broadcastToSubscribers(runId, event),
     });
+
+    // Initialize SessionManager with event forwarding
+    this.sessionManager = new SessionManager({
+      onSessionEvent: (sessionId, event) => this.broadcastSessionEvent(sessionId, event),
+    });
   }
 
   async start(): Promise<{ port: number; host: string; apiKey: string }> {
@@ -63,7 +72,9 @@ export class Gateway {
       // Create HTTP server with API handler
       const apiHandler = createApiHandler({
         runManager: this.runManager,
+        sessionManager: this.sessionManager,
         onRunCreated: () => this.broadcastRunsList(),
+        onSessionEvent: (sessionId, event) => this.broadcastSessionEvent(sessionId, event),
       });
 
       this.httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -85,6 +96,12 @@ export class Gateway {
         HEARTBEAT_INTERVAL_MS
       );
 
+      // Session cleanup timer (every 5 minutes)
+      this.sessionCleanupTimer = setInterval(
+        () => this.sessionManager.cleanup(),
+        5 * 60 * 1000
+      );
+
       this.httpServer.listen(this.port, this.host, () => {
         resolve({ port: this.port, host: this.host, apiKey: config.apiKey });
       });
@@ -97,6 +114,7 @@ export class Gateway {
     this.runManager.cancelAllRuns();
 
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    if (this.sessionCleanupTimer) clearInterval(this.sessionCleanupTimer);
     for (const [, client] of this.clients) {
       client.ws.close(1001, 'Gateway shutting down');
     }
@@ -149,6 +167,7 @@ export class Gateway {
             alive: true,
             authenticated: true,
             subscribedRuns: new Set(),
+            subscribedSessions: new Set(),
           });
 
           // Send connected acknowledgment
@@ -175,19 +194,29 @@ export class Gateway {
             return;
           }
 
-          const payload = msg.payload as SubscribePayload;
-          client.subscribedRuns.add(payload.runId);
+          const payload = msg.payload as SubscribePayload & { sessionId?: string };
 
-          // Send current state of the subscribed run
-          const runStatus = this.runManager.getRunStatus(payload.runId);
-          if (runStatus) {
-            this.send(ws, createMessage('snapshot', {
-              phase: runStatus.phase,
-              phaseName: runStatus.phaseName,
-              tasks: runStatus.tasks,
-              agents: [],
-              runId: payload.runId,
-            } as SnapshotPayload));
+          // Handle session subscription
+          if (payload.sessionId) {
+            client.subscribedSessions.add(payload.sessionId);
+            break;
+          }
+
+          // Handle run subscription
+          if (payload.runId) {
+            client.subscribedRuns.add(payload.runId);
+
+            // Send current state of the subscribed run
+            const runStatus = this.runManager.getRunStatus(payload.runId);
+            if (runStatus) {
+              this.send(ws, createMessage('snapshot', {
+                phase: runStatus.phase,
+                phaseName: runStatus.phaseName,
+                tasks: runStatus.tasks,
+                agents: [],
+                runId: payload.runId,
+              } as SnapshotPayload));
+            }
           }
           break;
         }
@@ -196,8 +225,13 @@ export class Gateway {
           const client = this.clients.get(clientId);
           if (!client) return;
 
-          const payload = msg.payload as UnsubscribePayload;
-          client.subscribedRuns.delete(payload.runId);
+          const payload = msg.payload as UnsubscribePayload & { sessionId?: string };
+          if (payload.sessionId) {
+            client.subscribedSessions.delete(payload.sessionId);
+          }
+          if (payload.runId) {
+            client.subscribedRuns.delete(payload.runId);
+          }
           break;
         }
 
@@ -262,6 +296,54 @@ export class Gateway {
     // Send list of all runs as initial snapshot
     const runs = this.runManager.getAllRunStatuses();
     this.send(ws, createMessage('runs:list', { runs }));
+
+    // Send list of active sessions + available tmux sessions
+    const sessions = this.sessionManager.getAll().filter(s => s.status === 'active');
+    const discovered = this.sessionManager.discoverTmuxSessions();
+
+    // Filter out already-registered tmux sessions from discovered
+    const registeredTmux = new Set(sessions.map(s => s.tmuxSession));
+    const availableSessions = discovered.filter(d => !registeredTmux.has(d.tmuxSession));
+
+    this.send(ws, createMessage('sessions:list', { sessions, availableSessions }));
+  }
+
+  /**
+   * Broadcast session event to clients subscribed to a specific session
+   */
+  private broadcastSessionEvent(sessionId: string, event: SessionEvent): void {
+    let messageType: string;
+    let payload: Record<string, unknown>;
+
+    switch (event.type) {
+      case 'output':
+        messageType = 'session:output';
+        payload = { sessionId, content: event.content };
+        break;
+      case 'error':
+        messageType = 'session:error';
+        payload = { sessionId, error: event.error };
+        break;
+      case 'closed':
+        messageType = 'session:closed';
+        payload = { sessionId };
+        break;
+      default:
+        return;
+    }
+
+    const message = createMessage(messageType, payload);
+    const raw = JSON.stringify(message);
+
+    for (const [, client] of this.clients) {
+      if (
+        client.authenticated &&
+        client.subscribedSessions.has(sessionId) &&
+        client.ws.readyState === WebSocket.OPEN
+      ) {
+        client.ws.send(raw);
+      }
+    }
   }
 
   /**

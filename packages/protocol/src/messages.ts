@@ -111,3 +111,26 @@ export interface PongPayload {}
 export interface RunsListPayload {
   runs: RunStatus[];
 }
+
+/** Info about a tmux Claude CLI session */
+export interface SessionInfo {
+  id: string;
+  name: string;           // Session name (e.g., "main", "backend")
+  chatId: number;         // Telegram chat ID (0 for system/dashboard)
+  tmuxSession: string;    // Tmux session name
+  status: 'active' | 'closed';
+  projectPath: string;
+  createdAt: number;
+  lastActivityAt: number;
+}
+
+/** Discovered tmux session (not yet connected to Gateway) */
+export interface AvailableSession {
+  tmuxSession: string;
+  projectPath: string;
+}
+
+export interface SessionsListPayload {
+  sessions: SessionInfo[];
+  availableSessions?: AvailableSession[];
+}

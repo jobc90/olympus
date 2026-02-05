@@ -96,6 +96,9 @@ export class OlympusClient {
   onRunsList(handler: (runs: RunStatus[]) => void): () => void {
     return this.on('runs:list', (m) => handler((m.payload as { runs: RunStatus[] }).runs));
   }
+  onSessionsList(handler: (payload: unknown) => void): () => void {
+    return this.on('sessions:list', (m) => handler(m.payload));
+  }
   onError(handler: (error: { code: string; message: string }) => void): () => void {
     return this.on('error', (m) => handler(m.payload as { code: string; message: string }));
   }

@@ -1,99 +1,134 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import {
-  loadConfig,
-  isTelegramConfigured,
-  getConfigPath,
-} from '@olympus-dev/gateway';
+import { execSync } from 'child_process';
+import { basename, resolve } from 'path';
+
+/**
+ * Generate session name from project path
+ * e.g., /Users/jobc/dev/olympus -> olympus-olympus
+ *       /Users/jobc/dev/console -> olympus-console
+ */
+function generateSessionName(projectPath: string): string {
+  const absolutePath = resolve(projectPath);
+  const folderName = basename(absolutePath);
+  // Sanitize folder name (remove special chars, replace spaces with dashes)
+  const sanitized = folderName.replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase();
+  return `olympus-${sanitized}`;
+}
+
+/**
+ * Find available session name by appending -2, -3, etc. if base name exists
+ */
+function findAvailableSessionName(baseName: string): string {
+  // First try: base name
+  try {
+    execSync(`tmux has-session -t "${baseName}" 2>/dev/null`, { stdio: 'pipe' });
+  } catch {
+    // Session doesn't exist, use base name
+    return baseName;
+  }
+
+  // Base name exists, try -2, -3, ...
+  let suffix = 2;
+  while (suffix <= 99) {
+    const newName = `${baseName}-${suffix}`;
+    try {
+      execSync(`tmux has-session -t "${newName}" 2>/dev/null`, { stdio: 'pipe' });
+      suffix++;
+    } catch {
+      return newName;
+    }
+  }
+
+  throw new Error('Too many sessions with the same base name (max 99)');
+}
 
 export const startCommand = new Command('start')
-  .description('Start Olympus Gateway (and Telegram bot if configured)')
-  .option('--no-telegram', 'Do not start Telegram bot')
-  .option('--gateway-only', 'Only start Gateway (alias for --no-telegram)')
+  .description('Start Claude CLI in a new tmux session')
+  .option('-p, --project <path>', 'Project directory path', process.cwd())
+  .option('-s, --session <name>', 'Tmux session name (auto-generated from project path if not specified)')
+  .option('-a, --attach', 'Attach to the session after creation', true)
+  .option('--no-attach', 'Do not attach to the session')
   .action(async (opts) => {
-    const config = loadConfig();
+    const projectPath = resolve(opts.project);
 
     console.log(chalk.cyan.bold('\n⚡ Olympus Start\n'));
 
-    // Determine what to start
-    const startTelegram =
-      opts.telegram !== false &&
-      !opts.gatewayOnly &&
-      isTelegramConfigured();
-
-    if (!isTelegramConfigured() && opts.telegram !== false && !opts.gatewayOnly) {
-      console.log(chalk.yellow('💡 Telegram 봇이 설정되지 않았습니다.'));
-      console.log(chalk.gray('   설정하려면: olympus setup --telegram\n'));
+    // Check if tmux is installed
+    try {
+      execSync('which tmux', { stdio: 'pipe' });
+    } catch {
+      console.log(chalk.red('❌ tmux가 설치되어 있지 않습니다.'));
+      console.log(chalk.gray('   설치: brew install tmux (macOS)'));
+      console.log(chalk.gray('         apt install tmux (Ubuntu)'));
+      process.exit(1);
     }
 
-    // Display startup info
+    // Check if claude is installed
+    try {
+      execSync('which claude', { stdio: 'pipe' });
+    } catch {
+      console.log(chalk.red('❌ Claude CLI가 설치되어 있지 않습니다.'));
+      console.log(chalk.gray('   설치: npm install -g @anthropic-ai/claude-code'));
+      process.exit(1);
+    }
+
+    // Check if already inside tmux
+    const insideTmux = !!process.env.TMUX;
+
+    // Generate session name (auto-increment if exists: olympus-foo, olympus-foo-2, olympus-foo-3...)
+    const baseName = opts.session || generateSessionName(projectPath);
+    const sessionName = findAvailableSessionName(baseName);
+
+    if (sessionName !== baseName) {
+      console.log(chalk.yellow(`📌 '${baseName}' 이미 존재 → '${sessionName}' 생성`));
+      console.log();
+    }
+
+    // Create new session
     console.log(chalk.white('Starting:'));
-    console.log(chalk.green('  ✓ Gateway'));
-    if (startTelegram) {
-      console.log(chalk.green('  ✓ Telegram Bot'));
-    }
+    console.log(chalk.green(`  ✓ tmux session: ${sessionName}`));
+    console.log(chalk.green(`  ✓ Claude CLI`));
+    console.log(chalk.gray(`  ✓ Project: ${projectPath}`));
     console.log();
 
-    // Set environment variables for telegram bot
-    if (startTelegram && config.telegram) {
-      process.env.TELEGRAM_BOT_TOKEN = config.telegram.token;
-      process.env.ALLOWED_USERS = config.telegram.allowedUsers.join(',');
-      process.env.OLYMPUS_GATEWAY_URL = config.gatewayUrl;
-      process.env.OLYMPUS_API_KEY = config.apiKey;
-    }
+    try {
+      // Get claude path to ensure it's found in tmux
+      const claudePath = execSync('which claude', { encoding: 'utf-8' }).trim();
 
-    // Import and start Gateway
-    const { Gateway } = await import('@olympus-dev/gateway');
+      // Create tmux session with claude as the command
+      // Use login shell (-l) to ensure proper environment
+      // When claude exits, the session will automatically close
+      execSync(
+        `tmux new-session -d -s "${sessionName}" -c "${projectPath}" "${claudePath}"`,
+        { stdio: 'pipe' }
+      );
 
-    const gateway = new Gateway({
-      host: config.gatewayHost,
-      port: config.gatewayPort,
-    });
+      console.log(chalk.cyan.bold('✅ Claude CLI 세션 시작됨!\n'));
 
-    await gateway.start();
-
-    console.log(chalk.cyan('\n📡 Gateway 시작됨'));
-    console.log(chalk.gray(`   URL: http://${config.gatewayHost}:${config.gatewayPort}`));
-    console.log(chalk.gray(`   API Key: ${config.apiKey}`));
-    console.log(chalk.gray(`   WebSocket: ws://${config.gatewayHost}:${config.gatewayPort}/ws`));
-
-    // Start Telegram bot if configured
-    if (startTelegram) {
-      console.log(chalk.cyan('\n🤖 Telegram 봇 시작 중...'));
-
-      try {
-        // Dynamic import telegram bot
-        await import('@olympus-dev/telegram-bot');
-        console.log(chalk.green('   ✓ Telegram 봇 연결됨'));
-        console.log(chalk.gray(`   허용된 사용자: ${config.telegram?.allowedUsers.join(', ')}`));
-      } catch (err) {
-        console.log(chalk.red(`   ✗ Telegram 봇 시작 실패: ${(err as Error).message}`));
+      if (insideTmux) {
+        // Already inside tmux, can't attach directly
+        console.log(chalk.yellow('현재 tmux 내부에서 실행 중입니다.'));
+        console.log(chalk.white('\n전환 방법:'));
+        console.log(chalk.yellow(`  Ctrl+b ) 또는 Ctrl+b s`));
+        console.log(chalk.gray('  → 세션 목록에서 선택'));
+      } else if (opts.attach) {
+        console.log(chalk.cyan('세션에 연결합니다...\n'));
+        try {
+          execSync(`tmux attach -t "${sessionName}"`, { stdio: 'inherit' });
+          console.log(chalk.yellow('\n세션이 종료되었습니다.'));
+        } catch {
+          // Session might have ended
+          console.log(chalk.yellow('\n세션이 종료되었습니다.'));
+        }
+      } else {
+        console.log(chalk.white('사용 방법:'));
+        console.log(chalk.yellow(`  tmux attach -t ${sessionName}`));
+        console.log(chalk.gray('  → 세션 연결\n'));
+        console.log(chalk.gray(`종료: Ctrl+D (Claude 종료 시 세션도 종료됨)`));
       }
+    } catch (err) {
+      console.log(chalk.red(`❌ 세션 생성 실패: ${(err as Error).message}`));
+      process.exit(1);
     }
-
-    // Final instructions
-    console.log(chalk.cyan.bold('\n✅ Olympus 준비 완료!\n'));
-
-    if (startTelegram) {
-      console.log(chalk.white('Telegram에서 봇에게 /start 메시지를 보내세요.'));
-    } else {
-      console.log(chalk.white('사용 방법:'));
-      console.log(chalk.yellow('  olympus run "작업 프롬프트"'));
-      console.log(chalk.gray('  → Gateway에 작업 요청\n'));
-    }
-
-    console.log(chalk.gray('종료: Ctrl+C'));
-    console.log(chalk.gray(`설정: ${getConfigPath()}`));
-
-    // Keep running
-    process.on('SIGINT', () => {
-      console.log(chalk.yellow('\n\nShutting down...'));
-      gateway.stop();
-      process.exit(0);
-    });
-
-    process.on('SIGTERM', () => {
-      gateway.stop();
-      process.exit(0);
-    });
   });

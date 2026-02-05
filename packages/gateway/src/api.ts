@@ -2,12 +2,15 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { authMiddleware, loadConfig, validateApiKey } from './auth.js';
 import { handleCorsPrefllight, setCorsHeaders } from './cors.js';
 import type { RunManager, RunOptions } from './run-manager.js';
+import { SessionManager, type SessionEvent } from './session-manager.js';
 import { runParallel, GeminiExecutor, TaskStore } from '@olympus-dev/core';
 import type { CreateTaskInput, UpdateTaskInput } from '@olympus-dev/protocol';
 
 export interface ApiHandlerOptions {
   runManager: RunManager;
+  sessionManager: SessionManager;
   onRunCreated?: () => void;  // Callback to broadcast runs:list
+  onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
 }
 
 /**
@@ -54,6 +57,30 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     return { path: '/api/runs/:id', id: parts[2], query };
   }
 
+  // /api/sessions routes
+  if (parts[0] === 'api' && parts[1] === 'sessions') {
+    // /api/sessions/discover
+    if (parts[2] === 'discover') {
+      return { path: '/api/sessions/discover', query };
+    }
+    // /api/sessions/connect
+    if (parts[2] === 'connect') {
+      return { path: '/api/sessions/connect', query };
+    }
+    if (parts[2]) {
+      // /api/sessions/:id/input
+      if (parts[3] === 'input') {
+        return { path: '/api/sessions/:id/input', id: parts[2], query };
+      }
+      // /api/sessions/:id/output
+      if (parts[3] === 'output') {
+        return { path: '/api/sessions/:id/output', id: parts[2], query };
+      }
+      // /api/sessions/:id
+      return { path: '/api/sessions/:id', id: parts[2], query };
+    }
+  }
+
   // /api/tasks special routes (before :id matching)
   if (parts[0] === 'api' && parts[1] === 'tasks') {
     // /api/tasks/search
@@ -89,7 +116,7 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
  * Create HTTP API request handler
  */
 export function createApiHandler(options: ApiHandlerOptions) {
-  const { runManager, onRunCreated } = options;
+  const { runManager, sessionManager, onRunCreated, onSessionEvent } = options;
 
   return async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Handle CORS
@@ -204,6 +231,119 @@ export function createApiHandler(options: ApiHandlerOptions) {
           return;
         }
         sendJson(res, 200, { cancelled: true, runId: id });
+        return;
+      }
+
+      // ============ Session API ============
+
+      // POST /api/sessions - Create new session
+      if (path === '/api/sessions' && method === 'POST') {
+        const body = await parseBody<{ chatId: number; projectPath?: string; name?: string }>(req);
+
+        if (typeof body.chatId !== 'number') {
+          sendJson(res, 400, { error: 'Bad Request', message: 'chatId (number) is required' });
+          return;
+        }
+
+        try {
+          const session = await sessionManager.create(body.chatId, body.projectPath, body.name);
+          sendJson(res, 201, { session });
+        } catch (e) {
+          sendJson(res, 500, { error: 'Session Creation Failed', message: (e as Error).message });
+        }
+        return;
+      }
+
+      // GET /api/sessions - List all sessions (registered + discovered)
+      if (path === '/api/sessions' && method === 'GET') {
+        const sessions = sessionManager.getAll();
+        const discovered = sessionManager.discoverTmuxSessions();
+
+        // Filter out already-registered tmux sessions from discovered
+        const registeredTmux = new Set(
+          sessions.filter(s => s.status === 'active').map(s => s.tmuxSession)
+        );
+        const availableSessions = discovered.filter(d => !registeredTmux.has(d.tmuxSession));
+
+        sendJson(res, 200, { sessions, availableSessions });
+        return;
+      }
+
+      // GET /api/sessions/discover - Discover all olympus-* tmux sessions
+      if (path === '/api/sessions/discover' && method === 'GET') {
+        const tmuxSessions = sessionManager.discoverTmuxSessions();
+        sendJson(res, 200, { tmuxSessions });
+        return;
+      }
+
+      // POST /api/sessions/connect - Connect to existing tmux session
+      if (path === '/api/sessions/connect' && method === 'POST') {
+        const body = await parseBody<{ chatId: number; tmuxSession: string }>(req);
+
+        if (typeof body.chatId !== 'number' || !body.tmuxSession) {
+          sendJson(res, 400, { error: 'Bad Request', message: 'chatId (number) and tmuxSession are required' });
+          return;
+        }
+
+        try {
+          const session = await sessionManager.connectToTmuxSession(body.chatId, body.tmuxSession);
+          sendJson(res, 201, { session });
+        } catch (e) {
+          sendJson(res, 404, { error: 'Not Found', message: (e as Error).message });
+        }
+        return;
+      }
+
+      // GET /api/sessions/:id - Get session
+      if (path === '/api/sessions/:id' && method === 'GET' && id) {
+        const session = sessionManager.get(id);
+        if (!session) {
+          sendJson(res, 404, { error: 'Not Found', message: `Session ${id} not found` });
+          return;
+        }
+        sendJson(res, 200, { session });
+        return;
+      }
+
+      // DELETE /api/sessions/:id - Close session
+      if (path === '/api/sessions/:id' && method === 'DELETE' && id) {
+        const closed = sessionManager.closeSession(id);
+        if (!closed) {
+          sendJson(res, 404, { error: 'Not Found', message: `Session ${id} not found` });
+          return;
+        }
+        sendJson(res, 200, { closed: true, sessionId: id });
+        return;
+      }
+
+      // POST /api/sessions/:id/input - Send input to Claude CLI
+      if (path === '/api/sessions/:id/input' && method === 'POST' && id) {
+        const body = await parseBody<{ message: string }>(req);
+
+        if (!body.message) {
+          sendJson(res, 400, { error: 'Bad Request', message: 'message is required' });
+          return;
+        }
+
+        // sendInput returns immediately, Claude runs async and streams via WebSocket
+        const sent = sessionManager.sendInput(id, body.message);
+        if (!sent) {
+          sendJson(res, 404, { error: 'Not Found', message: `Session ${id} not found or closed` });
+          return;
+        }
+        sendJson(res, 200, { sent: true, sessionId: id });
+        return;
+      }
+
+      // GET /api/sessions/:id/output - Capture output from tmux
+      if (path === '/api/sessions/:id/output' && method === 'GET' && id) {
+        const lines = parseInt(query?.lines ?? '100', 10);
+        const output = sessionManager.captureOutput(id, lines);
+        if (output === null) {
+          sendJson(res, 404, { error: 'Not Found', message: `Session ${id} not found or closed` });
+          return;
+        }
+        sendJson(res, 200, { output, sessionId: id });
         return;
       }
 

@@ -1,0 +1,7 @@
+{
+  "language": "auto",
+  "plan": "max",
+  "cache": {
+    "ttlSeconds": 60
+  }
+}

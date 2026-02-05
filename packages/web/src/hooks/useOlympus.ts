@@ -8,6 +8,8 @@ import type {
   LogPayload,
   SnapshotPayload,
   RunStatus,
+  SessionInfo,
+  AvailableSession,
 } from '@olympus-dev/protocol';
 
 export interface OlympusState {
@@ -17,6 +19,8 @@ export interface OlympusState {
   logs: LogPayload[];
   agentStreams: Map<string, string>;
   runs: RunStatus[];
+  sessions: SessionInfo[];
+  availableSessions: AvailableSession[];
   currentRunId: string | null;
   error: string | null;
 }
@@ -36,6 +40,8 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     logs: [],
     agentStreams: new Map(),
     runs: [],
+    sessions: [],
+    availableSessions: [],
     currentRunId: null,
     error: null,
   });
@@ -43,6 +49,12 @@ export function useOlympus(options: UseOlympusOptions = {}) {
   const { port, host, apiKey } = options;
 
   useEffect(() => {
+    // Don't attempt connection without API key
+    if (!apiKey) {
+      setState((s) => ({ ...s, connected: false, error: 'API key required. Configure in Settings.' }));
+      return;
+    }
+
     const client = new OlympusClient({
       clientType: 'web',
       port: port ?? DEFAULT_GATEWAY_PORT,
@@ -57,6 +69,20 @@ export function useOlympus(options: UseOlympusOptions = {}) {
 
     client.onRunsList((runs: RunStatus[]) => {
       setState((s) => ({ ...s, runs }));
+    });
+
+    client.onSessionsList((payload: unknown) => {
+      const data = payload as { sessions?: SessionInfo[]; availableSessions?: AvailableSession[] };
+      // Handle both array (old format) and object (new format)
+      if (Array.isArray(data)) {
+        setState((s) => ({ ...s, sessions: data as SessionInfo[] }));
+      } else {
+        setState((s) => ({
+          ...s,
+          sessions: data.sessions ?? [],
+          availableSessions: data.availableSessions ?? [],
+        }));
+      }
     });
 
     client.onSnapshot((snap: SnapshotPayload) => {

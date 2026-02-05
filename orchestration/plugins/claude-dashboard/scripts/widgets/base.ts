@@ -1,0 +1,50 @@
+/**
+ * Base widget interface and types
+ */
+
+import type { WidgetContext, WidgetData, WidgetId } from '../types.js';
+
+/**
+ * Widget interface - all widgets must implement this
+ */
+export interface Widget<T extends WidgetData = WidgetData> {
+  /** Unique widget identifier */
+  readonly id: WidgetId;
+
+  /** Human-readable widget name */
+  readonly name: string;
+
+  /**
+   * Collect data for this widget
+   * @returns Widget data or null if unavailable
+   */
+  getData(ctx: WidgetContext): Promise<T | null>;
+
+  /**
+   * Render widget data to a formatted string
+   * @param data - Widget data from getData()
+   * @param ctx - Widget context for translations and config
+   * @returns Formatted string for display
+   */
+  render(data: T, ctx: WidgetContext): string;
+}
+
+/**
+ * Widget render result
+ */
+export interface WidgetRenderResult {
+  id: WidgetId;
+  output: string;
+}
+
+/**
+ * Helper function to create a widget
+ */
+export function createWidget<T extends WidgetData>(
+  id: WidgetId,
+  name: string,
+  getData: (ctx: WidgetContext) => Promise<T | null>,
+  render: (data: T, ctx: WidgetContext) => string
+): Widget<T> {
+  return { id, name, getData, render };
+}

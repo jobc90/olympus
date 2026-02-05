@@ -1,17 +1,18 @@
 import React from 'react';
 import type { PhasePayload } from '@olympus-dev/protocol';
+import { Card, CardHeader } from './Card';
 
 const PHASES = [
-  { num: -1, name: 'Smart Intake' },
-  { num: 0, name: 'Contract' },
-  { num: 1, name: 'DAG' },
-  { num: 2, name: 'Review' },
-  { num: 3, name: 'Lock' },
-  { num: 4, name: 'Execute' },
-  { num: 5, name: 'Merge' },
-  { num: 6, name: 'Improve' },
-  { num: 7, name: 'Test' },
-  { num: 8, name: 'Judge' },
+  { num: -1, name: 'Intake', icon: '📥' },
+  { num: 0, name: 'Contract', icon: '📋' },
+  { num: 1, name: 'DAG', icon: '🔀' },
+  { num: 2, name: 'Review', icon: '👁️' },
+  { num: 3, name: 'Lock', icon: '🔒' },
+  { num: 4, name: 'Execute', icon: '⚡' },
+  { num: 5, name: 'Merge', icon: '🔗' },
+  { num: 6, name: 'Improve', icon: '✨' },
+  { num: 7, name: 'Test', icon: '🧪' },
+  { num: 8, name: 'Judge', icon: '⚖️' },
 ];
 
 interface Props {
@@ -19,42 +20,103 @@ interface Props {
 }
 
 export function PhaseProgress({ phase }: Props) {
+  const currentPhaseIndex = phase ? PHASES.findIndex((p) => p.num === phase.phase) : -1;
+
   return (
-    <div className="bg-gray-800/50 rounded-lg p-4">
-      <h2 className="text-sm font-semibold text-gray-400 mb-3">ORCHESTRATION PHASES</h2>
-      <div className="flex items-center gap-1">
-        {PHASES.map((p) => {
-          const isCurrent = phase?.phase === p.num;
-          const isDone = phase ? p.num < phase.phase : false;
-          return (
-            <div key={p.num} className="flex flex-col items-center flex-1 min-w-0">
+    <Card>
+      <CardHeader>Orchestration Phases</CardHeader>
+
+      {/* Progress Bar */}
+      <div className="relative mb-4">
+        <div className="flex gap-1">
+          {PHASES.map((p, index) => {
+            const isCurrent = phase?.phase === p.num;
+            const isDone = currentPhaseIndex > -1 && index < currentPhaseIndex;
+            const isFailed = isCurrent && phase?.status === 'failed';
+
+            return (
               <div
-                className={`w-full h-2 rounded-full transition-colors ${
-                  isDone ? 'bg-green-500' : isCurrent ? 'bg-cyan-400 animate-pulse' : 'bg-gray-700'
+                key={p.num}
+                className="flex-1 relative group"
+              >
+                <div
+                  className={`h-2 rounded-full transition-all duration-300 ${
+                    isFailed
+                      ? 'bg-error'
+                      : isDone
+                      ? 'bg-success'
+                      : isCurrent
+                      ? 'bg-primary animate-pulse shadow-glow-cyan'
+                      : 'bg-surface-hover'
+                  }`}
+                />
+
+                {/* Tooltip */}
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-surface-active rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                  <span className="mr-1">{p.icon}</span>
+                  {p.name}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Phase Labels (abbreviated) */}
+        <div className="flex gap-1 mt-1">
+          {PHASES.map((p, index) => {
+            const isCurrent = phase?.phase === p.num;
+            const isDone = currentPhaseIndex > -1 && index < currentPhaseIndex;
+
+            return (
+              <span
+                key={p.num}
+                className={`flex-1 text-[9px] text-center truncate transition-colors ${
+                  isCurrent
+                    ? 'text-primary font-semibold'
+                    : isDone
+                    ? 'text-success'
+                    : 'text-text-muted'
                 }`}
-              />
-              <span className={`text-[10px] mt-1 truncate ${
-                isCurrent ? 'text-cyan-400 font-bold' : isDone ? 'text-green-400' : 'text-gray-600'
-              }`}>
+              >
                 {p.name}
               </span>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
+
+      {/* Current Phase Info */}
       {phase && (
-        <div className="mt-2 text-sm">
-          <span className="text-cyan-400">Phase {phase.phase}</span>
-          <span className="text-gray-400">: {phase.phaseName}</span>
-          <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
-            phase.status === 'completed' ? 'bg-green-500/20 text-green-400' :
-            phase.status === 'failed' ? 'bg-red-500/20 text-red-400' :
-            'bg-cyan-500/20 text-cyan-400'
-          }`}>
+        <div className="flex items-center justify-between pt-3 border-t border-border">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">
+              {PHASES.find((p) => p.num === phase.phase)?.icon || '⚡'}
+            </span>
+            <div>
+              <span className="text-primary font-semibold">Phase {phase.phase}</span>
+              <span className="text-text-secondary ml-2">{phase.phaseName}</span>
+            </div>
+          </div>
+
+          <span
+            className={`px-2 py-1 rounded-full text-xs font-medium ${
+              phase.status === 'completed'
+                ? 'bg-success/20 text-success'
+                : phase.status === 'failed'
+                ? 'bg-error/20 text-error'
+                : 'bg-primary/20 text-primary'
+            }`}
+          >
             {phase.status}
           </span>
         </div>
       )}
-    </div>
+
+      {!phase && (
+        <div className="text-center text-text-muted text-sm py-2">
+          Waiting for orchestration to start...
+        </div>
+      )}
+    </Card>
   );
 }
