@@ -289,17 +289,76 @@ cd "$SCRIPT_DIR"
 echo ""
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Phase 3~6: 전역 모드에서만 실행
+# Phase 3: 로컬 모드 - 프로젝트 내 .claude/ 설정
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 if [ "$INSTALL_MODE" = "local" ]; then
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    phase "Phase 3~6: 건너뜀 (로컬 모드)"
+    phase "Phase 3: 프로젝트 로컬 설정 (.claude/)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    info "로컬 모드에서는 commands, skills를"
-    info "프로젝트 내 orchestration/ 디렉토리에서 직접 사용합니다."
-    info "전역 ~/.claude/ 디렉토리는 변경되지 않습니다."
+
+    # 프로젝트 내 .claude 디렉토리 생성
+    PROJECT_CLAUDE_DIR="$SCRIPT_DIR/.claude"
+    mkdir -p "$PROJECT_CLAUDE_DIR/commands"
+    mkdir -p "$PROJECT_CLAUDE_DIR/skills"
+    success "프로젝트 .claude/ 디렉토리 생성 완료"
+
+    # /orchestration 명령어 복사
+    step "/orchestration 명령어 설치 중..."
+    cp "$ORCHESTRATION_DIR/commands/orchestration.md" "$PROJECT_CLAUDE_DIR/commands/"
+    success "/orchestration v5.0 명령어 설치 완료 (.claude/commands/)"
+
+    # 번들 스킬 복사
+    step "번들 스킬 복사 중..."
+    BUNDLED_SKILLS=("frontend-ui-ux" "git-master" "agent-browser")
+    for skill in "${BUNDLED_SKILLS[@]}"; do
+        if [ -d "$ORCHESTRATION_DIR/skills/$skill" ]; then
+            mkdir -p "$PROJECT_CLAUDE_DIR/skills/$skill"
+            cp -r "$ORCHESTRATION_DIR/skills/$skill/"* "$PROJECT_CLAUDE_DIR/skills/$skill/" 2>/dev/null && \
+                success "$skill 스킬 복사 완료" || \
+                warn "$skill 스킬 복사 실패"
+        fi
+    done
+
+    # settings.local.json 생성 (프로젝트 로컬 MCP 경로)
+    echo ""
+    step "settings.local.json 생성 중..."
+
+    LOCAL_SETTINGS_FILE="$PROJECT_CLAUDE_DIR/settings.local.json"
+
+    cat > "$LOCAL_SETTINGS_FILE" << EOF
+{
+  "mcpServers": {
+    "ai-agents": {
+      "command": "node",
+      "args": ["$SCRIPT_DIR/orchestration/mcps/ai-agents/server.js"],
+      "env": {}
+    },
+    "openapi": {
+      "command": "node",
+      "args": ["$SCRIPT_DIR/orchestration/mcps/openapi/server.js"]
+    },
+    "stitch": {
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/stitch-mcp"]
+    }
+  },
+  "enabledPlugins": {
+    "postgres-best-practices@supabase-agent-skills": true,
+    "vercel-react-best-practices": true
+  }
+}
+EOF
+    success "settings.local.json 생성 완료"
+
+    echo ""
+    info "📌 로컬 모드 설정 완료:"
+    info "   • .claude/commands/orchestration.md - /orchestration 명령어"
+    info "   • .claude/skills/ - 번들 스킬"
+    info "   • .claude/settings.local.json - MCP 서버 설정"
+    echo ""
+    warn "이 프로젝트 디렉토리에서 claude를 실행하면 /orchestration 사용 가능!"
     echo ""
 fi
 
@@ -722,15 +781,25 @@ echo "   [ ] codex CLI 설치됨 + OAuth (터미널에서 'codex login' 실행)"
 echo ""
 
 if [ "$INSTALL_MODE" = "local" ]; then
-echo -e "${CYAN}🔌 MCP 서버 (프로젝트 로컬):${NC}"
-echo "   [✔] ai-agents MCP (orchestration/mcps/ai-agents/ - npm install 완료)"
-echo "   [✔] openapi MCP (orchestration/mcps/openapi/ - npm install 완료)"
-echo "   [~] stitch → 필요 시 .claude/settings.local.json에 추가"
+echo -e "${CYAN}📁 프로젝트 로컬 설정:${NC}"
+echo "   [✔] .claude/commands/orchestration.md - /orchestration 명령어"
+echo "   [✔] .claude/skills/ - 번들 스킬 (frontend-ui-ux, git-master, agent-browser)"
+echo "   [✔] .claude/settings.local.json - MCP 서버 설정"
 echo ""
-echo -e "${YELLOW}📌 로컬 모드 주의사항:${NC}"
-echo "   • 이 프로젝트 디렉토리에서만 /orchestration 사용 가능"
-echo "   • skills/plugins는 전역 설치 필요 시 ./install.sh --global 재실행"
-echo "   • ~/.claude/ 디렉토리는 변경되지 않았습니다"
+echo -e "${CYAN}🔌 MCP 서버 (프로젝트 로컬):${NC}"
+echo "   [✔] ai-agents MCP (orchestration/mcps/ai-agents/)"
+echo "   [✔] openapi MCP (orchestration/mcps/openapi/)"
+echo "   [✔] stitch MCP (npx로 자동 실행)"
+echo ""
+echo -e "${GREEN}✅ 로컬 모드 사용법:${NC}"
+echo "   cd $SCRIPT_DIR"
+echo "   claude                        # 이 디렉토리에서 claude 실행"
+echo "   /orchestration \"작업 설명\"    # 바로 사용 가능!"
+echo ""
+echo -e "${YELLOW}📌 주의사항:${NC}"
+echo "   • 반드시 이 프로젝트 디렉토리에서 claude를 실행해야 합니다"
+echo "   • ~/.claude/ 전역 디렉토리는 변경되지 않았습니다"
+echo "   • 다른 프로젝트에서도 사용하려면: ./install.sh --global"
 else
 echo -e "${CYAN}🔌 MCP 서버 (전역):${NC}"
 echo "   [✔] ai-agents MCP (Gemini + Codex 협업)"

@@ -67,30 +67,45 @@ Olympus는 Claude CLI의 생산성을 극대화하는 **Multi-AI 협업 플랫�
 
 ## Quick Install
 
-### 방법 1: Git Clone (권장)
-
 ```bash
 git clone https://github.com/jobc90/olympus.git
 cd olympus
 ./install.sh
 ```
 
-설치 스크립트는 두 가지 모드를 지원합니다:
-- **전역 설치 (Global)**: 모든 프로젝트에서 `/orchestration` 사용 가능
-- **로컬 설치 (Local)**: 이 프로젝트에서만 사용
+### 설치 모드 선택
 
-### 방법 2: npm
+| 모드 | 설명 | 권장 대상 |
+|------|------|----------|
+| **전역 설치 (1번)** | `~/.claude/`에 모든 것 설치, 어디서든 `/orchestration` 사용 | 대부분의 사용자 |
+| **로컬 설치 (2번)** | 프로젝트 내 `.claude/`에 설치, 이 디렉토리에서만 사용 | 테스트/격리 원할 때 |
 
 ```bash
-npm i -g olympus-dev
+# 전역 설치 (권장)
+./install.sh --global
+
+# 로컬 설치 (이 프로젝트에서만)
+./install.sh --local
 ```
 
-**Prerequisites:**
+### 로컬 설치 후 사용법
+
+```bash
+# 반드시 olympus 디렉토리에서 실행
+cd /path/to/olympus
+claude                        # Claude CLI 시작
+/orchestration "작업 설명"    # 바로 사용 가능!
+```
+
+> ⚠️ **로컬 설치 주의**: 반드시 olympus 프로젝트 디렉토리에서 `claude`를 실행해야 `/orchestration`이 인식됩니다.
+
+### Prerequisites
+
 - Node.js 18+
 - Claude CLI (`npm i -g @anthropic-ai/claude-code`)
-- tmux (선택사항, `olympus start` 사용 시 필요)
-- Gemini CLI (선택, Multi-AI Orchestration용): `npm i -g @google/gemini-cli`
-- Codex CLI (선택, Multi-AI Orchestration용): `npm i -g @openai/codex`
+- tmux (선택, `olympus start` 사용 시): `brew install tmux`
+- Gemini CLI (선택, Multi-AI용): `npm i -g @google/gemini-cli`
+- Codex CLI (선택, Multi-AI용): `npm i -g @openai/codex`
 
 ## Platform Requirements
 
@@ -107,19 +122,73 @@ npm i -g olympus-dev
 >
 > ❌ **Windows**: tmux를 지원하지 않아 `olympus start` 및 Telegram 봇 연동 기능을 사용할 수 없습니다. `/orchestration` 프로토콜 및 MCP 서버는 정상 작동합니다.
 
-### Telegram 봇 연동 요구사항
+### Telegram 봇 연동 가이드
 
-Telegram 봇으로 원격에서 Claude CLI를 조작하려면:
+Telegram 봇으로 원격에서 Claude CLI를 조작할 수 있습니다.
 
-1. **macOS** 사용 필수 (tmux 기반 세션 관리)
-2. `olympus start`로 Claude CLI 세션 시작
-3. `olympus server start --telegram`으로 Telegram 봇 활성화
+#### Step 1: Telegram 봇 생성 (핸드폰 또는 웹)
+
+**핸드폰에서:**
+1. Telegram 앱 설치 (iOS App Store / Google Play)
+2. `@BotFather` 검색 후 대화 시작
+3. `/newbot` 명령어 입력
+4. 봇 이름 입력 (예: `My Claude Bot`)
+5. 봇 사용자명 입력 (예: `my_claude_bot` - 반드시 `_bot`으로 끝나야 함)
+6. **봇 토큰 저장** (예: `7123456789:AAHxxxxxx...`)
+
+**웹에서 (권장 - 토큰 복사가 편함):**
+1. https://webogram.org 또는 https://web.telegram.org 접속
+2. 핸드폰 번호로 로그인
+3. `@BotFather` 검색 후 위와 동일하게 진행
+4. 토큰을 컴퓨터에서 바로 복사 가능
+
+#### Step 2: 사용자 ID 확인
+
+1. `@userinfobot` 검색 후 대화 시작
+2. `/start` 입력
+3. **User ID 저장** (숫자, 예: `123456789`)
+
+#### Step 3: 환경 변수 설정
 
 ```bash
-# macOS에서 Telegram 연동 전체 과정
-olympus start                    # tmux에서 Claude CLI 시작
-olympus server start --telegram  # Telegram 봇 시작
+# ~/.zshrc 또는 ~/.bashrc에 추가
+export TELEGRAM_BOT_TOKEN="7123456789:AAHxxxxxx..."
+export ALLOWED_USERS="123456789"  # 여러 명이면 쉼표로 구분: "123,456,789"
 ```
+
+설정 후 터미널 재시작 또는 `source ~/.zshrc`
+
+#### Step 4: Olympus 서버 시작
+
+```bash
+# 1. tmux에서 Claude CLI 시작
+olympus start
+
+# 2. 새 터미널에서 Telegram 봇 시작
+olympus server start --telegram
+
+# 또는 한 번에 모두 시작
+olympus quickstart
+```
+
+#### Step 5: 핸드폰에서 사용
+
+1. Telegram 앱에서 생성한 봇 검색 (예: `@my_claude_bot`)
+2. `/start` - 도움말 보기
+3. `/sessions` - 연결 가능한 Claude 세션 목록
+4. `/use olympus-myproject` - 세션 연결
+5. 이제 메시지를 보내면 Claude가 응답!
+
+```
+💡 팁: /orchestration 장바구니 기능 추가
+      → 핸드폰에서 복잡한 작업도 실행 가능
+```
+
+#### 요구사항
+
+- **macOS** 필수 (tmux 기반 세션 관리)
+- Node.js 18+
+- tmux 설치됨 (`brew install tmux`)
 
 ## Usage
 
