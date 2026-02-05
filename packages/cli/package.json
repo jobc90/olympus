@@ -10,12 +10,12 @@
   "files": ["dist"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/jobc/olympus.git",
+    "url": "https://github.com/jobc90/olympus.git",
     "directory": "packages/cli"
   },
   "author": "jobc",
   "license": "MIT",
-  "homepage": "https://github.com/jobc/olympus#readme",
+  "homepage": "https://github.com/jobc90/olympus#readme",
   "publishConfig": {
     "access": "public"
   },

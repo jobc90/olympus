@@ -70,7 +70,7 @@ Olympus는 Claude CLI의 생산성을 극대화하는 **Multi-AI 협업 플랫�
 ### 방법 1: Git Clone (권장)
 
 ```bash
-git clone https://github.com/jobc/olympus.git
+git clone https://github.com/jobc90/olympus.git
 cd olympus
 ./install.sh
 ```

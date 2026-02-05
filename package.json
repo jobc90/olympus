@@ -5,10 +5,10 @@
   "description": "AI-powered development platform with multi-agent orchestration",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jobc/olympus.git"
+    "url": "git+https://github.com/jobc90/olympus.git"
   },
   "bugs": {
-    "url": "https://github.com/jobc/olympus/issues"
+    "url": "https://github.com/jobc90/olympus/issues"
   },
   "keywords": [
     "claude",
@@ -23,7 +23,7 @@
   ],
   "author": "jobc",
   "license": "MIT",
-  "homepage": "https://github.com/jobc/olympus#readme",
+  "homepage": "https://github.com/jobc90/olympus#readme",
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
