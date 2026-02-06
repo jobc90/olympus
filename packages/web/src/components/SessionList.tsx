@@ -7,11 +7,13 @@ interface Props {
   sessions: SessionInfo[];
   availableSessions: AvailableSession[];
   currentRunId: string | null;
+  currentSessionId: string | null;
   onSelect: (runId: string) => void;
+  onSelectSession: (sessionId: string) => void;
   onCancel: (runId: string) => void;
 }
 
-export function SessionList({ runs, sessions, availableSessions, currentRunId, onSelect, onCancel }: Props) {
+export function SessionList({ runs, sessions, availableSessions, currentRunId, currentSessionId, onSelect, onSelectSession, onCancel }: Props) {
   const activeSessions = sessions.filter(s => s.status === 'active');
   const totalCount = runs.length + activeSessions.length + availableSessions.length;
 
@@ -51,6 +53,8 @@ export function SessionList({ runs, sessions, availableSessions, currentRunId, o
               <TmuxSessionItem
                 key={session.id}
                 session={session}
+                isActive={currentSessionId === session.id}
+                onSelect={() => onSelectSession(session.id)}
               />
             ))}
           </>
@@ -133,16 +137,25 @@ function AvailableSessionItem({ session }: AvailableSessionItemProps) {
 /** Tmux Claude CLI Session Item */
 interface TmuxSessionItemProps {
   session: SessionInfo;
+  isActive: boolean;
+  onSelect: () => void;
 }
 
-function TmuxSessionItem({ session }: TmuxSessionItemProps) {
+function TmuxSessionItem({ session, isActive, onSelect }: TmuxSessionItemProps) {
   const timeAgo = getTimeAgo(session.lastActivityAt);
   const contextLabel = session.taskContextId
     ? `${session.taskContextId.slice(0, 8)}…`
     : null;
 
   return (
-    <div className="p-4 border-b border-border last:border-b-0 hover:bg-surface-hover transition-all">
+    <div
+      className={`p-4 border-b border-border last:border-b-0 cursor-pointer transition-all ${
+        isActive
+          ? 'bg-success/10 border-l-2 border-l-success'
+          : 'hover:bg-surface-hover'
+      }`}
+      onClick={onSelect}
+    >
       <div className="flex items-center justify-between mb-2">
         <span className="font-mono text-sm text-success truncate max-w-[150px]">
           {session.name}

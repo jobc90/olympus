@@ -39,6 +39,7 @@ export class OlympusClient {
   private _connected = false;
   private _sessionId: string | null = null;
   private subscribedRuns = new Set<string>();
+  private subscribedSessions = new Set<string>();
 
   constructor(options: OlympusClientOptions) {
     this.options = {
@@ -130,9 +131,12 @@ export class OlympusClient {
         this._connected = true;
         this._sessionId = (msg.payload as { sessionId: string }).sessionId;
 
-        // Re-subscribe to runs after reconnection
+        // Re-subscribe to runs and sessions after reconnection
         for (const runId of this.subscribedRuns) {
           this.send(createMessage('subscribe', { runId }));
+        }
+        for (const sessionId of this.subscribedSessions) {
+          this.send(createMessage('subscribe', { sessionId }));
         }
       }
 
@@ -180,6 +184,33 @@ export class OlympusClient {
   unsubscribe(runId: string): void {
     this.subscribedRuns.delete(runId);
     this.send(createMessage('unsubscribe', { runId }));
+  }
+
+  /** Subscribe to events for a specific session */
+  subscribeSession(sessionId: string): void {
+    this.subscribedSessions.add(sessionId);
+    this.send(createMessage('subscribe', { sessionId }));
+  }
+
+  /** Unsubscribe from session events */
+  unsubscribeSession(sessionId: string): void {
+    this.subscribedSessions.delete(sessionId);
+    this.send(createMessage('unsubscribe', { sessionId }));
+  }
+
+  /** Convenience: subscribe to session output events */
+  onSessionOutput(handler: (p: { sessionId: string; content: string }) => void): () => void {
+    return this.on('session:output', (m) => handler(m.payload as { sessionId: string; content: string }));
+  }
+
+  /** Convenience: subscribe to session error events */
+  onSessionError(handler: (p: { sessionId: string; error: string }) => void): () => void {
+    return this.on('session:error', (m) => handler(m.payload as { sessionId: string; error: string }));
+  }
+
+  /** Convenience: subscribe to session closed events */
+  onSessionClosed(handler: (p: { sessionId: string }) => void): () => void {
+    return this.on('session:closed', (m) => handler(m.payload as { sessionId: string }));
   }
 
   /** Cancel a run or task */

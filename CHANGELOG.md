@@ -5,6 +5,23 @@ All notable changes to the Olympus project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Session Output Panel**: New web dashboard component showing real-time Claude CLI session output (`SessionOutputPanel.tsx`)
+- **Session subscription**: `OlympusClient.subscribeSession()`/`unsubscribeSession()` + `onSessionOutput()`/`onSessionError()`/`onSessionClosed()` event handlers
+- **Dashboard session interaction**: Clicking a connected session in SessionList now subscribes and displays live output
+- **Telegram message splitting**: `sendLongMessage()` splits messages exceeding 4000 chars into multiple parts instead of truncating
+
+### Fixed
+
+- **Telegram message truncation**: Replaced 3500-char hard truncation with multi-part message delivery
+- **Telegram keystroke spam**: Gateway output polling now enforces 2s debounce, 10-char minimum change filter, and 3s throttle between notifications
+- **Dashboard session clicks**: `TmuxSessionItem` now has click handler and active selection highlight
+- **Dashboard logs empty**: `session:output`/`session:error`/`session:closed` events now populate the Logs panel
+- **Context DB unused**: Session output now auto-updates task context via `ContextService` with `on-threshold` auto-report policy
+
 ## [0.3.0] - 2026-02-06
 
 Initial public release of Olympus — Claude CLI Enhanced Platform.
@@ -43,4 +60,5 @@ Initial public release of Olympus — Claude CLI Enhanced Platform.
 - Gateway session idle timeout disabled by default to prevent long-running session kills (`b7b5d24`)
 - CLI tsconfig: added `"jsx": "react-jsx"` for Ink/React TSX compilation
 
+[Unreleased]: https://github.com/jobc90/olympus/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/jobc90/olympus/releases/tag/v0.3.0

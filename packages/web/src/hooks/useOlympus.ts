@@ -12,6 +12,12 @@ import type {
   AvailableSession,
 } from '@olympus-dev/protocol';
 
+export interface SessionOutput {
+  sessionId: string;
+  content: string;
+  timestamp: number;
+}
+
 export interface OlympusState {
   connected: boolean;
   phase: PhasePayload | null;
@@ -22,6 +28,8 @@ export interface OlympusState {
   sessions: SessionInfo[];
   availableSessions: AvailableSession[];
   currentRunId: string | null;
+  currentSessionId: string | null;
+  sessionOutputs: SessionOutput[];
   error: string | null;
 }
 
@@ -43,6 +51,8 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     sessions: [],
     availableSessions: [],
     currentRunId: null,
+    currentSessionId: null,
+    sessionOutputs: [],
     error: null,
   });
 
@@ -124,6 +134,30 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       setState((s) => ({ ...s, logs: [...s.logs.slice(-99), l] }));
     });
 
+    client.onSessionOutput((p) => {
+      setState((s) => ({
+        ...s,
+        sessionOutputs: [...s.sessionOutputs.slice(-49), { sessionId: p.sessionId, content: p.content, timestamp: Date.now() }],
+        logs: [...s.logs.slice(-99), { level: 'info', message: `[session:output] ${p.content.slice(0, 200)}${p.content.length > 200 ? '...' : ''}` }],
+      }));
+    });
+
+    client.onSessionError((p) => {
+      setState((s) => ({
+        ...s,
+        logs: [...s.logs.slice(-99), { level: 'error', message: `[session:error] ${p.error}` }],
+      }));
+    });
+
+    client.onSessionClosed((p) => {
+      setState((s) => ({
+        ...s,
+        currentSessionId: s.currentSessionId === p.sessionId ? null : s.currentSessionId,
+        sessionOutputs: [],
+        logs: [...s.logs.slice(-99), { level: 'warn', message: `[session:closed] Session ${p.sessionId} ended` }],
+      }));
+    });
+
     client.onError((e) => {
       setState((s) => ({
         ...s,
@@ -140,7 +174,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
 
   const subscribe = useCallback((runId: string) => {
     clientRef.current?.subscribe(runId);
-    setState((s) => ({ ...s, currentRunId: runId, tasks: [], phase: null, agentStreams: new Map() }));
+    setState((s) => ({ ...s, currentRunId: runId, currentSessionId: null, tasks: [], phase: null, agentStreams: new Map(), sessionOutputs: [] }));
   }, []);
 
   const unsubscribe = useCallback((runId: string) => {
@@ -151,9 +185,23 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     }));
   }, []);
 
+  const subscribeSession = useCallback((sessionId: string) => {
+    clientRef.current?.subscribeSession(sessionId);
+    setState((s) => ({ ...s, currentSessionId: sessionId, currentRunId: null, tasks: [], phase: null, agentStreams: new Map(), sessionOutputs: [] }));
+  }, []);
+
+  const unsubscribeSession = useCallback((sessionId: string) => {
+    clientRef.current?.unsubscribeSession(sessionId);
+    setState((s) => ({
+      ...s,
+      currentSessionId: s.currentSessionId === sessionId ? null : s.currentSessionId,
+      sessionOutputs: [],
+    }));
+  }, []);
+
   const cancel = useCallback((runId?: string, taskId?: string) => {
     clientRef.current?.cancel(runId, taskId);
   }, []);
 
-  return { ...state, subscribe, unsubscribe, cancel };
+  return { ...state, subscribe, unsubscribe, subscribeSession, unsubscribeSession, cancel };
 }

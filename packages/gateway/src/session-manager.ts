@@ -3,7 +3,7 @@ import { spawn, execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { TaskStore, ContextStore } from '@olympus-dev/core';
+import { TaskStore, ContextStore, ContextService } from '@olympus-dev/core';
 
 /**
  * Session represents an active Claude CLI tmux session
@@ -117,7 +117,15 @@ export class SessionManager {
   private lastOutputs: Map<string, string> = new Map();        // Last sent output
   private lastCaptured: Map<string, string> = new Map();       // Last captured output (for change detection)
   private outputDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
+  private lastSentTimestamps: Map<string, number> = new Map(); // Anti-spam: last sent time per session
   private workspaceRoot: string;
+
+  // Minimum interval between output events (ms) - prevents keystroke spam
+  private static readonly OUTPUT_MIN_INTERVAL = 3000;
+  // Minimum content change (chars) to trigger notification
+  private static readonly OUTPUT_MIN_CHANGE = 10;
+  // Debounce wait time after output stabilizes (ms)
+  private static readonly OUTPUT_DEBOUNCE_MS = 2000;
 
   constructor(options: SessionManagerOptions = {}) {
     const dataDir = options.dataDir ?? join(homedir(), '.olympus');
@@ -409,6 +417,7 @@ export class SessionManager {
       this.outputDebounceTimers.delete(sessionId);
     }
     this.lastCaptured.delete(sessionId);
+    this.lastSentTimestamps.delete(sessionId);
 
     // Kill tmux window (not entire session) if alive
     if (session.tmuxWindow && this.isTmuxWindowAlive(session.tmuxSession, session.tmuxWindow)) {
@@ -627,22 +636,46 @@ export class SessionManager {
       if (!this.outputDebounceTimers.has(sessionId)) {
         const lastSent = this.lastOutputs.get(sessionId) ?? '';
         if (output !== lastSent) {
-          // Set debounce timer (1 second after output stabilizes)
+          // Set debounce timer - wait for output to stabilize
           const timer = setTimeout(() => {
             const currentOutput = this.lastCaptured.get(sessionId) ?? '';
             const lastSentOutput = this.lastOutputs.get(sessionId) ?? '';
 
             if (currentOutput !== lastSentOutput) {
-              // Find new content and send
+              // Find new content
               const newContent = this.findNewContent(lastSentOutput, currentOutput);
               if (newContent && newContent.trim()) {
+                // Anti-spam: skip if change is too small (cursor blink, minor redraws)
+                if (newContent.trim().length < SessionManager.OUTPUT_MIN_CHANGE) {
+                  this.outputDebounceTimers.delete(sessionId);
+                  return;
+                }
+
+                // Anti-spam: throttle - enforce minimum interval between sends
+                const now = Date.now();
+                const lastSentTime = this.lastSentTimestamps.get(sessionId) ?? 0;
+                const elapsed = now - lastSentTime;
+
+                if (elapsed < SessionManager.OUTPUT_MIN_INTERVAL) {
+                  // Re-schedule after remaining interval
+                  const retryTimer = setTimeout(() => {
+                    this.outputDebounceTimers.delete(sessionId);
+                  }, SessionManager.OUTPUT_MIN_INTERVAL - elapsed);
+                  this.outputDebounceTimers.set(sessionId, retryTimer);
+                  return;
+                }
+
                 this.lastOutputs.set(sessionId, currentOutput);
+                this.lastSentTimestamps.set(sessionId, now);
                 this.onSessionEvent?.(sessionId, { type: 'output', content: newContent });
+
+                // Update session's context with latest output
+                this.updateSessionContext(sessionId, newContent);
               }
             }
 
             this.outputDebounceTimers.delete(sessionId);
-          }, 1000);
+          }, SessionManager.OUTPUT_DEBOUNCE_MS);
 
           this.outputDebounceTimers.set(sessionId, timer);
         }
@@ -650,6 +683,32 @@ export class SessionManager {
     }, 500);
 
     this.outputPollers.set(sessionId, poller);
+  }
+
+  /**
+   * Update session's task context with latest output summary
+   */
+  private updateSessionContext(sessionId: string, newContent: string): void {
+    const session = this.store.get(sessionId);
+    if (!session?.taskContextId) return;
+
+    try {
+      const contextService = ContextService.getInstance({ autoReportPolicy: 'on-threshold', autoReportThreshold: 500 });
+      const context = contextService.getById(session.taskContextId);
+      if (!context) return;
+
+      // Append new output to context content (keep last 2000 chars)
+      const existing = context.content ?? '';
+      const updated = (existing + '\n' + newContent).slice(-2000);
+
+      contextService.update(session.taskContextId, {
+        content: updated,
+        summary: `Session ${session.name}: ${newContent.slice(0, 100)}`,
+        expectedVersion: context.version,
+      }, 'session-manager');
+    } catch {
+      // Non-fatal: context update failure shouldn't affect session
+    }
   }
 
   /**

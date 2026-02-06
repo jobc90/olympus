@@ -43,6 +43,9 @@ function loadConfig(): BotConfig {
   return { telegramToken: token, gatewayUrl, apiKey, allowedUsers };
 }
 
+// Telegram message limit (with some margin for safety)
+const TELEGRAM_MSG_LIMIT = 4000;
+
 class OlympusBot {
   private bot: Telegraf;
   private config: BotConfig;
@@ -601,6 +604,43 @@ class OlympusBot {
     return banner.trim();
   }
 
+  /**
+   * Send a long message to Telegram, splitting into multiple parts if needed
+   */
+  private async sendLongMessage(chatId: number, text: string): Promise<void> {
+    if (text.length <= TELEGRAM_MSG_LIMIT) {
+      await this.bot.telegram.sendMessage(chatId, text);
+      return;
+    }
+
+    // Split on line boundaries
+    const lines = text.split('\n');
+    let chunk = '';
+    let partNum = 1;
+
+    for (const line of lines) {
+      if (chunk.length + line.length + 1 > TELEGRAM_MSG_LIMIT) {
+        if (chunk) {
+          await this.bot.telegram.sendMessage(chatId, chunk.trimEnd());
+          partNum++;
+          chunk = '';
+        }
+        // Single line exceeds limit - force split
+        if (line.length > TELEGRAM_MSG_LIMIT) {
+          for (let i = 0; i < line.length; i += TELEGRAM_MSG_LIMIT) {
+            await this.bot.telegram.sendMessage(chatId, line.slice(i, i + TELEGRAM_MSG_LIMIT));
+            partNum++;
+          }
+          continue;
+        }
+      }
+      chunk += (chunk ? '\n' : '') + line;
+    }
+    if (chunk.trim()) {
+      await this.bot.telegram.sendMessage(chatId, chunk.trimEnd());
+    }
+  }
+
   private async sendToClaude(sessionId: string, message: string): Promise<void> {
     const res = await fetch(`${this.config.gatewayUrl}/api/sessions/${sessionId}/input`, {
       method: 'POST',
@@ -734,11 +774,8 @@ class OlympusBot {
             }
           }
           const prefix = sessionName ? `📩 [${sessionName}] Claude:` : '📩 Claude:';
-          // Truncate if too long for Telegram
-          const truncated = content.length > 3500
-            ? content.slice(0, 3500) + '\n\n...(truncated)'
-            : content;
-          this.bot.telegram.sendMessage(chatId, `${prefix}\n\n${truncated}`).catch(console.error);
+          // Send full message, split into parts if needed
+          this.sendLongMessage(chatId, `${prefix}\n\n${content}`).catch(console.error);
         }
         break;
       }
@@ -799,10 +836,11 @@ class OlympusBot {
       case 'agent:complete': {
         const a = payload as AgentPayload;
         const content = a.content ?? '';
-        const truncated = content.length > 500 ? content.slice(0, 500) + '...' : content;
+        // Agent results: show summary (first 500 chars) with Markdown
+        const summary = content.length > 500 ? content.slice(0, 500) + '...' : content;
         this.bot.telegram.sendMessage(
           chatId,
-          `✅ *${a.agentId}* 완료\n\n${truncated}`,
+          `✅ *${a.agentId}* 완료\n\n${summary}`,
           { parse_mode: 'Markdown' }
         ).catch(console.error);
         break;

@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { useOlympus } from './hooks/useOlympus';
 import { Header } from './components/Header';
 import { SessionList } from './components/SessionList';
+import { SessionOutputPanel } from './components/SessionOutputPanel';
 import { EmptyState } from './components/EmptyState';
 import { SettingsModal } from './components/SettingsModal';
 import { PhaseProgress } from './components/PhaseProgress';
@@ -48,8 +49,11 @@ export default function App() {
     sessions,
     availableSessions,
     currentRunId,
+    currentSessionId,
+    sessionOutputs,
     error,
     subscribe,
+    subscribeSession,
     cancel,
   } = useOlympus(config);
 
@@ -68,6 +72,7 @@ export default function App() {
   );
 
   const currentRun = runs.find((r) => r.runId === currentRunId);
+  const currentSession = sessions.find((s) => s.id === currentSessionId);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -102,7 +107,9 @@ export default function App() {
               sessions={sessions}
               availableSessions={availableSessions}
               currentRunId={currentRunId}
+              currentSessionId={currentSessionId}
               onSelect={subscribe}
+              onSelectSession={subscribeSession}
               onCancel={(runId) => cancel(runId)}
             />
           </aside>
@@ -148,6 +155,8 @@ export default function App() {
                 {/* Agent Stream */}
                 <AgentStream agentStreams={agentStreams} />
               </>
+            ) : currentSessionId && currentSession ? (
+              <SessionOutputPanel session={currentSession} outputs={sessionOutputs} />
             ) : (
               <EmptyState config={config} hasRuns={runs.length > 0} hasSessions={sessions.filter(s => s.status === 'active').length > 0} />
             )}
