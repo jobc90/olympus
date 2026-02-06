@@ -20,23 +20,29 @@ NC='\033[0m' # No Color
 # 설치 모드 결정: --local / --global / 대화형 선택
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 INSTALL_MODE=""
+WITH_CLAUDE_MD=0
 for arg in "$@"; do
     case $arg in
         --local)  INSTALL_MODE="local" ;;
         --global) INSTALL_MODE="global" ;;
+        --with-claude-md) WITH_CLAUDE_MD=1 ;;
         --help|-h)
-            echo "Usage: ./install.sh [--local | --global]"
+            echo "Usage: ./install.sh [--local | --global] [--with-claude-md]"
             echo ""
             echo "  --local   프로젝트 로컬 설치 (이 프로젝트에서만 사용)"
             echo "            • CLI 도구만 전역 설치 (claude, olympus)"
             echo "            • MCP 서버는 프로젝트 orchestration/mcps/에 npm install"
-            echo "            • ~/.claude/CLAUDE.md는 템플릿 symlink로 연결 (에이전트 정책)"
+            echo "            • ~/.claude/CLAUDE.md는 기본적으로 수정하지 않음"
             echo "            • 플러그인 자동 설치 (Supabase, ui-ux-pro-max)"
             echo ""
             echo "  --global  전역 설치 (모든 프로젝트에서 사용)"
             echo "            • 주요 리소스를 ~/.claude/에 symlink 연결"
             echo "            • skills, commands, plugins 전역 연결 (git pull 시 자동 최신화)"
             echo "            • 어디서든 /orchestration 사용 가능"
+            echo ""
+            echo "  --with-claude-md"
+            echo "            • ~/.claude/CLAUDE.md에 Olympus managed block을 삽입/업데이트"
+            echo "            • 기존 개인 설정은 유지 (마커 블록만 관리)"
             echo ""
             echo "  (인자 없음) 대화형으로 선택"
             exit 0
@@ -130,6 +136,67 @@ migrate_to_symlink() {
         rm -rf "$dest"
     fi
     ln -sf "$src" "$dest"
+}
+
+# CLAUDE.md managed block 삽입/업데이트 (사용자 기존 내용 보존)
+upsert_olympus_claude_md_block() {
+    local template="$1"
+    local dest="$2"
+    local start="<!-- OLYMPUS:START (managed by install.sh) -->"
+    local end="<!-- OLYMPUS:END -->"
+    local block
+    local tmp
+    local resolved
+
+    block="$(mktemp)"
+    tmp="$(mktemp)"
+
+    {
+        echo "$start"
+        cat "$template"
+        echo "$end"
+    } > "$block"
+
+    # If dest is an old symlink (legacy install), convert to a regular file first.
+    if [ -L "$dest" ]; then
+        resolved="$(readlink "$dest")"
+        rm -f "$dest"
+        if [ -n "$resolved" ] && [ -f "$resolved" ]; then
+            cp "$resolved" "$dest"
+        fi
+    fi
+
+    if [ ! -f "$dest" ]; then
+        cp "$block" "$dest"
+        rm -f "$block" "$tmp"
+        return 0
+    fi
+
+    awk -v s="$start" -v e="$end" -v b="$block" '
+        BEGIN { in_block=0; replaced=0 }
+        {
+            if (index($0, s) > 0) {
+                system("cat \"" b "\"")
+                in_block=1
+                replaced=1
+                next
+            }
+            if (in_block && index($0, e) > 0) {
+                in_block=0
+                next
+            }
+            if (!in_block) print
+        }
+        END {
+            if (!replaced) {
+                if (NR > 0) print ""
+                system("cat \"" b "\"")
+            }
+        }
+    ' "$dest" > "$tmp"
+
+    mv "$tmp" "$dest"
+    rm -f "$block"
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -392,21 +459,23 @@ EOF
 EOF
     success ".claude/settings.json 생성 완료"
 
-    # CLAUDE.global.md → ~/.claude/CLAUDE.md symlink 연결 (글로벌 지침)
-    echo ""
-    step "CLAUDE.global.md 글로벌 지침 설치 중 (symlink)..."
-    CLAUDE_GLOBAL_TEMPLATE="$ORCHESTRATION_DIR/templates/CLAUDE.global.md"
-    if [ -f "$CLAUDE_GLOBAL_TEMPLATE" ]; then
-        mkdir -p "$CLAUDE_DIR"
-        if [ -f "$CLAUDE_DIR/CLAUDE.md" ] && [ ! -L "$CLAUDE_DIR/CLAUDE.md" ]; then
-            BACKUP_FILE="$CLAUDE_DIR/CLAUDE.md.backup.$(date +%Y%m%d%H%M%S)"
-            cp "$CLAUDE_DIR/CLAUDE.md" "$BACKUP_FILE"
-            warn "기존 ~/.claude/CLAUDE.md를 백업했습니다: $BACKUP_FILE"
+    # CLAUDE.md는 기본 비침범. 옵션 플래그로만 managed block 삽입.
+    if [ "$WITH_CLAUDE_MD" -eq 1 ]; then
+        echo ""
+        step "CLAUDE.global.md managed block 설치 중..."
+        CLAUDE_GLOBAL_TEMPLATE="$ORCHESTRATION_DIR/templates/CLAUDE.global.md"
+        if [ -f "$CLAUDE_GLOBAL_TEMPLATE" ]; then
+            mkdir -p "$CLAUDE_DIR"
+            upsert_olympus_claude_md_block "$CLAUDE_GLOBAL_TEMPLATE" "$CLAUDE_DIR/CLAUDE.md"
+            success "~/.claude/CLAUDE.md에 Olympus managed block 반영 완료"
+        else
+            warn "CLAUDE.global.md 템플릿 파일을 찾을 수 없습니다"
         fi
-        migrate_to_symlink "$CLAUDE_GLOBAL_TEMPLATE" "$CLAUDE_DIR/CLAUDE.md"
-        success "CLAUDE.global.md → ~/.claude/CLAUDE.md 설치 완료 (symlink)"
     else
-        warn "CLAUDE.global.md 템플릿 파일을 찾을 수 없습니다"
+        info "CLAUDE.md는 건드리지 않습니다. (--with-claude-md로 managed block 설치 가능)"
+        if [ -L "$CLAUDE_DIR/CLAUDE.md" ]; then
+            warn "기존 CLAUDE.md symlink가 감지되었습니다. 필요 시 수동으로 개인 설정 파일로 전환하세요."
+        fi
     fi
 
     echo ""
@@ -415,7 +484,11 @@ EOF
     info "   • .claude/settings.json - 플러그인 설정 (Git 커밋 가능)"
     info "   • .claude/commands/orchestration.md - /orchestration 명령어"
     info "   • .claude/skills/ - 번들 스킬"
-    info "   • ~/.claude/CLAUDE.md - 글로벌 지침 (에이전트 정책, 프로토콜 요약)"
+    if [ "$WITH_CLAUDE_MD" -eq 1 ]; then
+        info "   • ~/.claude/CLAUDE.md - Olympus managed block 반영"
+    else
+        info "   • ~/.claude/CLAUDE.md - 기존 사용자 설정 유지 (비수정)"
+    fi
     echo ""
     warn "이 프로젝트 디렉토리에서 claude를 실행하면 /orchestration 사용 가능!"
     echo ""
@@ -437,20 +510,20 @@ success "/orchestration v5.1 명령어 설치 완료 (symlink)"
 
 echo ""
 
-# CLAUDE.global.md → ~/.claude/CLAUDE.md 글로벌 지침 설치 (symlink 기반)
-step "CLAUDE.global.md 글로벌 지침 설치 중 (symlink)..."
-CLAUDE_GLOBAL_TEMPLATE="$ORCHESTRATION_DIR/templates/CLAUDE.global.md"
-if [ -f "$CLAUDE_GLOBAL_TEMPLATE" ]; then
-    # 기존 일반 파일이면 백업 후 symlink 전환
-    if [ -f "$CLAUDE_DIR/CLAUDE.md" ] && [ ! -L "$CLAUDE_DIR/CLAUDE.md" ]; then
-        BACKUP_FILE="$CLAUDE_DIR/CLAUDE.md.backup.$(date +%Y%m%d%H%M%S)"
-        cp "$CLAUDE_DIR/CLAUDE.md" "$BACKUP_FILE"
-        warn "기존 ~/.claude/CLAUDE.md를 백업했습니다: $BACKUP_FILE"
+if [ "$WITH_CLAUDE_MD" -eq 1 ]; then
+    step "CLAUDE.global.md managed block 설치 중..."
+    CLAUDE_GLOBAL_TEMPLATE="$ORCHESTRATION_DIR/templates/CLAUDE.global.md"
+    if [ -f "$CLAUDE_GLOBAL_TEMPLATE" ]; then
+        upsert_olympus_claude_md_block "$CLAUDE_GLOBAL_TEMPLATE" "$CLAUDE_DIR/CLAUDE.md"
+        success "~/.claude/CLAUDE.md에 Olympus managed block 반영 완료"
+    else
+        warn "CLAUDE.global.md 템플릿 파일을 찾을 수 없습니다: $CLAUDE_GLOBAL_TEMPLATE"
     fi
-    migrate_to_symlink "$CLAUDE_GLOBAL_TEMPLATE" "$CLAUDE_DIR/CLAUDE.md"
-    success "CLAUDE.global.md → ~/.claude/CLAUDE.md 설치 완료 (symlink)"
 else
-    warn "CLAUDE.global.md 템플릿 파일을 찾을 수 없습니다: $CLAUDE_GLOBAL_TEMPLATE"
+    info "CLAUDE.md는 건드리지 않습니다. (--with-claude-md로 managed block 설치 가능)"
+    if [ -L "$CLAUDE_DIR/CLAUDE.md" ]; then
+        warn "기존 CLAUDE.md symlink가 감지되었습니다. 필요 시 수동으로 개인 설정 파일로 전환하세요."
+    fi
 fi
 
 echo ""
@@ -844,7 +917,11 @@ if [ "$INSTALL_MODE" = "global" ]; then
     [ -d "$CLAUDE_DIR/skills/git-master" ] && success "git-master 스킬" || warn "git-master 스킬 없음"
     [ -d "$CLAUDE_DIR/plugins/claude-dashboard" ] && success "claude-dashboard 플러그인" || warn "claude-dashboard 플러그인 없음"
     [ -f "$CLAUDE_DIR/settings.json" ] && success "settings.json" || warn "settings.json 없음"
-    [ -f "$CLAUDE_DIR/CLAUDE.md" ] && success "CLAUDE.md (글로벌 지침)" || warn "CLAUDE.md 없음"
+    if [ "$WITH_CLAUDE_MD" -eq 1 ]; then
+        [ -f "$CLAUDE_DIR/CLAUDE.md" ] && success "CLAUDE.md (Olympus managed block 반영)" || warn "CLAUDE.md 없음"
+    else
+        info "CLAUDE.md는 사용자 파일 유지 (기본 비수정)"
+    fi
 fi
 
 echo ""
@@ -921,7 +998,11 @@ echo "   /orchestration \"작업 설명\"    # 바로 사용 가능!"
 echo ""
 echo -e "${YELLOW}📌 주의사항:${NC}"
 echo "   • 반드시 이 프로젝트 디렉토리에서 claude를 실행해야 합니다"
-echo "   • ~/.claude/CLAUDE.md만 전역 설치됨 (에이전트 정책 + 프로토콜 요약)"
+if [ "$WITH_CLAUDE_MD" -eq 1 ]; then
+echo "   • ~/.claude/CLAUDE.md에 Olympus managed block이 반영되었습니다"
+else
+echo "   • ~/.claude/CLAUDE.md는 기본적으로 수정하지 않습니다"
+fi
 echo "   • 다른 프로젝트에서도 사용하려면: ./install.sh --global"
 else
 echo -e "${CYAN}🔌 MCP 서버 (전역):${NC}"
@@ -954,7 +1035,12 @@ echo "   [✔] claude-dashboard (상태줄 플러그인 - Codex/Gemini 사용량
 echo ""
 echo -e "${GREEN}🔗 Symlink 기반 설치:${NC}"
 echo "   • git pull만으로 모든 전역 파일이 자동 최신화됩니다"
-echo "   • orchestration.md, CLAUDE.md, MCP 서버, 스킬, 플러그인 모두 symlink"
+echo "   • orchestration.md, MCP 서버, 스킬, 플러그인은 symlink"
+if [ "$WITH_CLAUDE_MD" -eq 1 ]; then
+echo "   • CLAUDE.md는 managed block 방식으로 업데이트됩니다 (재실행 필요)"
+else
+echo "   • CLAUDE.md는 사용자 파일 유지 (원하면 --with-claude-md)"
+fi
 echo -e "   ${YELLOW}⚠️  olympus 저장소를 이동한 경우 install.sh를 다시 실행하세요${NC}"
 fi
 

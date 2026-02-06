@@ -120,6 +120,7 @@ cd olympus
 |------|------|----------|
 | **전역 설치 (1번)** | `~/.claude/`에 모든 것 설치, 어디서든 `/orchestration` 사용 | 대부분의 사용자 |
 | **로컬 설치 (2번)** | 프로젝트 내 `.claude/`에 설치, 이 디렉토리에서만 사용 | 테스트/격리 원할 때 |
+| **선택 옵션** | `--with-claude-md` 사용 시에만 `~/.claude/CLAUDE.md`에 Olympus managed block 삽입/업데이트 | CLAUDE.md 지침도 함께 쓰고 싶은 사용자 |
 
 ```bash
 # 전역 설치 (권장)
@@ -127,7 +128,12 @@ cd olympus
 
 # 로컬 설치 (이 프로젝트에서만)
 ./install.sh --local
+
+# 선택: CLAUDE.md에 Olympus managed block 반영
+./install.sh --global --with-claude-md
 ```
+
+> 기본 동작은 비침범입니다. `~/.claude/CLAUDE.md`는 수정하지 않습니다.
 
 ### 로컬 설치 후 사용법
 
@@ -633,8 +639,9 @@ cd packages/cli && pnpm build && node dist/index.js
 
 ```bash
 ./install.sh              # 대화형 선택
-./install.sh --global     # 전역 설치 (~/.claude/에 복사)
+./install.sh --global     # 전역 설치 (commands/mcps/skills/plugins symlink)
 ./install.sh --local      # 로컬 설치 (프로젝트 내에서만)
+./install.sh --global --with-claude-md  # CLAUDE.md managed block 포함
 ./install.sh --help       # 도움말
 ```
 

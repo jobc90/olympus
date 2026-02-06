@@ -74,11 +74,15 @@ Install modes:
 
 - `--global`: install to `~/.claude/` and use `/orchestration` from any project
 - `--local`: install under current project only
+- `--with-claude-md`: optionally insert/update an Olympus managed block in `~/.claude/CLAUDE.md`
 
 ```bash
 ./install.sh --global
 ./install.sh --local
+./install.sh --global --with-claude-md
 ```
+
+Default behavior is non-invasive: `~/.claude/CLAUDE.md` is not modified unless `--with-claude-md` is provided.
 
 ## Prerequisites
 
