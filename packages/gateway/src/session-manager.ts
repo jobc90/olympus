@@ -3,7 +3,7 @@ import { spawn, execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { TaskStore } from '@olympus-dev/core';
+import { TaskStore, ContextStore } from '@olympus-dev/core';
 
 /**
  * Session represents an active Claude CLI tmux session
@@ -17,8 +17,18 @@ export interface Session {
   tmuxWindow?: string;  // Window name within tmux session (for multi-window mode)
   status: 'active' | 'closed';
   projectPath: string;
+  workspaceContextId?: string;
+  projectContextId?: string;
+  taskContextId?: string;
   createdAt: number;
   lastActivityAt: number;
+}
+
+export interface SessionContextLink {
+  sessionId: string;
+  workspaceContextId?: string;
+  projectContextId?: string;
+  taskContextId?: string;
 }
 
 export interface SessionManagerOptions {
@@ -107,6 +117,7 @@ export class SessionManager {
   private lastOutputs: Map<string, string> = new Map();        // Last sent output
   private lastCaptured: Map<string, string> = new Map();       // Last captured output (for change detection)
   private outputDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
+  private workspaceRoot: string;
 
   constructor(options: SessionManagerOptions = {}) {
     const dataDir = options.dataDir ?? join(homedir(), '.olympus');
@@ -117,6 +128,7 @@ export class SessionManager {
     this.store = new SessionStore(dataDir);
     this.sessionTimeout = options.sessionTimeout ?? 60 * 60 * 1000; // 1 hour
     this.onSessionEvent = options.onSessionEvent;
+    this.workspaceRoot = process.cwd();
 
     // Restart output polling for active sessions
     for (const session of this.store.getAll()) {
@@ -189,6 +201,8 @@ export class SessionManager {
       if (!this.outputPollers.has(existing.id)) {
         this.startOutputPolling(existing.id, existing.tmuxSession);
       }
+      this.ensureSessionContextLink(existing);
+      this.store.set(existing);
       return existing;
     }
 
@@ -235,6 +249,7 @@ export class SessionManager {
       lastActivityAt: timestamp,
     };
 
+    this.ensureSessionContextLink(session);
     this.store.set(session);
     this.startOutputPolling(sessionId, tmuxSession);
 
@@ -310,6 +325,7 @@ export class SessionManager {
       lastActivityAt: timestamp,
     };
 
+    this.ensureSessionContextLink(session);
     this.store.set(session);
     this.startOutputPolling(sessionId, tmuxSession);
 
@@ -335,6 +351,20 @@ export class SessionManager {
    */
   getAll(): Session[] {
     return this.store.getAll();
+  }
+
+  /**
+   * Get session-context mapping information.
+   */
+  getSessionContextLink(sessionId: string): SessionContextLink | null {
+    const session = this.store.get(sessionId);
+    if (!session) return null;
+    return {
+      sessionId,
+      workspaceContextId: session.workspaceContextId,
+      projectContextId: session.projectContextId,
+      taskContextId: session.taskContextId,
+    };
   }
 
   /**
@@ -665,5 +695,34 @@ export class SessionManager {
     }
 
     return filtered.join('\n').trim();
+  }
+
+  /**
+   * Ensure a session is linked to workspace/project/task contexts.
+   */
+  private ensureSessionContextLink(session: Session): void {
+    try {
+      const contextStore = ContextStore.getInstance();
+      const workspace = contextStore.seedWorkspace(this.workspaceRoot);
+      const project = contextStore.seedProject(this.workspaceRoot, session.projectPath);
+      const taskPath = `${session.projectPath}#session:${session.id}`;
+
+      let task = contextStore.getByPath('task', taskPath);
+      if (!task) {
+        task = contextStore.create({
+          scope: 'task',
+          path: taskPath,
+          parentId: project.id,
+          summary: `Session ${session.name}`,
+          content: `Session ${session.id} linked to tmux ${session.tmuxSession}`,
+        }, 'session-manager');
+      }
+
+      session.workspaceContextId = workspace.id;
+      session.projectContextId = project.id;
+      session.taskContextId = task.id;
+    } catch {
+      // Non-fatal: session can operate without context mapping.
+    }
   }
 }

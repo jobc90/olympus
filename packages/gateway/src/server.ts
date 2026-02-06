@@ -75,6 +75,7 @@ export class Gateway {
         sessionManager: this.sessionManager,
         onRunCreated: () => this.broadcastRunsList(),
         onSessionEvent: (sessionId, event) => this.broadcastSessionEvent(sessionId, event),
+        onContextEvent: (eventType, payload) => this.broadcastContextEvent(eventType, payload),
       });
 
       this.httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -353,6 +354,20 @@ export class Gateway {
   broadcastRunsList(): void {
     const runs = this.runManager.getAllRunStatuses();
     const message = createMessage('runs:list', { runs });
+    const raw = JSON.stringify(message);
+
+    for (const [, client] of this.clients) {
+      if (client.authenticated && client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(raw);
+      }
+    }
+  }
+
+  /**
+   * Broadcast context events to ALL authenticated clients
+   */
+  broadcastContextEvent(eventType: string, payload: unknown): void {
+    const message = createMessage(eventType, payload);
     const raw = JSON.stringify(message);
 
     for (const [, client] of this.clients) {

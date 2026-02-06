@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
 import type { AgentExecutor, AgentResult, ExecuteOptions } from '../types.js';
-import { DEFAULT_CONFIG } from '../config.js';
+import { loadConfig } from '../config.js';
 
 /**
  * Gemini agent executor - uses Gemini CLI (spawn)
@@ -18,9 +18,10 @@ export class GeminiExecutor implements AgentExecutor {
   }
 
   async execute(prompt: string, options?: ExecuteOptions): Promise<AgentResult> {
+    const config = await loadConfig();
     const usePro = options?.usePro ?? false;
-    const primaryModel = options?.model ?? (usePro ? DEFAULT_CONFIG.gemini.proModel : DEFAULT_CONFIG.gemini.defaultModel);
-    const fallbackModel = usePro ? DEFAULT_CONFIG.gemini.fallbackProModel : DEFAULT_CONFIG.gemini.fallbackModel;
+    const primaryModel = options?.model ?? (usePro ? config.gemini.proModel : config.gemini.defaultModel);
+    const fallbackModel = usePro ? config.gemini.fallbackProModel : config.gemini.fallbackModel;
     const timeout = options?.timeout ?? 120_000;
 
     const start = Date.now();

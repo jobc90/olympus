@@ -121,6 +121,13 @@ export function extractApiKey(req: IncomingMessage): string | undefined {
   if (authHeader?.startsWith('Bearer ')) {
     return authHeader.slice(7);
   }
+
+  // Backward compatibility for older dashboard clients.
+  const legacyHeader = req.headers['x-api-key'];
+  if (typeof legacyHeader === 'string') {
+    return legacyHeader;
+  }
+
   return undefined;
 }
 

@@ -1,3 +1,6 @@
+export type AgentId = 'gemini' | 'codex';
+export type LegacyAgentId = AgentId | 'gpt';
+
 /** Agent execution result */
 export interface AgentResult {
   success: boolean;
@@ -5,7 +8,7 @@ export interface AgentResult {
   error?: string;
   skipped?: boolean;   // true if agent was skipped (e.g., no API key)
   reason?: string;     // reason for skipping
-  agent: 'gemini' | 'gpt';
+  agent: AgentId;
   model: string;
   durationMs?: number;
 }
@@ -13,7 +16,9 @@ export interface AgentResult {
 /** Merged result from parallel execution */
 export interface MergedResult {
   gemini: AgentResult | null;
-  gpt: AgentResult | null;
+  codex: AgentResult | null;
+  // Deprecated alias for backward compatibility.
+  gpt?: AgentResult | null;
   durationMs: number;
 }
 
@@ -21,14 +26,14 @@ export interface MergedResult {
 export interface OrchestratorOptions {
   prompt: string;
   usePro?: boolean;
-  agents?: ('gemini' | 'gpt')[];
+  agents?: LegacyAgentId[];
   context?: string;
   timeout?: number;
 }
 
 /** Agent executor interface */
 export interface AgentExecutor {
-  readonly name: 'gemini' | 'gpt';
+  readonly name: AgentId;
   execute(prompt: string, options?: ExecuteOptions): Promise<AgentResult>;
   checkAuth(): Promise<boolean>;
 }
@@ -54,20 +59,25 @@ export interface AgentMetadata {
 export interface DelegationEntry {
   domain: string;
   keywords: string[];
-  agent: 'gemini' | 'gpt';
+  agent: AgentId;
 }
 
 /** Olympus configuration */
 export interface OlympusConfig {
   configDir: string;
-  defaultAgents: ('gemini' | 'gpt')[];
+  defaultAgents: LegacyAgentId[];
   gemini: {
     defaultModel: string;
     proModel: string;
     fallbackModel: string;
     fallbackProModel: string;
   };
-  gpt: {
+  codex: {
+    defaultModel: string;
+    apiBaseUrl: string;
+  };
+  // Deprecated alias for backward compatibility.
+  gpt?: {
     defaultModel: string;
     apiBaseUrl: string;
   };

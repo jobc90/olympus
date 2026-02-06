@@ -9,6 +9,8 @@ import { TaskList } from './components/TaskList';
 import { AgentStream } from './components/AgentStream';
 import { LogPanel } from './components/LogPanel';
 import { Card, CardHeader } from './components/Card';
+import { ContextExplorer } from './components/ContextExplorer';
+import { useContextTree } from './hooks/useContextTree';
 
 // Get config from URL params or localStorage
 function getConfig() {
@@ -50,6 +52,11 @@ export default function App() {
     subscribe,
     cancel,
   } = useOlympus(config);
+
+  const contextTree = useContextTree({
+    baseUrl: `http://${config.host}:${config.port}`,
+    apiKey: config.apiKey,
+  });
 
   const handleConfigSave = useCallback(
     (newConfig: { host: string; port: number; apiKey: string }) => {
@@ -146,8 +153,9 @@ export default function App() {
             )}
           </section>
 
-          {/* Right Sidebar: Logs */}
-          <aside className="lg:col-span-3">
+          {/* Right Sidebar: Context + Logs */}
+          <aside className="lg:col-span-3 space-y-4">
+            <ContextExplorer ctx={contextTree} />
             <LogPanel logs={logs} />
           </aside>
         </div>

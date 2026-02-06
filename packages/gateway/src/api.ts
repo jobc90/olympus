@@ -3,14 +3,15 @@ import { authMiddleware, loadConfig, validateApiKey } from './auth.js';
 import { handleCorsPrefllight, setCorsHeaders } from './cors.js';
 import type { RunManager, RunOptions } from './run-manager.js';
 import { SessionManager, type SessionEvent } from './session-manager.js';
-import { runParallel, GeminiExecutor, TaskStore } from '@olympus-dev/core';
-import type { CreateTaskInput, UpdateTaskInput } from '@olympus-dev/protocol';
+import { runParallel, GeminiExecutor, TaskStore, ContextStore, ContextService } from '@olympus-dev/core';
+import type { CreateTaskInput, UpdateTaskInput, CreateContextInput, UpdateContextInput, ContextScope, CreateMergeInput, ReportUpstreamInput } from '@olympus-dev/protocol';
 
 export interface ApiHandlerOptions {
   runManager: RunManager;
   sessionManager: SessionManager;
   onRunCreated?: () => void;  // Callback to broadcast runs:list
   onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
+  onContextEvent?: (eventType: string, payload: unknown) => void;
 }
 
 /**
@@ -68,6 +69,10 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
       return { path: '/api/sessions/connect', query };
     }
     if (parts[2]) {
+      // /api/sessions/:id/context
+      if (parts[3] === 'context') {
+        return { path: '/api/sessions/:id/context', id: parts[2], query };
+      }
       // /api/sessions/:id/input
       if (parts[3] === 'input') {
         return { path: '/api/sessions/:id/input', id: parts[2], query };
@@ -109,6 +114,35 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     }
   }
 
+  // /api/contexts routes
+  if (parts[0] === 'api' && parts[1] === 'contexts') {
+    // /api/contexts/:id/merge
+    if (parts[2] && parts[3] === 'merge') {
+      return { path: '/api/contexts/:id/merge', id: parts[2], query };
+    }
+    // /api/contexts/:id/report-upstream
+    if (parts[2] && parts[3] === 'report-upstream') {
+      return { path: '/api/contexts/:id/report-upstream', id: parts[2], query };
+    }
+    // /api/contexts/:id/versions
+    if (parts[2] && parts[3] === 'versions') {
+      return { path: '/api/contexts/:id/versions', id: parts[2], query };
+    }
+    // /api/contexts/:id/children
+    if (parts[2] && parts[3] === 'children') {
+      return { path: '/api/contexts/:id/children', id: parts[2], query };
+    }
+    // /api/contexts/:id
+    if (parts[2]) {
+      return { path: '/api/contexts/:id', id: parts[2], query };
+    }
+  }
+
+  // /api/operations/:id
+  if (parts[0] === 'api' && parts[1] === 'operations' && parts[2]) {
+    return { path: '/api/operations/:id', id: parts[2], query };
+  }
+
   return { path: urlObj.pathname, query };
 }
 
@@ -116,7 +150,7 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
  * Create HTTP API request handler
  */
 export function createApiHandler(options: ApiHandlerOptions) {
-  const { runManager, sessionManager, onRunCreated, onSessionEvent } = options;
+  const { runManager, sessionManager, onRunCreated, onSessionEvent, onContextEvent } = options;
 
   return async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Handle CORS
@@ -305,6 +339,17 @@ export function createApiHandler(options: ApiHandlerOptions) {
         return;
       }
 
+      // GET /api/sessions/:id/context - Get session with linked contexts
+      if (path === '/api/sessions/:id/context' && method === 'GET' && id) {
+        const session = sessionManager.get(id);
+        if (!session) {
+          sendJson(res, 404, { error: 'Not Found', message: `Session ${id} not found` });
+          return;
+        }
+        sendJson(res, 200, { session, contextLink: sessionManager.getSessionContextLink(id) });
+        return;
+      }
+
       // DELETE /api/sessions/:id - Close session
       if (path === '/api/sessions/:id' && method === 'DELETE' && id) {
         const closed = sessionManager.closeSession(id);
@@ -473,6 +518,261 @@ export function createApiHandler(options: ApiHandlerOptions) {
         return;
       }
 
+      // ============ Context API ============
+
+      // GET /api/contexts - List contexts (filter by scope, path)
+      if (path === '/api/contexts' && method === 'GET') {
+        const contextStore = ContextStore.getInstance();
+        const format = query?.format;
+        const scope = query?.scope as ContextScope | undefined;
+
+        if (format === 'tree') {
+          const tree = contextStore.getTree(scope);
+          sendJson(res, 200, { contexts: tree });
+        } else {
+          const parentId = query?.parentId;
+          const contexts = contextStore.getAll(scope, parentId === 'null' ? null : parentId);
+          sendJson(res, 200, { contexts });
+        }
+        return;
+      }
+
+      // POST /api/contexts - Create context
+      if (path === '/api/contexts' && method === 'POST') {
+        const body = await parseBody<CreateContextInput>(req);
+
+        if (!body.scope || !body.path) {
+          sendJson(res, 400, { error: 'Bad Request', message: 'scope and path are required' });
+          return;
+        }
+
+        const contextService = ContextService.getInstance();
+        const actor = req.headers['x-changed-by'] as string || 'user';
+
+        try {
+          const context = contextService.create(body, actor);
+          onContextEvent?.('context:created', { context });
+          sendJson(res, 201, { context });
+        } catch (e) {
+          const msg = (e as Error).message;
+          if (msg.includes('already exists')) {
+            sendJson(res, 409, { error: 'Conflict', message: msg });
+          } else if (msg.includes('not found') || msg.includes('Invalid scope')) {
+            sendJson(res, 400, { error: 'Bad Request', message: msg });
+          } else {
+            throw e;
+          }
+        }
+        return;
+      }
+
+      // GET /api/contexts/:id - Get context
+      if (path === '/api/contexts/:id' && method === 'GET' && id) {
+        const contextStore = ContextStore.getInstance();
+        const context = contextStore.getById(id);
+
+        if (!context) {
+          sendJson(res, 404, { error: 'Not Found', message: `Context ${id} not found` });
+          return;
+        }
+        sendJson(res, 200, { context });
+        return;
+      }
+
+      // PATCH /api/contexts/:id - Update context (optimistic locking)
+      if (path === '/api/contexts/:id' && method === 'PATCH' && id) {
+        const body = await parseBody<UpdateContextInput>(req);
+        const contextService = ContextService.getInstance();
+        const actor = req.headers['x-changed-by'] as string || 'user';
+
+        if (body.expectedVersion === undefined) {
+          sendJson(res, 400, { error: 'Bad Request', message: 'expectedVersion is required for optimistic locking' });
+          return;
+        }
+
+        try {
+          const context = contextService.update(id, body, actor);
+          onContextEvent?.('context:updated', { context });
+          sendJson(res, 200, { context });
+        } catch (e) {
+          const msg = (e as Error).message;
+          if (msg.includes('not found')) {
+            sendJson(res, 404, { error: 'Not Found', message: msg });
+          } else if (msg.includes('Version mismatch')) {
+            sendJson(res, 409, { error: 'Conflict', message: msg });
+          } else {
+            throw e;
+          }
+        }
+        return;
+      }
+
+      // DELETE /api/contexts/:id - Soft delete context
+      if (path === '/api/contexts/:id' && method === 'DELETE' && id) {
+        const contextStore = ContextStore.getInstance();
+        const context = contextStore.getById(id);
+        if (!context) {
+          sendJson(res, 404, { error: 'Not Found', message: `Context ${id} not found` });
+          return;
+        }
+        contextStore.delete(id);
+        sendJson(res, 200, { deleted: true, contextId: id });
+        return;
+      }
+
+      // GET /api/contexts/:id/versions - Get version history
+      if (path === '/api/contexts/:id/versions' && method === 'GET' && id) {
+        const contextStore = ContextStore.getInstance();
+        const limit = parseInt(query?.limit || '100', 10);
+        const versions = contextStore.getVersionHistory(id, limit);
+        sendJson(res, 200, { versions });
+        return;
+      }
+
+      // GET /api/contexts/:id/children - Get children
+      if (path === '/api/contexts/:id/children' && method === 'GET' && id) {
+        const contextStore = ContextStore.getInstance();
+        const children = contextStore.getChildren(id);
+        sendJson(res, 200, { contexts: children });
+        return;
+      }
+
+      // POST /api/contexts/:id/merge - Create merge request (async 202)
+      if (path === '/api/contexts/:id/merge' && method === 'POST' && id) {
+        const body = await parseBody<CreateMergeInput & { idempotencyKey?: string }>(req);
+        const contextStore = ContextStore.getInstance();
+
+        if (!body.targetId) {
+          sendJson(res, 400, { error: 'Bad Request', message: 'targetId is required' });
+          return;
+        }
+
+        try {
+          // Create operation for tracking
+          const operation = contextStore.createOperation('merge', id);
+          // Create merge record
+          const merge = contextStore.createMerge(id, body.targetId, body.idempotencyKey);
+          contextStore.updateMergeStatus(merge.id, 'pending', 'Waiting for approval');
+
+          onContextEvent?.('context:merge_requested', { merge, operation });
+
+          if (query?.autoApply === 'true') {
+            // Optional immediate apply path.
+            setTimeout(() => {
+              try {
+                contextStore.updateMergeStatus(merge.id, 'approved');
+                const updated = contextStore.applyMerge(merge.id, 'system');
+                const appliedMerge = contextStore.getMerge(merge.id);
+                contextStore.updateOperationStatus(operation.id, 'succeeded', JSON.stringify({ mergeId: merge.id }));
+                onContextEvent?.('context:merged', { merge: appliedMerge, targetContext: updated });
+              } catch (e) {
+                contextStore.updateMergeStatus(merge.id, 'conflict');
+                contextStore.updateOperationStatus(operation.id, 'failed', undefined, (e as Error).message);
+                const failedMerge = contextStore.getMerge(merge.id);
+                onContextEvent?.('context:conflict_detected', {
+                  merge: failedMerge,
+                  conflicts: [(e as Error).message],
+                });
+              }
+            }, 0);
+          } else {
+            contextStore.updateOperationStatus(
+              operation.id,
+              'succeeded',
+              JSON.stringify({ mergeId: merge.id, status: 'pending' })
+            );
+          }
+
+          sendJson(res, 202, { operationId: operation.id, mergeId: merge.id });
+        } catch (e) {
+          const msg = (e as Error).message;
+          sendJson(res, 400, { error: 'Bad Request', message: msg });
+        }
+        return;
+      }
+
+      // POST /api/contexts/:id/report-upstream - Report to parent (async 202)
+      if (path === '/api/contexts/:id/report-upstream' && method === 'POST' && id) {
+        const contextService = ContextService.getInstance();
+        const contextStore = ContextStore.getInstance();
+        const context = contextService.getById(id);
+
+        if (!context) {
+          sendJson(res, 404, { error: 'Not Found', message: `Context ${id} not found` });
+          return;
+        }
+
+        if (!context.parentId) {
+          sendJson(res, 400, { error: 'Bad Request', message: 'Context has no parent to report to' });
+          return;
+        }
+
+        try {
+          // Create operation for tracking
+          const operation = contextStore.createOperation('report_upstream', id);
+          const actor = req.headers['x-changed-by'] as string || 'user';
+          const cascade = query?.cascade === 'true';
+
+          // Async: policy-based report with optional cascade
+          setTimeout(() => {
+            try {
+              if (cascade) {
+                const merges = contextService.cascadeReportUpstream(id, actor);
+                contextStore.updateOperationStatus(
+                  operation.id,
+                  'succeeded',
+                  JSON.stringify({ mergeIds: merges.map(m => m.id), cascade: true })
+                );
+                const latestSource = contextService.getById(id);
+                const latestTarget = latestSource?.parentId ? contextService.getById(latestSource.parentId) : null;
+                if (latestSource && latestTarget) {
+                  onContextEvent?.('context:reported_upstream', {
+                    sourceContext: latestSource,
+                    targetContext: latestTarget,
+                    operation: contextStore.getOperation(operation.id),
+                  });
+                }
+                return;
+              }
+
+              const merge = contextService.reportUpstream(id, actor);
+              const sourceContext = contextService.getById(id);
+              const targetContext = context.parentId ? contextService.getById(context.parentId) : null;
+              contextStore.updateOperationStatus(operation.id, 'succeeded', JSON.stringify({ mergeId: merge.id }));
+              if (sourceContext && targetContext) {
+                onContextEvent?.('context:reported_upstream', {
+                  sourceContext,
+                  targetContext,
+                  operation: contextStore.getOperation(operation.id),
+                });
+              }
+            } catch (e) {
+              contextStore.updateOperationStatus(operation.id, 'failed', undefined, (e as Error).message);
+            }
+          }, 0);
+
+          sendJson(res, 202, { operationId: operation.id });
+        } catch (e) {
+          throw e;
+        }
+        return;
+      }
+
+      // ============ Operation API ============
+
+      // GET /api/operations/:id - Get operation status
+      if (path === '/api/operations/:id' && method === 'GET' && id) {
+        const contextStore = ContextStore.getInstance();
+        const operation = contextStore.getOperation(id);
+
+        if (!operation) {
+          sendJson(res, 404, { error: 'Not Found', message: `Operation ${id} not found` });
+          return;
+        }
+        sendJson(res, 200, { operation });
+        return;
+      }
+
       // Not found
       sendJson(res, 404, { error: 'Not Found', message: `${method} ${path} not found` });
     } catch (e) {
@@ -510,7 +810,8 @@ async function executeRun(runId: string, runManager: RunManager, options: RunOpt
     }
 
     // Determine success
-    const success = (result.gemini?.success ?? true) && (result.gpt?.success ?? true);
+    const codexResult = result.codex ?? result.gpt;
+    const success = (result.gemini?.success ?? true) && (codexResult?.success ?? true);
     runManager.completeRun(runId, success);
   } catch (e) {
     bus.emitLog('error', `Run failed: ${(e as Error).message}`, 'run-manager');

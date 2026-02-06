@@ -2,7 +2,7 @@
  * REPL Type Definitions
  */
 
-export type OutputType = 'user' | 'gemini' | 'gpt' | 'system' | 'error';
+export type OutputType = 'user' | 'gemini' | 'codex' | 'gpt' | 'system' | 'error';
 
 export interface OutputLine {
   id: string;

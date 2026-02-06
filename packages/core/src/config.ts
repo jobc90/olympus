@@ -7,16 +7,20 @@ const DEFAULT_CONFIG_DIR = join(homedir(), '.olympus');
 
 export const DEFAULT_CONFIG: OlympusConfig = {
   configDir: DEFAULT_CONFIG_DIR,
-  defaultAgents: ['gemini', 'gpt'],
+  defaultAgents: ['gemini', 'codex'],
   gemini: {
-    defaultModel: 'gemini-3-flash-preview',
-    proModel: 'gemini-3-pro-preview',
-    fallbackModel: 'gemini-2.5-flash',
-    fallbackProModel: 'gemini-2.5-pro',
+    defaultModel: process.env.OLYMPUS_GEMINI_MODEL ?? process.env.OLYMPUS_GEMINI_FLASH_MODEL ?? 'gemini-3-flash-preview',
+    proModel: process.env.OLYMPUS_GEMINI_PRO_MODEL ?? 'gemini-3-pro-preview',
+    fallbackModel: process.env.OLYMPUS_GEMINI_FALLBACK_MODEL ?? 'gemini-2.5-flash',
+    fallbackProModel: process.env.OLYMPUS_GEMINI_FALLBACK_PRO_MODEL ?? 'gemini-2.5-pro',
+  },
+  codex: {
+    defaultModel: process.env.OLYMPUS_CODEX_MODEL ?? process.env.OLYMPUS_OPENAI_MODEL ?? 'gpt-4o',
+    apiBaseUrl: process.env.OLYMPUS_OPENAI_API_BASE_URL ?? 'https://api.openai.com/v1',
   },
   gpt: {
-    defaultModel: 'gpt-4o',
-    apiBaseUrl: 'https://api.openai.com/v1',
+    defaultModel: process.env.OLYMPUS_CODEX_MODEL ?? process.env.OLYMPUS_OPENAI_MODEL ?? 'gpt-4o',
+    apiBaseUrl: process.env.OLYMPUS_OPENAI_API_BASE_URL ?? 'https://api.openai.com/v1',
   },
   webPort: 4200,
 };
@@ -29,8 +33,25 @@ export async function loadConfig(configDir: string = DEFAULT_CONFIG_DIR): Promis
   try {
     const configPath = join(configDir, 'config.json');
     const raw = await readFile(configPath, 'utf-8');
-    const userConfig = JSON.parse(raw);
-    return { ...DEFAULT_CONFIG, ...userConfig, configDir };
+    const userConfig = JSON.parse(raw) as Partial<OlympusConfig>;
+    const merged: OlympusConfig = {
+      ...DEFAULT_CONFIG,
+      ...userConfig,
+      gemini: {
+        ...DEFAULT_CONFIG.gemini,
+        ...(userConfig.gemini ?? {}),
+      },
+      codex: {
+        ...DEFAULT_CONFIG.codex,
+        ...(userConfig.codex ?? {}),
+      },
+      gpt: {
+        ...(DEFAULT_CONFIG.gpt ?? DEFAULT_CONFIG.codex),
+        ...(userConfig.gpt ?? {}),
+      },
+      configDir,
+    };
+    return merged;
   } catch {
     return { ...DEFAULT_CONFIG, configDir };
   }

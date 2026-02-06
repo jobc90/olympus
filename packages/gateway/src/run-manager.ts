@@ -5,7 +5,7 @@ import type { TaskPayload, RunStatus } from '@olympus-dev/protocol';
 export interface RunOptions {
   prompt: string;
   context?: string;
-  agents?: ('gemini' | 'gpt')[];
+  agents?: ('gemini' | 'codex' | 'gpt')[];
   usePro?: boolean;
   timeout?: number;
 }

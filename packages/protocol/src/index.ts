@@ -16,6 +16,31 @@ export type {
   TaskMovedPayload,
 } from './task.js';
 
+// Context OS types
+export type {
+  ContextScope,
+  ContextStatus,
+  ContextEdgeType,
+  ContextMergeStatus,
+  OperationStatus,
+  Context,
+  CreateContextInput,
+  UpdateContextInput,
+  ContextEdge,
+  ContextVersionEntry,
+  ContextMerge,
+  Operation,
+  CreateMergeInput,
+  ReportUpstreamInput,
+  ContextTreeNode,
+  ContextCreatedPayload,
+  ContextUpdatedPayload,
+  ContextMergeRequestedPayload,
+  ContextMergedPayload,
+  ContextConflictDetectedPayload,
+  ContextReportedUpstreamPayload,
+} from './context.js';
+
 // Message types
 export type {
   WsMessage,

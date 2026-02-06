@@ -47,11 +47,12 @@ Respond with ONLY the code changes in unified diff format.`;
         console.log(result.gemini.output);
       }
 
-      if (result.gpt?.success) {
+      const codexResult = result.codex ?? result.gpt;
+      if (codexResult?.success) {
         console.log();
-        console.log(chalk.bold.green('⚙️  GPT Patch:'));
+        console.log(chalk.bold.green('⚙️  Codex Patch:'));
         console.log(chalk.dim('─'.repeat(40)));
-        console.log(result.gpt.output);
+        console.log(codexResult.output);
       }
 
       await addHistory(`patch: ${instructions}`, result);

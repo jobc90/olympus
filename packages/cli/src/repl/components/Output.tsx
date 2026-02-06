@@ -10,6 +10,7 @@ interface OutputProps {
 const TYPE_COLORS: Record<string, string> = {
   user: 'white',
   gemini: 'blue',
+  codex: 'green',
   gpt: 'green',
   system: 'yellow',
   error: 'red',
@@ -18,7 +19,8 @@ const TYPE_COLORS: Record<string, string> = {
 const TYPE_PREFIXES: Record<string, string> = {
   user: '> ',
   gemini: '🎨 Gemini: ',
-  gpt: '⚙️  GPT: ',
+  codex: '⚙️  Codex: ',
+  gpt: '⚙️  Codex(legacy): ',
   system: '📢 ',
   error: '❌ ',
 };

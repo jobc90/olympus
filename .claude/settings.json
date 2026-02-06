@@ -1,6 +1,7 @@
 {
   "enabledPlugins": {
     "postgres-best-practices@supabase-agent-skills": true,
-    "vercel-react-best-practices": true
+    "vercel-react-best-practices": true,
+    "ui-ux-pro-max@ui-ux-pro-max-skill": true
   }
 }

@@ -137,6 +137,9 @@ interface TmuxSessionItemProps {
 
 function TmuxSessionItem({ session }: TmuxSessionItemProps) {
   const timeAgo = getTimeAgo(session.lastActivityAt);
+  const contextLabel = session.taskContextId
+    ? `${session.taskContextId.slice(0, 8)}…`
+    : null;
 
   return (
     <div className="p-4 border-b border-border last:border-b-0 hover:bg-surface-hover transition-all">
@@ -161,6 +164,11 @@ function TmuxSessionItem({ session }: TmuxSessionItemProps) {
           {timeAgo}
         </span>
       </div>
+      {contextLabel && (
+        <div className="mt-1 text-xs text-text-muted">
+          context: {contextLabel}
+        </div>
+      )}
     </div>
   );
 }

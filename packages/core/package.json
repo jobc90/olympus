@@ -1,6 +1,6 @@
 {
   "name": "@olympus-dev/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Core library for Olympus AI development platform",
   "main": "dist/index.js",
@@ -24,7 +24,8 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@olympus-dev/protocol": "workspace:*",

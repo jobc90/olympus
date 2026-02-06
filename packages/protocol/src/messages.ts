@@ -50,7 +50,13 @@ export type ServerMessage =
   | WsMessage<LogPayload> & { type: 'log' }
   | WsMessage<SnapshotPayload> & { type: 'snapshot' }
   | WsMessage<RunsListPayload> & { type: 'runs:list' }
-  | WsMessage<PongPayload> & { type: 'pong' };
+  | WsMessage<PongPayload> & { type: 'pong' }
+  | WsMessage<import('./context.js').ContextCreatedPayload> & { type: 'context:created' }
+  | WsMessage<import('./context.js').ContextUpdatedPayload> & { type: 'context:updated' }
+  | WsMessage<import('./context.js').ContextMergeRequestedPayload> & { type: 'context:merge_requested' }
+  | WsMessage<import('./context.js').ContextMergedPayload> & { type: 'context:merged' }
+  | WsMessage<import('./context.js').ContextConflictDetectedPayload> & { type: 'context:conflict_detected' }
+  | WsMessage<import('./context.js').ContextReportedUpstreamPayload> & { type: 'context:reported_upstream' };
 
 export interface ConnectedPayload {
   protocolVersion: string;
@@ -67,7 +73,7 @@ export interface PhasePayload {
 
 export interface AgentPayload {
   runId?: string;       // Run this agent belongs to
-  agentId: string;      // 'gemini' | 'gpt' | agent name
+  agentId: string;      // 'gemini' | 'codex' | legacy 'gpt' | agent name
   taskId: string;
   content?: string;     // for chunk/complete
   error?: string;       // for error
@@ -120,6 +126,9 @@ export interface SessionInfo {
   tmuxSession: string;    // Tmux session name
   status: 'active' | 'closed';
   projectPath: string;
+  workspaceContextId?: string;
+  projectContextId?: string;
+  taskContextId?: string;
   createdAt: number;
   lastActivityAt: number;
 }

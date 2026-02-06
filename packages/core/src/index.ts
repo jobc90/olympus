@@ -18,6 +18,7 @@ export { DEFAULT_CONFIG, loadConfig, saveConfig, loadCredentials, saveCredential
 
 // Agents
 export { GeminiExecutor } from './agents/gemini.js';
+export { CodexExecutor } from './agents/codex.js';
 export { GptExecutor } from './agents/gpt.js';
 export { AGENT_METADATA, DELEGATION_TABLE, detectAgent } from './agents/router.js';
 
@@ -36,5 +37,11 @@ export { OlympusBus } from './events.js';
 // Task Store
 export { TaskStore } from './taskStore.js';
 
+// Context Store
+export { ContextStore } from './contextStore.js';
+
 // Context Resolver
 export { ContextResolver, type ContextResolverOptions } from './contextResolver.js';
+
+// Context Service
+export { ContextService, type AutoReportPolicy, type ContextServiceConfig, type ContextEvent, type ContextEventCallback, type ContextEventType } from './contextService.js';

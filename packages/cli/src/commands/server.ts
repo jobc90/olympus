@@ -13,7 +13,8 @@ serverCommand
   .option('--telegram', 'Start only the telegram bot')
   .option('-p, --port <port>', 'Gateway port', '18790')
   .option('--web-port <port>', 'Dashboard port', '18791')
-  .option('--skip-update', 'Skip CLI update check')
+  .option('--skip-update', 'Skip CLI update check (default: true)', true)
+  .option('--update-tools', 'Force CLI tools update on start')
   .action(async (opts) => {
     const { loadConfig, isTelegramConfigured } = await import('@olympus-dev/gateway');
     const config = loadConfig();
@@ -26,8 +27,8 @@ serverCommand
 
     console.log(chalk.cyan.bold('\n⚡ Olympus Server\n'));
 
-    // Update CLI tools (unless skipped)
-    if (!opts.skipUpdate) {
+    // Update CLI tools only when explicitly requested
+    if (opts.updateTools) {
       await updateCLITools();
     }
 
@@ -69,8 +70,36 @@ serverCommand
       console.log(chalk.yellow('💡 Telegram 봇 설정: olympus setup --telegram\n'));
     }
 
+    // Seed Context OS workspace
+    try {
+      const { ContextStore } = await import('@olympus-dev/core');
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const store = ContextStore.getInstance();
+      const workspacePath = process.cwd();
+      store.seedWorkspace(workspacePath);
+
+      // Seed direct child directories as project contexts for top-level visibility.
+      const entries = fs.readdirSync(workspacePath, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name.startsWith('.')) continue;
+        const projectPath = path.join(workspacePath, entry.name);
+        const hasProjectMarker =
+          fs.existsSync(path.join(projectPath, '.git')) ||
+          fs.existsSync(path.join(projectPath, 'package.json')) ||
+          fs.existsSync(path.join(projectPath, 'pnpm-workspace.yaml'));
+        if (!hasProjectMarker) continue;
+        store.seedProject(workspacePath, projectPath);
+      }
+
+      console.log(chalk.green(`  ✓ Context OS workspace seeded: ${workspacePath}`));
+    } catch {
+      // Non-critical, continue
+    }
+
     // Final instructions
-    console.log(chalk.cyan.bold('✅ Olympus 준비 완료!\n'));
+    console.log(chalk.cyan.bold('\n✅ Olympus 준비 완료!\n'));
     console.log(chalk.gray('종료: Ctrl+C'));
 
     // Graceful shutdown
@@ -110,12 +139,49 @@ serverCommand
 
     let stoppedAny = false;
 
+    // Graceful stop helper: SIGTERM → wait → SIGKILL
+    const gracefulKill = (pids: string, label: string, timeoutMs = 5000): boolean => {
+      const pidList = pids.split('\n').filter(Boolean).join(' ');
+      if (!pidList) return false;
+      try {
+        // Step 1: Send SIGTERM for graceful shutdown
+        execSync(`kill -15 ${pidList} 2>/dev/null`);
+        console.log(chalk.gray(`    ${label}: SIGTERM 전송됨, 종료 대기 중...`));
+
+        // Step 2: Wait for process to exit (poll every 500ms)
+        const startTime = Date.now();
+        let alive = true;
+        while (alive && Date.now() - startTime < timeoutMs) {
+          try {
+            execSync(`kill -0 ${pidList.split(' ')[0]} 2>/dev/null`);
+            // Still alive, wait
+            execSync('sleep 0.5');
+          } catch {
+            alive = false;
+          }
+        }
+
+        // Step 3: Force kill if still alive
+        if (alive) {
+          try {
+            execSync(`kill -9 ${pidList} 2>/dev/null`);
+            console.log(chalk.yellow(`    ${label}: 강제 종료됨 (SIGKILL)`));
+          } catch {
+            // Already dead
+          }
+        }
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
     // Stop Gateway (port 18790) - this also stops telegram if running in same process
     if (stopGateway) {
       try {
         const pids = execSync(`lsof -ti :${config.gatewayPort} 2>/dev/null`, { encoding: 'utf-8' }).trim();
         if (pids) {
-          execSync(`kill -9 ${pids.split('\n').join(' ')} 2>/dev/null`);
+          gracefulKill(pids, 'Gateway');
           console.log(chalk.green('  ✓ Gateway 종료됨 (+ Telegram Bot)'));
           stoppedAny = true;
         } else {
@@ -131,7 +197,7 @@ serverCommand
       try {
         const pids = execSync('lsof -ti :18791 2>/dev/null', { encoding: 'utf-8' }).trim();
         if (pids) {
-          execSync(`kill -9 ${pids.split('\n').join(' ')} 2>/dev/null`);
+          gracefulKill(pids, 'Dashboard');
           console.log(chalk.green('  ✓ Dashboard 종료됨'));
           stoppedAny = true;
         } else {
@@ -147,7 +213,7 @@ serverCommand
       try {
         const pids = execSync('pgrep -f "olympus.*telegram" 2>/dev/null', { encoding: 'utf-8' }).trim();
         if (pids) {
-          execSync(`kill -9 ${pids.split('\n').join(' ')} 2>/dev/null`);
+          gracefulKill(pids, 'Telegram Bot');
           console.log(chalk.green('  ✓ Telegram Bot 종료됨'));
           stoppedAny = true;
         } else {

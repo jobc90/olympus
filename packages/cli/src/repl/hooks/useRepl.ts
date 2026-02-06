@@ -90,7 +90,7 @@ export function useRepl(): ReplHook {
           addOutput({
             type: 'system',
             content: `Available commands:
-  <prompt>  - Send prompt to AI agents (Gemini + GPT)
+  <prompt>  - Send prompt to AI agents (Gemini + Codex)
   help      - Show this help message
   clear     - Clear the output
   status    - Show connection status
@@ -106,7 +106,7 @@ export function useRepl(): ReplHook {
           addOutput({
             type: 'system',
             content: `Mode: Direct (no Gateway)
-Agents: Gemini + GPT`,
+Agents: Gemini + Codex`,
           });
           return true;
 
@@ -154,7 +154,7 @@ Agents: Gemini + GPT`,
       try {
         // Check auth status
         const authStatus = await checkAuthStatus();
-        const availableAgents = (['gemini', 'gpt'] as const).filter(
+        const availableAgents = (['gemini', 'codex'] as const).filter(
           (a) => authStatus[a]
         );
 
@@ -192,16 +192,17 @@ Agents: Gemini + GPT`,
           }
         }
 
-        if (result.gpt) {
-          if (result.gpt.success) {
+        const codexResult = result.codex ?? result.gpt;
+        if (codexResult) {
+          if (codexResult.success) {
             addOutput({
-              type: 'gpt',
-              content: result.gpt.output || '(no output)',
+              type: 'codex',
+              content: codexResult.output || '(no output)',
             });
           } else {
             addOutput({
               type: 'error',
-              content: `GPT error: ${result.gpt.error}`,
+              content: `Codex error: ${codexResult.error}`,
             });
           }
         }

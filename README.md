@@ -18,27 +18,63 @@
   <i>"Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 도구"</i>
 </p>
 
+## Table of Contents
+
+- [What is Olympus?](#what-is-olympus)
+- [Quick Start (60s)](#quick-start-60s)
+- [Quick Install](#quick-install)
+- [Platform Requirements](#platform-requirements)
+- [Usage](#usage)
+- [Model Configuration](#model-configuration)
+- [Telegram Bot Commands](#telegram-bot-commands)
+- [Multi-AI Orchestration (AIOS v5.1)](#multi-ai-orchestration-aios-v51)
+- [Architecture](#architecture)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
+
 ## What is Olympus?
 
 Olympus는 Claude CLI의 생산성을 극대화하는 **Multi-AI 협업 플랫폼**입니다:
 
-1. **Multi-AI Orchestration (AIOS v5.0)**: Claude + Gemini + Codex 협업으로 복잡한 작업 자동화
-2. **Claude CLI 래퍼**: `olympus` 실행 시 Claude CLI가 실행됩니다 (브랜딩만 Olympus)
-3. **원격 접근**: Gateway를 통해 Telegram 봇으로 핸드폰에서 로컬 Claude CLI 사용
-4. **대시보드**: 웹 UI로 작업 현황 모니터링
+1. **Multi-AI Orchestration (AIOS v5.1)**: Claude + Gemini + Codex Co-Leadership 기반 협업으로 복잡한 작업 자동화
+2. **Context OS**: 계층적 컨텍스트 관리 (Workspace → Project → Task), 자동 상향 보고, 병합 워크플로우
+3. **Claude CLI 래퍼**: `olympus` 실행 시 Claude CLI가 실행됩니다 (브랜딩만 Olympus)
+4. **원격 접근**: Gateway를 통해 Telegram 봇으로 핸드폰에서 로컬 Claude CLI 사용
+5. **대시보드**: 웹 UI로 작업 현황 + 컨텍스트 탐색기 모니터링
 
 ### 핵심 기능
 
 | 기능 | 설명 |
 |------|------|
-| `/orchestration` 프로토콜 | 10 Phase 워크플로우로 복잡한 작업 체계적 수행 |
+| `/orchestration` v5.1 | Claude-Codex Co-Leadership, 10 Phase 합의 기반 워크플로우 |
+| **Context OS** | 3계층 컨텍스트 (Workspace/Project/Task), SQLite 저장, 자동 상향 보고 |
+| **Context Explorer** | 대시보드에서 트리뷰 + 편집 + 버전 이력 + 병합 요청 |
 | MCP 서버 | ai-agents (Multi-AI), openapi (Swagger 연동) |
 | Skills | frontend-ui-ux, git-master, agent-browser 등 |
 | Plugins | claude-dashboard (상태줄, 사용량 표시) |
 | **Telegram 봇** | 핸드폰에서 원격으로 Claude CLI 조작 |
-| **웹 대시보드** | 작업 현황 실시간 모니터링 |
+| **웹 대시보드** | 작업 현황 + 컨텍스트 탐색기 실시간 모니터링 |
 | **tmux 세션 관리** | 안정적인 세션 유지 및 스크롤 지원 |
 | **통합 CLI** | `olympus` 명령어로 모든 기능 접근 |
+
+## Quick Start (60s)
+
+```bash
+git clone https://github.com/jobc90/olympus.git
+cd olympus
+./install.sh --global
+olympus setup
+olympus start
+olympus server start
+```
+
+바로 사용:
+
+```bash
+olympus
+# Claude CLI 내부에서
+/orchestration "로그인 페이지 UI 개선"
+```
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -240,7 +276,7 @@ olympus server status
 ### 설정
 
 ```bash
-# 초기 설정 마법사
+# 초기 설정 마법사 (Gateway + Telegram + 모델 설정)
 olympus setup
 
 # 빠른 설정 + 시작 (Telegram 설정 후 서버 시작)
@@ -277,13 +313,52 @@ olympus tui
 | `olympus server start` | Gateway + Dashboard + Telegram 통합 시작 |
 | `olympus server stop` | 서버 종료 |
 | `olympus server status` | 서버 상태 확인 |
-| `olympus setup` | 초기 설정 마법사 |
+| `olympus setup` | 초기 설정 마법사(Gateway/Telegram/모델) |
 | `olympus quickstart` | 빠른 설정 + 서버 시작 |
 | `olympus config` | 설정 관리 |
+| `olympus models` | 모델 설정/동기화(core + MCP) |
 | `olympus gateway` | Gateway 서버만 실행 |
 | `olympus telegram` | Telegram 봇만 실행 |
 | `olympus dashboard` | 웹 대시보드 열기 |
 | `olympus tui` | 터미널 UI 실행 |
+
+## Model Configuration
+
+Olympus는 모델명을 하드코딩하지 않고, **환경변수 + 사용자 설정**으로 런타임에 결정할 수 있습니다.
+
+우선순위:
+1. 명령/요청에서 직접 전달한 `model`
+2. `~/.olympus/config.json`의 모델 설정
+3. 환경변수(`OLYMPUS_*_MODEL`)
+4. 내장 기본값
+
+주요 환경변수:
+- `OLYMPUS_GEMINI_MODEL`
+- `OLYMPUS_GEMINI_PRO_MODEL`
+- `OLYMPUS_GEMINI_FALLBACK_MODEL`
+- `OLYMPUS_GEMINI_FALLBACK_PRO_MODEL`
+- `OLYMPUS_CODEX_MODEL`
+- `OLYMPUS_OPENAI_MODEL`
+- `OLYMPUS_OPENAI_API_BASE_URL`
+
+예시:
+```bash
+export OLYMPUS_GEMINI_MODEL=gemini-2.5-flash
+export OLYMPUS_GEMINI_PRO_MODEL=gemini-2.5-pro
+export OLYMPUS_CODEX_MODEL=gpt-4.1
+```
+
+동기화 명령:
+```bash
+# 현재 상태 확인
+olympus models show
+
+# 모델 지정 + core/MCP 동시 반영
+olympus models set --gemini gemini-2.5-flash --gemini-pro gemini-2.5-pro --codex gpt-4.1
+
+# core를 기준으로 MCP에 동기화
+olympus models sync
+```
 
 ## Telegram Bot Commands
 
@@ -300,9 +375,9 @@ olympus tui
 | 일반 메시지 | 활성 세션의 Claude에게 전송 |
 | `@이름 메시지` | 특정 세션에 메시지 전송 |
 
-## Multi-AI Orchestration (AIOS v5.0)
+## Multi-AI Orchestration (AIOS v5.1)
 
-Olympus는 **Multi-AI Orchestration Protocol v5.0 (AIOS)**을 완벽하게 내장하고 있습니다. Claude CLI에서 `/orchestration` 명령어를 사용하여 Gemini, Codex 등 여러 AI와 협업할 수 있습니다.
+Olympus는 **Multi-AI Orchestration Protocol v5.1 (AIOS)**을 완벽하게 내장하고 있습니다. Claude + Codex Co-Leadership 기반으로 `/orchestration` 명령어를 사용하여 Gemini, Codex 등 여러 AI와 협업할 수 있습니다.
 
 > 💡 **모든 플랫폼에서 사용 가능**: `/orchestration` 프로토콜은 macOS, Linux, Windows 모두에서 작동합니다.
 
@@ -320,8 +395,8 @@ Olympus는 **Multi-AI Orchestration Protocol v5.0 (AIOS)**을 완벽하게 내�
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           AI Operating System v5.0                               │
-│                        (Claude as CEO/CTO/Orchestrator)                          │
+│                           AI Operating System v5.1                               │
+│                    (Claude + Codex Co-Leadership Model)                          │
 └─────────────────────────────────────────────────────────────────────────────────┘
                                       │
                     ┌─────────────────┼─────────────────┐

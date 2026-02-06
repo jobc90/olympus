@@ -1,6 +1,6 @@
 {
   "name": "olympus-dev",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "AI-powered development platform - Multi-agent orchestration CLI",
   "bin": {
@@ -22,7 +22,8 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@olympus-dev/core": "workspace:*",
@@ -47,5 +48,5 @@
   "engines": {
     "node": ">=18"
   },
-  "keywords": ["ai", "cli", "developer-tools", "gemini", "gpt", "orchestration"]
+  "keywords": ["ai", "cli", "developer-tools", "gemini", "codex", "orchestration"]
 }

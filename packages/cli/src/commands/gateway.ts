@@ -31,10 +31,10 @@ export const gatewayCommand = new Command('gateway')
 
       // Create a demo run through RunManager
       const runManager = gw.getRunManager();
-      const demoRun = runManager.createRun({
-        prompt: 'Demo: Analyze best practices for TypeScript monorepo',
-        agents: ['gemini', 'gpt'],
-      });
+        const demoRun = runManager.createRun({
+          prompt: 'Demo: Analyze best practices for TypeScript monorepo',
+          agents: ['gemini', 'codex'],
+        });
 
       const bus = demoRun.bus;
 
@@ -47,7 +47,7 @@ export const gatewayCommand = new Command('gateway')
       setTimeout(() => {
         bus.emitTaskUpdate('task-1', 'Analyze requirements', 'pending');
         bus.emitTaskUpdate('task-2', 'Run Gemini', 'pending');
-        bus.emitTaskUpdate('task-3', 'Run GPT', 'pending');
+        bus.emitTaskUpdate('task-3', 'Run Codex', 'pending');
       }, 2000);
 
       setTimeout(() => {
@@ -67,12 +67,12 @@ export const gatewayCommand = new Command('gateway')
 
       setTimeout(() => {
         bus.emitAgentChunk('gemini', 'task-2', 'Optimize imports\n2. Add caching\n3. Refactor utils');
-        bus.emitTaskUpdate('task-3', 'Run GPT', 'in_progress');
-        bus.emitAgentStart('gpt', 'task-3');
+        bus.emitTaskUpdate('task-3', 'Run Codex', 'in_progress');
+        bus.emitAgentStart('codex', 'task-3');
       }, 4500);
 
       setTimeout(() => {
-        bus.emitAgentChunk('gpt', 'task-3', 'Backend analysis complete. Recommendations:...');
+        bus.emitAgentChunk('codex', 'task-3', 'Backend analysis complete. Recommendations:...');
       }, 5000);
 
       setTimeout(() => {
@@ -82,9 +82,9 @@ export const gatewayCommand = new Command('gateway')
       }, 5500);
 
       setTimeout(() => {
-        bus.emitAgentComplete('gpt', 'task-3', 'Analysis complete');
-        bus.emitTaskUpdate('task-3', 'Run GPT', 'completed');
-        bus.emitLog('info', 'GPT finished in 2000ms', 'orchestrator');
+        bus.emitAgentComplete('codex', 'task-3', 'Analysis complete');
+        bus.emitTaskUpdate('task-3', 'Run Codex', 'completed');
+        bus.emitLog('info', 'Codex finished in 2000ms', 'orchestrator');
       }, 6000);
 
       setTimeout(() => {

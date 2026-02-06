@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Olympus - Claude CLI Enhanced Platform Installer
-# Multi-AI Orchestration Protocol v5.0 통합 버전
+# Multi-AI Orchestration Protocol v5.1 통합 버전
 # macOS / Linux 용
 #
 
@@ -30,7 +30,8 @@ for arg in "$@"; do
             echo "  --local   프로젝트 로컬 설치 (이 프로젝트에서만 사용)"
             echo "            • CLI 도구만 전역 설치 (claude, olympus)"
             echo "            • MCP 서버는 프로젝트 orchestration/mcps/에 npm install"
-            echo "            • ~/.claude/ 디렉토리를 건드리지 않음"
+            echo "            • ~/.claude/CLAUDE.md만 전역 설치 (에이전트 정책)"
+            echo "            • 플러그인 자동 설치 (Supabase, ui-ux-pro-max)"
             echo ""
             echo "  --global  전역 설치 (모든 프로젝트에서 사용)"
             echo "            • 모든 것을 ~/.claude/에 복사"
@@ -54,7 +55,7 @@ echo -e "${MAGENTA}║  ██║   ██║██║    ╚██╔╝  █�
 echo -e "${MAGENTA}║  ╚██████╔╝███████╗██║   ██║ ╚═╝ ██║██║     ╚██████╔╝███████║      ║${NC}"
 echo -e "${MAGENTA}║   ╚═════╝ ╚══════╝╚═╝   ╚═╝     ╚═╝╚═╝      ╚═════╝ ╚══════╝      ║${NC}"
 echo -e "${MAGENTA}║                                                                    ║${NC}"
-echo -e "${MAGENTA}║          Claude CLI Enhanced Platform + AIOS v5.0                 ║${NC}"
+echo -e "${MAGENTA}║          Claude CLI Enhanced Platform + AIOS v5.1                 ║${NC}"
 echo -e "${MAGENTA}║       \"Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 도구\"            ║${NC}"
 echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
@@ -307,7 +308,7 @@ if [ "$INSTALL_MODE" = "local" ]; then
     # /orchestration 명령어 복사
     step "/orchestration 명령어 설치 중..."
     cp "$ORCHESTRATION_DIR/commands/orchestration.md" "$PROJECT_CLAUDE_DIR/commands/"
-    success "/orchestration v5.0 명령어 설치 완료 (.claude/commands/)"
+    success "/orchestration v5.1 명령어 설치 완료 (.claude/commands/)"
 
     # 번들 스킬 복사
     step "번들 스킬 복사 중..."
@@ -358,11 +359,30 @@ EOF
 {
   "enabledPlugins": {
     "postgres-best-practices@supabase-agent-skills": true,
-    "vercel-react-best-practices": true
+    "vercel-react-best-practices": true,
+    "ui-ux-pro-max@ui-ux-pro-max-skill": true
   }
 }
 EOF
     success ".claude/settings.json 생성 완료"
+
+    # CLAUDE.global.md → ~/.claude/CLAUDE.md 복사 (글로벌 지침)
+    echo ""
+    step "CLAUDE.global.md 글로벌 지침 설치 중..."
+    CLAUDE_GLOBAL_TEMPLATE="$ORCHESTRATION_DIR/templates/CLAUDE.global.md"
+    if [ -f "$CLAUDE_GLOBAL_TEMPLATE" ]; then
+        mkdir -p "$CLAUDE_DIR"
+        if [ -f "$CLAUDE_DIR/CLAUDE.md" ]; then
+            BACKUP_FILE="$CLAUDE_DIR/CLAUDE.md.backup.$(date +%Y%m%d%H%M%S)"
+            cp "$CLAUDE_DIR/CLAUDE.md" "$BACKUP_FILE"
+            warn "기존 ~/.claude/CLAUDE.md를 백업했습니다: $BACKUP_FILE"
+        fi
+        # YOUR_USERNAME을 실제 사용자명으로 치환
+        sed "s/YOUR_USERNAME/$(whoami)/g" "$CLAUDE_GLOBAL_TEMPLATE" > "$CLAUDE_DIR/CLAUDE.md"
+        success "CLAUDE.global.md → ~/.claude/CLAUDE.md 설치 완료"
+    else
+        warn "CLAUDE.global.md 템플릿 파일을 찾을 수 없습니다"
+    fi
 
     echo ""
     info "📌 로컬 모드 설정 완료:"
@@ -370,6 +390,7 @@ EOF
     info "   • .claude/settings.json - 플러그인 설정 (Git 커밋 가능)"
     info "   • .claude/commands/orchestration.md - /orchestration 명령어"
     info "   • .claude/skills/ - 번들 스킬"
+    info "   • ~/.claude/CLAUDE.md - 글로벌 지침 (에이전트 정책, 프로토콜 요약)"
     echo ""
     warn "이 프로젝트 디렉토리에서 claude를 실행하면 /orchestration 사용 가능!"
     echo ""
@@ -387,7 +408,25 @@ echo ""
 
 # /orchestration 커맨드 설치
 cp "$ORCHESTRATION_DIR/commands/orchestration.md" "$CLAUDE_DIR/commands/"
-success "/orchestration v5.0 명령어 설치 완료"
+success "/orchestration v5.1 명령어 설치 완료"
+
+echo ""
+
+# CLAUDE.global.md → ~/.claude/CLAUDE.md 글로벌 지침 설치
+step "CLAUDE.global.md 글로벌 지침 설치 중..."
+CLAUDE_GLOBAL_TEMPLATE="$ORCHESTRATION_DIR/templates/CLAUDE.global.md"
+if [ -f "$CLAUDE_GLOBAL_TEMPLATE" ]; then
+    if [ -f "$CLAUDE_DIR/CLAUDE.md" ]; then
+        BACKUP_FILE="$CLAUDE_DIR/CLAUDE.md.backup.$(date +%Y%m%d%H%M%S)"
+        cp "$CLAUDE_DIR/CLAUDE.md" "$BACKUP_FILE"
+        warn "기존 ~/.claude/CLAUDE.md를 백업했습니다: $BACKUP_FILE"
+    fi
+    # YOUR_USERNAME을 실제 사용자명으로 치환
+    sed "s/YOUR_USERNAME/$(whoami)/g" "$CLAUDE_GLOBAL_TEMPLATE" > "$CLAUDE_DIR/CLAUDE.md"
+    success "CLAUDE.global.md → ~/.claude/CLAUDE.md 설치 완료 (에이전트 정책 + 프로토콜 요약)"
+else
+    warn "CLAUDE.global.md 템플릿 파일을 찾을 수 없습니다: $CLAUDE_GLOBAL_TEMPLATE"
+fi
 
 echo ""
 
@@ -423,14 +462,45 @@ phase "Phase 4.2: Supabase Agent Skills (DB 최적화)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-info "Supabase Agent Skills는 Claude Code 내에서 설치해야 합니다."
+if command -v claude &> /dev/null; then
+    step "Supabase Agent Skills 마켓플레이스 등록 중..."
+    claude plugin marketplace add supabase/agent-skills 2>/dev/null && \
+        success "supabase-agent-skills 마켓플레이스 등록 완료" || \
+        info "supabase-agent-skills 마켓플레이스 이미 등록됨"
+
+    step "postgres-best-practices 플러그인 설치 중..."
+    claude plugin install postgres-best-practices@supabase-agent-skills 2>/dev/null && \
+        success "postgres-best-practices 플러그인 설치 완료" || \
+        warn "postgres-best-practices 설치 실패 - Claude Code 내에서 수동 설치 필요"
+else
+    warn "Claude CLI 미설치 - Supabase plugin 수동 설치 필요:"
+    echo -e "${CYAN}  claude plugin marketplace add supabase/agent-skills${NC}"
+    echo -e "${CYAN}  claude plugin install postgres-best-practices@supabase-agent-skills${NC}"
+fi
+
 echo ""
-echo -e "${YELLOW}Claude Code 실행 후 다음 명령어를 입력하세요:${NC}"
+
+# ── Phase 4.2.1: ui-ux-pro-max (UI/UX Design Intelligence) ──
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+phase "Phase 4.2.1: ui-ux-pro-max (UI/UX Design Intelligence)"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo -e "${CYAN}  /plugin marketplace add supabase/agent-skills${NC}"
-echo -e "${CYAN}  /plugin install postgres-best-practices@supabase-agent-skills${NC}"
-echo ""
-warn "이 스킬은 /orchestration v5.0 실행의 필수 조건입니다!"
+
+if command -v claude &> /dev/null; then
+    step "ui-ux-pro-max 마켓플레이스 등록 중..."
+    claude plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill 2>/dev/null && \
+        success "ui-ux-pro-max-skill 마켓플레이스 등록 완료" || \
+        info "ui-ux-pro-max-skill 마켓플레이스 이미 등록됨"
+
+    step "ui-ux-pro-max 플러그인 설치 중..."
+    claude plugin install ui-ux-pro-max@ui-ux-pro-max-skill 2>/dev/null && \
+        success "ui-ux-pro-max 플러그인 설치 완료" || \
+        warn "ui-ux-pro-max 설치 실패 - Claude Code 내에서 수동 설치 필요"
+else
+    warn "Claude CLI 미설치 - ui-ux-pro-max 수동 설치 필요:"
+    echo -e "${CYAN}  claude plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill${NC}"
+    echo -e "${CYAN}  claude plugin install ui-ux-pro-max@ui-ux-pro-max-skill${NC}"
+fi
 
 echo ""
 
@@ -620,7 +690,8 @@ if [ -f "$SETTINGS_FILE" ]; then
     echo ""
     echo -e "${YELLOW}  \"enabledPlugins\": {"
     echo "    \"postgres-best-practices@supabase-agent-skills\": true,"
-    echo "    \"vercel-react-best-practices\": true"
+    echo "    \"vercel-react-best-practices\": true,"
+    echo "    \"ui-ux-pro-max@ui-ux-pro-max-skill\": true"
     echo -e "  }${NC}"
 else
     cat > "$SETTINGS_FILE" << EOF
@@ -642,7 +713,8 @@ else
   },
   "enabledPlugins": {
     "postgres-best-practices@supabase-agent-skills": true,
-    "vercel-react-best-practices": true
+    "vercel-react-best-practices": true,
+    "ui-ux-pro-max@ui-ux-pro-max-skill": true
   }
 }
 EOF
@@ -735,6 +807,20 @@ command -v agent-browser &> /dev/null && success "agent-browser" || info "agent-
 
 echo ""
 
+echo -e "${CYAN}설치된 플러그인:${NC}"
+if command -v claude &> /dev/null; then
+    claude plugin list 2>/dev/null | grep -q "postgres-best-practices" && \
+        success "postgres-best-practices (Supabase DB)" || \
+        warn "postgres-best-practices 미설치"
+    claude plugin list 2>/dev/null | grep -q "ui-ux-pro-max" && \
+        success "ui-ux-pro-max (UI/UX Design Intelligence)" || \
+        warn "ui-ux-pro-max 미설치"
+else
+    warn "Claude CLI 미설치 - 플러그인 확인 불가"
+fi
+
+echo ""
+
 if [ "$INSTALL_MODE" = "global" ]; then
     echo -e "${CYAN}설치된 파일:${NC}"
     [ -f "$CLAUDE_DIR/commands/orchestration.md" ] && success "/orchestration 명령어" || warn "/orchestration 명령어 없음"
@@ -744,6 +830,7 @@ if [ "$INSTALL_MODE" = "global" ]; then
     [ -d "$CLAUDE_DIR/skills/git-master" ] && success "git-master 스킬" || warn "git-master 스킬 없음"
     [ -d "$CLAUDE_DIR/plugins/claude-dashboard" ] && success "claude-dashboard 플러그인" || warn "claude-dashboard 플러그인 없음"
     [ -f "$CLAUDE_DIR/settings.json" ] && success "settings.json" || warn "settings.json 없음"
+    [ -f "$CLAUDE_DIR/CLAUDE.md" ] && success "CLAUDE.md (글로벌 지침)" || warn "CLAUDE.md 없음"
 fi
 
 echo ""
@@ -755,15 +842,15 @@ echo ""
 echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${MAGENTA}║                                                                    ║${NC}"
 if [ "$INSTALL_MODE" = "local" ]; then
-echo -e "${MAGENTA}║         ✅ Olympus + AIOS v5.0 로컬 설치 완료!                    ║${NC}"
+echo -e "${MAGENTA}║         ✅ Olympus + AIOS v5.1 로컬 설치 완료!                    ║${NC}"
 else
-echo -e "${MAGENTA}║         ✅ Olympus + AIOS v5.0 전역 설치 완료!                    ║${NC}"
+echo -e "${MAGENTA}║         ✅ Olympus + AIOS v5.1 전역 설치 완료!                    ║${NC}"
 fi
 echo -e "${MAGENTA}║                                                                    ║${NC}"
 echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-echo -e "${CYAN}🆕 v5.0 새로운 기능:${NC}"
+echo -e "${CYAN}🆕 v5.1 새로운 기능:${NC}"
 echo ""
 echo "   🧠 Phase -1: Smart Intake"
 echo "      • Complexity Heuristic 기반 자동 모드 결정"
@@ -776,6 +863,14 @@ echo "      • UI/Domain/Infra/Integration 레이어"
 echo ""
 echo "   ⚡ Shared Surface 충돌 감지 (Phase 4)"
 echo "      • 병렬 실행 전 파일 겹침 자동 검출"
+echo ""
+echo "   🤝 Claude-Codex Co-Leadership (v5.1 NEW)"
+echo "      • Codex가 Claude와 동급 의사결정 파트너로 격상"
+echo "      • 계획/문서에 Claude-Codex 합의 필수"
+echo ""
+echo "   🎨 UI/UX Design Intelligence (v5.1 NEW)"
+echo "      • ui-ux-pro-max 자동 감지 및 Design System 생성"
+echo "      • 96 색상 팔레트, 57 폰트 페어링, 100 산업별 룰"
 echo ""
 echo "   📊 정량화된 Quality Gate (Phase 8)"
 echo "      • Hard/Behavior/Soft 3단계 Gate"
@@ -812,7 +907,7 @@ echo "   /orchestration \"작업 설명\"    # 바로 사용 가능!"
 echo ""
 echo -e "${YELLOW}📌 주의사항:${NC}"
 echo "   • 반드시 이 프로젝트 디렉토리에서 claude를 실행해야 합니다"
-echo "   • ~/.claude/ 전역 디렉토리는 변경되지 않았습니다"
+echo "   • ~/.claude/CLAUDE.md만 전역 설치됨 (에이전트 정책 + 프로토콜 요약)"
 echo "   • 다른 프로젝트에서도 사용하려면: ./install.sh --global"
 else
 echo -e "${CYAN}🔌 MCP 서버 (전역):${NC}"
@@ -820,9 +915,15 @@ echo "   [✔] ai-agents MCP (Gemini + Codex 협업)"
 echo "   [✔] openapi MCP (Swagger/OpenAPI 스펙 활용)"
 echo "   [✔] stitch MCP (프론트엔드 컴포넌트 생성)"
 echo ""
-echo -e "${CYAN}🔌 Plugin (Claude Code 내에서 실행 필요):${NC}"
-echo "   [ ] /plugin marketplace add supabase/agent-skills"
-echo "   [ ] /plugin install postgres-best-practices@supabase-agent-skills"
+echo -e "${CYAN}🔌 Plugin (자동 설치 시도됨 - 실패 시 아래 명령어 실행):${NC}"
+echo "   [✔] postgres-best-practices (Supabase DB 최적화)"
+echo "   [✔] ui-ux-pro-max (UI/UX Design Intelligence)"
+echo ""
+echo -e "${YELLOW}   설치 실패 시 Claude Code 내에서:${NC}"
+echo "   claude plugin marketplace add supabase/agent-skills"
+echo "   claude plugin install postgres-best-practices@supabase-agent-skills"
+echo "   claude plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill"
+echo "   claude plugin install ui-ux-pro-max@ui-ux-pro-max-skill"
 echo ""
 echo -e "${CYAN}📦 Skills:${NC}"
 echo "   [✔] vercel-react-best-practices (React/Next.js 최적화)"
@@ -854,13 +955,14 @@ echo "   /orchestration \"작업 설명\"    # 10 Phase 프로토콜 시작"
 echo ""
 echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo -e "${MAGENTA}v5.0 핵심 원칙:${NC}"
+echo -e "${MAGENTA}v5.1 핵심 원칙:${NC}"
 echo ""
-echo -e "   👑 ${CYAN}Claude = Orchestrator${NC}: 프로세스 조율, 병합, 사용자 소통"
-echo -e "   🎨 ${CYAN}Gemini = Architect${NC}: 계획, 리뷰, 리스크 분석"
-echo -e "   ⚙️ ${CYAN}Codex = Implementer${NC}: 코드 패치, 테스트, 타입"
+echo -e "   👑 ${CYAN}Claude + Codex = Co-Leaders${NC}: 합의 기반 의사결정"
+echo -e "   🎨 ${CYAN}Gemini = Frontend Specialist${NC}: UI/UX, 컴포넌트 구현"
+echo -e "   ⚙️ ${CYAN}Codex = Co-Architect${NC}: 아키텍처 공동 결정, 백엔드"
 echo -e "   🧠 ${CYAN}find-skills 필수${NC}: 모든 작업에서 스킬 검색 필수"
 echo -e "   📊 ${CYAN}Dashboard${NC}: Gemini/Codex 사용량 실시간 표시"
+echo -e "   🎨 ${CYAN}ui-ux-pro-max${NC}: UI/UX 의도 자동 감지 + Design System"
 echo ""
 echo -e "   ${YELLOW}🎯 목표: Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 도구${NC}"
 echo ""

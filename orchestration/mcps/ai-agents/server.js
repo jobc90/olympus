@@ -7,7 +7,7 @@
  * 역할 분담:
  * - Claude (Conductor): 유일한 결정권자, 모든 코드 변경 적용
  * - Gemini (Advisor): 프론트엔드 관점 제안/검증 ONLY
- * - Codex/GPT (Advisor): 백엔드 관점 제안/검증 ONLY
+ * - Codex (Advisor): 백엔드 관점 제안/검증 ONLY
  *
  * 중요: Gemini/Codex는 결정권 없음. 제안만 제공.
  * Claude가 제안을 검토하고 적용 여부를 결정함.
@@ -35,6 +35,13 @@ const CONFIG_DIR = join(homedir(), ".claude", "mcps", "ai-agents");
 const CREDENTIALS_FILE = join(CONFIG_DIR, "credentials.json");
 const LOG_FILE = join(CONFIG_DIR, "server.log");
 const WISDOM_FILE = join(CONFIG_DIR, "wisdom.json");
+const MODEL_DEFAULTS = {
+  geminiFlash: process.env.OLYMPUS_GEMINI_MODEL || process.env.OLYMPUS_GEMINI_FLASH_MODEL || "gemini-3-flash-preview",
+  geminiPro: process.env.OLYMPUS_GEMINI_PRO_MODEL || "gemini-3-pro-preview",
+  geminiFallbackFlash: process.env.OLYMPUS_GEMINI_FALLBACK_MODEL || "gemini-2.5-flash",
+  geminiFallbackPro: process.env.OLYMPUS_GEMINI_FALLBACK_PRO_MODEL || "gemini-2.5-pro",
+  codex: process.env.OLYMPUS_CODEX_MODEL || process.env.OLYMPUS_OPENAI_MODEL || "gpt-4o",
+};
 
 // ============================================================
 // AGENT METADATA SYSTEM (inspired by oh-my-opencode)
@@ -67,7 +74,7 @@ const AGENT_METADATA = {
     ],
   },
   codex: {
-    name: "Codex (GPT)",
+    name: "Codex",
     role: "Backend Specialist",
     category: "specialist",
     cost: "MODERATE",
@@ -119,22 +126,22 @@ const DELEGATION_TABLE = {
   "routing": "gemini",
   "page": "gemini",
 
-  // Backend domains → GPT
-  "api": "gpt",
-  "endpoint": "gpt",
-  "database": "gpt",
-  "schema": "gpt",
-  "migration": "gpt",
-  "test": "gpt",
-  "testing": "gpt",
-  "ci": "gpt",
-  "cd": "gpt",
-  "docker": "gpt",
-  "deployment": "gpt",
-  "server": "gpt",
-  "backend": "gpt",
-  "authentication": "gpt",
-  "authorization": "gpt",
+  // Backend domains → Codex
+  "api": "codex",
+  "endpoint": "codex",
+  "database": "codex",
+  "schema": "codex",
+  "migration": "codex",
+  "test": "codex",
+  "testing": "codex",
+  "ci": "codex",
+  "cd": "codex",
+  "docker": "codex",
+  "deployment": "codex",
+  "server": "codex",
+  "backend": "codex",
+  "authentication": "codex",
+  "authorization": "codex",
 };
 
 // ============================================================
@@ -167,6 +174,19 @@ async function saveCredentials(creds) {
   await writeFile(CREDENTIALS_FILE, JSON.stringify(creds, null, 2));
 }
 
+async function getRuntimeModels() {
+  const creds = await loadCredentials();
+  const userModels = creds.models && typeof creds.models === "object" ? creds.models : {};
+
+  return {
+    geminiFlash: userModels.geminiFlash || MODEL_DEFAULTS.geminiFlash,
+    geminiPro: userModels.geminiPro || MODEL_DEFAULTS.geminiPro,
+    geminiFallbackFlash: userModels.geminiFallbackFlash || MODEL_DEFAULTS.geminiFallbackFlash,
+    geminiFallbackPro: userModels.geminiFallbackPro || MODEL_DEFAULTS.geminiFallbackPro,
+    codex: userModels.codex || MODEL_DEFAULTS.codex,
+  };
+}
+
 // Wisdom accumulation (oh-my-opencode pattern)
 async function loadWisdom() {
   try {
@@ -195,14 +215,6 @@ async function addWisdom(type, content) {
 // ============================================================
 // AGENT EXECUTORS
 // ============================================================
-
-// Gemini 모델 라우팅: Gemini 3(Preview) → 2.5(폴백)
-const GEMINI_MODELS = {
-  flash: "gemini-3-flash-preview",
-  pro: "gemini-3-pro-preview",
-  fallbackFlash: "gemini-2.5-flash",
-  fallbackPro: "gemini-2.5-pro",
-};
 
 async function executeGeminiWithModel(prompt, model, args) {
   return new Promise((resolve, reject) => {
@@ -233,9 +245,10 @@ async function executeGeminiWithModel(prompt, model, args) {
 }
 
 async function executeGemini(prompt, options = {}) {
+  const models = await getRuntimeModels();
   const baseArgs = ["--approval-mode", "yolo"];
-  const primaryModel = options.model || (options.usePro ? GEMINI_MODELS.pro : GEMINI_MODELS.flash);
-  const fallbackModel = options.usePro ? GEMINI_MODELS.fallbackPro : GEMINI_MODELS.fallbackFlash;
+  const primaryModel = options.model || (options.usePro ? models.geminiPro : models.geminiFlash);
+  const fallbackModel = options.usePro ? models.geminiFallbackPro : models.geminiFallbackFlash;
 
   // 1차: Gemini 3 시도
   const result = await executeGeminiWithModel(prompt, primaryModel, baseArgs);
@@ -249,7 +262,7 @@ async function executeGemini(prompt, options = {}) {
   return result;
 }
 
-// Execute Codex CLI (GPT via OAuth)
+// Execute Codex CLI (OpenAI OAuth)
 async function executeCodex(prompt, options = {}) {
   return new Promise((resolve, reject) => {
     const args = ["exec"];
@@ -312,6 +325,7 @@ async function executeCodex(prompt, options = {}) {
 async function executeOpenAI(prompt, options = {}) {
   const creds = await loadCredentials();
   const apiKey = creds.openai_api_key || process.env.OPENAI_API_KEY;
+  const models = await getRuntimeModels();
 
   if (!apiKey) {
     // Try Codex CLI instead
@@ -326,7 +340,7 @@ async function executeOpenAI(prompt, options = {}) {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: options.model || "gpt-4-turbo-preview",
+        model: options.model || models.codex,
         messages: [
           {
             role: "system",
@@ -342,7 +356,7 @@ async function executeOpenAI(prompt, options = {}) {
 
     if (!response.ok) {
       const error = await response.text();
-      return { success: false, error: `OpenAI API error: ${error}`, agent: "gpt" };
+      return { success: false, error: `OpenAI API error: ${error}`, agent: "codex" };
     }
 
     const data = await response.json();
@@ -350,10 +364,10 @@ async function executeOpenAI(prompt, options = {}) {
       success: true,
       output: data.choices[0].message.content,
       usage: data.usage,
-      agent: "gpt",
+      agent: "codex",
     };
   } catch (err) {
-    return { success: false, error: err.message, agent: "gpt" };
+    return { success: false, error: err.message, agent: "codex" };
   }
 }
 
@@ -367,7 +381,7 @@ function detectDomain(prompt) {
 
   const matches = {
     gemini: 0,
-    gpt: 0,
+    codex: 0,
   };
 
   for (const keyword of keywords) {
@@ -377,9 +391,9 @@ function detectDomain(prompt) {
   }
 
   return {
-    recommended: matches.gemini > matches.gpt ? "gemini" : matches.gpt > matches.gemini ? "gpt" : "both",
+    recommended: matches.gemini > matches.codex ? "gemini" : matches.codex > matches.gemini ? "codex" : "both",
     scores: matches,
-    shouldParallel: matches.gemini > 0 && matches.gpt > 0,
+    shouldParallel: matches.gemini > 0 && matches.codex > 0,
   };
 }
 
@@ -401,6 +415,8 @@ const server = new Server(
 
 // Define tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
+  const runtimeModels = await getRuntimeModels();
+
   return {
     tools: [
       // === Core Analysis Tools (제안만 - Claude가 결정) ===
@@ -417,14 +433,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
-        name: "gpt_analyze",
-        description: "[제안만] GPT(Backend Advisor)의 분석 의견을 받습니다. Claude가 검토 후 결정. API, 구조, 테스트 전문. Cost: MODERATE.",
+        name: "codex_analyze",
+        description: "[제안만] Codex(Backend Advisor)의 분석 의견을 받습니다. Claude가 검토 후 결정. API, 구조, 테스트 전문. Cost: MODERATE.",
         inputSchema: {
           type: "object",
           properties: {
             prompt: { type: "string", description: "Analysis prompt" },
             context: { type: "string", description: "Code context" },
-            model: { type: "string", enum: ["gpt-4-turbo-preview", "gpt-4o", "gpt-4", "gpt-3.5-turbo"] },
+            model: { type: "string", description: `Codex model override (default: ${runtimeModels.codex})` },
           },
           required: ["prompt"],
         },
@@ -444,8 +460,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
-        name: "gpt_patch",
-        description: "[제안만] GPT가 백엔드 패치를 제안합니다. Claude가 검토 후 적용 여부 결정. unified diff 형식.",
+        name: "codex_patch",
+        description: "[제안만] Codex가 백엔드 패치를 제안합니다. Claude가 검토 후 적용 여부 결정. unified diff 형식.",
         inputSchema: {
           type: "object",
           properties: {
@@ -466,14 +482,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             task: { type: "string", description: "Task description" },
             context: { type: "string", description: "Code context" },
-            force_agent: { type: "string", enum: ["gemini", "gpt"], description: "Force specific agent" },
+            force_agent: { type: "string", enum: ["gemini", "codex", "gpt"], description: "Force specific agent" },
           },
           required: ["task"],
         },
       },
       {
         name: "ai_team_analyze",
-        description: "[병렬 제안] Gemini+GPT 양쪽에서 분석 의견 수집. Claude가 종합 검토 후 결정.",
+        description: "[병렬 제안] Gemini+Codex 양쪽에서 분석 의견 수집. Claude가 종합 검토 후 결정.",
         inputSchema: {
           type: "object",
           properties: {
@@ -499,15 +515,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       // === Verification Tools (검증 의견 - Claude가 판단) ===
       {
         name: "verify_patches",
-        description: "[검증 의견] Gemini/GPT 패치 간 충돌 검사. Claude가 검증 결과 검토 후 병합 결정.",
+        description: "[검증 의견] Gemini/Codex 패치 간 충돌 검사. Claude가 검증 결과 검토 후 병합 결정.",
         inputSchema: {
           type: "object",
           properties: {
             gemini_patches: { type: "string", description: "Patches from Gemini" },
-            gpt_patches: { type: "string", description: "Patches from GPT" },
+            codex_patches: { type: "string", description: "Patches from Codex" },
             context: { type: "string", description: "Original code context" },
           },
-          required: ["gemini_patches", "gpt_patches"],
+          required: ["gemini_patches", "codex_patches"],
         },
       },
       {
@@ -535,7 +551,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: "object",
           properties: {
-            agent: { type: "string", enum: ["gemini", "gpt", "all"] },
+            agent: { type: "string", enum: ["gemini", "codex", "gpt", "all"] },
           },
         },
       },
@@ -562,13 +578,27 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       // === Configuration Tools ===
       {
         name: "configure_openai",
-        description: "Configure OpenAI API key for GPT tools.",
+        description: "Configure OpenAI API key for Codex tools.",
         inputSchema: {
           type: "object",
           properties: {
             api_key: { type: "string", description: "OpenAI API key (starts with sk-)" },
           },
           required: ["api_key"],
+        },
+      },
+      {
+        name: "configure_models",
+        description: "Configure preferred runtime models for Gemini/Codex. Values are stored and used as defaults.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            gemini_flash: { type: "string", description: "Preferred Gemini flash/default model" },
+            gemini_pro: { type: "string", description: "Preferred Gemini pro model" },
+            gemini_fallback_flash: { type: "string", description: "Gemini fallback flash model" },
+            gemini_fallback_pro: { type: "string", description: "Gemini fallback pro model" },
+            codex: { type: "string", description: "Preferred Codex/OpenAI model" },
+          },
         },
       },
       {
@@ -608,6 +638,7 @@ Provide specific, actionable recommendations.`;
         };
       }
 
+      case "codex_analyze":
       case "gpt_analyze": {
         const systemPrompt = `You are a Backend/Architecture Specialist. Analyze from a backend perspective.
 Focus on: Project structure, API design, server components, data fetching, testing, CI/CD, security.`;
@@ -619,7 +650,7 @@ Focus on: Project structure, API design, server components, data fetching, testi
           content: [{
             type: "text",
             text: result.success
-              ? `## ⚙️ GPT (Backend Specialist) Analysis\n\n${result.output}`
+              ? `## ⚙️ Codex (Backend Specialist) Analysis\n\n${result.output}`
               : `❌ Error: ${result.error}`,
           }],
         };
@@ -657,6 +688,7 @@ Respond with JSON:
         };
       }
 
+      case "codex_patch":
       case "gpt_patch": {
         const systemPrompt = `You are a Backend/Architecture Specialist. Generate code patches. Always respond with valid JSON.`;
 
@@ -680,7 +712,7 @@ Respond with JSON:
           content: [{
             type: "text",
             text: result.success
-              ? `## ⚙️ GPT Backend Patches\n\n${result.output}`
+              ? `## ⚙️ Codex Backend Patches\n\n${result.output}`
               : `❌ Error: ${result.error}`,
           }],
         };
@@ -689,13 +721,14 @@ Respond with JSON:
       // === Intelligent Delegation ===
       case "delegate_task": {
         const detection = detectDomain(args.task);
-        const agent = args.force_agent || detection.recommended;
+        const forcedAgent = args.force_agent === "gpt" ? "codex" : args.force_agent;
+        const agent = forcedAgent || detection.recommended;
 
-        await log(`Delegating to ${agent} (scores: gemini=${detection.scores.gemini}, gpt=${detection.scores.gpt})`);
+        await log(`Delegating to ${agent} (scores: gemini=${detection.scores.gemini}, codex=${detection.scores.codex})`);
 
         if (agent === "both" || detection.shouldParallel) {
           // Parallel execution
-          const [geminiResult, gptResult] = await Promise.all([
+          const [geminiResult, codexResult] = await Promise.all([
             executeGemini(`Frontend analysis:\n${args.context ? `Context:\n${args.context}\n\n` : ""}${args.task}`),
             executeOpenAI(`${args.context ? `Context:\n${args.context}\n\n` : ""}${args.task}`, {
               systemPrompt: "You are a Backend Specialist. Provide backend perspective.",
@@ -712,11 +745,11 @@ ${geminiResult.success ? geminiResult.output : `Error: ${geminiResult.error}`}
 
 ---
 
-### ⚙️ GPT (Backend)
-${gptResult.success ? gptResult.output : `Error: ${gptResult.error}`}
+### ⚙️ Codex (Backend)
+${codexResult.success ? codexResult.output : `Error: ${codexResult.error}`}
 
 ---
-**Domain Scores**: Frontend=${detection.scores.gemini}, Backend=${detection.scores.gpt}`,
+**Domain Scores**: Frontend=${detection.scores.gemini}, Backend=${detection.scores.codex}`,
             }],
           };
         }
@@ -727,7 +760,7 @@ ${gptResult.success ? gptResult.output : `Error: ${gptResult.error}`}
 
         const result = await executor(
           `You are a ${role}.\n\n${args.context ? `Context:\n${args.context}\n\n` : ""}Task: ${args.task}`,
-          agent === "gpt" ? { systemPrompt: `You are a ${role}.` } : {}
+          agent === "codex" ? { systemPrompt: `You are a ${role}.` } : {}
         );
 
         return {
@@ -736,7 +769,7 @@ ${gptResult.success ? gptResult.output : `Error: ${gptResult.error}`}
             text: result.success
               ? `## ${agent === "gemini" ? "🎨" : "⚙️"} Delegated to ${AGENT_METADATA[agent].name} (${role})
 
-**Routing**: ${detection.recommended} (scores: frontend=${detection.scores.gemini}, backend=${detection.scores.gpt})
+**Routing**: ${detection.recommended} (scores: frontend=${detection.scores.gemini}, backend=${detection.scores.codex})
 
 ${result.output}`
               : `❌ Error: ${result.error}`,
@@ -746,7 +779,7 @@ ${result.output}`
 
       // === Team Analysis ===
       case "ai_team_analyze": {
-        const [geminiResult, gptResult] = await Promise.all([
+        const [geminiResult, codexResult] = await Promise.all([
           executeGemini(`Frontend Specialist Analysis:\n${args.context ? `Context:\n${args.context}\n\n` : ""}${args.prompt}`, { usePro: true }),
           executeOpenAI(`${args.context ? `Context:\n${args.context}\n\n` : ""}${args.prompt}`, {
             systemPrompt: "You are a Backend/Architecture Specialist. Provide analysis from a backend perspective.",
@@ -763,8 +796,8 @@ ${geminiResult.success ? geminiResult.output : `Error: ${geminiResult.error}`}
 
 ---
 
-### ⚙️ GPT (Backend Perspective)
-${gptResult.success ? gptResult.output : `Error: ${gptResult.error}`}
+### ⚙️ Codex (Backend Perspective)
+${codexResult.success ? codexResult.output : `Error: ${codexResult.error}`}
 
 ---
 
@@ -783,7 +816,7 @@ ${args.context ? `Current Code:\n\`\`\`\n${args.context}\n\`\`\`\n\n` : ""}
 
 Respond with JSON patches array.`;
 
-        const [geminiResult, gptResult] = await Promise.all([
+        const [geminiResult, codexResult] = await Promise.all([
           executeGemini(`Frontend Specialist:\n${patchPrompt}`, { usePro: true }),
           executeOpenAI(patchPrompt, {
             systemPrompt: "You are a Backend Specialist. Generate backend-related patches.",
@@ -801,8 +834,8 @@ ${geminiResult.success ? geminiResult.output : `Error: ${geminiResult.error}`}
 
 ---
 
-### ⚙️ GPT (Backend Patches)
-${gptResult.success ? gptResult.output : `Error: ${gptResult.error}`}
+### ⚙️ Codex (Backend Patches)
+${codexResult.success ? codexResult.output : `Error: ${codexResult.error}`}
 
 ---
 
@@ -822,8 +855,8 @@ ${gptResult.success ? gptResult.output : `Error: ${gptResult.error}`}
 ## Gemini (Frontend) Patches:
 ${args.gemini_patches}
 
-## GPT (Backend) Patches:
-${args.gpt_patches}
+## Codex (Backend) Patches:
+${args.codex_patches ?? args.gpt_patches}
 
 ${args.context ? `## Original Context:\n${args.context}\n\n` : ""}
 
@@ -846,7 +879,7 @@ Analyze:
       }
 
       case "review_implementation": {
-        const [geminiReview, gptReview] = await Promise.all([
+        const [geminiReview, codexReview] = await Promise.all([
           executeGemini(`Review this implementation from a frontend perspective:
 
 Code:
@@ -881,8 +914,8 @@ ${geminiReview.success ? geminiReview.output : `Error: ${geminiReview.error}`}
 
 ---
 
-### ⚙️ Backend Review (GPT)
-${gptReview.success ? gptReview.output : `Error: ${gptReview.error}`}
+### ⚙️ Backend Review (Codex)
+${codexReview.success ? codexReview.output : `Error: ${codexReview.error}`}
 
 ---
 
@@ -894,7 +927,7 @@ ${gptReview.success ? gptReview.output : `Error: ${gptReview.error}`}
       // === Metadata ===
       case "get_delegation_table": {
         const tableRows = Object.entries(DELEGATION_TABLE)
-          .map(([domain, agent]) => `| ${domain} | ${agent === "gemini" ? "🎨 Gemini" : "⚙️ GPT"} |`)
+          .map(([domain, agent]) => `| ${domain} | ${agent === "gemini" ? "🎨 Gemini" : "⚙️ Codex"} |`)
           .join("\n");
 
         return {
@@ -913,7 +946,7 @@ ${tableRows}
 
       case "get_agent_metadata": {
         const agent = args.agent || "all";
-        const agents = agent === "all" ? ["gemini", "gpt"] : [agent];
+        const agents = agent === "all" ? ["gemini", "codex"] : [agent === "gpt" ? "codex" : agent];
 
         const metadata = agents.map((a) => {
           const m = AGENT_METADATA[a];
@@ -977,12 +1010,41 @@ Last Updated: ${wisdom.lastUpdated || "Never"}`,
         await saveCredentials(creds);
 
         return {
-          content: [{ type: "text", text: "✅ OpenAI API key configured. GPT tools are now available." }],
+          content: [{ type: "text", text: "✅ OpenAI API key configured. Codex tools are now available." }],
+        };
+      }
+
+      case "configure_models": {
+        const creds = await loadCredentials();
+        const previous = creds.models || {};
+        creds.models = {
+          ...previous,
+          ...(args.gemini_flash ? { geminiFlash: args.gemini_flash } : {}),
+          ...(args.gemini_pro ? { geminiPro: args.gemini_pro } : {}),
+          ...(args.gemini_fallback_flash ? { geminiFallbackFlash: args.gemini_fallback_flash } : {}),
+          ...(args.gemini_fallback_pro ? { geminiFallbackPro: args.gemini_fallback_pro } : {}),
+          ...(args.codex ? { codex: args.codex } : {}),
+        };
+        await saveCredentials(creds);
+        const runtimeModels = await getRuntimeModels();
+
+        return {
+          content: [{
+            type: "text",
+            text: `✅ Runtime model preferences updated.
+
+- geminiFlash: ${runtimeModels.geminiFlash}
+- geminiPro: ${runtimeModels.geminiPro}
+- geminiFallbackFlash: ${runtimeModels.geminiFallbackFlash}
+- geminiFallbackPro: ${runtimeModels.geminiFallbackPro}
+- codex: ${runtimeModels.codex}`,
+          }],
         };
       }
 
       case "check_auth_status": {
         const creds = await loadCredentials();
+        const runtimeModels = await getRuntimeModels();
         const geminiOAuth = join(homedir(), ".gemini", "oauth_creds.json");
         const codexAuth = join(homedir(), ".codex", "auth.json");
 
@@ -1033,11 +1095,14 @@ Last Updated: ${wisdom.lastUpdated || "Never"}`,
 ${geminiStatus}
 - Auth Method: Google OAuth (via Gemini CLI)
 - Cost: CHEAP
+- Default Model: ${runtimeModels.geminiFlash}
+- Pro Model: ${runtimeModels.geminiPro}
 
-### ⚙️ Codex (GPT)
+### ⚙️ Codex
 ${codexStatus}${codexAccount ? `\n- Account: ${codexAccount}` : ""}
 - Auth Method: OpenAI OAuth (via Codex CLI)
 - Cost: MODERATE
+- Default Model: ${runtimeModels.codex}
 
 ### 🔑 OpenAI API Key
 ${apiKeyStatus}
@@ -1047,6 +1112,7 @@ ${apiKeyStatus}
 **Authentication Methods**:
 - Gemini: \`gemini\` (Google OAuth)
 - Codex: \`codex login\` (OpenAI OAuth)
+- Models: \`configure_models\` tool or env vars (\`OLYMPUS_*_MODEL\`)
 - API Key: \`configure_openai\` tool (fallback)`,
           }],
         };

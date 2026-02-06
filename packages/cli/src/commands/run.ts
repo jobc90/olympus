@@ -16,9 +16,9 @@ interface RunStatus {
 }
 
 export const runCommand = new Command('run')
-  .description('Run parallel AI analysis with Gemini + GPT')
+  .description('Run parallel AI analysis with Gemini + Codex')
   .argument('<prompt>', 'The prompt to analyze')
-  .option('--agent <agent>', 'Use specific agent: gemini, gpt, or both', 'both')
+  .option('--agent <agent>', 'Use specific agent: gemini, codex, gpt(legacy), or both', 'both')
   .option('--pro', 'Use pro models for complex tasks', false)
   .option('--json', 'Output as JSON', false)
   .option('--timeout <ms>', 'Timeout in milliseconds', '120000')
@@ -33,7 +33,10 @@ export const runCommand = new Command('run')
 
     // Direct execution mode (existing behavior)
     const authStatus = await checkAuthStatus();
-    const agents = opts.agent === 'both' ? ['gemini', 'gpt'] as const : [opts.agent as 'gemini' | 'gpt'];
+    const normalizedAgent = opts.agent === 'gpt' ? 'codex' : opts.agent;
+    const agents = normalizedAgent === 'both'
+      ? ['gemini', 'codex'] as const
+      : [normalizedAgent as 'gemini' | 'codex'];
 
     for (const agent of agents) {
       if (!authStatus[agent]) {
@@ -54,7 +57,7 @@ export const runCommand = new Command('run')
     try {
       const result = await runParallel({
         prompt,
-        agents: availableAgents as ('gemini' | 'gpt')[],
+        agents: availableAgents as ('gemini' | 'codex')[],
         usePro: opts.pro,
         timeout: parseInt(opts.timeout),
       });
@@ -82,14 +85,15 @@ export const runCommand = new Command('run')
         }
       }
 
-      if (result.gpt) {
+      const codexResult = result.codex ?? result.gpt;
+      if (codexResult) {
         console.log();
-        console.log(chalk.bold.green('⚙️  GPT') + chalk.dim(` (${result.gpt.model}, ${result.gpt.durationMs}ms)`));
+        console.log(chalk.bold.green('⚙️  Codex') + chalk.dim(` (${codexResult.model}, ${codexResult.durationMs}ms)`));
         console.log(chalk.dim('─'.repeat(40)));
-        if (result.gpt.success) {
-          console.log(result.gpt.output);
+        if (codexResult.success) {
+          console.log(codexResult.output);
         } else {
-          console.log(chalk.red(`Error: ${result.gpt.error}`));
+          console.log(chalk.red(`Error: ${codexResult.error}`));
         }
       }
 
@@ -131,7 +135,8 @@ async function runViaGateway(prompt: string, opts: {
     }
   }
 
-  const agents = opts.agent === 'both' ? ['gemini', 'gpt'] : [opts.agent];
+  const normalizedAgent = opts.agent === 'gpt' ? 'codex' : opts.agent;
+  const agents = normalizedAgent === 'both' ? ['gemini', 'codex'] : [normalizedAgent];
 
   const spinner = ora({
     text: `Sending request to gateway...`,
@@ -147,7 +152,7 @@ async function runViaGateway(prompt: string, opts: {
       },
       body: JSON.stringify({
         prompt,
-        agents: agents as ('gemini' | 'gpt')[],
+        agents: agents as ('gemini' | 'codex')[],
         usePro: opts.pro,
         timeout: parseInt(opts.timeout),
       }),

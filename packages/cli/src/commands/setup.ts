@@ -5,8 +5,8 @@ import {
   loadConfig,
   updateConfig,
   getConfigPath,
-  isTelegramConfigured,
 } from '@olympus-dev/gateway';
+import { getCoreModelPrefs, syncModelPrefs, type ModelPrefs } from '../model-sync.js';
 
 function createPrompt() {
   return createInterface({
@@ -91,6 +91,17 @@ export const setupCommand = new Command('setup')
           await setupTelegram(rl, loadConfig());
         } else {
           console.log(chalk.gray('   Telegram 설정 건너뜀\n'));
+        }
+
+        // Step 3: Model setup (optional)
+        console.log(chalk.bold('3. 모델 설정 (선택)'));
+        console.log(chalk.gray('   Gemini/Codex 모델을 설정하고 core + MCP에 동기화합니다.'));
+
+        const setupModels = await ask(rl, '   모델을 설정하시겠습니까? (Y/n): ');
+        if (setupModels.toLowerCase() !== 'n') {
+          await setupModelsWizard(rl);
+        } else {
+          console.log(chalk.gray('   모델 설정 건너뜀\n'));
         }
       }
 
@@ -180,4 +191,34 @@ async function setupTelegram(
   });
 
   console.log(chalk.green('   ✓ Telegram 설정 완료\n'));
+}
+
+async function setupModelsWizard(rl: ReturnType<typeof createPrompt>) {
+  const corePrefs = await getCoreModelPrefs();
+  const current: Required<ModelPrefs> = {
+    geminiFlash: corePrefs.geminiFlash ?? 'gemini-2.5-flash',
+    geminiPro: corePrefs.geminiPro ?? 'gemini-2.5-pro',
+    geminiFallbackFlash: corePrefs.geminiFallbackFlash ?? corePrefs.geminiFlash ?? 'gemini-2.5-flash',
+    geminiFallbackPro: corePrefs.geminiFallbackPro ?? corePrefs.geminiPro ?? 'gemini-2.5-pro',
+    codex: corePrefs.codex ?? 'gpt-4.1',
+  };
+
+  const target: ModelPrefs = {
+    geminiFlash: await askWithDefault(rl, '   Gemini default (flash) 모델', current.geminiFlash),
+    geminiPro: await askWithDefault(rl, '   Gemini pro 모델', current.geminiPro),
+    geminiFallbackFlash: await askWithDefault(
+      rl,
+      '   Gemini fallback default 모델',
+      current.geminiFallbackFlash
+    ),
+    geminiFallbackPro: await askWithDefault(
+      rl,
+      '   Gemini fallback pro 모델',
+      current.geminiFallbackPro
+    ),
+    codex: await askWithDefault(rl, '   Codex 모델', current.codex),
+  };
+
+  await syncModelPrefs(target);
+  console.log(chalk.green('   ✓ 모델 설정 및 동기화 완료\n'));
 }

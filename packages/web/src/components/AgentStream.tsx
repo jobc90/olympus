@@ -13,7 +13,7 @@ const AGENT_CONFIG: Record<string, { name: string; color: string; bgColor: strin
     icon: '💎',
   },
   gpt: {
-    name: 'GPT',
+    name: 'Codex (legacy)',
     color: 'text-green-400',
     bgColor: 'bg-green-400/10',
     icon: '🤖',

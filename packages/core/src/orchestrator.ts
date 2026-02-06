@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentExecutor, AgentResult, MergedResult, OrchestratorOptions, ExecuteOptions } from './types.js';
 import { GeminiExecutor } from './agents/gemini.js';
-import { GptExecutor } from './agents/gpt.js';
+import { CodexExecutor } from './agents/codex.js';
 import { detectAgent } from './agents/router.js';
 import { OlympusBus } from './events.js';
 
 const executors: Record<string, AgentExecutor> = {
   gemini: new GeminiExecutor(),
-  gpt: new GptExecutor(),
+  codex: new CodexExecutor(),
 };
 
 /** Extended options with bus injection and abort signal */
@@ -22,7 +22,8 @@ export async function runParallel(options: RunParallelOptions): Promise<MergedRe
   const bus = options.bus ?? OlympusBus.getInstance();
   const runId = bus.runId ?? randomUUID().slice(0, 8);
   const start = Date.now();
-  const agents = options.agents ?? ['gemini', 'gpt'];
+  const requested = options.agents ?? ['gemini', 'codex'];
+  const agents = requested.map((a) => (a === 'gpt' ? 'codex' : a));
 
   const prompt = options.context
     ? `Context:\n${options.context}\n\nTask:\n${options.prompt}`
@@ -31,7 +32,7 @@ export async function runParallel(options: RunParallelOptions): Promise<MergedRe
   // Check if already aborted
   if (options.signal?.aborted) {
     bus.emitLog('warn', 'Run aborted before start', 'orchestrator');
-    return { gemini: null, gpt: null, durationMs: 0 };
+    return { gemini: null, codex: null, gpt: null, durationMs: 0 };
   }
 
   // Phase 0: Start
@@ -99,6 +100,7 @@ export async function runParallel(options: RunParallelOptions): Promise<MergedRe
 
   const merged: MergedResult = {
     gemini: null,
+    codex: null,
     gpt: null,
     durationMs: Date.now() - start,
   };
@@ -107,12 +109,13 @@ export async function runParallel(options: RunParallelOptions): Promise<MergedRe
     if (result.status === 'fulfilled') {
       const [name, agentResult] = result.value;
       if (name === 'gemini') merged.gemini = agentResult;
-      if (name === 'gpt') merged.gpt = agentResult;
+      if (name === 'codex') merged.codex = agentResult;
     }
   }
+  merged.gpt = merged.codex;
 
   // Phase completion
-  const allSuccess = (merged.gemini?.success ?? true) && (merged.gpt?.success ?? true);
+  const allSuccess = (merged.gemini?.success ?? true) && (merged.codex?.success ?? true);
   bus.emitPhase(0, 'Analysis', allSuccess ? 'completed' : 'failed');
   bus.emitLog('info', `Parallel execution completed in ${merged.durationMs}ms`, 'orchestrator');
 
