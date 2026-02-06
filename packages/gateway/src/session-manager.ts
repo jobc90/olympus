@@ -33,7 +33,7 @@ export interface SessionContextLink {
 
 export interface SessionManagerOptions {
   dataDir?: string;
-  sessionTimeout?: number; // ms, default 1 hour
+  sessionTimeout?: number; // ms, <= 0 means no timeout (default: no timeout)
   onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
 }
 
@@ -126,7 +126,8 @@ export class SessionManager {
     }
 
     this.store = new SessionStore(dataDir);
-    this.sessionTimeout = options.sessionTimeout ?? 60 * 60 * 1000; // 1 hour
+    // Default behavior: no idle timeout. Set a positive value to enable timeout cleanup.
+    this.sessionTimeout = options.sessionTimeout ?? 0;
     this.onSessionEvent = options.onSessionEvent;
     this.workspaceRoot = process.cwd();
 
@@ -528,8 +529,8 @@ export class SessionManager {
 
     for (const session of this.store.getAll()) {
       if (session.status === 'active') {
-        // Check if session timed out
-        if (now - session.lastActivityAt > this.sessionTimeout) {
+        // Optional timeout cleanup. Non-positive values disable timeout.
+        if (this.sessionTimeout > 0 && now - session.lastActivityAt > this.sessionTimeout) {
           this.closeSession(session.id);
           cleaned++;
         }
