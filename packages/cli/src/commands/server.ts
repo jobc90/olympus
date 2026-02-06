@@ -13,6 +13,7 @@ serverCommand
   .option('--telegram', 'Start only the telegram bot')
   .option('-p, --port <port>', 'Gateway port', '18790')
   .option('--web-port <port>', 'Dashboard port', '18791')
+  .option('--skip-update', 'Skip CLI update check')
   .action(async (opts) => {
     const { loadConfig, isTelegramConfigured } = await import('@olympus-dev/gateway');
     const config = loadConfig();
@@ -24,6 +25,11 @@ serverCommand
     const startTelegram = startAll || opts.telegram;
 
     console.log(chalk.cyan.bold('\n⚡ Olympus Server\n'));
+
+    // Update CLI tools (unless skipped)
+    if (!opts.skipUpdate) {
+      await updateCLITools();
+    }
 
     // Show what will be started
     console.log(chalk.white('Starting:'));
@@ -444,5 +450,85 @@ async function connectMainSessionToGateway(
   } catch (err) {
     console.log(chalk.yellow(`   ⚠ Gateway 연결 실패: ${(err as Error).message}`));
   }
+  console.log();
+}
+
+/**
+ * CLI Tools to update
+ */
+const CLI_TOOLS = [
+  { name: 'claude', package: '@anthropic-ai/claude-code', label: 'Claude CLI' },
+  { name: 'gemini', package: '@google/gemini-cli', label: 'Gemini CLI' },
+  { name: 'codex', package: '@openai/codex', label: 'Codex CLI' },
+];
+
+/**
+ * Update CLI tools to latest versions
+ */
+async function updateCLITools(): Promise<void> {
+  const { execSync, spawnSync } = await import('child_process');
+
+  console.log(chalk.white('🔄 CLI 도구 업데이트 확인 중...\n'));
+
+  for (const tool of CLI_TOOLS) {
+    // Check if tool is installed
+    try {
+      execSync(`which ${tool.name}`, { stdio: 'pipe' });
+    } catch {
+      console.log(chalk.gray(`   - ${tool.label}: 설치되지 않음 (건너뜀)`));
+      continue;
+    }
+
+    // Get current version
+    let currentVersion = '';
+    try {
+      currentVersion = execSync(`npm list -g ${tool.package} --depth=0 2>/dev/null | grep ${tool.package} | sed 's/.*@//'`, {
+        encoding: 'utf-8',
+      }).trim();
+    } catch {
+      // Couldn't get version
+    }
+
+    // Get latest version from npm
+    let latestVersion = '';
+    try {
+      latestVersion = execSync(`npm view ${tool.package} version 2>/dev/null`, {
+        encoding: 'utf-8',
+      }).trim();
+    } catch {
+      console.log(chalk.yellow(`   ⚠ ${tool.label}: 버전 확인 실패`));
+      continue;
+    }
+
+    // Compare versions
+    if (currentVersion === latestVersion) {
+      console.log(chalk.green(`   ✓ ${tool.label}: v${currentVersion} (최신)`));
+    } else {
+      console.log(chalk.yellow(`   ↑ ${tool.label}: v${currentVersion || '?'} → v${latestVersion} 업데이트 중...`));
+
+      // Update
+      const result = spawnSync('npm', ['install', '-g', `${tool.package}@latest`], {
+        stdio: 'pipe',
+        shell: true,
+      });
+
+      if (result.status === 0) {
+        console.log(chalk.green(`   ✓ ${tool.label}: v${latestVersion} 업데이트 완료`));
+      } else {
+        // Try with sudo on permission error
+        const sudoResult = spawnSync('sudo', ['npm', 'install', '-g', `${tool.package}@latest`], {
+          stdio: 'inherit',
+          shell: true,
+        });
+
+        if (sudoResult.status === 0) {
+          console.log(chalk.green(`   ✓ ${tool.label}: v${latestVersion} 업데이트 완료`));
+        } else {
+          console.log(chalk.red(`   ✗ ${tool.label}: 업데이트 실패 (수동으로 실행: npm i -g ${tool.package})`));
+        }
+      }
+    }
+  }
+
   console.log();
 }
