@@ -39,9 +39,9 @@ Olympus extends Claude CLI into a practical development operations platform:
 
 1. **Multi-AI Orchestration (AIOS v5.1)**: Claude + Gemini + Codex with Co-Leadership workflow
 2. **Context OS**: hierarchical context management (Workspace → Project → Task)
-3. **Remote Access**: run and control local sessions through Gateway + Telegram
+3. **Remote Access**: run and control local sessions through Gateway + Telegram (with output summarization and anti-spam filtering)
 4. **Stable Sessions**: tmux-backed long-running Claude sessions
-5. **Visibility**: Web dashboard with session and context explorer
+5. **Visibility**: Web dashboard with auto-config, real-time session output, and context explorer
 
 ## Quick Start (60s)
 
@@ -109,7 +109,7 @@ Default behavior is non-invasive: `~/.claude/CLAUDE.md` is not modified unless `
 ```bash
 olympus                 # Launch Claude CLI (wrapper)
 olympus start           # Start Claude in tmux
-olympus server start    # Start Gateway + Dashboard + Telegram
+olympus server start    # Start Gateway + Dashboard + Telegram (Dashboard auto-connects)
 olympus setup           # Setup wizard (gateway/telegram/models)
 olympus models show     # Show runtime model preferences
 ```
@@ -251,6 +251,24 @@ pnpm lint
 ```
 
 ## Troubleshooting
+
+### Dashboard shows "Failed to fetch" or "Cannot connect to Gateway"
+
+When using `olympus server start`, the Dashboard receives Gateway config (host, port, apiKey) automatically via `window.__OLYMPUS_CONFIG__` injection. No manual setup is needed.
+
+If running the Vite dev server separately (port 5173), CORS is allowed by default. For any other port, add it to `packages/gateway/src/cors.ts`.
+
+Always **restart Gateway** after changing Gateway code.
+
+### Telegram bot sends too many notifications
+
+Anti-spam filters are applied at the Gateway level:
+- 2s debounce (waits for output to stabilize)
+- 3s minimum interval between sends
+- 10-char minimum change threshold
+- Noise filtering: user prompt lines (`❯`), status bar (token/cost), spinners, and Claude Code UI elements are stripped
+
+If spam persists, **restart Gateway** to apply the latest filters.
 
 ### tmux scroll in `olympus start`
 

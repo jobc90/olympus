@@ -57,8 +57,8 @@ Olympus는 Claude CLI의 생산성을 극대화하는 **Multi-AI 협업 플랫�
 | MCP 서버 | ai-agents (Multi-AI), openapi (Swagger 연동) |
 | Skills | frontend-ui-ux, git-master, agent-browser 등 |
 | Plugins | claude-dashboard (상태줄, 사용량 표시) |
-| **Telegram 봇** | 핸드폰에서 원격으로 Claude CLI 조작 |
-| **웹 대시보드** | 작업 현황 + 컨텍스트 탐색기 실시간 모니터링 |
+| **Telegram 봇** | 원격 Claude CLI 조작, 출력 요약, 스팸 방지 필터링 |
+| **웹 대시보드** | 자동 연결(설정 불필요), 실시간 세션 출력, 컨텍스트 탐색기 |
 | **tmux 세션 관리** | 안정적인 세션 유지 및 스크롤 지원 |
 | **통합 CLI** | `olympus` 명령어로 모든 기능 접근 |
 
@@ -283,6 +283,8 @@ olympus server stop
 # 서버 상태 확인
 olympus server status
 ```
+
+> **Dashboard 자동 연결**: `olympus server start`로 시작하면 Gateway 주소와 API Key가 Dashboard HTML에 자동 주입됩니다. 별도의 설정 없이 브라우저에서 바로 사용할 수 있습니다.
 
 ### 설정
 
@@ -658,6 +660,28 @@ cd packages/cli && pnpm build && node dist/index.js
 - **Telegram**: Telegraf
 
 ## Troubleshooting
+
+### Dashboard에서 "Failed to fetch" 또는 "Cannot connect to Gateway" 오류
+
+**원인**: Gateway의 CORS 설정에서 Dashboard 포트(18791)가 허용되지 않거나, API Key가 설정되지 않은 경우 발생합니다.
+
+**해결**:
+
+1. `olympus server start`로 서버를 시작하면 Dashboard에 Gateway 설정이 자동 주입됩니다 (수동 설정 불필요)
+2. Vite dev 서버(포트 5173)로 개발 중이라면, CORS는 기본 허용됩니다
+3. Gateway 설정 변경 후에는 반드시 **Gateway를 재시작**해야 합니다
+
+### Telegram 봇에서 알림이 너무 많이 옴
+
+**원인**: tmux 세션에서 직접 타이핑할 때 프롬프트 변경, 상태바 업데이트가 "새 출력"으로 감지되어 Telegram에 전송됩니다.
+
+**현재 스팸 방지 메커니즘**:
+- 출력 안정화 대기: 2초 debounce (출력이 변하지 않을 때까지 대기)
+- 전송 간격 제한: 최소 3초 throttle
+- 최소 변경량: 10자 미만 변경은 무시
+- 노이즈 필터: 사용자 프롬프트(`❯`), 상태바(토큰/비용), 스피너, Claude Code UI 요소 자동 제거
+
+> Gateway 코드를 변경한 경우 **반드시 Gateway를 재시작**해야 필터가 적용됩니다.
 
 ### tmux에서 마우스 휠 스크롤 문제
 

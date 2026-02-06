@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type {
   Context,
   ContextTreeNode,
@@ -38,6 +38,17 @@ async function safeJsonParse(res: Response): Promise<{ message?: string }> {
   }
 }
 
+function friendlyError(e: unknown): string {
+  const msg = (e as Error).message || String(e);
+  if (msg === 'Failed to fetch' || msg.includes('NetworkError') || msg.includes('ERR_CONNECTION_REFUSED')) {
+    return 'Cannot connect to Gateway. Is it running?';
+  }
+  if (msg.includes('API key') || msg.includes('Unauthorized')) {
+    return 'Authentication failed. Check your API Key in Settings.';
+  }
+  return msg;
+}
+
 export function useContextTree(options: UseContextTreeOptions = {}): UseContextTreeReturn {
   const { baseUrl = 'http://localhost:18790', apiKey } = options;
   const [tree, setTree] = useState<ContextTreeNode[]>([]);
@@ -46,64 +57,138 @@ export function useContextTree(options: UseContextTreeOptions = {}): UseContextT
   const [selectedContext, setSelectedContext] = useState<Context | null>(null);
   const [versions, setVersions] = useState<ContextVersionEntry[]>([]);
 
+  // AbortControllers refs
+  const refreshAbortRef = useRef<AbortController | null>(null);
+  const selectAbortRef = useRef<AbortController | null>(null);
+  const versionsAbortRef = useRef<AbortController | null>(null);
+
   const headers: HeadersInit = useMemo(() => ({
     'Content-Type': 'application/json',
     ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
   }), [apiKey]);
 
   const refresh = useCallback(async () => {
+    // Don't fetch if no API key configured
+    if (!apiKey) {
+      setLoading(false);
+      setError('API Key not configured. Open Settings to connect.');
+      return;
+    }
+
+    // Abort previous request if active
+    if (refreshAbortRef.current) {
+      refreshAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    refreshAbortRef.current = controller;
+
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${baseUrl}/api/contexts?format=tree`, { headers });
+      const res = await fetch(`${baseUrl}/api/contexts?format=tree`, {
+        headers,
+        signal: controller.signal
+      });
       if (!res.ok) {
         const err = await safeJsonParse(res);
         throw new Error(err.message || `Failed to fetch contexts: ${res.status}`);
       }
       const data = await res.json();
-      setTree(data.contexts || []);
+      if (!controller.signal.aborted) {
+        setTree(data.contexts || []);
+      }
     } catch (e) {
-      setError((e as Error).message);
+      if ((e as Error).name !== 'AbortError' && !controller.signal.aborted) {
+        setError(friendlyError(e));
+      }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
-  }, [baseUrl, headers]);
+  }, [baseUrl, headers, apiKey]);
 
+  // Initial load and auto-refresh
   useEffect(() => {
     refresh();
+    const interval = setInterval(refresh, 30000); // 30s auto-refresh
+
+    return () => {
+      clearInterval(interval);
+      if (refreshAbortRef.current) {
+        refreshAbortRef.current.abort();
+      }
+      if (selectAbortRef.current) {
+        selectAbortRef.current.abort();
+      }
+      if (versionsAbortRef.current) {
+        versionsAbortRef.current.abort();
+      }
+    };
   }, [refresh]);
 
   const selectContext = useCallback(async (id: string | null) => {
+    if (selectAbortRef.current) {
+      selectAbortRef.current.abort();
+    }
+
     if (!id) {
       setSelectedContext(null);
       setVersions([]);
       return;
     }
+
+    const controller = new AbortController();
+    selectAbortRef.current = controller;
+
     try {
-      const res = await fetch(`${baseUrl}/api/contexts/${id}`, { headers });
+      const res = await fetch(`${baseUrl}/api/contexts/${id}`, { 
+        headers,
+        signal: controller.signal
+      });
       if (res.ok) {
         const data = await res.json();
-        setSelectedContext(data.context);
+        if (!controller.signal.aborted) {
+          setSelectedContext(data.context);
+        }
       } else {
         const err = await safeJsonParse(res);
-        setError(err.message || 'Failed to fetch context');
-        setSelectedContext(null);
+        if (!controller.signal.aborted) {
+          setError(err.message || 'Failed to fetch context');
+          setSelectedContext(null);
+        }
       }
     } catch (e) {
-      setError((e as Error).message);
-      setSelectedContext(null);
+      if ((e as Error).name !== 'AbortError') {
+        setError(friendlyError(e));
+        setSelectedContext(null);
+      }
     }
   }, [baseUrl, headers]);
 
   const fetchVersions = useCallback(async (id: string) => {
+    if (versionsAbortRef.current) {
+      versionsAbortRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    versionsAbortRef.current = controller;
+
     try {
-      const res = await fetch(`${baseUrl}/api/contexts/${id}/versions?limit=50`, { headers });
+      const res = await fetch(`${baseUrl}/api/contexts/${id}/versions?limit=50`, { 
+        headers,
+        signal: controller.signal
+      });
       if (res.ok) {
         const data = await res.json();
-        setVersions(data.versions || []);
+        if (!controller.signal.aborted) {
+          setVersions(data.versions || []);
+        }
       }
     } catch (e) {
-      console.error('Failed to fetch versions:', e);
+      if ((e as Error).name !== 'AbortError') {
+        console.error('Failed to fetch versions:', e);
+      }
     }
   }, [baseUrl, headers]);
 
@@ -134,11 +219,10 @@ export function useContextTree(options: UseContextTreeOptions = {}): UseContextT
     }
     const data = await res.json();
     await refresh();
-    if (selectedContext?.id === id) {
-      setSelectedContext(data.context);
-    }
+    // Only update selected context if it's the one we modified
+    setSelectedContext((prev) => (prev?.id === id ? data.context : prev));
     return data.context;
-  }, [baseUrl, headers, refresh, selectedContext]);
+  }, [baseUrl, headers, refresh]);
 
   const deleteContext = useCallback(async (id: string): Promise<void> => {
     const res = await fetch(`${baseUrl}/api/contexts/${id}`, {
@@ -150,8 +234,8 @@ export function useContextTree(options: UseContextTreeOptions = {}): UseContextT
       throw new Error(err.message || 'Failed to delete context');
     }
     await refresh();
+    setSelectedContext((prev) => (prev?.id === id ? null : prev));
     if (selectedContext?.id === id) {
-      setSelectedContext(null);
       setVersions([]);
     }
   }, [baseUrl, headers, refresh, selectedContext]);

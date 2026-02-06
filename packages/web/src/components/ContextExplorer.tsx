@@ -5,6 +5,8 @@ import type { ContextTreeNode, ContextScope } from '@olympus-dev/protocol';
 
 interface ContextExplorerProps {
   ctx: UseContextTreeReturn;
+  readOnly?: boolean;
+  onSettingsClick?: () => void;
 }
 
 const SCOPE_ICONS: Record<ContextScope, string> = {
@@ -92,7 +94,7 @@ function TreeNode({
   );
 }
 
-function ContextDetail({ ctx }: { ctx: UseContextTreeReturn }) {
+function ContextDetail({ ctx, readOnly }: { ctx: UseContextTreeReturn; readOnly: boolean }) {
   const { selectedContext, versions, updateContext, deleteContext, reportUpstream, fetchVersions } = ctx;
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -210,10 +212,12 @@ function ContextDetail({ ctx }: { ctx: UseContextTreeReturn }) {
           </>
         ) : (
           <>
-            <button className="btn-primary text-xs px-3 py-1" onClick={handleEdit}>
-              Edit
-            </button>
-            {selectedContext.parentId && (
+            {!readOnly && (
+              <button className="btn-primary text-xs px-3 py-1" onClick={handleEdit}>
+                Edit
+              </button>
+            )}
+            {!readOnly && selectedContext.parentId && (
               <button
                 className="text-xs px-3 py-1 border border-border rounded hover:bg-surface-hover transition-colors"
                 onClick={handleReport}
@@ -227,16 +231,18 @@ function ContextDetail({ ctx }: { ctx: UseContextTreeReturn }) {
             >
               {showVersions ? 'Hide Versions' : 'Versions'}
             </button>
-            <button
-              className="text-xs px-3 py-1 text-error hover:text-error/80 transition-colors ml-auto"
-              onClick={() => {
-                if (confirm('Delete this context?')) {
-                  deleteContext(selectedContext.id);
-                }
-              }}
-            >
-              Delete
-            </button>
+            {!readOnly && (
+              <button
+                className="text-xs px-3 py-1 text-error hover:text-error/80 transition-colors ml-auto"
+                onClick={() => {
+                  if (confirm('Delete this context?')) {
+                    deleteContext(selectedContext.id);
+                  }
+                }}
+              >
+                Delete
+              </button>
+            )}
           </>
         )}
       </div>
@@ -273,13 +279,19 @@ function ContextDetail({ ctx }: { ctx: UseContextTreeReturn }) {
   );
 }
 
-export function ContextExplorer({ ctx }: ContextExplorerProps) {
+export function ContextExplorer({ ctx, readOnly = true, onSettingsClick }: ContextExplorerProps) {
   const { tree, loading, error, selectedContext, refresh } = ctx;
   const [showCreate, setShowCreate] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const [newScope, setNewScope] = useState<ContextScope>('project');
   const [newParentId, setNewParentId] = useState('');
   const [newPath, setNewPath] = useState('');
   const [newSummary, setNewSummary] = useState('');
+
+  // Reset edit mode if readOnly becomes true
+  React.useEffect(() => {
+    if (readOnly) setEditMode(false);
+  }, [readOnly]);
 
   const parentCandidates = tree.flatMap((node) => {
     const out: Array<{ id: string; label: string; scope: ContextScope }> = [];
@@ -341,12 +353,45 @@ export function ContextExplorer({ ctx }: ContextExplorerProps) {
                 />
               </svg>
             </button>
-            <button
-              className="text-xs text-primary hover:text-primary/80 transition-colors"
-              onClick={() => setShowCreate(!showCreate)}
-            >
-              + New
-            </button>
+            {!readOnly && (
+              <>
+                <button
+                  className={`text-xs transition-colors ${
+                    editMode ? 'text-primary' : 'text-text-muted hover:text-text'
+                  }`}
+                  onClick={() => setEditMode(!editMode)}
+                  title={editMode ? 'Lock' : 'Unlock for editing'}
+                >
+                  {editMode ? (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"
+                      />
+                    </svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                      />
+                    </svg>
+                  )}
+                </button>
+                {editMode && (
+                  <button
+                    className="text-xs text-primary hover:text-primary/80 transition-colors"
+                    onClick={() => setShowCreate(!showCreate)}
+                  >
+                    + New
+                  </button>
+                )}
+              </>
+            )}
           </div>
         }
       >
@@ -355,11 +400,31 @@ export function ContextExplorer({ ctx }: ContextExplorerProps) {
 
       {/* Error */}
       {error && (
-        <div className="text-xs text-error mb-2 p-2 bg-error/10 rounded">{error}</div>
+        <div className="text-xs text-error mb-2 p-2 bg-error/10 rounded">
+          <div className="flex items-center justify-between gap-2">
+            <span>{error}</span>
+            <div className="flex gap-2">
+              {error.includes('Settings') && onSettingsClick && (
+                <button
+                  className="text-xs text-primary hover:text-primary/80 whitespace-nowrap"
+                  onClick={onSettingsClick}
+                >
+                  Settings
+                </button>
+              )}
+              <button
+                className="text-xs text-primary hover:text-primary/80 whitespace-nowrap"
+                onClick={refresh}
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Create Form */}
-      {showCreate && (
+      {!readOnly && editMode && showCreate && (
         <div className="mb-3 p-2 bg-surface-hover rounded space-y-2">
           <div className="flex gap-2">
             <select
@@ -417,11 +482,15 @@ export function ContextExplorer({ ctx }: ContextExplorerProps) {
 
       {/* Tree View */}
       <div className="mb-3 max-h-64 overflow-y-auto custom-scrollbar">
-        {loading ? (
+        {loading && !error ? (
           <div className="text-center text-text-muted py-4 text-sm">Loading...</div>
+        ) : error && tree.length === 0 ? (
+          <div className="text-center text-text-muted py-4 text-sm px-4">
+            Waiting for Gateway connection...
+          </div>
         ) : tree.length === 0 ? (
-          <div className="text-center text-text-muted py-4 text-sm">
-            No contexts yet. Create one to get started.
+          <div className="text-center text-text-muted py-4 text-sm px-4">
+            No contexts yet. Contexts are auto-created when sessions connect to the Gateway.
           </div>
         ) : (
           tree.map((node) => (
@@ -439,7 +508,7 @@ export function ContextExplorer({ ctx }: ContextExplorerProps) {
       {/* Detail Panel */}
       {selectedContext && (
         <div className="border-t border-border pt-3">
-          <ContextDetail ctx={ctx} />
+          <ContextDetail ctx={ctx} readOnly={readOnly || !editMode} />
         </div>
       )}
     </Card>

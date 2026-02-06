@@ -55,7 +55,11 @@ serverCommand
 
     // Start Dashboard
     if (startDashboard) {
-      dashboard = await startDashboardServer(opts.webPort);
+      dashboard = await startDashboardServer(opts.webPort, {
+        gatewayHost: config.gatewayHost,
+        gatewayPort: config.gatewayPort,
+        apiKey: config.apiKey,
+      });
     }
 
     // Create main Claude CLI session first (before Telegram bot)
@@ -289,7 +293,13 @@ async function startGatewayServer(port: string, config: { gatewayHost: string; a
   return gateway;
 }
 
-async function startDashboardServer(port: string) {
+interface DashboardConfig {
+  gatewayHost: string;
+  gatewayPort: number;
+  apiKey: string;
+}
+
+async function startDashboardServer(port: string, gatewayConfig?: DashboardConfig) {
   const http = await import('node:http');
   const fs = await import('node:fs');
   const path = await import('node:path');
@@ -351,6 +361,20 @@ async function startDashboardServer(port: string) {
         res.end('Not Found');
         return;
       }
+
+      // Inject gateway config into index.html as window.__OLYMPUS_CONFIG__
+      if (ext === '.html' && gatewayConfig) {
+        const configScript = `<script>window.__OLYMPUS_CONFIG__=${JSON.stringify({
+          host: gatewayConfig.gatewayHost,
+          port: gatewayConfig.gatewayPort,
+          apiKey: gatewayConfig.apiKey,
+        })};</script>`;
+        const html = content.toString().replace('</head>', `${configScript}</head>`);
+        res.writeHead(200, { 'Content-Type': contentType });
+        res.end(html);
+        return;
+      }
+
       res.writeHead(200, { 'Content-Type': contentType });
       res.end(content);
     });

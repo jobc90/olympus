@@ -712,44 +712,61 @@ export class SessionManager {
   }
 
   /**
-   * Find new content by comparing outputs
+   * Find new content by comparing outputs.
+   * First filters noise, then diffs to find genuinely new lines.
    */
   private findNewContent(oldOutput: string, newOutput: string): string {
-    const oldLines = oldOutput.split('\n');
-    const newLines = newOutput.split('\n');
+    // Filter BOTH old and new before diffing to prevent noise lines from creating false diffs
+    const oldFiltered = this.filterOutput(oldOutput);
+    const newFiltered = this.filterOutput(newOutput);
 
-    // Simple diff: find lines in new that aren't in old
+    const oldLines = oldFiltered.split('\n');
+    const newLines = newFiltered.split('\n');
+
+    // Diff: find lines in new that aren't in old
     const oldSet = new Set(oldLines);
     const newContent = newLines.filter(line => !oldSet.has(line) && line.trim());
 
-    // Filter out Claude Code banner and noise
-    const filtered = this.filterOutput(newContent.join('\n'));
-    return filtered;
+    return newContent.join('\n').trim();
   }
 
   /**
-   * Filter out Claude Code banner and other noise from output
+   * Filter out Claude Code banner, user typing, status bar, and other noise from output.
+   * Only real Claude AI output should pass through to avoid Telegram spam.
    */
   private filterOutput(content: string): string {
     const lines = content.split('\n');
     const filtered: string[] = [];
 
     for (const line of lines) {
+      const trimmed = line.trim();
+
+      // Skip empty lines
+      if (!trimmed) continue;
+
       // Skip Claude Code banner patterns
       if (line.includes('▐▛███▜▌') || line.includes('▝▜█████▛▘') || line.includes('▘▘ ▝▝')) continue;
       if (line.includes('Claude Code v')) continue;
-      if (line.includes('Opus 4.5 · Claude') || line.includes('Sonnet 4 · Claude')) continue;
+      if (/Opus \d|Sonnet \d|Haiku \d/.test(line) && line.includes('Claude')) continue;
 
-      // Skip horizontal dividers (long lines of ─)
-      if (/^[─━]{20,}$/.test(line.trim())) continue;
+      // Skip horizontal dividers (long lines of ─ or ━)
+      if (/^[─━]{20,}$/.test(trimmed)) continue;
 
       // Skip "Try" suggestions
       if (line.includes('Try "write a test') || line.includes('Try "explain')) continue;
 
-      // Skip empty prompts
-      if (line.trim() === '❯') continue;
+      // Skip user prompt lines (❯ with optional typed text = user is typing)
+      if (/^[\s]*❯/.test(line)) continue;
 
-      // Keep status bar lines (contain 🤖, 📁, 🔷, 💎) - they're useful!
+      // Skip status bar lines (update frequently with token counts, cost, model info)
+      if (line.includes('🤖') || line.includes('📁') || line.includes('🔷') || line.includes('💎')) continue;
+      if (/\d+[kK]?\s*tokens?/i.test(line) && /\$[\d.]+/.test(line)) continue;
+
+      // Skip Claude Code spinner/progress indicators (braille pattern chars)
+      if (/^[\s]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(line)) continue;
+
+      // Skip Claude Code "Thinking..." / "Working..." UI lines
+      if (/^[\s]*(Thinking|Working|Reading|Writing|Searching|Running)\.\.\./i.test(trimmed)) continue;
 
       filtered.push(line);
     }

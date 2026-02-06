@@ -1,10 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 const ALLOWED_ORIGINS = [
-  'http://localhost:5173',   // Vite dev server
+  'http://localhost:5173',     // Vite dev server
   'http://127.0.0.1:5173',
-  'http://localhost:3000',
+  'http://localhost:3000',     // Alternative dev port
   'http://127.0.0.1:3000',
+  'http://localhost:18791',    // Production dashboard
+  'http://127.0.0.1:18791',
 ];
 
 /**
@@ -13,7 +15,6 @@ const ALLOWED_ORIGINS = [
 export function setCorsHeaders(req: IncomingMessage, res: ServerResponse): void {
   const origin = req.headers.origin;
 
-  // Allow requests from allowed origins or same-origin (no origin header)
   if (origin && ALLOWED_ORIGINS.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   } else if (!origin) {

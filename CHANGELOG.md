@@ -9,15 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Dashboard auto-config**: Server injects `window.__OLYMPUS_CONFIG__` (host, port, apiKey) into Dashboard HTML at serve time — no manual Settings input needed
+- **Dashboard TaskList grouping**: Tasks grouped by feature set with collapsible sections and per-group stats
+- **Context Explorer edit mode**: Read-only by default with lock/unlock toggle; Settings button shown on auth errors
+- **Telegram output summarization**: `summarizeOutput()` collapses long code blocks, removes verbose tool-use lines, head+tail truncation
+- **Telegram message queue**: `enqueueSessionMessage()` serializes per-session sends to prevent interleaving
+- **Telegram session display**: `/sessions` command with icons, relative age, short paths (`~/`), and visual hierarchy
 - **Session Output Panel**: New web dashboard component showing real-time Claude CLI session output (`SessionOutputPanel.tsx`)
 - **Session subscription**: `OlympusClient.subscribeSession()`/`unsubscribeSession()` + `onSessionOutput()`/`onSessionError()`/`onSessionClosed()` event handlers
-- **Dashboard session interaction**: Clicking a connected session in SessionList now subscribes and displays live output
-- **Telegram message splitting**: `sendLongMessage()` splits messages exceeding 4000 chars into multiple parts instead of truncating
 
 ### Fixed
 
+- **Dashboard CORS**: Added port 18791 (production Dashboard) to Gateway CORS whitelist — fixes "Failed to fetch" errors
+- **Dashboard Context Explorer**: Added apiKey guard, AbortController for request cancellation, user-friendly error messages
+- **Telegram output spam**: `filterOutput()` now strips user prompt lines (`❯ ...`), status bar lines (token/cost updates), spinner/progress indicators, and Claude Code UI chrome; `findNewContent()` filters both old and new output before diffing to eliminate false positives
 - **Telegram message truncation**: Replaced 3500-char hard truncation with multi-part message delivery
-- **Telegram keystroke spam**: Gateway output polling now enforces 2s debounce, 10-char minimum change filter, and 3s throttle between notifications
 - **Dashboard session clicks**: `TmuxSessionItem` now has click handler and active selection highlight
 - **Dashboard logs empty**: `session:output`/`session:error`/`session:closed` events now populate the Logs panel
 - **Context DB unused**: Session output now auto-updates task context via `ContextService` with `on-threshold` auto-report policy

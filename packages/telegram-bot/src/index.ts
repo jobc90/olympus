@@ -45,6 +45,8 @@ function loadConfig(): BotConfig {
 
 // Telegram message limit (with some margin for safety)
 const TELEGRAM_MSG_LIMIT = 4000;
+// Target summary length for output messages
+const OUTPUT_SUMMARY_LIMIT = 1500;
 
 class OlympusBot {
   private bot: Telegraf;
@@ -57,6 +59,8 @@ class OlympusBot {
   // Multi-session support: chatId -> Map<sessionName, sessionId>
   private chatSessions = new Map<number, Map<string, string>>();
   private activeSession = new Map<number, string>(); // chatId -> current active session name
+  // Per-session message queue to prevent interleaving
+  private sendQueues = new Map<string, Promise<void>>(); // sessionId -> queue chain
 
   constructor(config: BotConfig) {
     this.config = config;
@@ -160,31 +164,37 @@ class OlympusBot {
 
         // Connected sessions
         if (connectedSessions.length > 0) {
-          msg += '📋 *연결된 세션*\n\n';
+          msg += `📋 *연결된 세션* (${connectedSessions.length}개)\n`;
+          msg += '─────────────────\n';
           for (const session of connectedSessions) {
             const rawName = session.name ?? session.tmuxSession;
             const displayName = rawName.replace(/^olympus-/, '');
             const isCurrent = currentDisplayName === displayName;
-            const marker = isCurrent ? '✨ ' : '• ';
-            const current = isCurrent ? ' _(현재)_' : '';
-            msg += `${marker}*${displayName}*${current}\n`;
-            msg += `   경로: \`${session.projectPath}\`\n\n`;
+            const icon = isCurrent ? '✅' : '🔵';
+            const current = isCurrent ? ' ← 현재' : '';
+            const shortPath = session.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
+            const age = this.formatAge(session.createdAt);
+            msg += `${icon} *${displayName}*${current}\n`;
+            msg += `    📂 \`${shortPath}\`\n`;
+            msg += `    ⏱ ${age}\n\n`;
           }
         }
 
         // Available (unconnected) tmux sessions
         if (availableTmux.length > 0) {
-          msg += '🖥️ *연결 가능한 세션* (olympus start로 생성됨)\n\n';
+          msg += `⬜ *미연결 세션* (${availableTmux.length}개)\n`;
+          msg += '─────────────────\n';
           for (const tmux of availableTmux) {
             const displayName = tmux.tmuxSession.replace(/^olympus-/, '');
-            msg += `• *${displayName}*\n`;
-            msg += `   경로: \`${tmux.projectPath}\`\n\n`;
+            const shortPath = tmux.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
+            msg += `⚪ *${displayName}*\n`;
+            msg += `    📂 \`${shortPath}\`\n`;
+            msg += `    → \`/use ${displayName}\`\n\n`;
           }
-          const firstDisplayName = availableTmux[0].tmuxSession.replace(/^olympus-/, '');
-          msg += `💡 \`/use ${firstDisplayName}\`로 연결\n`;
         }
 
-        msg += `\n💡 \`/use 이름\`으로 세션 전환`;
+        msg += '─────────────────\n';
+        msg += '💡 `/use 이름` 세션 전환 | `/close 이름` 종료';
 
         await ctx.reply(msg, { parse_mode: 'Markdown' });
       } catch (err) {
@@ -505,6 +515,16 @@ class OlympusBot {
   /**
    * Get active session name, or first connected session if none active
    */
+  private formatAge(createdAt: number): string {
+    const diff = Date.now() - createdAt;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return '방금 전';
+    if (mins < 60) return `${mins}분 전 시작`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}시간 전 시작`;
+    return `${Math.floor(hours / 24)}일 전 시작`;
+  }
+
   private getActiveSessionName(chatId: number): string | null {
     const activeName = this.activeSession.get(chatId);
     const sessions = this.chatSessions.get(chatId);
@@ -605,9 +625,92 @@ class OlympusBot {
   }
 
   /**
-   * Send a long message to Telegram, splitting into multiple parts if needed
+   * Summarize long output to fit within a reasonable Telegram message length.
+   * Preserves code blocks (first/last 5 lines), removes noise, truncates middle.
    */
-  private async sendLongMessage(chatId: number, text: string): Promise<void> {
+  private summarizeOutput(content: string, limit: number = OUTPUT_SUMMARY_LIMIT): string {
+    if (content.length <= limit) return content;
+
+    const lines = content.split('\n');
+
+    // 1. Remove consecutive blank lines (keep max 1)
+    const deduped: string[] = [];
+    let prevBlank = false;
+    for (const line of lines) {
+      const isBlank = line.trim() === '';
+      if (isBlank && prevBlank) continue;
+      deduped.push(line);
+      prevBlank = isBlank;
+    }
+
+    // 2. Collapse long code blocks (keep first/last 3 lines)
+    const collapsed: string[] = [];
+    let inCodeBlock = false;
+    let codeBlockLines: string[] = [];
+
+    for (const line of deduped) {
+      if (line.trim().startsWith('```') && !inCodeBlock) {
+        inCodeBlock = true;
+        codeBlockLines = [line];
+        continue;
+      }
+      if (inCodeBlock) {
+        codeBlockLines.push(line);
+        if (line.trim().startsWith('```')) {
+          // Code block ended - collapse if too long
+          if (codeBlockLines.length > 8) {
+            collapsed.push(...codeBlockLines.slice(0, 3));
+            collapsed.push(`  ... (${codeBlockLines.length - 6}줄 생략)`);
+            collapsed.push(...codeBlockLines.slice(-3));
+          } else {
+            collapsed.push(...codeBlockLines);
+          }
+          inCodeBlock = false;
+          codeBlockLines = [];
+        }
+        continue;
+      }
+      collapsed.push(line);
+    }
+    // Flush unclosed code block
+    if (codeBlockLines.length > 0) {
+      if (codeBlockLines.length > 8) {
+        collapsed.push(...codeBlockLines.slice(0, 3));
+        collapsed.push(`  ... (${codeBlockLines.length - 6}줄 생략)`);
+        collapsed.push(...codeBlockLines.slice(-3));
+      } else {
+        collapsed.push(...codeBlockLines);
+      }
+    }
+
+    // 3. Filter out verbose patterns (tool use details, repeated status lines)
+    const filtered = collapsed.filter(line => {
+      if (/^(Reading|Searching|Globbing|Grepping)\s/.test(line.trim())) return false;
+      if (/^\s*⎿\s*(Reading|Searching|Found)\s/.test(line)) return false;
+      if (/^Running \d+ \w+ agents/.test(line.trim())) return false;
+      return true;
+    });
+
+    let result = filtered.join('\n');
+
+    // 4. If still too long, keep head + tail
+    if (result.length > limit) {
+      const headBudget = Math.floor(limit * 0.6);
+      const tailBudget = Math.floor(limit * 0.3);
+      const head = result.slice(0, headBudget);
+      const tail = result.slice(-tailBudget);
+      const omitted = result.length - headBudget - tailBudget;
+      result = `${head}\n\n... (${omitted}자 생략) ...\n\n${tail}`;
+    }
+
+    return result;
+  }
+
+  /**
+   * Send a long message to Telegram, splitting into multiple parts if needed.
+   * Each part includes the session prefix for multi-session clarity.
+   */
+  private async sendLongMessage(chatId: number, text: string, sessionPrefix?: string): Promise<void> {
     if (text.length <= TELEGRAM_MSG_LIMIT) {
       await this.bot.telegram.sendMessage(chatId, text);
       return;
@@ -624,6 +727,10 @@ class OlympusBot {
           await this.bot.telegram.sendMessage(chatId, chunk.trimEnd());
           partNum++;
           chunk = '';
+          // Add prefix to continuation parts
+          if (sessionPrefix) {
+            chunk = `${sessionPrefix} (${partNum}부)\n\n`;
+          }
         }
         // Single line exceeds limit - force split
         if (line.length > TELEGRAM_MSG_LIMIT) {
@@ -639,6 +746,24 @@ class OlympusBot {
     if (chunk.trim()) {
       await this.bot.telegram.sendMessage(chatId, chunk.trimEnd());
     }
+  }
+
+  /**
+   * Enqueue a message for a session to prevent interleaving across sessions.
+   * Messages for the same session are sent sequentially.
+   */
+  private enqueueSessionMessage(sessionId: string, chatId: number, text: string, sessionPrefix?: string): void {
+    const prev = this.sendQueues.get(sessionId) ?? Promise.resolve();
+    const next = prev.then(() =>
+      this.sendLongMessage(chatId, text, sessionPrefix).catch(console.error)
+    );
+    this.sendQueues.set(sessionId, next);
+    // Clean up resolved promise to prevent memory leak
+    next.then(() => {
+      if (this.sendQueues.get(sessionId) === next) {
+        this.sendQueues.delete(sessionId);
+      }
+    });
   }
 
   private async sendToClaude(sessionId: string, message: string): Promise<void> {
@@ -773,9 +898,11 @@ class OlympusBot {
               }
             }
           }
-          const prefix = sessionName ? `📩 [${sessionName}] Claude:` : '📩 Claude:';
-          // Send full message, split into parts if needed
-          this.sendLongMessage(chatId, `${prefix}\n\n${content}`).catch(console.error);
+          const displayName = sessionName.replace(/^olympus-/, '') || sessionId.slice(0, 8);
+          const prefix = `📩 [${displayName}]`;
+          // Summarize long output before sending
+          const summarized = this.summarizeOutput(content);
+          this.enqueueSessionMessage(sessionId, chatId, `${prefix}\n\n${summarized}`, prefix);
         }
         break;
       }
@@ -783,7 +910,7 @@ class OlympusBot {
       case 'session:error': {
         const error = (payload as { error?: string }).error;
         if (error) {
-          this.bot.telegram.sendMessage(chatId, `❌ 오류: ${error}`).catch(console.error);
+          this.enqueueSessionMessage(sessionId, chatId, `❌ 오류: ${error}`);
         }
         break;
       }
@@ -812,10 +939,12 @@ class OlympusBot {
           }
         }
         this.subscribedRuns.delete(sessionId);
+        this.sendQueues.delete(sessionId);
 
+        const displayClosed = (closedName || sessionId.slice(0, 8)).replace(/^olympus-/, '');
         this.bot.telegram.sendMessage(
           chatId,
-          `🛑 세션 '${closedName || sessionId.slice(0, 8)}' 종료됨\n\n새 메시지를 보내면 자동으로 새 세션이 생성됩니다.`
+          `🛑 세션 '${displayClosed}' 종료됨`
         ).catch(console.error);
         break;
       }
@@ -824,11 +953,7 @@ class OlympusBot {
       case 'phase:change': {
         const p = payload as PhasePayload;
         if (p.status === 'completed') {
-          this.bot.telegram.sendMessage(
-            chatId,
-            `📍 *Phase ${p.phase} 완료*: ${p.phaseName}`,
-            { parse_mode: 'Markdown' }
-          ).catch(console.error);
+          this.enqueueSessionMessage(sessionId, chatId, `📍 Phase ${p.phase} 완료: ${p.phaseName}`);
         }
         break;
       }
@@ -836,39 +961,27 @@ class OlympusBot {
       case 'agent:complete': {
         const a = payload as AgentPayload;
         const content = a.content ?? '';
-        // Agent results: show summary (first 500 chars) with Markdown
-        const summary = content.length > 500 ? content.slice(0, 500) + '...' : content;
-        this.bot.telegram.sendMessage(
-          chatId,
-          `✅ *${a.agentId}* 완료\n\n${summary}`,
-          { parse_mode: 'Markdown' }
-        ).catch(console.error);
+        // Agent results: show brief summary only
+        const summary = content.length > 200 ? content.slice(0, 200) + '...' : content;
+        this.enqueueSessionMessage(sessionId, chatId, `✅ *${a.agentId}* 완료\n\n${summary}`);
         break;
       }
 
       case 'agent:error': {
         const a = payload as AgentPayload;
-        this.bot.telegram.sendMessage(
-          chatId,
-          `❌ *${a.agentId}* 오류\n\n${a.error}`,
-          { parse_mode: 'Markdown' }
-        ).catch(console.error);
+        this.enqueueSessionMessage(sessionId, chatId, `❌ ${a.agentId} 오류: ${(a.error ?? '').slice(0, 200)}`);
         break;
       }
 
       case 'run:complete': {
-        this.bot.telegram.sendMessage(
-          chatId,
-          `🎉 *작업 완료!*`,
-          { parse_mode: 'Markdown' }
-        ).catch(console.error);
+        this.enqueueSessionMessage(sessionId, chatId, `🎉 작업 완료!`);
         break;
       }
 
       case 'log': {
         const l = payload as LogPayload;
         if (l.level === 'error') {
-          this.bot.telegram.sendMessage(chatId, `⚠️ ${l.message}`).catch(console.error);
+          this.enqueueSessionMessage(sessionId, chatId, `⚠️ ${l.message.slice(0, 300)}`);
         }
         break;
       }

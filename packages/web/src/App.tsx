@@ -13,8 +13,16 @@ import { Card, CardHeader } from './components/Card';
 import { ContextExplorer } from './components/ContextExplorer';
 import { useContextTree } from './hooks/useContextTree';
 
-// Get config from URL params or localStorage
+// Config priority: server-injected > URL params > localStorage > defaults
+// Server injects window.__OLYMPUS_CONFIG__ via <script> tag in index.html
+declare global {
+  interface Window {
+    __OLYMPUS_CONFIG__?: { host: string; port: number; apiKey: string };
+  }
+}
+
 function getConfig() {
+  const injected = window.__OLYMPUS_CONFIG__;
   const params = new URLSearchParams(window.location.search);
   const stored = localStorage.getItem('olympus-config');
 
@@ -23,16 +31,22 @@ function getConfig() {
     try {
       storedConfig = JSON.parse(stored);
     } catch {
-      // Invalid JSON in localStorage, clear it
       localStorage.removeItem('olympus-config');
     }
   }
 
-  return {
-    host: params.get('host') ?? (storedConfig.host as string) ?? '127.0.0.1',
-    port: parseInt(params.get('port') ?? String(storedConfig.port ?? '18790')),
-    apiKey: params.get('apiKey') ?? (storedConfig.apiKey as string) ?? '',
+  const config = {
+    host: injected?.host ?? params.get('host') ?? (storedConfig.host as string) ?? '127.0.0.1',
+    port: injected?.port ?? parseInt(params.get('port') ?? String(storedConfig.port ?? '18790')),
+    apiKey: injected?.apiKey ?? params.get('apiKey') ?? (storedConfig.apiKey as string) ?? '',
   };
+
+  // Persist to localStorage for consistency
+  if (config.apiKey) {
+    localStorage.setItem('olympus-config', JSON.stringify(config));
+  }
+
+  return config;
 }
 
 export default function App() {
@@ -164,7 +178,7 @@ export default function App() {
 
           {/* Right Sidebar: Context + Logs */}
           <aside className="lg:col-span-3 space-y-4">
-            <ContextExplorer ctx={contextTree} />
+            <ContextExplorer ctx={contextTree} onSettingsClick={() => setShowSettings(true)} />
             <LogPanel logs={logs} />
           </aside>
         </div>

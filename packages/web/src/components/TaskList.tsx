@@ -1,9 +1,21 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import type { TaskPayload } from '@olympus-dev/protocol';
 import { Card, CardHeader } from './Card';
 
 interface Props {
   tasks: TaskPayload[];
+}
+
+interface TaskGroup {
+  name: string;
+  tasks: TaskPayload[];
+  stats: {
+    total: number;
+    completed: number;
+    failed: number;
+    in_progress: number;
+    pending: number;
+  };
 }
 
 const STATUS_CONFIG: Record<string, { icon: React.ReactNode; color: string; bgColor: string }> = {
@@ -50,51 +62,159 @@ export function TaskList({ tasks }: Props) {
     return null;
   }
 
-  const completedCount = tasks.filter((t) => t.status === 'completed').length;
-  const progress = Math.round((completedCount / tasks.length) * 100);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  const groups = useMemo(() => {
+    const groupsMap = new Map<string, TaskPayload[]>();
+    
+    tasks.forEach(task => {
+      const key = task.featureSet || 'General';
+      if (!groupsMap.has(key)) groupsMap.set(key, []);
+      groupsMap.get(key)!.push(task);
+    });
+
+    const result: TaskGroup[] = [];
+    groupsMap.forEach((groupTasks, name) => {
+      result.push({
+        name,
+        tasks: groupTasks,
+        stats: {
+          total: groupTasks.length,
+          completed: groupTasks.filter(t => t.status === 'completed').length,
+          failed: groupTasks.filter(t => t.status === 'failed').length,
+          in_progress: groupTasks.filter(t => t.status === 'in_progress').length,
+          pending: groupTasks.filter(t => t.status === 'pending').length,
+        }
+      });
+    });
+
+    // Sort: General last, then alphabetical
+    return result.sort((a, b) => {
+      if (a.name === 'General') return 1;
+      if (b.name === 'General') return -1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [tasks]);
+
+  const toggleGroup = (name: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  const totalTasks = tasks.length;
+  const totalCompleted = tasks.filter((t) => t.status === 'completed').length;
+  const totalFailed = tasks.filter((t) => t.status === 'failed').length;
+  const progress = Math.round((totalCompleted / totalTasks) * 100);
+
+  // Gradient based on failure presence
+  const progressGradient = totalFailed > 0 
+    ? 'from-primary to-error' 
+    : 'from-primary to-success';
 
   return (
     <Card>
       <CardHeader
         action={
           <span className="text-xs text-text-muted">
-            {completedCount}/{tasks.length} ({progress}%)
+            {totalCompleted}/{totalTasks} ({progress}%)
           </span>
         }
       >
         Tasks
       </CardHeader>
 
-      {/* Progress Bar */}
+      {/* Overall Progress Bar */}
       <div className="h-1 bg-surface-hover rounded-full mb-3 overflow-hidden">
         <div
-          className="h-full bg-gradient-to-r from-primary to-success rounded-full transition-all duration-500"
+          className={`h-full bg-gradient-to-r ${progressGradient} rounded-full transition-all duration-500`}
           style={{ width: `${progress}%` }}
         />
       </div>
 
-      {/* Task List */}
-      <div className="space-y-1 max-h-64 overflow-y-auto">
-        {tasks.map((task) => {
-          const config = STATUS_CONFIG[task.status] ?? STATUS_CONFIG.pending;
-
+      {/* Task List Groups */}
+      <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1 custom-scrollbar">
+        {groups.map((group) => {
+          const isCollapsed = collapsedGroups.has(group.name);
+          const groupProgress = Math.round((group.stats.completed / group.stats.total) * 100);
+          const hasInProgress = group.stats.in_progress > 0;
+          
           return (
-            <div
-              key={task.taskId}
-              className={`flex items-center gap-3 p-2 rounded-lg transition-colors ${config.bgColor}`}
-            >
-              <div className="flex-shrink-0">{config.icon}</div>
-
-              <div className="flex-1 min-w-0">
-                <span className={`text-sm ${task.status === 'completed' ? 'text-text-secondary' : 'text-text'}`}>
-                  {task.subject}
+            <div key={group.name} className={`space-y-1 ${hasInProgress ? 'bg-warning/5 rounded-lg p-1' : ''}`}>
+              {/* Group Header */}
+              <button
+                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-surface-hover rounded transition-colors text-left group"
+                onClick={() => toggleGroup(group.name)}
+              >
+                <svg
+                  className={`w-3 h-3 text-text-muted transition-transform ${isCollapsed ? '-rotate-90' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+                
+                <span className="text-sm font-medium text-text-secondary flex-1">
+                  {group.name}
                 </span>
-              </div>
 
-              {task.featureSet && (
-                <span className="flex-shrink-0 text-xs px-1.5 py-0.5 bg-surface-hover rounded text-text-muted">
-                  {task.featureSet}
-                </span>
+                <div className="flex items-center gap-2">
+                  {/* Mini Stats Badges */}
+                  {group.stats.failed > 0 && (
+                    <span className="text-[10px] px-1.5 rounded-full bg-error/10 text-error font-mono">
+                      {group.stats.failed} err
+                    </span>
+                  )}
+                  {group.stats.in_progress > 0 && (
+                    <span className="text-[10px] px-1.5 rounded-full bg-warning/10 text-warning font-mono animate-pulse">
+                      {group.stats.in_progress} run
+                    </span>
+                  )}
+                  
+                  {/* Mini Progress */}
+                  <div className="w-12 h-1 bg-surface-hover rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary/70"
+                      style={{ width: `${groupProgress}%` }}
+                    />
+                  </div>
+                  
+                  <span className="text-xs text-text-muted w-8 text-right">
+                    {group.stats.completed}/{group.stats.total}
+                  </span>
+                </div>
+              </button>
+
+              {/* Tasks */}
+              {!isCollapsed && (
+                <div className="space-y-1 pl-2">
+                  {group.tasks.map((task) => {
+                    const config = STATUS_CONFIG[task.status] ?? STATUS_CONFIG.pending;
+                    const isCompleted = task.status === 'completed';
+
+                    return (
+                      <div
+                        key={task.taskId}
+                        className={`flex items-center gap-3 p-2 rounded-lg transition-colors ${config.bgColor}`}
+                      >
+                        <div className="flex-shrink-0">{config.icon}</div>
+
+                        <div className="flex-1 min-w-0">
+                          <span 
+                            className={`text-sm block truncate ${isCompleted ? 'text-text-muted line-through opacity-70' : 'text-text'}`}
+                            title={task.subject}
+                          >
+                            {task.subject}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           );
