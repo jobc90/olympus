@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "ai-agents": {
+      "command": "node",
+      "args": ["${PWD}/orchestration/mcps/ai-agents/server.js"],
+      "env": {}
+    },
+    "openapi": {
+      "command": "node",
+      "args": ["${PWD}/orchestration/mcps/openapi/server.js"]
+    },
+    "stitch": {
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/stitch-mcp"]
+    }
+  }
+}

@@ -401,22 +401,26 @@ Olympus는 **Multi-AI Orchestration Protocol v5.0 (AIOS)**을 완벽하게 내�
 
 ### MCP 서버 설정
 
-`~/.claude/settings.json`에 자동 추가:
+**로컬 설치** (`--local`): 프로젝트 루트에 `.mcp.json`이 자동 생성됩니다 (Git 커밋 가능):
 
 ```json
 {
   "mcpServers": {
     "ai-agents": {
       "command": "node",
-      "args": ["~/.claude/mcps/ai-agents/server.js"]
+      "args": ["${PWD}/orchestration/mcps/ai-agents/server.js"]
     },
     "openapi": {
       "command": "node",
-      "args": ["~/.claude/mcps/openapi/server.js"]
+      "args": ["${PWD}/orchestration/mcps/openapi/server.js"]
     }
   }
 }
 ```
+
+> `${PWD}`는 Claude Code가 자동으로 현재 프로젝트 경로로 치환합니다. 절대경로 없이 포터블하게 동작합니다.
+
+**전역 설치** (`--global`): `~/.claude/settings.json`에 자동 추가됩니다.
 
 ### 인증 설정 (선택)
 

@@ -321,42 +321,55 @@ if [ "$INSTALL_MODE" = "local" ]; then
         fi
     done
 
-    # settings.local.json 생성 (프로젝트 로컬 MCP 경로)
+    # .mcp.json 생성 (프로젝트 루트 - 포터블 MCP 설정)
+    # ${PWD} 환경변수를 사용하여 절대경로 없이 어디서든 동작
     echo ""
-    step "settings.local.json 생성 중..."
+    step ".mcp.json 생성 중 (포터블 MCP 설정)..."
 
-    LOCAL_SETTINGS_FILE="$PROJECT_CLAUDE_DIR/settings.local.json"
+    MCP_JSON_FILE="$SCRIPT_DIR/.mcp.json"
 
-    cat > "$LOCAL_SETTINGS_FILE" << EOF
+    cat > "$MCP_JSON_FILE" << 'EOF'
 {
   "mcpServers": {
     "ai-agents": {
       "command": "node",
-      "args": ["$SCRIPT_DIR/orchestration/mcps/ai-agents/server.js"],
+      "args": ["${PWD}/orchestration/mcps/ai-agents/server.js"],
       "env": {}
     },
     "openapi": {
       "command": "node",
-      "args": ["$SCRIPT_DIR/orchestration/mcps/openapi/server.js"]
+      "args": ["${PWD}/orchestration/mcps/openapi/server.js"]
     },
     "stitch": {
       "command": "npx",
       "args": ["-y", "@anthropic-ai/stitch-mcp"]
     }
-  },
+  }
+}
+EOF
+    success ".mcp.json 생성 완료 (Git 커밋 가능, 포터블)"
+
+    # .claude/settings.json 생성 (플러그인 설정 - 경로 없음)
+    step ".claude/settings.json 생성 중 (플러그인 설정)..."
+
+    SETTINGS_FILE="$PROJECT_CLAUDE_DIR/settings.json"
+
+    cat > "$SETTINGS_FILE" << 'EOF'
+{
   "enabledPlugins": {
     "postgres-best-practices@supabase-agent-skills": true,
     "vercel-react-best-practices": true
   }
 }
 EOF
-    success "settings.local.json 생성 완료"
+    success ".claude/settings.json 생성 완료"
 
     echo ""
     info "📌 로컬 모드 설정 완료:"
+    info "   • .mcp.json - MCP 서버 설정 (포터블, Git 커밋 가능)"
+    info "   • .claude/settings.json - 플러그인 설정 (Git 커밋 가능)"
     info "   • .claude/commands/orchestration.md - /orchestration 명령어"
     info "   • .claude/skills/ - 번들 스킬"
-    info "   • .claude/settings.local.json - MCP 서버 설정"
     echo ""
     warn "이 프로젝트 디렉토리에서 claude를 실행하면 /orchestration 사용 가능!"
     echo ""
@@ -782,11 +795,12 @@ echo ""
 
 if [ "$INSTALL_MODE" = "local" ]; then
 echo -e "${CYAN}📁 프로젝트 로컬 설정:${NC}"
+echo "   [✔] .mcp.json - MCP 서버 설정 (포터블, Git 커밋 가능)"
+echo "   [✔] .claude/settings.json - 플러그인 설정 (Git 커밋 가능)"
 echo "   [✔] .claude/commands/orchestration.md - /orchestration 명령어"
 echo "   [✔] .claude/skills/ - 번들 스킬 (frontend-ui-ux, git-master, agent-browser)"
-echo "   [✔] .claude/settings.local.json - MCP 서버 설정"
 echo ""
-echo -e "${CYAN}🔌 MCP 서버 (프로젝트 로컬):${NC}"
+echo -e "${CYAN}🔌 MCP 서버 (프로젝트 로컬 - \${PWD} 기반):${NC}"
 echo "   [✔] ai-agents MCP (orchestration/mcps/ai-agents/)"
 echo "   [✔] openapi MCP (orchestration/mcps/openapi/)"
 echo "   [✔] stitch MCP (npx로 자동 실행)"

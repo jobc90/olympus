@@ -34,5 +34,12 @@ coverage/
 *.db
 *.sqlite
 
+# Claude Code - override global gitignore to allow project settings
+!.claude/settings.json
+!CLAUDE.md
+
+# Claude Code local settings (machine-specific, NOT committed)
+.claude/settings.local.json
+
 # Demo files
 !orchestration/plugins/claude-dashboard/demo.gif
