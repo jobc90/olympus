@@ -1,7 +1,7 @@
 <!-- ============================================================
   CLAUDE.global.md - Olympus Multi-AI Orchestration 글로벌 설정 템플릿
   ============================================================
-  이 파일은 install.sh에 의해 ~/.claude/CLAUDE.md로 복사됩니다.
+  이 파일은 install.sh에 의해 ~/.claude/CLAUDE.md로 symlink 연결됩니다.
   Claude Code가 모든 대화에서 자동으로 읽는 글로벌 지침입니다.
 
   포함 내용:
@@ -11,8 +11,7 @@
   - 사용 가능한 Slash Commands & Skills
 
   수정 시 주의:
-  - settings.json 예시의 YOUR_USERNAME을 실제 사용자명으로 변경하세요
-  - install.sh가 자동으로 처리하므로 수동 수정은 보통 불필요합니다
+  - install.sh가 symlink로 자동 연결하므로 수동 수정은 보통 불필요합니다
   ============================================================ -->
 
 # 언어 설정
@@ -823,7 +822,7 @@ Phase 8: 최종 리포트
 {
   "statusLine": {
     "type": "command",
-    "command": "node /Users/YOUR_USERNAME/.claude/plugins/claude-dashboard/dist/index.js"
+    "command": "node /Users/<username>/.claude/plugins/claude-dashboard/dist/index.js"
   },
   "enabledPlugins": {
     "postgres-best-practices@supabase-agent-skills": true,
@@ -833,12 +832,12 @@ Phase 8: 최종 리포트
   "mcpServers": {
     "ai-agents": {
       "command": "node",
-      "args": ["/Users/YOUR_USERNAME/.claude/mcps/ai-agents/server.js"],
+      "args": ["/Users/<username>/.claude/mcps/ai-agents/server.js"],
       "description": "Multi-AI orchestration with Gemini (frontend) and GPT (backend)"
     },
     "openapi": {
       "command": "node",
-      "args": ["/Users/YOUR_USERNAME/.claude/mcps/openapi/server.js"],
+      "args": ["/Users/<username>/.claude/mcps/openapi/server.js"],
       "description": "OpenAPI/Swagger spec loader and API caller"
     },
     "stitch": {

@@ -30,12 +30,12 @@ for arg in "$@"; do
             echo "  --local   프로젝트 로컬 설치 (이 프로젝트에서만 사용)"
             echo "            • CLI 도구만 전역 설치 (claude, olympus)"
             echo "            • MCP 서버는 프로젝트 orchestration/mcps/에 npm install"
-            echo "            • ~/.claude/CLAUDE.md만 전역 설치 (에이전트 정책)"
+            echo "            • ~/.claude/CLAUDE.md는 템플릿 symlink로 연결 (에이전트 정책)"
             echo "            • 플러그인 자동 설치 (Supabase, ui-ux-pro-max)"
             echo ""
             echo "  --global  전역 설치 (모든 프로젝트에서 사용)"
-            echo "            • 모든 것을 ~/.claude/에 복사"
-            echo "            • skills, commands, plugins 전역 설치"
+            echo "            • 주요 리소스를 ~/.claude/에 symlink 연결"
+            echo "            • skills, commands, plugins 전역 연결 (git pull 시 자동 최신화)"
             echo "            • 어디서든 /orchestration 사용 가능"
             echo ""
             echo "  (인자 없음) 대화형으로 선택"
@@ -116,6 +116,21 @@ phase() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 ORCHESTRATION_DIR="$SCRIPT_DIR/orchestration"
+
+# symlink 헬퍼: 기존 파일/디렉토리를 제거하고 symlink 생성
+migrate_to_symlink() {
+    local src="$1"
+    local dest="$2"
+    # 이미 올바른 symlink이면 스킵
+    if [ -L "$dest" ] && [ "$(readlink "$dest")" = "$src" ]; then
+        return 0
+    fi
+    # 기존 파일/디렉토리/symlink 제거
+    if [ -e "$dest" ] || [ -L "$dest" ]; then
+        rm -rf "$dest"
+    fi
+    ln -sf "$src" "$dest"
+}
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Phase 0: 사전 요구사항 확인
@@ -200,10 +215,18 @@ step "Olympus 패키지 빌드 및 설치 중..."
 cd "$SCRIPT_DIR"
 pnpm install
 pnpm build
-cd packages/cli
-npm link 2>/dev/null || sudo npm link
+CLI_BIN="$SCRIPT_DIR/packages/cli/dist/index.js"
+NPM_BIN_DIR="$(npm prefix -g)/bin"
+LOCAL_BIN="$HOME/.local/bin"
+if [ -w "$NPM_BIN_DIR" ]; then
+    ln -sf "$CLI_BIN" "$NPM_BIN_DIR/olympus"
+elif [ -d "$LOCAL_BIN" ] || mkdir -p "$LOCAL_BIN"; then
+    ln -sf "$CLI_BIN" "$LOCAL_BIN/olympus"
+    warn "~/.local/bin에 설치됨. PATH에 추가 필요: export PATH=\"\$HOME/.local/bin:\$PATH\""
+else
+    warn "olympus symlink 생성 실패. 수동 설치 필요."
+fi
 success "Olympus CLI 설치 완료"
-cd "$SCRIPT_DIR"
 
 # Gemini CLI 확인 (Devil's Advocate - FE)
 echo -e "${CYAN}😈 Gemini CLI (Devil's Advocate - Frontend):${NC}"
@@ -253,7 +276,7 @@ if [ "$INSTALL_MODE" = "local" ]; then
     info "로컬 모드: .claude/settings.json이 프로젝트 orchestration/mcps/를 참조합니다."
     info "이 프로젝트 디렉토리에서만 /orchestration이 작동합니다."
 else
-    # ── 전역 모드: ~/.claude/에 복사 후 npm install ──
+    # ── 전역 모드: ~/.claude/에 symlink 연결 후 npm install ──
     mkdir -p "$CLAUDE_DIR/mcps/ai-agents"
     mkdir -p "$CLAUDE_DIR/mcps/openapi"
     mkdir -p "$CLAUDE_DIR/commands"
@@ -266,24 +289,27 @@ else
 
     echo ""
 
-    # ai-agents MCP 설치
-    step "ai-agents MCP 설치 중 (전역)..."
-    cp "$ORCHESTRATION_DIR/mcps/ai-agents/server.js" "$CLAUDE_DIR/mcps/ai-agents/"
-    cp "$ORCHESTRATION_DIR/mcps/ai-agents/package.json" "$CLAUDE_DIR/mcps/ai-agents/"
-    cp "$ORCHESTRATION_DIR/mcps/ai-agents/wisdom.json" "$CLAUDE_DIR/mcps/ai-agents/"
+    # ai-agents MCP 설치 (symlink 기반 — git pull 시 자동 최신화)
+    step "ai-agents MCP 설치 중 (전역, symlink)..."
+    migrate_to_symlink "$ORCHESTRATION_DIR/mcps/ai-agents/server.js" "$CLAUDE_DIR/mcps/ai-agents/server.js"
+    migrate_to_symlink "$ORCHESTRATION_DIR/mcps/ai-agents/package.json" "$CLAUDE_DIR/mcps/ai-agents/package.json"
+    # wisdom.json은 런타임 데이터 → 기존 파일 보존, 없을 때만 복사
+    if [ ! -f "$CLAUDE_DIR/mcps/ai-agents/wisdom.json" ]; then
+        cp "$ORCHESTRATION_DIR/mcps/ai-agents/wisdom.json" "$CLAUDE_DIR/mcps/ai-agents/"
+    fi
     cd "$CLAUDE_DIR/mcps/ai-agents"
     npm install --silent
-    success "ai-agents MCP 설치 완료 (전역: ~/.claude/mcps/ai-agents/)"
+    success "ai-agents MCP 설치 완료 (전역: ~/.claude/mcps/ai-agents/ → symlink)"
 
     echo ""
 
-    # openapi MCP 설치
-    step "openapi MCP 설치 중 (전역)..."
-    cp "$ORCHESTRATION_DIR/mcps/openapi/server.js" "$CLAUDE_DIR/mcps/openapi/"
-    cp "$ORCHESTRATION_DIR/mcps/openapi/package.json" "$CLAUDE_DIR/mcps/openapi/"
+    # openapi MCP 설치 (symlink 기반)
+    step "openapi MCP 설치 중 (전역, symlink)..."
+    migrate_to_symlink "$ORCHESTRATION_DIR/mcps/openapi/server.js" "$CLAUDE_DIR/mcps/openapi/server.js"
+    migrate_to_symlink "$ORCHESTRATION_DIR/mcps/openapi/package.json" "$CLAUDE_DIR/mcps/openapi/package.json"
     cd "$CLAUDE_DIR/mcps/openapi"
     npm install --silent
-    success "openapi MCP 설치 완료 (전역: ~/.claude/mcps/openapi/)"
+    success "openapi MCP 설치 완료 (전역: ~/.claude/mcps/openapi/ → symlink)"
 fi
 
 cd "$SCRIPT_DIR"
@@ -366,20 +392,19 @@ EOF
 EOF
     success ".claude/settings.json 생성 완료"
 
-    # CLAUDE.global.md → ~/.claude/CLAUDE.md 복사 (글로벌 지침)
+    # CLAUDE.global.md → ~/.claude/CLAUDE.md symlink 연결 (글로벌 지침)
     echo ""
-    step "CLAUDE.global.md 글로벌 지침 설치 중..."
+    step "CLAUDE.global.md 글로벌 지침 설치 중 (symlink)..."
     CLAUDE_GLOBAL_TEMPLATE="$ORCHESTRATION_DIR/templates/CLAUDE.global.md"
     if [ -f "$CLAUDE_GLOBAL_TEMPLATE" ]; then
         mkdir -p "$CLAUDE_DIR"
-        if [ -f "$CLAUDE_DIR/CLAUDE.md" ]; then
+        if [ -f "$CLAUDE_DIR/CLAUDE.md" ] && [ ! -L "$CLAUDE_DIR/CLAUDE.md" ]; then
             BACKUP_FILE="$CLAUDE_DIR/CLAUDE.md.backup.$(date +%Y%m%d%H%M%S)"
             cp "$CLAUDE_DIR/CLAUDE.md" "$BACKUP_FILE"
             warn "기존 ~/.claude/CLAUDE.md를 백업했습니다: $BACKUP_FILE"
         fi
-        # YOUR_USERNAME을 실제 사용자명으로 치환
-        sed "s/YOUR_USERNAME/$(whoami)/g" "$CLAUDE_GLOBAL_TEMPLATE" > "$CLAUDE_DIR/CLAUDE.md"
-        success "CLAUDE.global.md → ~/.claude/CLAUDE.md 설치 완료"
+        migrate_to_symlink "$CLAUDE_GLOBAL_TEMPLATE" "$CLAUDE_DIR/CLAUDE.md"
+        success "CLAUDE.global.md → ~/.claude/CLAUDE.md 설치 완료 (symlink)"
     else
         warn "CLAUDE.global.md 템플릿 파일을 찾을 수 없습니다"
     fi
@@ -406,24 +431,24 @@ phase "Phase 3: Commands 설치"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# /orchestration 커맨드 설치
-cp "$ORCHESTRATION_DIR/commands/orchestration.md" "$CLAUDE_DIR/commands/"
-success "/orchestration v5.1 명령어 설치 완료"
+# /orchestration 커맨드 설치 (symlink 기반 — git pull 시 자동 최신화)
+migrate_to_symlink "$ORCHESTRATION_DIR/commands/orchestration.md" "$CLAUDE_DIR/commands/orchestration.md"
+success "/orchestration v5.1 명령어 설치 완료 (symlink)"
 
 echo ""
 
-# CLAUDE.global.md → ~/.claude/CLAUDE.md 글로벌 지침 설치
-step "CLAUDE.global.md 글로벌 지침 설치 중..."
+# CLAUDE.global.md → ~/.claude/CLAUDE.md 글로벌 지침 설치 (symlink 기반)
+step "CLAUDE.global.md 글로벌 지침 설치 중 (symlink)..."
 CLAUDE_GLOBAL_TEMPLATE="$ORCHESTRATION_DIR/templates/CLAUDE.global.md"
 if [ -f "$CLAUDE_GLOBAL_TEMPLATE" ]; then
-    if [ -f "$CLAUDE_DIR/CLAUDE.md" ]; then
+    # 기존 일반 파일이면 백업 후 symlink 전환
+    if [ -f "$CLAUDE_DIR/CLAUDE.md" ] && [ ! -L "$CLAUDE_DIR/CLAUDE.md" ]; then
         BACKUP_FILE="$CLAUDE_DIR/CLAUDE.md.backup.$(date +%Y%m%d%H%M%S)"
         cp "$CLAUDE_DIR/CLAUDE.md" "$BACKUP_FILE"
         warn "기존 ~/.claude/CLAUDE.md를 백업했습니다: $BACKUP_FILE"
     fi
-    # YOUR_USERNAME을 실제 사용자명으로 치환
-    sed "s/YOUR_USERNAME/$(whoami)/g" "$CLAUDE_GLOBAL_TEMPLATE" > "$CLAUDE_DIR/CLAUDE.md"
-    success "CLAUDE.global.md → ~/.claude/CLAUDE.md 설치 완료 (에이전트 정책 + 프로토콜 요약)"
+    migrate_to_symlink "$CLAUDE_GLOBAL_TEMPLATE" "$CLAUDE_DIR/CLAUDE.md"
+    success "CLAUDE.global.md → ~/.claude/CLAUDE.md 설치 완료 (symlink)"
 else
     warn "CLAUDE.global.md 템플릿 파일을 찾을 수 없습니다: $CLAUDE_GLOBAL_TEMPLATE"
 fi
@@ -562,19 +587,17 @@ echo ""
 
 # ── Phase 4.7: 프로젝트 번들 스킬 복사 ──
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-phase "Phase 4.7: 프로젝트 번들 스킬 복사"
+phase "Phase 4.7: 프로젝트 번들 스킬 연결 (symlink)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# 프로젝트에 포함된 스킬들 복사
+# 프로젝트에 포함된 스킬들 symlink 연결 (git pull 시 자동 최신화)
 BUNDLED_SKILLS=("frontend-ui-ux" "git-master" "agent-browser")
 
 for skill in "${BUNDLED_SKILLS[@]}"; do
     if [ -d "$ORCHESTRATION_DIR/skills/$skill" ]; then
-        mkdir -p "$CLAUDE_DIR/skills/$skill"
-        cp -r "$ORCHESTRATION_DIR/skills/$skill/"* "$CLAUDE_DIR/skills/$skill/" 2>/dev/null && \
-            success "$skill 스킬 복사 완료" || \
-            warn "$skill 스킬 복사 실패"
+        migrate_to_symlink "$ORCHESTRATION_DIR/skills/$skill" "$CLAUDE_DIR/skills/$skill"
+        success "$skill 스킬 연결 완료 (symlink)"
     else
         warn "$skill 스킬이 프로젝트에 없습니다"
     fi
@@ -593,18 +616,9 @@ echo ""
 DASHBOARD_DIR="$CLAUDE_DIR/plugins/claude-dashboard"
 DASHBOARD_SRC="$ORCHESTRATION_DIR/plugins/claude-dashboard"
 if [ -d "$DASHBOARD_SRC" ]; then
-    if [ -d "$DASHBOARD_DIR" ]; then
-        step "claude-dashboard 업데이트 중..."
-        cp -r "$DASHBOARD_SRC"/* "$DASHBOARD_DIR"/ 2>/dev/null && \
-            success "claude-dashboard 업데이트 완료" || \
-            warn "claude-dashboard 업데이트 실패"
-    else
-        step "claude-dashboard 설치 중..."
-        mkdir -p "$CLAUDE_DIR/plugins"
-        cp -r "$DASHBOARD_SRC" "$DASHBOARD_DIR" && \
-            success "claude-dashboard 설치 완료" || \
-            warn "claude-dashboard 설치 실패"
-    fi
+    mkdir -p "$CLAUDE_DIR/plugins"
+    migrate_to_symlink "$DASHBOARD_SRC" "$DASHBOARD_DIR"
+    success "claude-dashboard 연결 완료 (symlink)"
 fi
 
 # claude-dashboard 설정 파일 생성
@@ -937,6 +951,11 @@ echo "   [✔] find-skills (스킬 검색 - 필수)"
 echo ""
 echo -e "${CYAN}📊 Dashboard:${NC}"
 echo "   [✔] claude-dashboard (상태줄 플러그인 - Codex/Gemini 사용량 표시)"
+echo ""
+echo -e "${GREEN}🔗 Symlink 기반 설치:${NC}"
+echo "   • git pull만으로 모든 전역 파일이 자동 최신화됩니다"
+echo "   • orchestration.md, CLAUDE.md, MCP 서버, 스킬, 플러그인 모두 symlink"
+echo -e "   ${YELLOW}⚠️  olympus 저장소를 이동한 경우 install.sh를 다시 실행하세요${NC}"
 fi
 
 echo ""
