@@ -168,6 +168,10 @@ export function groupIntoBlocks(lines: ScoredLine[]): DigestBlock[] {
 export function buildDigest(blocks: DigestBlock[], maxLength: number = DEFAULT_DIGEST_CONFIG.maxLength): string {
   if (blocks.length === 0) return '';
 
+  // If no high-signal blocks (score >= 3), give more budget to lower-signal content
+  const hasHighSignal = blocks.some(b => b.maxScore >= 3);
+  const effectiveMaxLength = hasHighSignal ? maxLength : Math.floor(maxLength * 1.5);
+
   // Sort blocks by maxScore descending, then by original order for ties
   const indexed = blocks.map((b, i) => ({ block: b, originalIndex: i }));
   indexed.sort((a, b) => {
@@ -185,7 +189,7 @@ export function buildDigest(blocks: DigestBlock[], maxLength: number = DEFAULT_D
       const prefix = emoji && line === block.lines[0] ? `${emoji} ` : '  ';
       const formatted = `${prefix}${line.text.trim()}`;
 
-      if (totalLength + formatted.length + 1 > maxLength) {
+      if (totalLength + formatted.length + 1 > effectiveMaxLength) {
         // Budget exceeded — stop adding
         break;
       }
@@ -194,7 +198,7 @@ export function buildDigest(blocks: DigestBlock[], maxLength: number = DEFAULT_D
       totalLength += formatted.length + 1; // +1 for newline
     }
 
-    if (totalLength >= maxLength) break;
+    if (totalLength >= effectiveMaxLength) break;
   }
 
   // Re-sort by original order for coherent output

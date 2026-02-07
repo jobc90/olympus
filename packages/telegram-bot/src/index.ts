@@ -922,6 +922,11 @@ class OlympusBot {
 
       // Start ping interval to keep connection alive
       this.startPing();
+
+      // Re-sync sessions from gateway on reconnect to prune stale sessions
+      for (const chatId of this.config.allowedUsers) {
+        this.syncSessionsFromGateway(chatId).catch(() => {});
+      }
     });
 
     this.ws.on('message', (data) => {
@@ -1216,15 +1221,48 @@ class OlympusBot {
       const data = await res.json() as { sessions: Array<{ id: string; name: string; chatId: number; status: string }> };
       const userSessions = data.sessions.filter(s => s.chatId === chatId && s.status === 'active');
 
-      if (userSessions.length === 0) return;
-
-      // Update local state
+      // Get or create sessions map for this chat
       let sessionsMap = this.chatSessions.get(chatId);
       if (!sessionsMap) {
         sessionsMap = new Map();
         this.chatSessions.set(chatId, sessionsMap);
       }
 
+      // If gateway returns no active sessions, clear all local sessions for this chat
+      if (userSessions.length === 0) {
+        // Clean up all local sessions for this chat
+        for (const [name, sessionId] of sessionsMap) {
+          this.subscribedRuns.delete(sessionId);
+          this.digestSessions.get(sessionId)?.destroy();
+          this.digestSessions.delete(sessionId);
+          this.outputHistory.delete(sessionId);
+        }
+        sessionsMap.clear();
+        this.activeSession.delete(chatId);
+        return;
+      }
+
+      // Build set of active session IDs from gateway
+      const activeSessionIds = new Set(userSessions.map(s => s.id));
+
+      // Prune stale sessions (sessions in local state that gateway doesn't have)
+      for (const [name, sessionId] of sessionsMap) {
+        if (!activeSessionIds.has(sessionId)) {
+          // Session no longer active on gateway - remove it
+          sessionsMap.delete(name);
+          this.subscribedRuns.delete(sessionId);
+          this.digestSessions.get(sessionId)?.destroy();
+          this.digestSessions.delete(sessionId);
+          this.outputHistory.delete(sessionId);
+
+          // If this was the active session, clear it
+          if (this.activeSession.get(chatId) === name) {
+            this.activeSession.delete(chatId);
+          }
+        }
+      }
+
+      // Add NEW sessions from gateway that aren't in local state
       for (const session of userSessions) {
         if (!sessionsMap.has(session.name)) {
           sessionsMap.set(session.name, session.id);

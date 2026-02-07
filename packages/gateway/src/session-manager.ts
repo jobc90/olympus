@@ -119,13 +119,16 @@ export class SessionManager {
   private workspaceRoot: string;
   private outputLogDir: string;
   private logOffsets: Map<string, number> = new Map();
+  // Per-session output ring buffer for replay on subscribe (last N outputs)
+  private outputBuffers: Map<string, Array<{ content: string; timestamp: number }>> = new Map();
+  private static readonly OUTPUT_BUFFER_SIZE = 20;
 
   // Minimum interval between output events (ms) - prevents keystroke spam
-  private static readonly OUTPUT_MIN_INTERVAL = 3000;
+  private static readonly OUTPUT_MIN_INTERVAL = 2000;
   // Minimum content change (chars) to trigger notification
-  private static readonly OUTPUT_MIN_CHANGE = 10;
+  private static readonly OUTPUT_MIN_CHANGE = 5;
   // Debounce wait time after output stabilizes (ms)
-  private static readonly OUTPUT_DEBOUNCE_MS = 2000;
+  private static readonly OUTPUT_DEBOUNCE_MS = 1000;
 
   constructor(options: SessionManagerOptions = {}) {
     const dataDir = options.dataDir ?? join(homedir(), '.olympus');
@@ -445,6 +448,7 @@ export class SessionManager {
       this.outputDebounceTimers.delete(sessionId);
     }
     this.lastSentTimestamps.delete(sessionId);
+    this.outputBuffers.delete(sessionId);
 
     // Kill tmux window (not entire session) if alive
     if (session.tmuxWindow && this.isTmuxWindowAlive(session.tmuxSession, session.tmuxWindow)) {
@@ -732,6 +736,7 @@ export class SessionManager {
             // Re-schedule after remaining interval
             const retryTimer = setTimeout(() => {
               this.lastSentTimestamps.set(sessionId, Date.now());
+              this.bufferOutput(sessionId, capturedFiltered);
               this.onSessionEvent?.(sessionId, { type: 'output', content: capturedFiltered });
               this.updateSessionContext(sessionId, capturedFiltered);
               this.outputDebounceTimers.delete(sessionId);
@@ -741,6 +746,7 @@ export class SessionManager {
           }
 
           this.lastSentTimestamps.set(sessionId, Date.now());
+          this.bufferOutput(sessionId, capturedFiltered);
           this.onSessionEvent?.(sessionId, { type: 'output', content: capturedFiltered });
           this.updateSessionContext(sessionId, capturedFiltered);
           this.outputDebounceTimers.delete(sessionId);
@@ -784,6 +790,28 @@ export class SessionManager {
     } catch {
       // Non-fatal: context update failure shouldn't affect session
     }
+  }
+
+  /**
+   * Buffer output for replay on subscribe
+   */
+  private bufferOutput(sessionId: string, content: string): void {
+    let buffer = this.outputBuffers.get(sessionId);
+    if (!buffer) {
+      buffer = [];
+      this.outputBuffers.set(sessionId, buffer);
+    }
+    buffer.push({ content, timestamp: Date.now() });
+    if (buffer.length > SessionManager.OUTPUT_BUFFER_SIZE) {
+      buffer.shift();
+    }
+  }
+
+  /**
+   * Get buffered outputs for a session (for replay on subscribe)
+   */
+  getOutputBuffer(sessionId: string): Array<{ content: string; timestamp: number }> {
+    return this.outputBuffers.get(sessionId) ?? [];
   }
 
   /**
@@ -835,8 +863,8 @@ export class SessionManager {
       // Skip Claude Code spinner/progress indicators (braille pattern chars)
       if (/^[\s]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(line)) continue;
 
-      // Skip Claude Code "Thinking..." / "Working..." UI lines
-      if (/^[\s]*(Thinking|Working|Reading|Writing|Searching|Running)\.\.\./i.test(trimmed)) continue;
+      // Skip Claude Code "Thinking..." / "Working..." UI lines (exact match only, not content starting with these words)
+      if (/^(Thinking|Working|Reading|Writing|Searching|Running)\.\.\.$/i.test(trimmed)) continue;
 
       // Skip consecutive empty lines (but allow single empty lines for formatting)
       if (!trimmed) {

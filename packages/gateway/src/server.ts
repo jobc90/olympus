@@ -213,11 +213,21 @@ export class Gateway {
             return;
           }
 
-          const payload = msg.payload as SubscribePayload & { sessionId?: string };
+          const payload = msg.payload as SubscribePayload;
 
           // Handle session subscription
           if (payload.sessionId) {
             client.subscribedSessions.add(payload.sessionId);
+
+            // Replay buffered output for this session
+            const bufferedOutputs = this.sessionManager.getOutputBuffer(payload.sessionId);
+            for (const entry of bufferedOutputs) {
+              this.send(ws, createMessage('session:output', {
+                sessionId: payload.sessionId,
+                content: entry.content,
+                timestamp: entry.timestamp,
+              }));
+            }
             break;
           }
 
@@ -244,7 +254,7 @@ export class Gateway {
           const client = this.clients.get(clientId);
           if (!client) return;
 
-          const payload = msg.payload as UnsubscribePayload & { sessionId?: string };
+          const payload = msg.payload as UnsubscribePayload;
           if (payload.sessionId) {
             client.subscribedSessions.delete(payload.sessionId);
           }

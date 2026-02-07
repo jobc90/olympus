@@ -29,11 +29,13 @@ export interface CancelPayload {
 }
 
 export interface SubscribePayload {
-  runId: string;  // Subscribe to events for a specific run
+  runId?: string;      // Subscribe to events for a specific run
+  sessionId?: string;  // Subscribe to events for a specific session
 }
 
 export interface UnsubscribePayload {
-  runId: string;  // Unsubscribe from a specific run
+  runId?: string;      // Unsubscribe from a specific run
+  sessionId?: string;  // Unsubscribe from a specific session
 }
 
 export interface PingPayload {}

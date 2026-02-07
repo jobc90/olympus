@@ -84,10 +84,10 @@ export const QUALITY_PATTERNS = [
 
 /** Tool/process noise to filter out */
 export const NOISE_PATTERNS = [
-  /^(Reading|Searching|Globbing|Grepping|Writing)\b/i,  // tool actions (with or without args)
+  /^(Reading|Searching|Globbing|Grepping|Writing)\s+(file|for|in|to|packages?[/.]|src[/.]|\S*\.\w{1,4})/i,  // tool actions with file paths or prepositions
   /^\s*⎿\s*(Reading|Searching|Found|Wrote|Updated)/,
   /^Running \d+ \w+ agents?/i,
-  /^(Thinking|Working|Loading)\.\.\./i,
+  /^(Thinking|Working|Loading|Searching|Globbing|Grepping)\.\.\.$/i,
   /^Using \w+ (tool|agent)/i,
   /^\s*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/,
   /^\s*\.\.\.\s*$/,
