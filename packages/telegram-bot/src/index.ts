@@ -70,6 +70,9 @@ class OlympusBot {
   // Output history buffer per session (last N messages for /last retrieval)
   private outputHistory = new Map<string, string[]>(); // sessionId -> last 10 outputs
   private static readonly OUTPUT_HISTORY_SIZE = 10;
+  // Throttle for sessions:list sync (prevent burst REST calls)
+  private syncThrottleTimer: NodeJS.Timeout | null = null;
+  private syncThrottleMs = 1000;
 
   constructor(config: BotConfig) {
     this.config = config;
@@ -985,6 +988,12 @@ class OlympusBot {
   }
 
   private handleWebSocketMessage(msg: { type: string; payload: unknown }) {
+    // Handle broadcast events (no sessionId) before the sessionId guard
+    if (msg.type === 'sessions:list') {
+      this.throttledSyncAllChats();
+      return;
+    }
+
     const payload = msg.payload as { sessionId?: string; runId?: string };
     const sessionId = payload.sessionId ?? payload.runId;
 
@@ -1213,6 +1222,29 @@ class OlympusBot {
    * Sync ALL active sessions from Gateway for a specific chat.
    * Single-user tool: subscribe to all sessions regardless of chatId ownership.
    */
+  /**
+   * Throttled sync for all known chats — triggered by sessions:list WS broadcast.
+   * Coalesces rapid-fire events into a single sync cycle (1s throttle).
+   */
+  private throttledSyncAllChats(): void {
+    if (this.syncThrottleTimer) return; // Already scheduled
+    this.syncThrottleTimer = setTimeout(() => {
+      this.syncThrottleTimer = null;
+      // Collect all chat IDs: existing sessions + allowed users (for empty-state recovery)
+      const chatIds = new Set<number>([
+        ...this.chatSessions.keys(),
+        ...this.config.allowedUsers,
+      ]);
+      for (const chatId of chatIds) {
+        if (chatId > 0) {
+          this.syncSessionsFromGateway(chatId).catch((err) => {
+            structuredLog('warn', 'telegram', 'sessions:list sync failed', { chatId, error: String(err) });
+          });
+        }
+      }
+    }, this.syncThrottleMs);
+  }
+
   private async syncSessionsFromGateway(chatId: number): Promise<void> {
     try {
       const res = await fetch(`${this.config.gatewayUrl}/api/sessions`, {
