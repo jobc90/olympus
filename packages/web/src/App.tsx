@@ -172,7 +172,7 @@ export default function App() {
                 <AgentStream agentStreams={agentStreams} />
               </>
             ) : currentSessionId && currentSession ? (
-              <SessionOutputPanel session={currentSession} outputs={sessionOutputs} />
+              <SessionOutputPanel session={currentSession} outputs={sessionOutputs.filter(o => o.sessionId === currentSessionId)} />
             ) : (
               <EmptyState config={config} hasRuns={runs.length > 0} hasSessions={sessions.filter(s => s.status === 'active').length > 0} />
             )}

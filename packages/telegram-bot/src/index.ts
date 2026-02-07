@@ -924,7 +924,9 @@ class OlympusBot {
       this.startPing();
 
       // Re-sync sessions from gateway on reconnect to prune stale sessions
-      for (const chatId of this.config.allowedUsers) {
+      // Sync for all known chats + allowedUsers
+      const chatIds = new Set([...this.config.allowedUsers, ...this.chatSessions.keys()]);
+      for (const chatId of chatIds) {
         this.syncSessionsFromGateway(chatId).catch(() => {});
       }
     });
@@ -1178,8 +1180,9 @@ class OlympusBot {
         allowedUsers: this.config.allowedUsers,
       });
 
-      // Sync sessions from Gateway for all allowed users
-      for (const chatId of this.config.allowedUsers) {
+      // Sync sessions from Gateway for all allowed users + known chats
+      const chatIds = new Set([...this.config.allowedUsers, ...this.chatSessions.keys()]);
+      for (const chatId of chatIds) {
         await this.syncSessionsFromGateway(chatId);
       }
 
@@ -1207,8 +1210,8 @@ class OlympusBot {
   }
 
   /**
-   * Sync sessions from Gateway for a specific chat
-   * This ensures local state matches Gateway state
+   * Sync ALL active sessions from Gateway for a specific chat.
+   * Single-user tool: subscribe to all sessions regardless of chatId ownership.
    */
   private async syncSessionsFromGateway(chatId: number): Promise<void> {
     try {
@@ -1219,7 +1222,8 @@ class OlympusBot {
       if (!res.ok) return;
 
       const data = await res.json() as { sessions: Array<{ id: string; name: string; chatId: number; status: string }> };
-      const userSessions = data.sessions.filter(s => s.chatId === chatId && s.status === 'active');
+      // Subscribe to ALL active sessions (not just this chatId — single-user tool)
+      const activeSessions = data.sessions.filter(s => s.status === 'active');
 
       // Get or create sessions map for this chat
       let sessionsMap = this.chatSessions.get(chatId);
@@ -1229,9 +1233,8 @@ class OlympusBot {
       }
 
       // If gateway returns no active sessions, clear all local sessions for this chat
-      if (userSessions.length === 0) {
-        // Clean up all local sessions for this chat
-        for (const [name, sessionId] of sessionsMap) {
+      if (activeSessions.length === 0) {
+        for (const [, sessionId] of sessionsMap) {
           this.subscribedRuns.delete(sessionId);
           this.digestSessions.get(sessionId)?.destroy();
           this.digestSessions.delete(sessionId);
@@ -1243,19 +1246,17 @@ class OlympusBot {
       }
 
       // Build set of active session IDs from gateway
-      const activeSessionIds = new Set(userSessions.map(s => s.id));
+      const activeSessionIds = new Set(activeSessions.map(s => s.id));
 
       // Prune stale sessions (sessions in local state that gateway doesn't have)
       for (const [name, sessionId] of sessionsMap) {
         if (!activeSessionIds.has(sessionId)) {
-          // Session no longer active on gateway - remove it
           sessionsMap.delete(name);
           this.subscribedRuns.delete(sessionId);
           this.digestSessions.get(sessionId)?.destroy();
           this.digestSessions.delete(sessionId);
           this.outputHistory.delete(sessionId);
 
-          // If this was the active session, clear it
           if (this.activeSession.get(chatId) === name) {
             this.activeSession.delete(chatId);
           }
@@ -1263,14 +1264,14 @@ class OlympusBot {
       }
 
       // Add NEW sessions from gateway that aren't in local state
-      for (const session of userSessions) {
+      for (const session of activeSessions) {
         if (!sessionsMap.has(session.name)) {
           sessionsMap.set(session.name, session.id);
 
-          // Subscribe to session events
+          // Subscribe to session events via WebSocket
           this.subscribedRuns.set(session.id, chatId);
-          if (this.ws?.readyState === 1) {
-            this.ws.send(JSON.stringify({ type: 'subscribe', payload: { sessionId: session.id } }));
+          if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify(createMessage('subscribe', { sessionId: session.id })));
           }
         }
       }

@@ -475,9 +475,8 @@ export class SessionManager {
       // Task might already be deleted
     }
 
-    // Update session status
-    session.status = 'closed';
-    this.store.set(session);
+    // Delete session from store (no more accumulating closed records)
+    this.store.delete(sessionId);
 
     // Emit closed event
     this.onSessionEvent?.(sessionId, { type: 'closed' });
@@ -572,7 +571,14 @@ export class SessionManager {
     const now = Date.now();
     let changed = false;
 
-    // 1. Close dead sessions
+    // 1. Purge all closed sessions from store (compaction)
+    const closedSessions = this.store.getAll().filter(s => s.status === 'closed');
+    for (const closed of closedSessions) {
+      this.store.delete(closed.id);
+      changed = true;
+    }
+
+    // 2. Close dead active sessions
     for (const session of this.store.getAll()) {
       if (session.status !== 'active') continue;
 
@@ -590,7 +596,7 @@ export class SessionManager {
       }
     }
 
-    // 2. Auto-register discovered tmux sessions that aren't in the store
+    // 3. Auto-register discovered tmux sessions that aren't in the store
     const discovered = this.discoverTmuxSessions();
     const registeredTmux = new Set(
       this.store.getAll().filter(s => s.status === 'active').map(s => s.tmuxSession)
