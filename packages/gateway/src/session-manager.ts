@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { spawn, execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { execSync, execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { TaskStore, ContextStore, ContextService } from '@olympus-dev/core';
 
 /**
@@ -114,11 +114,11 @@ export class SessionManager {
   private sessionTimeout: number;
   private onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
   private outputPollers: Map<string, NodeJS.Timeout> = new Map();
-  private lastOutputs: Map<string, string> = new Map();        // Last sent output
-  private lastCaptured: Map<string, string> = new Map();       // Last captured output (for change detection)
   private outputDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
   private lastSentTimestamps: Map<string, number> = new Map(); // Anti-spam: last sent time per session
   private workspaceRoot: string;
+  private outputLogDir: string;
+  private logOffsets: Map<string, number> = new Map();
 
   // Minimum interval between output events (ms) - prevents keystroke spam
   private static readonly OUTPUT_MIN_INTERVAL = 3000;
@@ -131,6 +131,11 @@ export class SessionManager {
     const dataDir = options.dataDir ?? join(homedir(), '.olympus');
     if (!existsSync(dataDir)) {
       mkdirSync(dataDir, { recursive: true });
+    }
+
+    this.outputLogDir = join(tmpdir(), 'olympus-logs');
+    if (!existsSync(this.outputLogDir)) {
+      mkdirSync(this.outputLogDir, { recursive: true, mode: 0o700 });
     }
 
     this.store = new SessionStore(dataDir);
@@ -167,7 +172,10 @@ export class SessionManager {
       const sessions: Array<{ tmuxSession: string; projectPath: string }> = [];
       for (const line of output.trim().split('\n')) {
         if (!line) continue;
-        const [sessionName, sessionPath] = line.split(':');
+        const colonIdx = line.indexOf(':');
+        if (colonIdx === -1) continue;
+        const sessionName = line.slice(0, colonIdx);
+        const sessionPath = line.slice(colonIdx + 1);
         if (sessionName.startsWith('olympus-') || sessionName === 'olympus') {
           sessions.push({
             tmuxSession: sessionName,
@@ -223,7 +231,7 @@ export class SessionManager {
     // Get session path from tmux
     let workDir = process.cwd();
     try {
-      workDir = execSync(`tmux display-message -t "${tmuxSession}" -p "#{pane_current_path}"`, {
+      workDir = execFileSync('tmux', ['display-message', '-t', tmuxSession, '-p', '#{pane_current_path}'], {
         encoding: 'utf-8',
       }).trim();
     } catch {
@@ -292,7 +300,7 @@ export class SessionManager {
     // Get claude absolute path
     let claudePath = 'claude';
     try {
-      claudePath = execSync('which claude', { encoding: 'utf-8' }).trim();
+      claudePath = execFileSync('which', ['claude'], { encoding: 'utf-8' }).trim();
     } catch {
       // Fall back to 'claude' if which fails
     }
@@ -313,7 +321,7 @@ export class SessionManager {
 
     try {
       // Create new tmux session with Claude CLI
-      execSync(`tmux new-session -d -s "${tmuxSession}" -c "${workDir}" "${claudePath}"`, {
+      execFileSync('tmux', ['new-session', '-d', '-s', tmuxSession, '-c', workDir, claudePath], {
         stdio: 'pipe',
       });
     } catch (err) {
@@ -408,29 +416,48 @@ export class SessionManager {
       clearInterval(poller);
       this.outputPollers.delete(sessionId);
     }
-    this.lastOutputs.delete(sessionId);
 
-    // Clear debounce timer and cached outputs
+    // Stop pipe-pane
+    const target = this.getTmuxTarget(session);
+    if (this.validateTmuxTarget(target)) {
+      try {
+        execFileSync('tmux', ['pipe-pane', '-t', target], { stdio: 'pipe' });
+      } catch {
+        // Ignore if already stopped
+      }
+    }
+
+    // Clean up log file
+    const logPath = this.getLogPath(sessionId);
+    try {
+      unlinkSync(logPath);
+    } catch {
+      // Ignore if file doesn't exist
+    }
+
+    // Clean up offset
+    this.logOffsets.delete(sessionId);
+
+    // Clear debounce timer
     const debounceTimer = this.outputDebounceTimers.get(sessionId);
     if (debounceTimer) {
       clearTimeout(debounceTimer);
       this.outputDebounceTimers.delete(sessionId);
     }
-    this.lastCaptured.delete(sessionId);
     this.lastSentTimestamps.delete(sessionId);
 
     // Kill tmux window (not entire session) if alive
     if (session.tmuxWindow && this.isTmuxWindowAlive(session.tmuxSession, session.tmuxWindow)) {
       try {
         // Kill just the window, not the entire session
-        execSync(`tmux kill-window -t "${session.tmuxSession}:${session.tmuxWindow}"`, { stdio: 'pipe' });
+        execFileSync('tmux', ['kill-window', '-t', `${session.tmuxSession}:${session.tmuxWindow}`], { stdio: 'pipe' });
       } catch {
         // Ignore if already dead
       }
     } else if (!session.tmuxWindow && this.isTmuxSessionAlive(session.tmuxSession)) {
       // Legacy: kill entire session if no window specified
       try {
-        execSync(`tmux kill-session -t "${session.tmuxSession}"`, { stdio: 'pipe' });
+        execFileSync('tmux', ['kill-session', '-t', session.tmuxSession], { stdio: 'pipe' });
       } catch {
         // Ignore if already dead
       }
@@ -467,12 +494,14 @@ export class SessionManager {
       return false;
     }
 
-    // Sanitize input
-    const sanitized = this.sanitizeInput(input);
-
-    // Send to tmux with -l (literal) flag
     const target = this.getTmuxTarget(session);
-    const success = this.sendKeys(sanitized, target, sessionId);
+    if (!this.validateTmuxTarget(target)) {
+      this.onSessionEvent?.(sessionId, { type: 'error', error: 'Invalid tmux target name' });
+      return false;
+    }
+
+    // No sanitization needed — execFileSync + send-keys -l handles safety
+    const success = this.sendKeys(input, target, sessionId);
 
     if (success) {
       this.store.updateActivity(sessionId);
@@ -486,12 +515,11 @@ export class SessionManager {
    */
   private sendKeys(keys: string, tmuxTarget: string, sessionId?: string): boolean {
     try {
-      // Use -l for literal mode (sends text as-is without interpreting special chars)
-      // Then send Enter separately
-      execSync(`tmux send-keys -t "${tmuxTarget}" -l ${JSON.stringify(keys)}`, {
+      // Use execFileSync to avoid shell interpolation
+      execFileSync('tmux', ['send-keys', '-t', tmuxTarget, '-l', keys], {
         stdio: 'pipe',
       });
-      execSync(`tmux send-keys -t "${tmuxTarget}" Enter`, {
+      execFileSync('tmux', ['send-keys', '-t', tmuxTarget, 'Enter'], {
         stdio: 'pipe',
       });
       return true;
@@ -519,10 +547,10 @@ export class SessionManager {
 
     try {
       const target = this.getTmuxTarget(session);
-      const output = execSync(
-        `tmux capture-pane -t "${target}" -p -S -${lines}`,
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-      );
+      const output = execFileSync('tmux', ['capture-pane', '-t', target, '-p', '-S', `-${lines}`], {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
       return output;
     } catch {
       return null;
@@ -555,15 +583,11 @@ export class SessionManager {
   }
 
   /**
-   * Sanitize input to prevent shell injection
+   * Validate tmux target name
    */
-  private sanitizeInput(input: string): string {
-    // Remove potentially dangerous shell metacharacters
-    // Keep the input mostly intact for Claude to understand
-    return input
-      .replace(/[;|&$`]/g, '') // Remove shell operators
-      .replace(/\$\([^)]*\)/g, '') // Remove command substitution
-      .replace(/`[^`]*`/g, ''); // Remove backtick command substitution
+  private validateTmuxTarget(target: string): boolean {
+    // Allowlist: only alphanumeric, dash, underscore, colon (for session:window)
+    return /^[a-zA-Z0-9_:-]+$/.test(target);
   }
 
   /**
@@ -571,7 +595,7 @@ export class SessionManager {
    */
   private isTmuxSessionAlive(tmuxSession: string): boolean {
     try {
-      execSync(`tmux has-session -t "${tmuxSession}" 2>/dev/null`, { stdio: 'pipe' });
+      execFileSync('tmux', ['has-session', '-t', tmuxSession], { stdio: 'pipe' });
       return true;
     } catch {
       return false;
@@ -584,11 +608,11 @@ export class SessionManager {
   private isTmuxWindowAlive(tmuxSession: string, windowName?: string): boolean {
     if (!windowName) return this.isTmuxSessionAlive(tmuxSession);
     try {
-      execSync(`tmux list-windows -t "${tmuxSession}" -F "#{window_name}" | grep -q "^${windowName}$"`, {
-        stdio: 'pipe',
-        shell: '/bin/bash',
+      const output = execFileSync('tmux', ['list-windows', '-t', tmuxSession, '-F', '#{window_name}'], {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
-      return true;
+      return output.split('\n').some(line => line.trim() === windowName);
     } catch {
       return false;
     }
@@ -605,80 +629,116 @@ export class SessionManager {
   }
 
   /**
-   * Start polling for output changes
+   * Get log file path for a session
+   */
+  private getLogPath(sessionId: string): string {
+    return join(this.outputLogDir, `session-${sessionId}.log`);
+  }
+
+  /**
+   * Start polling for output changes using pipe-pane + file offset
    */
   private startOutputPolling(sessionId: string, _tmuxSession?: string, _tmuxWindow?: string): void {
+    const session = this.store.get(sessionId);
+    if (!session) return;
+
+    const target = this.getTmuxTarget(session);
+    const logPath = this.getLogPath(sessionId);
+
+    // Start pipe-pane to log output to file
+    try {
+      execFileSync('tmux', ['pipe-pane', '-t', target, '-o', `cat >> "${logPath}"`], { stdio: 'pipe' });
+    } catch (err) {
+      this.onSessionEvent?.(sessionId, { type: 'error', error: `Failed to start pipe-pane: ${(err as Error).message}` });
+      return;
+    }
+
     // Poll every 500ms for new output
     const poller = setInterval(() => {
-      const output = this.captureOutput(sessionId, 50);
-      if (output === null) {
-        // Session died
-        this.closeSession(sessionId);
-        return;
-      }
+      try {
+        const stats = statSync(logPath);
+        const fileSize = stats.size;
+        let offset = this.logOffsets.get(sessionId) ?? 0;
 
-      const lastCaptured = this.lastCaptured.get(sessionId) ?? '';
-      const outputChanged = output !== lastCaptured;
+        // If file size < offset, reset offset (resync)
+        if (fileSize < offset) {
+          offset = 0;
+          this.logOffsets.set(sessionId, 0);
+        }
 
-      if (outputChanged) {
-        // Output changed - update last captured and reset debounce timer
-        this.lastCaptured.set(sessionId, output);
+        // If no new content, skip
+        if (fileSize === offset) return;
 
-        // Clear existing debounce timer (output is still changing)
+        // Read only new content from offset (efficient for large files)
+        const bytesToRead = fileSize - offset;
+        const buffer = Buffer.alloc(bytesToRead);
+        const fd = openSync(logPath, 'r');
+        try {
+          readSync(fd, buffer, 0, bytesToRead, offset);
+        } finally {
+          closeSync(fd);
+        }
+        const newContent = buffer.toString('utf-8');
+
+        // Filter noise (don't update offset yet — throttle may defer)
+        const filtered = this.filterOutput(newContent);
+        if (!filtered || !filtered.trim()) {
+          // Only noise — advance offset since we don't need this content
+          this.logOffsets.set(sessionId, fileSize);
+          return;
+        }
+
+        // Anti-spam: skip if change is too small (but still advance offset)
+        if (filtered.trim().length < SessionManager.OUTPUT_MIN_CHANGE) {
+          this.logOffsets.set(sessionId, fileSize);
+          return;
+        }
+
+        // If debounce timer exists, accumulate content (don't send yet)
+        // Clear existing timer so we batch with new content
         const existingTimer = this.outputDebounceTimers.get(sessionId);
         if (existingTimer) {
           clearTimeout(existingTimer);
           this.outputDebounceTimers.delete(sessionId);
         }
-      }
 
-      // If no debounce timer and output differs from last sent, start timer
-      if (!this.outputDebounceTimers.has(sessionId)) {
-        const lastSent = this.lastOutputs.get(sessionId) ?? '';
-        if (output !== lastSent) {
-          // Set debounce timer - wait for output to stabilize
-          const timer = setTimeout(() => {
-            const currentOutput = this.lastCaptured.get(sessionId) ?? '';
-            const lastSentOutput = this.lastOutputs.get(sessionId) ?? '';
+        // Advance offset now — content is buffered in debounce closure
+        this.logOffsets.set(sessionId, fileSize);
 
-            if (currentOutput !== lastSentOutput) {
-              // Find new content
-              const newContent = this.findNewContent(lastSentOutput, currentOutput);
-              if (newContent && newContent.trim()) {
-                // Anti-spam: skip if change is too small (cursor blink, minor redraws)
-                if (newContent.trim().length < SessionManager.OUTPUT_MIN_CHANGE) {
-                  this.outputDebounceTimers.delete(sessionId);
-                  return;
-                }
+        // Set debounce timer — wait for output to stabilize before sending
+        const capturedFiltered = filtered;
+        const timer = setTimeout(() => {
+          // Anti-spam: throttle check at send time
+          const now = Date.now();
+          const lastSentTime = this.lastSentTimestamps.get(sessionId) ?? 0;
+          const elapsed = now - lastSentTime;
 
-                // Anti-spam: throttle - enforce minimum interval between sends
-                const now = Date.now();
-                const lastSentTime = this.lastSentTimestamps.get(sessionId) ?? 0;
-                const elapsed = now - lastSentTime;
+          if (elapsed < SessionManager.OUTPUT_MIN_INTERVAL) {
+            // Re-schedule after remaining interval
+            const retryTimer = setTimeout(() => {
+              this.lastSentTimestamps.set(sessionId, Date.now());
+              this.onSessionEvent?.(sessionId, { type: 'output', content: capturedFiltered });
+              this.updateSessionContext(sessionId, capturedFiltered);
+              this.outputDebounceTimers.delete(sessionId);
+            }, SessionManager.OUTPUT_MIN_INTERVAL - elapsed);
+            this.outputDebounceTimers.set(sessionId, retryTimer);
+            return;
+          }
 
-                if (elapsed < SessionManager.OUTPUT_MIN_INTERVAL) {
-                  // Re-schedule after remaining interval
-                  const retryTimer = setTimeout(() => {
-                    this.outputDebounceTimers.delete(sessionId);
-                  }, SessionManager.OUTPUT_MIN_INTERVAL - elapsed);
-                  this.outputDebounceTimers.set(sessionId, retryTimer);
-                  return;
-                }
+          this.lastSentTimestamps.set(sessionId, Date.now());
+          this.onSessionEvent?.(sessionId, { type: 'output', content: capturedFiltered });
+          this.updateSessionContext(sessionId, capturedFiltered);
+          this.outputDebounceTimers.delete(sessionId);
+        }, SessionManager.OUTPUT_DEBOUNCE_MS);
 
-                this.lastOutputs.set(sessionId, currentOutput);
-                this.lastSentTimestamps.set(sessionId, now);
-                this.onSessionEvent?.(sessionId, { type: 'output', content: newContent });
-
-                // Update session's context with latest output
-                this.updateSessionContext(sessionId, newContent);
-              }
-            }
-
-            this.outputDebounceTimers.delete(sessionId);
-          }, SessionManager.OUTPUT_DEBOUNCE_MS);
-
-          this.outputDebounceTimers.set(sessionId, timer);
+        this.outputDebounceTimers.set(sessionId, timer);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          // Log file doesn't exist yet, ignore
+          return;
         }
+        // Session might have died
+        this.closeSession(sessionId);
       }
     }, 500);
 
@@ -712,37 +772,16 @@ export class SessionManager {
   }
 
   /**
-   * Find new content by comparing outputs.
-   * First filters noise, then diffs to find genuinely new lines.
-   */
-  private findNewContent(oldOutput: string, newOutput: string): string {
-    // Filter BOTH old and new before diffing to prevent noise lines from creating false diffs
-    const oldFiltered = this.filterOutput(oldOutput);
-    const newFiltered = this.filterOutput(newOutput);
-
-    const oldLines = oldFiltered.split('\n');
-    const newLines = newFiltered.split('\n');
-
-    // Diff: find lines in new that aren't in old
-    const oldSet = new Set(oldLines);
-    const newContent = newLines.filter(line => !oldSet.has(line) && line.trim());
-
-    return newContent.join('\n').trim();
-  }
-
-  /**
    * Filter out Claude Code banner, user typing, status bar, and other noise from output.
    * Only real Claude AI output should pass through to avoid Telegram spam.
    */
   private filterOutput(content: string): string {
     const lines = content.split('\n');
     const filtered: string[] = [];
+    let lastLineWasEmpty = false;
 
     for (const line of lines) {
       const trimmed = line.trim();
-
-      // Skip empty lines
-      if (!trimmed) continue;
 
       // Skip Claude Code banner patterns
       if (line.includes('▐▛███▜▌') || line.includes('▝▜█████▛▘') || line.includes('▘▘ ▝▝')) continue;
@@ -767,6 +806,14 @@ export class SessionManager {
 
       // Skip Claude Code "Thinking..." / "Working..." UI lines
       if (/^[\s]*(Thinking|Working|Reading|Writing|Searching|Running)\.\.\./i.test(trimmed)) continue;
+
+      // Skip consecutive empty lines (but allow single empty lines for formatting)
+      if (!trimmed) {
+        if (lastLineWasEmpty) continue;
+        lastLineWasEmpty = true;
+      } else {
+        lastLineWasEmpty = false;
+      }
 
       filtered.push(line);
     }

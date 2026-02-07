@@ -402,11 +402,24 @@ async function startTelegramBot(config: { telegram?: { token: string; allowedUse
   console.log(chalk.cyan('🤖 Telegram 봇 시작 중...'));
 
   try {
-    // Import starts the bot in background
-    import('@olympus-dev/telegram-bot').catch(() => {});
+    // Import and await bot startup with timeout
+    const STARTUP_TIMEOUT = 15000; // 15 seconds max
+    const botModule = await Promise.race([
+      import('@olympus-dev/telegram-bot'),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Bot startup timed out after 15s')), STARTUP_TIMEOUT)
+      ),
+    ]);
 
-    // Wait for bot to initialize
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Check startup result from bot module
+    const startResult = (botModule as { startResult?: { success: boolean; error?: string } }).startResult;
+
+    if (startResult?.success === false) {
+      console.log(chalk.yellow(`   ⚠ Telegram 봇 시작 실패: ${startResult.error ?? '알 수 없는 오류'}`));
+      console.log(chalk.gray('   Gateway는 정상 작동합니다. 봇 없이 계속합니다.'));
+      console.log();
+      return;
+    }
 
     console.log(chalk.green('   ✓ Telegram 봇 연결됨'));
     console.log(chalk.gray(`   허용된 사용자: ${config.telegram.allowedUsers.join(', ')}`));
@@ -415,7 +428,10 @@ async function startTelegramBot(config: { telegram?: { token: string; allowedUse
     await autoConnectMainSessionForUsers(config, config.telegram.allowedUsers);
     console.log();
   } catch (err) {
-    console.log(chalk.red(`   ✗ Telegram 봇 시작 실패: ${(err as Error).message}`));
+    const errMsg = (err as Error).message;
+    const isTimeout = errMsg.includes('timed out');
+    console.log(chalk.yellow(`   ⚠ Telegram 봇 시작 ${isTimeout ? '시간 초과' : '실패'}: ${errMsg}`));
+    console.log(chalk.gray('   Gateway는 정상 작동합니다. 봇 없이 계속합니다.'));
     console.log();
   }
 }

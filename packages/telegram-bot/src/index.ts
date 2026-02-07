@@ -8,6 +8,7 @@ import {
   type AgentPayload,
   type LogPayload,
 } from '@olympus-dev/protocol';
+import { classifyError, structuredLog } from './error-utils.js';
 
 // Configuration
 interface BotConfig {
@@ -61,6 +62,11 @@ class OlympusBot {
   private activeSession = new Map<number, string>(); // chatId -> current active session name
   // Per-session message queue to prevent interleaving
   private sendQueues = new Map<string, Promise<void>>(); // sessionId -> queue chain
+  // Output mode per chat: 'raw' sends full output, 'summary' uses summarizeOutput
+  private outputMode = new Map<number, 'raw' | 'summary'>(); // chatId -> mode (default: raw)
+  // Output history buffer per session (last N messages for /last retrieval)
+  private outputHistory = new Map<string, string[]>(); // sessionId -> last 10 outputs
+  private static readonly OUTPUT_HISTORY_SIZE = 10;
 
   constructor(config: BotConfig) {
     this.config = config;
@@ -83,6 +89,32 @@ class OlympusBot {
         return;
       }
       return next();
+    });
+
+    // Global error handler - catch all unhandled errors in update processing
+    this.bot.catch((err: unknown, ctx: Context) => {
+      const classified = classifyError(err);
+      structuredLog('error', 'telegram-bot', 'unhandled_update_error', {
+        category: classified.category,
+        code: classified.code,
+        message: classified.message,
+        retryable: classified.retryable,
+        chatId: ctx.chat?.id,
+        updateId: ctx.update?.update_id,
+      });
+
+      // Try to notify user (fallback to plain text)
+      const errorMsg = classified.retryable
+        ? '⚠️ 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
+        : '❌ 오류가 발생했습니다. 지속되면 관리자에게 문의하세요.';
+
+      try {
+        ctx.reply(errorMsg).catch(() => {
+          // Even plain text reply failed - give up notifying user
+        });
+      } catch {
+        // ctx might be invalid
+      }
     });
 
     // /start - Welcome message
@@ -403,6 +435,40 @@ class OlympusBot {
       }
     });
 
+    // /raw - Toggle raw output mode
+    this.bot.command('raw', async (ctx) => {
+      const currentMode = this.outputMode.get(ctx.chat.id) ?? 'raw';
+      const newMode = currentMode === 'raw' ? 'summary' : 'raw';
+      this.outputMode.set(ctx.chat.id, newMode);
+      await this.safeReply(ctx, `📋 출력 모드: *${newMode === 'raw' ? '원문 전체' : '요약'}*\n\n${newMode === 'raw' ? '모든 출력을 원문 그대로 전달합니다.' : '긴 출력을 요약하여 전달합니다.'}`, 'Markdown');
+    });
+
+    // /last - Show last output from active session
+    this.bot.command('last', async (ctx) => {
+      const targetName = this.getActiveSessionName(ctx.chat.id);
+      if (!targetName) {
+        await this.safeReply(ctx, '❌ 연결된 세션이 없습니다.', undefined);
+        return;
+      }
+
+      const sessions = this.chatSessions.get(ctx.chat.id);
+      const sessionId = sessions?.get(targetName);
+      if (!sessionId) {
+        await this.safeReply(ctx, '❌ 세션을 찾을 수 없습니다.', undefined);
+        return;
+      }
+
+      const history = this.outputHistory.get(sessionId);
+      if (!history || history.length === 0) {
+        await this.safeReply(ctx, '📭 아직 출력이 없습니다.', undefined);
+        return;
+      }
+
+      const lastOutput = history[history.length - 1];
+      const displayName = targetName.replace(/^olympus-/, '');
+      await this.sendLongMessage(ctx.chat.id, `📋 [${displayName}] 마지막 출력\n\n${lastOutput}`);
+    });
+
     // Handle text messages - send to Claude CLI
     this.bot.on('text', async (ctx) => {
       const text = ctx.message.text;
@@ -510,6 +576,26 @@ class OlympusBot {
         is_personal: true,
       });
     });
+  }
+
+  /**
+   * Safely reply to a Telegram message, falling back to plain text if Markdown fails
+   */
+  private async safeReply(ctx: Context, text: string, parseMode: 'Markdown' | 'HTML' | undefined = 'Markdown'): Promise<void> {
+    try {
+      await ctx.reply(text, parseMode ? { parse_mode: parseMode } : {});
+    } catch {
+      // Markdown parsing failed — retry with plain text
+      try {
+        const plainText = text.replace(/[*_`\[\]()~>#+=|{}.!-]/g, '');
+        await ctx.reply(plainText);
+      } catch (fallbackErr) {
+        structuredLog('error', 'telegram-bot', 'reply_failed', {
+          chatId: ctx.chat?.id,
+          error: (fallbackErr as Error).message,
+        });
+      }
+    }
   }
 
   /**
@@ -884,7 +970,6 @@ class OlympusBot {
 
     switch (msg.type) {
       case 'session:output': {
-        // New output from Claude CLI
         const content = (payload as { content?: string }).content;
         if (content && content.trim()) {
           // Find session name
@@ -900,9 +985,22 @@ class OlympusBot {
           }
           const displayName = sessionName.replace(/^olympus-/, '') || sessionId.slice(0, 8);
           const prefix = `📩 [${displayName}]`;
-          // Summarize long output before sending
-          const summarized = this.summarizeOutput(content);
-          this.enqueueSessionMessage(sessionId, chatId, `${prefix}\n\n${summarized}`, prefix);
+
+          // Store in output history
+          let history = this.outputHistory.get(sessionId);
+          if (!history) {
+            history = [];
+            this.outputHistory.set(sessionId, history);
+          }
+          history.push(content);
+          if (history.length > OlympusBot.OUTPUT_HISTORY_SIZE) {
+            history.shift();
+          }
+
+          // Apply output mode
+          const mode = this.outputMode.get(chatId) ?? 'raw';
+          const output = mode === 'summary' ? this.summarizeOutput(content) : content;
+          this.enqueueSessionMessage(sessionId, chatId, `${prefix}\n\n${output}`, prefix);
         }
         break;
       }
@@ -940,6 +1038,7 @@ class OlympusBot {
         }
         this.subscribedRuns.delete(sessionId);
         this.sendQueues.delete(sessionId);
+        this.outputHistory.delete(sessionId);
 
         const displayClosed = (closedName || sessionId.slice(0, 8)).replace(/^olympus-/, '');
         this.bot.telegram.sendMessage(
@@ -988,7 +1087,23 @@ class OlympusBot {
     }
   }
 
-  async start() {
+  async start(): Promise<{ success: boolean; error?: string }> {
+    // Process-level error handlers
+    process.once('unhandledRejection', (reason) => {
+      structuredLog('error', 'telegram-bot', 'unhandled_rejection', {
+        message: reason instanceof Error ? reason.message : String(reason),
+        stack: reason instanceof Error ? reason.stack : undefined,
+      });
+    });
+
+    process.once('uncaughtException', (err) => {
+      structuredLog('error', 'telegram-bot', 'uncaught_exception', {
+        message: err.message,
+        stack: err.stack,
+      });
+      // Don't exit — let the bot try to recover
+    });
+
     // Connect to Gateway WebSocket
     this.connectWebSocket();
 
@@ -999,19 +1114,29 @@ class OlympusBot {
 
     try {
       await this.bot.launch();
-      console.log('Bot started! Send /start to begin.');
+      structuredLog('info', 'telegram-bot', 'bot_started', {
+        gateway: this.config.gatewayUrl,
+        allowedUsers: this.config.allowedUsers,
+      });
 
       // Sync sessions from Gateway for all allowed users
       for (const chatId of this.config.allowedUsers) {
         await this.syncSessionsFromGateway(chatId);
       }
-    } catch (err) {
-      console.error('Bot launch failed:', err);
-    }
 
-    // Graceful shutdown
-    process.once('SIGINT', () => this.stop('SIGINT'));
-    process.once('SIGTERM', () => this.stop('SIGTERM'));
+      // Graceful shutdown
+      process.once('SIGINT', () => this.stop('SIGINT'));
+      process.once('SIGTERM', () => this.stop('SIGTERM'));
+
+      return { success: true };
+    } catch (err) {
+      const classified = classifyError(err);
+      structuredLog('error', 'telegram-bot', 'bot_launch_failed', {
+        category: classified.category,
+        message: classified.message,
+      });
+      return { success: false, error: classified.message };
+    }
   }
 
   private stop(signal: string) {
@@ -1071,7 +1196,13 @@ class OlympusBot {
   }
 }
 
-// Main
+// Export for programmatic use (CLI startup handshake)
+export { OlympusBot, loadConfig };
+export type { BotConfig };
+
+// Auto-start when imported directly
 const config = loadConfig();
 const bot = new OlympusBot(config);
-await bot.start();
+const startResult = await bot.start();
+
+export { startResult };
