@@ -558,28 +558,43 @@ export class SessionManager {
   }
 
   /**
-   * Cleanup old sessions
+   * Reconcile sessions with actual tmux state.
+   * - Closes sessions whose tmux has died
+   * - Optionally cleans up timed-out sessions
+   * Returns true if any sessions were changed (useful for triggering broadcasts).
    */
-  cleanup(): number {
+  reconcileSessions(): boolean {
     const now = Date.now();
-    let cleaned = 0;
+    let changed = false;
 
     for (const session of this.store.getAll()) {
-      if (session.status === 'active') {
-        // Optional timeout cleanup. Non-positive values disable timeout.
-        if (this.sessionTimeout > 0 && now - session.lastActivityAt > this.sessionTimeout) {
-          this.closeSession(session.id);
-          cleaned++;
-        }
-        // Check if tmux window died
-        else if (!this.isTmuxWindowAlive(session.tmuxSession, session.tmuxWindow)) {
-          this.closeSession(session.id);
-          cleaned++;
-        }
+      if (session.status !== 'active') continue;
+
+      // Optional timeout cleanup
+      if (this.sessionTimeout > 0 && now - session.lastActivityAt > this.sessionTimeout) {
+        this.closeSession(session.id);
+        changed = true;
+        continue;
+      }
+
+      // Check if tmux window/session is still alive
+      if (!this.isTmuxWindowAlive(session.tmuxSession, session.tmuxWindow)) {
+        this.closeSession(session.id);
+        changed = true;
       }
     }
 
-    return cleaned;
+    return changed;
+  }
+
+  /**
+   * Cleanup old sessions (alias for reconcileSessions for backward compat)
+   */
+  cleanup(): number {
+    const before = this.store.getAll().filter(s => s.status === 'active').length;
+    this.reconcileSessions();
+    const after = this.store.getAll().filter(s => s.status === 'active').length;
+    return before - after;
   }
 
   /**

@@ -98,11 +98,28 @@ export class Gateway {
         HEARTBEAT_INTERVAL_MS
       );
 
-      // Session cleanup timer (every 5 minutes)
-      this.sessionCleanupTimer = setInterval(
-        () => this.sessionManager.cleanup(),
-        5 * 60 * 1000
-      );
+      // Session reconcile timer (every 30 seconds)
+      // Detects dead tmux sessions and new CLI-created sessions, broadcasts changes
+      let lastKnownTmux = new Set<string>();
+      this.sessionCleanupTimer = setInterval(() => {
+        const changed = this.sessionManager.reconcileSessions();
+
+        // Also detect newly created tmux sessions (e.g. from `olympus start`)
+        const currentTmux = new Set(
+          this.sessionManager.discoverTmuxSessions().map(s => s.tmuxSession)
+        );
+        const registeredTmux = new Set(
+          this.sessionManager.getAll().filter(s => s.status === 'active').map(s => s.tmuxSession)
+        );
+        // Check if discovered tmux sessions changed since last poll
+        const newDiscovered = [...currentTmux].some(t => !lastKnownTmux.has(t) && !registeredTmux.has(t));
+        const lostDiscovered = [...lastKnownTmux].some(t => !currentTmux.has(t));
+        lastKnownTmux = currentTmux;
+
+        if (changed || newDiscovered || lostDiscovered) {
+          this.broadcastSessionsList();
+        }
+      }, 30_000);
 
       this.httpServer.listen(this.port, this.host, () => {
         resolve({ port: this.port, host: this.host, apiKey: config.apiKey });

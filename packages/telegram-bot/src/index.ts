@@ -170,24 +170,21 @@ class OlympusBot {
     // /sessions - List sessions (both connected and available tmux sessions)
     this.bot.command('sessions', async (ctx) => {
       try {
-        // 1. Get connected sessions
+        // 1. Get all sessions (Gateway reconciles stale ones automatically)
         const sessionsRes = await fetch(`${this.config.gatewayUrl}/api/sessions`, {
           headers: { Authorization: `Bearer ${this.config.apiKey}` },
         });
-        const sessionsData = await sessionsRes.json() as { sessions: Array<{ id: string; name?: string; tmuxSession: string; chatId: number; status: string; projectPath: string; createdAt: number }> };
-        const connectedSessions = sessionsData.sessions.filter(s => s.chatId === ctx.chat.id && s.status === 'active');
+        const sessionsData = await sessionsRes.json() as {
+          sessions: Array<{ id: string; name?: string; tmuxSession: string; chatId: number; status: string; projectPath: string; createdAt: number }>;
+          availableSessions?: Array<{ tmuxSession: string; projectPath: string }>;
+        };
 
-        // 2. Discover available tmux sessions (olympus-*)
-        const discoverRes = await fetch(`${this.config.gatewayUrl}/api/sessions/discover`, {
-          headers: { Authorization: `Bearer ${this.config.apiKey}` },
-        });
-        const discoverData = await discoverRes.json() as { tmuxSessions: Array<{ tmuxSession: string; projectPath: string }> };
+        // All active registered sessions (regardless of chatId)
+        const activeSessions = sessionsData.sessions.filter(s => s.status === 'active');
+        // Available (unregistered) tmux sessions
+        const availableTmux = sessionsData.availableSessions ?? [];
 
-        // 3. Find unconnected tmux sessions
-        const connectedTmux = new Set(connectedSessions.map(s => s.tmuxSession));
-        const availableTmux = discoverData.tmuxSessions.filter(t => !connectedTmux.has(t.tmuxSession));
-
-        if (connectedSessions.length === 0 && availableTmux.length === 0) {
+        if (activeSessions.length === 0 && availableTmux.length === 0) {
           await ctx.reply(
             '📭 활성 세션이 없습니다.\n\n' +
             '💡 터미널에서 `olympus start`로 Claude CLI 세션을 시작하세요.\n' +
@@ -199,27 +196,29 @@ class OlympusBot {
 
         const currentName = this.getActiveSessionName(ctx.chat.id);
         const currentDisplayName = currentName?.replace(/^olympus-/, '');
+        const myChatId = ctx.chat.id;
         let msg = '';
 
-        // Connected sessions
-        if (connectedSessions.length > 0) {
-          msg += `📋 *연결된 세션* (${connectedSessions.length}개)\n`;
+        // Active registered sessions (all, not just this chat)
+        if (activeSessions.length > 0) {
+          msg += `📋 *활성 세션* (${activeSessions.length}개)\n`;
           msg += '─────────────────\n';
-          for (const session of connectedSessions) {
+          for (const session of activeSessions) {
             const rawName = session.name ?? session.tmuxSession;
             const displayName = rawName.replace(/^olympus-/, '');
-            const isCurrent = currentDisplayName === displayName;
-            const icon = isCurrent ? '✅' : '🔵';
-            const current = isCurrent ? ' ← 현재' : '';
+            const isMyChat = session.chatId === myChatId;
+            const isCurrent = isMyChat && currentDisplayName === displayName;
+            const icon = isCurrent ? '✅' : isMyChat ? '🔵' : '⚪';
+            const suffix = isCurrent ? ' ← 현재' : isMyChat ? '' : ' (외부)';
             const shortPath = session.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
             const age = this.formatAge(session.createdAt);
-            msg += `${icon} *${displayName}*${current}\n`;
+            msg += `${icon} *${displayName}*${suffix}\n`;
             msg += `    📂 \`${shortPath}\`\n`;
             msg += `    ⏱ ${age}\n\n`;
           }
         }
 
-        // Available (unconnected) tmux sessions
+        // Available (unregistered) tmux sessions
         if (availableTmux.length > 0) {
           msg += `⬜ *미연결 세션* (${availableTmux.length}개)\n`;
           msg += '─────────────────\n';

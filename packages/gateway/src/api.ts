@@ -292,13 +292,17 @@ export function createApiHandler(options: ApiHandlerOptions) {
 
       // GET /api/sessions - List all sessions (registered + discovered)
       if (path === '/api/sessions' && method === 'GET') {
-        const sessions = sessionManager.getAll();
+        // Reconcile with actual tmux state first (close dead sessions)
+        const changed = sessionManager.reconcileSessions();
+        if (changed) {
+          onSessionsChanged?.();
+        }
+
+        const sessions = sessionManager.getAll().filter(s => s.status === 'active');
         const discovered = sessionManager.discoverTmuxSessions();
 
         // Filter out already-registered tmux sessions from discovered
-        const registeredTmux = new Set(
-          sessions.filter(s => s.status === 'active').map(s => s.tmuxSession)
-        );
+        const registeredTmux = new Set(sessions.map(s => s.tmuxSession));
         const availableSessions = discovered.filter(d => !registeredTmux.has(d.tmuxSession));
 
         sendJson(res, 200, { sessions, availableSessions });
