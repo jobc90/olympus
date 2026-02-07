@@ -49,6 +49,7 @@ export const startCommand = new Command('start')
   .option('-s, --session <name>', 'Tmux session name (auto-generated from project path if not specified)')
   .option('-a, --attach', 'Attach to the session after creation', true)
   .option('--no-attach', 'Do not attach to the session')
+  .option('--trust', 'Run Claude CLI in trust mode (bypass permissions)')
   .action(async (opts) => {
     const projectPath = resolve(opts.project);
 
@@ -86,10 +87,15 @@ export const startCommand = new Command('start')
     }
 
     // Create new session
+    const trustMode = !!opts.trust;
+
     console.log(chalk.white('Starting:'));
     console.log(chalk.green(`  ✓ tmux session: ${sessionName}`));
-    console.log(chalk.green(`  ✓ Claude CLI`));
+    console.log(chalk.green(`  ✓ Claude CLI${trustMode ? ' (trust mode)' : ''}`));
     console.log(chalk.gray(`  ✓ Project: ${projectPath}`));
+    if (trustMode) {
+      console.log(chalk.yellow(`  ⚠ Trust mode: 권한 확인 없이 실행됩니다`));
+    }
     console.log();
 
     try {
@@ -99,8 +105,9 @@ export const startCommand = new Command('start')
       // Create tmux session with claude as the command
       // Use login shell (-l) to ensure proper environment
       // When claude exits, the session will automatically close
+      const claudeArgs = trustMode ? `${claudePath} --dangerously-skip-permissions` : claudePath;
       execSync(
-        `tmux new-session -d -s "${sessionName}" -c "${projectPath}" "${claudePath}"`,
+        `tmux new-session -d -s "${sessionName}" -c "${projectPath}" "${claudeArgs}"`,
         { stdio: 'pipe' }
       );
 
