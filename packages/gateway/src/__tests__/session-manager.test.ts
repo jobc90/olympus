@@ -20,9 +20,15 @@ function stripAnsi(text: string): string {
 /**
  * Replicated filterOutput logic for testing (same as SessionManager.filterOutput)
  * This avoids needing to instantiate SessionManager which requires tmux.
+ * Updated for new Claude CLI output format (⏺ responses, ⎿ tool results, star spinners)
  */
 function filterOutput(content: string): string {
-  const cleaned = stripAnsi(content);
+  // Strip ANSI escape codes and control characters first
+  let cleaned = stripAnsi(content);
+  // eslint-disable-next-line no-control-regex
+  cleaned = cleaned.replace(/[\x00-\x08\x0e-\x1f]/g, '');
+  cleaned = cleaned.replace(/\r/g, '');
+
   const lines = cleaned.split('\n');
   const filtered: string[] = [];
   let lastLineWasEmpty = false;
@@ -30,31 +36,68 @@ function filterOutput(content: string): string {
   for (const line of lines) {
     const trimmed = line.trim();
 
-    // Skip Claude Code banner patterns
+    // === ALLOWLIST (pass immediately) ===
+
+    // Claude response lines (⏺ prefix = AI output or tool call)
+    if (/^\s*⏺/.test(line)) {
+      const responseText = trimmed.replace(/^⏺\s*/, '');
+      if (responseText.length > 0) {
+        filtered.push(responseText);
+        lastLineWasEmpty = false;
+        continue;
+      }
+    }
+
+    // Tool result lines (⎿ prefix)
+    if (/^\s*⎿/.test(line)) {
+      const resultText = trimmed.replace(/^⎿\s*/, '');
+      if (resultText.length > 0) {
+        filtered.push('  ' + resultText);
+        lastLineWasEmpty = false;
+        continue;
+      }
+    }
+
+    // === BLOCKLIST (noise removal) ===
+
+    // Claude Code banner patterns
     if (line.includes('▐▛███▜▌') || line.includes('▝▜█████▛▘') || line.includes('▘▘ ▝▝')) continue;
     if (line.includes('Claude Code v')) continue;
     if (/Opus \d|Sonnet \d|Haiku \d/.test(line) && line.includes('Claude')) continue;
 
-    // Skip horizontal dividers
+    // Horizontal dividers
     if (/^[─━]{20,}$/.test(trimmed)) continue;
 
-    // Skip "Try" suggestions
+    // "Try" suggestions
     if (line.includes('Try "write a test') || line.includes('Try "explain')) continue;
 
-    // Skip user prompt lines
+    // User prompt lines (❯ prefix)
     if (/^[\s]*❯/.test(line)) continue;
 
-    // Skip status bar lines
-    if (line.includes('🤖') || line.includes('📁') || line.includes('🔷') || line.includes('💎')) continue;
+    // New-format status bar (pipe-delimited with emojis)
+    if (/🤖.*│/.test(line) || /📁.*│/.test(line)) continue;
+    if (/🔷.*│/.test(line) || /💎.*│/.test(line)) continue;
+    // Legacy status bar
     if (/\d+[kK]?\s*tokens?/i.test(line) && /\$[\d.]+/.test(line)) continue;
 
-    // Skip spinner/progress indicators
+    // New-format spinner/progress (star/dot chars)
+    if (/^[\s]*[✶✳✢✻✽·]/.test(line)) continue;
+    // Legacy braille spinner
     if (/^[\s]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(line)) continue;
 
-    // Skip transient status lines
-    if (/^[\s]*(Thinking|Working|Reading|Writing|Searching|Running)\.\.\./i.test(trimmed)) continue;
+    // Progress status lines
+    if (/^[\s]*(Thinking|Working|Reading|Writing|Searching|Running|Harmonizing|Schlepping)\.{2,}$/i.test(trimmed)) continue;
 
-    // Consecutive empty line dedup
+    // Permission bypass prompt
+    if (/^[\s]*⏵/.test(line)) continue;
+
+    // Context/compact notification
+    if (/Context left until auto-compact/i.test(line)) continue;
+
+    // Lines that are only box-drawing or block chars
+    if (/^[\s░▒▓█▄▀│├└┘┐┌─━]+$/.test(trimmed)) continue;
+
+    // Consecutive empty lines (keep max 1)
     if (!trimmed) {
       if (lastLineWasEmpty) continue;
       lastLineWasEmpty = true;
@@ -76,7 +119,45 @@ function validateTmuxTarget(target: string): boolean {
 }
 
 describe('filterOutput', () => {
-  it('should keep normal Claude AI output', () => {
+  // === ALLOWLIST tests (⏺ and ⎿) ===
+
+  it('should extract ⏺ response lines (strip prefix)', () => {
+    const input = '⏺ 안녕하세요! 코드를 분석하겠습니다.';
+    const result = filterOutput(input);
+    expect(result).toBe('안녕하세요! 코드를 분석하겠습니다.');
+  });
+
+  it('should extract ⏺ tool call lines', () => {
+    const input = '⏺ Bash(command: "ls -la")';
+    const result = filterOutput(input);
+    expect(result).toBe('Bash(command: "ls -la")');
+  });
+
+  it('should extract ⎿ tool result lines with indent', () => {
+    const input = '  ⎿ total 42\n  ⎿ drwxr-xr-x  5 user staff';
+    const result = filterOutput(input);
+    // trimmed removes leading spaces, then ⎿ is stripped, then '  ' is prepended
+    // But final .trim() removes leading whitespace from the entire result
+    expect(result).toBe('total 42\n  drwxr-xr-x  5 user staff');
+  });
+
+  it('should handle mixed ⏺ response and ⎿ result', () => {
+    const input = '⏺ Read(file_path: "/src/index.ts")\n  ⎿ import express from "express";\n  ⎿ const app = express();';
+    const result = filterOutput(input);
+    expect(result).toBe('Read(file_path: "/src/index.ts")\n  import express from "express";\n  const app = express();');
+  });
+
+  it('should pass through empty ⏺ as plain text (not matched by allowlist)', () => {
+    const input = '⏺\n⏺ Actual content';
+    const result = filterOutput(input);
+    // Bare ⏺ without content doesn't match allowlist (empty responseText)
+    // and doesn't match any blocklist pattern, so it passes through
+    expect(result).toBe('⏺\nActual content');
+  });
+
+  // === BLOCKLIST tests ===
+
+  it('should keep normal plain text output', () => {
     const input = 'Here is the answer to your question.\nThe code looks correct.';
     const result = filterOutput(input);
     expect(result).toBe(input);
@@ -94,19 +175,37 @@ describe('filterOutput', () => {
     expect(result).toBe('Actual output');
   });
 
-  it('should remove spinner lines', () => {
+  it('should remove legacy braille spinner lines', () => {
     const input = '⠋ Loading...\nResult is ready';
     const result = filterOutput(input);
     expect(result).toBe('Result is ready');
   });
 
-  it('should remove status bar lines with emojis', () => {
-    const input = '🤖 Opus 4 | 📁 src/ | 🔷 15k tokens\nActual output';
+  it('should remove new star spinners', () => {
+    const input = '✶ Processing...\n✳ Still working\n✢ Almost done\nResult is ready';
+    const result = filterOutput(input);
+    expect(result).toBe('Result is ready');
+  });
+
+  it('should remove dot spinner', () => {
+    const input = '· Thinking\nResult';
+    const result = filterOutput(input);
+    expect(result).toBe('Result');
+  });
+
+  it('should remove new pipe-delimited status bar', () => {
+    const input = '🤖Opus│████│78%│155K/200K│$14.62\nActual output';
     const result = filterOutput(input);
     expect(result).toBe('Actual output');
   });
 
-  it('should remove token/cost lines', () => {
+  it('should remove status bar with 📁 and │', () => {
+    const input = '📁/Users/jobc/dev/olympus│main\nActual output';
+    const result = filterOutput(input);
+    expect(result).toBe('Actual output');
+  });
+
+  it('should remove legacy status bar with emojis (no pipe)', () => {
     const input = '150k tokens | $0.45\nActual output';
     const result = filterOutput(input);
     expect(result).toBe('Actual output');
@@ -124,8 +223,8 @@ describe('filterOutput', () => {
     expect(result).toBe('Content after divider');
   });
 
-  it('should remove Thinking/Working lines', () => {
-    const input = 'Thinking...\nWorking...\nHere is the result';
+  it('should remove Thinking/Working/Harmonizing lines', () => {
+    const input = 'Thinking...\nWorking...\nHarmonizing...\nHere is the result';
     const result = filterOutput(input);
     expect(result).toBe('Here is the result');
   });
@@ -135,6 +234,26 @@ describe('filterOutput', () => {
     const result = filterOutput(input);
     expect(result).toBe('Actual output');
   });
+
+  it('should remove permission bypass prompts (⏵)', () => {
+    const input = '⏵⏵ bypass permissions on\nActual output';
+    const result = filterOutput(input);
+    expect(result).toBe('Actual output');
+  });
+
+  it('should remove context compact notification', () => {
+    const input = 'Context left until auto-compact: 15%\nActual output';
+    const result = filterOutput(input);
+    expect(result).toBe('Actual output');
+  });
+
+  it('should remove box-drawing only lines', () => {
+    const input = '│├└┘┐┌─━\nContent';
+    const result = filterOutput(input);
+    expect(result).toBe('Content');
+  });
+
+  // === Format/cleanup tests ===
 
   it('should preserve code blocks', () => {
     const input = '```typescript\nfunction foo() {\n  return 42;\n}\n```';
@@ -159,8 +278,20 @@ describe('filterOutput', () => {
   });
 
   it('should handle input that is all noise', () => {
-    const input = '⠋ Loading...\n❯ command\n🤖 status bar';
+    const input = '⠋ Loading...\n❯ command\n🤖Opus│status│bar';
     expect(filterOutput(input)).toBe('');
+  });
+
+  it('should strip control characters', () => {
+    const input = 'Hello\x01\x02World';
+    const result = filterOutput(input);
+    expect(result).toBe('HelloWorld');
+  });
+
+  it('should strip \\r carriage returns', () => {
+    const input = 'Line 1\r\nLine 2';
+    const result = filterOutput(input);
+    expect(result).toBe('Line 1\nLine 2');
   });
 
   it('should preserve lines with special characters in content', () => {
@@ -181,10 +312,31 @@ describe('filterOutput', () => {
     expect(result).toBe('Colored output');
   });
 
-  it('should strip multiple ANSI sequences in one line', () => {
-    const input = '\x1b[1m\x1b[31mBold Red\x1b[0m \x1b[32mGreen\x1b[0m';
+  // === Real-world integration test ===
+
+  it('should correctly process a real Claude CLI session', () => {
+    const input = [
+      '  ✶ Thinking...',
+      '🤖Opus│████│78%│155K/200K│$14.62',
+      '⏺ 분석 결과를 알려드리겠습니다.',
+      '',
+      '⏺ Read(file_path: "/src/index.ts")',
+      '  ⎿ import express from "express";',
+      '  ⎿ const app = express();',
+      '',
+      '⏺ 코드가 정상적으로 작동합니다.',
+      '❯ ',
+    ].join('\n');
     const result = filterOutput(input);
-    expect(result).toBe('Bold Red Green');
+    expect(result).toBe([
+      '분석 결과를 알려드리겠습니다.',
+      '',
+      'Read(file_path: "/src/index.ts")',
+      '  import express from "express";',
+      '  const app = express();',
+      '',
+      '코드가 정상적으로 작동합니다.',
+    ].join('\n'));
   });
 });
 

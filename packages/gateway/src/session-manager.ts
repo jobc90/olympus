@@ -867,12 +867,17 @@ export class SessionManager {
   }
 
   /**
-   * Filter out Claude Code banner, user typing, status bar, and other noise from output.
-   * Only real Claude AI output should pass through to avoid Telegram spam.
+   * Filter out Claude Code UI noise from output.
+   * Uses allowlist-first approach: known Claude response markers pass immediately,
+   * then blocklist removes known noise patterns.
    */
   private filterOutput(content: string): string {
-    // Strip ANSI escape codes first
-    const cleaned = this.stripAnsi(content);
+    // Strip ANSI escape codes and control characters first
+    let cleaned = this.stripAnsi(content);
+    // eslint-disable-next-line no-control-regex
+    cleaned = cleaned.replace(/[\x00-\x08\x0e-\x1f]/g, '');
+    cleaned = cleaned.replace(/\r/g, '');
+
     const lines = cleaned.split('\n');
     const filtered: string[] = [];
     let lastLineWasEmpty = false;
@@ -880,31 +885,69 @@ export class SessionManager {
     for (const line of lines) {
       const trimmed = line.trim();
 
-      // Skip Claude Code banner patterns
+      // === ALLOWLIST (pass immediately) ===
+
+      // Claude response lines (⏺ prefix = AI output or tool call)
+      if (/^\s*⏺/.test(line)) {
+        // Strip the ⏺ prefix and trailing tool UI noise for cleaner output
+        const responseText = trimmed.replace(/^⏺\s*/, '');
+        if (responseText.length > 0) {
+          filtered.push(responseText);
+          lastLineWasEmpty = false;
+          continue;
+        }
+      }
+
+      // Tool result lines (⎿ prefix)
+      if (/^\s*⎿/.test(line)) {
+        const resultText = trimmed.replace(/^⎿\s*/, '');
+        if (resultText.length > 0) {
+          filtered.push('  ' + resultText);
+          lastLineWasEmpty = false;
+          continue;
+        }
+      }
+
+      // === BLOCKLIST (noise removal) ===
+
+      // Claude Code banner patterns
       if (line.includes('▐▛███▜▌') || line.includes('▝▜█████▛▘') || line.includes('▘▘ ▝▝')) continue;
       if (line.includes('Claude Code v')) continue;
       if (/Opus \d|Sonnet \d|Haiku \d/.test(line) && line.includes('Claude')) continue;
 
-      // Skip horizontal dividers (long lines of ─ or ━)
+      // Horizontal dividers (long lines of ─ or ━)
       if (/^[─━]{20,}$/.test(trimmed)) continue;
 
-      // Skip "Try" suggestions
+      // "Try" suggestions
       if (line.includes('Try "write a test') || line.includes('Try "explain')) continue;
 
-      // Skip user prompt lines (❯ with optional typed text = user is typing)
+      // User prompt lines (❯ prefix)
       if (/^[\s]*❯/.test(line)) continue;
 
-      // Skip status bar lines (update frequently with token counts, cost, model info)
-      if (line.includes('🤖') || line.includes('📁') || line.includes('🔷') || line.includes('💎')) continue;
+      // New-format status bar (pipe-delimited with emojis: 🤖Opus│...│, 📁project│...)
+      if (/🤖.*│/.test(line) || /📁.*│/.test(line)) continue;
+      if (/🔷.*│/.test(line) || /💎.*│/.test(line)) continue;
+      // Legacy status bar (space-separated)
       if (/\d+[kK]?\s*tokens?/i.test(line) && /\$[\d.]+/.test(line)) continue;
 
-      // Skip Claude Code spinner/progress indicators (braille pattern chars)
+      // New-format spinner/progress (star/dot chars + short status text)
+      if (/^[\s]*[✶✳✢✻✽·]/.test(line)) continue;
+      // Legacy braille spinner
       if (/^[\s]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(line)) continue;
 
-      // Skip Claude Code "Thinking..." / "Working..." UI lines (exact match only, not content starting with these words)
-      if (/^(Thinking|Working|Reading|Writing|Searching|Running)\.\.\.$/i.test(trimmed)) continue;
+      // Progress status lines (exact match: "Thinking...", "Harmonizing...", etc.)
+      if (/^[\s]*(Thinking|Working|Reading|Writing|Searching|Running|Harmonizing|Schlepping)\.{2,}$/i.test(trimmed)) continue;
 
-      // Skip consecutive empty lines (but allow single empty lines for formatting)
+      // Permission bypass prompt
+      if (/^[\s]*⏵/.test(line)) continue;
+
+      // Context/compact notification lines
+      if (/Context left until auto-compact/i.test(line)) continue;
+
+      // Lines that are only whitespace + box-drawing or block chars
+      if (/^[\s░▒▓█▄▀│├└┘┐┌─━]+$/.test(trimmed)) continue;
+
+      // Consecutive empty lines (keep max 1)
       if (!trimmed) {
         if (lastLineWasEmpty) continue;
         lastLineWasEmpty = true;
