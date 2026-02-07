@@ -12,6 +12,7 @@ export interface ApiHandlerOptions {
   onRunCreated?: () => void;  // Callback to broadcast runs:list
   onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
   onContextEvent?: (eventType: string, payload: unknown) => void;
+  onSessionsChanged?: () => void;  // Callback to broadcast sessions:list
 }
 
 /**
@@ -150,7 +151,7 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
  * Create HTTP API request handler
  */
 export function createApiHandler(options: ApiHandlerOptions) {
-  const { runManager, sessionManager, onRunCreated, onSessionEvent, onContextEvent } = options;
+  const { runManager, sessionManager, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged } = options;
 
   return async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Handle CORS
@@ -282,6 +283,7 @@ export function createApiHandler(options: ApiHandlerOptions) {
         try {
           const session = await sessionManager.create(body.chatId, body.projectPath, body.name);
           sendJson(res, 201, { session });
+          onSessionsChanged?.();
         } catch (e) {
           sendJson(res, 500, { error: 'Session Creation Failed', message: (e as Error).message });
         }
@@ -322,6 +324,7 @@ export function createApiHandler(options: ApiHandlerOptions) {
         try {
           const session = await sessionManager.connectToTmuxSession(body.chatId, body.tmuxSession);
           sendJson(res, 201, { session });
+          onSessionsChanged?.();
         } catch (e) {
           sendJson(res, 404, { error: 'Not Found', message: (e as Error).message });
         }
@@ -358,6 +361,7 @@ export function createApiHandler(options: ApiHandlerOptions) {
           return;
         }
         sendJson(res, 200, { closed: true, sessionId: id });
+        onSessionsChanged?.();
         return;
       }
 

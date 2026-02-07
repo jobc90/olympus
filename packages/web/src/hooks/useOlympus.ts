@@ -203,5 +203,42 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     clientRef.current?.cancel(runId, taskId);
   }, []);
 
-  return { ...state, subscribe, unsubscribe, subscribeSession, unsubscribeSession, cancel };
+  const connectAvailableSession = useCallback(async (tmuxSession: string) => {
+    try {
+      const baseUrl = `http://${host ?? DEFAULT_GATEWAY_HOST}:${port ?? DEFAULT_GATEWAY_PORT}`;
+      const res = await fetch(`${baseUrl}/api/sessions/connect`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({ chatId: 0, tmuxSession }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+        setState(s => ({ ...s, error: err.message || 'Failed to connect session' }));
+        return;
+      }
+      const data = await res.json();
+      const session = data.session;
+      if (session?.id) {
+        // Subscribe to the newly connected session
+        clientRef.current?.subscribeSession(session.id);
+        setState(s => ({
+          ...s,
+          currentSessionId: session.id,
+          currentRunId: null,
+          tasks: [],
+          phase: null,
+          agentStreams: new Map(),
+          sessionOutputs: [],
+          error: null,
+        }));
+      }
+    } catch (e) {
+      setState(s => ({ ...s, error: `Failed to connect: ${(e as Error).message}` }));
+    }
+  }, [host, port, apiKey]);
+
+  return { ...state, subscribe, unsubscribe, subscribeSession, unsubscribeSession, cancel, connectAvailableSession };
 }

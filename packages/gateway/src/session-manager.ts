@@ -772,11 +772,27 @@ export class SessionManager {
   }
 
   /**
+   * Strip ANSI escape sequences from text
+   */
+  private stripAnsi(text: string): string {
+    // eslint-disable-next-line no-control-regex
+    return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b\][^\x07]*\x07/g, '')  // OSC sequences
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b[()][AB012]/g, '')       // Character set selection
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b\[[\?]?[0-9;]*[hlm]/g, ''); // Mode set/reset
+  }
+
+  /**
    * Filter out Claude Code banner, user typing, status bar, and other noise from output.
    * Only real Claude AI output should pass through to avoid Telegram spam.
    */
   private filterOutput(content: string): string {
-    const lines = content.split('\n');
+    // Strip ANSI escape codes first
+    const cleaned = this.stripAnsi(content);
+    const lines = cleaned.split('\n');
     const filtered: string[] = [];
     let lastLineWasEmpty = false;
 

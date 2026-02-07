@@ -11,9 +11,10 @@ interface Props {
   onSelect: (runId: string) => void;
   onSelectSession: (sessionId: string) => void;
   onCancel: (runId: string) => void;
+  onConnectAvailable?: (tmuxSession: string) => void;
 }
 
-export function SessionList({ runs, sessions, availableSessions, currentRunId, currentSessionId, onSelect, onSelectSession, onCancel }: Props) {
+export function SessionList({ runs, sessions, availableSessions, currentRunId, currentSessionId, onSelect, onSelectSession, onCancel, onConnectAvailable }: Props) {
   const activeSessions = sessions.filter(s => s.status === 'active');
   const totalCount = runs.length + activeSessions.length + availableSessions.length;
 
@@ -72,6 +73,7 @@ export function SessionList({ runs, sessions, availableSessions, currentRunId, c
               <AvailableSessionItem
                 key={session.tmuxSession}
                 session={session}
+                onConnect={onConnectAvailable ? () => onConnectAvailable(session.tmuxSession) : undefined}
               />
             ))}
           </>
@@ -104,14 +106,18 @@ export function SessionList({ runs, sessions, availableSessions, currentRunId, c
 /** Available tmux Session Item (not connected to Gateway) */
 interface AvailableSessionItemProps {
   session: AvailableSession;
+  onConnect?: () => void;
 }
 
-function AvailableSessionItem({ session }: AvailableSessionItemProps) {
+function AvailableSessionItem({ session, onConnect }: AvailableSessionItemProps) {
   // Extract display name from tmux session (e.g., "olympus-dev" -> "dev")
   const displayName = session.tmuxSession.replace(/^olympus-/, '');
 
   return (
-    <div className="p-4 border-b border-border last:border-b-0 hover:bg-surface-hover transition-all opacity-70">
+    <div
+      className={`p-4 border-b border-border last:border-b-0 hover:bg-surface-hover transition-all ${onConnect ? 'cursor-pointer' : 'opacity-70'}`}
+      onClick={onConnect}
+    >
       <div className="flex items-center justify-between mb-2">
         <span className="font-mono text-sm text-text-muted truncate max-w-[150px]">
           {displayName}
@@ -129,6 +135,11 @@ function AvailableSessionItem({ session }: AvailableSessionItemProps) {
         <span className="text-xs text-text-muted">
           tmux: {session.tmuxSession}
         </span>
+        {onConnect && (
+          <span className="text-xs text-primary">
+            Click to connect
+          </span>
+        )}
       </div>
     </div>
   );

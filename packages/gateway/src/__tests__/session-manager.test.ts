@@ -4,11 +4,26 @@ import { describe, it, expect } from 'vitest';
 // by extracting the filter logic and testing it directly.
 
 /**
+ * Replicated stripAnsi for testing
+ */
+function stripAnsi(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b\][^\x07]*\x07/g, '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b[()][AB012]/g, '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b\[[\?]?[0-9;]*[hlm]/g, '');
+}
+
+/**
  * Replicated filterOutput logic for testing (same as SessionManager.filterOutput)
  * This avoids needing to instantiate SessionManager which requires tmux.
  */
 function filterOutput(content: string): string {
-  const lines = content.split('\n');
+  const cleaned = stripAnsi(content);
+  const lines = cleaned.split('\n');
   const filtered: string[] = [];
   let lastLineWasEmpty = false;
 
@@ -152,6 +167,38 @@ describe('filterOutput', () => {
     const input = 'const a = `${hello}`;\nconst b = $HOME;';
     const result = filterOutput(input);
     expect(result).toBe(input);
+  });
+
+  it('should strip ANSI escape sequences', () => {
+    const input = '\x1b[2mDimmed text\x1b[0m\nNormal text';
+    const result = filterOutput(input);
+    expect(result).toBe('Dimmed text\nNormal text');
+  });
+
+  it('should strip ANSI color codes', () => {
+    const input = '\x1b[38;2;136;136;136mColored\x1b[0m output';
+    const result = filterOutput(input);
+    expect(result).toBe('Colored output');
+  });
+
+  it('should strip multiple ANSI sequences in one line', () => {
+    const input = '\x1b[1m\x1b[31mBold Red\x1b[0m \x1b[32mGreen\x1b[0m';
+    const result = filterOutput(input);
+    expect(result).toBe('Bold Red Green');
+  });
+});
+
+describe('stripAnsi', () => {
+  it('should strip CSI sequences', () => {
+    expect(stripAnsi('\x1b[31mred\x1b[0m')).toBe('red');
+  });
+
+  it('should strip OSC sequences', () => {
+    expect(stripAnsi('\x1b]0;title\x07text')).toBe('text');
+  });
+
+  it('should handle text without ANSI codes', () => {
+    expect(stripAnsi('plain text')).toBe('plain text');
   });
 });
 

@@ -69,6 +69,7 @@ export default function App() {
     subscribe,
     subscribeSession,
     cancel,
+    connectAvailableSession,
   } = useOlympus(config);
 
   const contextTree = useContextTree({
@@ -125,6 +126,7 @@ export default function App() {
               onSelect={subscribe}
               onSelectSession={subscribeSession}
               onCancel={(runId) => cancel(runId)}
+              onConnectAvailable={connectAvailableSession}
             />
           </aside>
 

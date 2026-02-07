@@ -76,6 +76,7 @@ export class Gateway {
         onRunCreated: () => this.broadcastRunsList(),
         onSessionEvent: (sessionId, event) => this.broadcastSessionEvent(sessionId, event),
         onContextEvent: (eventType, payload) => this.broadcastContextEvent(eventType, payload),
+        onSessionsChanged: () => this.broadcastSessionsList(),
       });
 
       this.httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -342,6 +343,26 @@ export class Gateway {
         client.subscribedSessions.has(sessionId) &&
         client.ws.readyState === WebSocket.OPEN
       ) {
+        client.ws.send(raw);
+      }
+    }
+  }
+
+  /**
+   * Broadcast sessions:list to ALL authenticated clients
+   * Used when a session is connected, created, or closed
+   */
+  broadcastSessionsList(): void {
+    const sessions = this.sessionManager.getAll().filter(s => s.status === 'active');
+    const discovered = this.sessionManager.discoverTmuxSessions();
+    const registeredTmux = new Set(sessions.map(s => s.tmuxSession));
+    const availableSessions = discovered.filter(d => !registeredTmux.has(d.tmuxSession));
+
+    const message = createMessage('sessions:list', { sessions, availableSessions });
+    const raw = JSON.stringify(message);
+
+    for (const [, client] of this.clients) {
+      if (client.authenticated && client.ws.readyState === WebSocket.OPEN) {
         client.ws.send(raw);
       }
     }
