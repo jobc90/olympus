@@ -9,6 +9,7 @@ import {
   type LogPayload,
 } from '@olympus-dev/protocol';
 import { classifyError, structuredLog } from './error-utils.js';
+import { DigestSession } from './digest/index.js';
 
 // Configuration
 interface BotConfig {
@@ -62,8 +63,10 @@ class OlympusBot {
   private activeSession = new Map<number, string>(); // chatId -> current active session name
   // Per-session message queue to prevent interleaving
   private sendQueues = new Map<string, Promise<void>>(); // sessionId -> queue chain
-  // Output mode per chat: 'raw' sends full output, 'summary' uses summarizeOutput
-  private outputMode = new Map<number, 'raw' | 'summary'>(); // chatId -> mode (default: raw)
+  // Output mode per chat: 'digest' (default) extracts key results, 'raw' sends full output
+  private outputMode = new Map<number, 'raw' | 'digest'>(); // chatId -> mode (default: digest)
+  // DigestSession instances per sessionId for buffered output processing
+  private digestSessions = new Map<string, DigestSession>();
   // Output history buffer per session (last N messages for /last retrieval)
   private outputHistory = new Map<string, string[]>(); // sessionId -> last 10 outputs
   private static readonly OUTPUT_HISTORY_SIZE = 10;
@@ -129,7 +132,11 @@ class OlympusBot {
         `/use <이름> - 세션 연결/전환\n` +
         `/close [이름] - 세션 해제\n` +
         `/health - 상태 확인\n` +
+        `/mode raw|digest - 출력 모드 전환\n` +
         `/orchestration <요청> - Multi-AI 협업 모드\n\n` +
+        `*출력 모드:*\n` +
+        `• *digest* (기본): 핵심 결과만 전달\n` +
+        `• *raw*: 원문 전체 전달\n\n` +
         `*메시지 전송:*\n` +
         `• 일반 텍스트 → 활성 세션\n` +
         `• \`@이름 메시지\` → 특정 세션`,
@@ -435,12 +442,24 @@ class OlympusBot {
       }
     });
 
-    // /raw - Toggle raw output mode
+    // /mode - Switch output mode (digest or raw)
+    this.bot.command('mode', async (ctx) => {
+      const arg = ctx.message.text.split(/\s+/)[1]?.toLowerCase();
+      if (arg === 'raw') {
+        this.outputMode.set(ctx.chat.id, 'raw');
+        await this.safeReply(ctx, '📋 출력 모드: *원문 전체 (raw)*\n\n모든 출력을 원문 그대로 전달합니다.', 'Markdown');
+      } else if (arg === 'digest' || !arg) {
+        this.outputMode.set(ctx.chat.id, 'digest');
+        await this.safeReply(ctx, '📋 출력 모드: *핵심 요약 (digest)*\n\n핵심 결과만 추출하여 전달합니다.', 'Markdown');
+      } else {
+        await this.safeReply(ctx, '사용법: /mode raw 또는 /mode digest', undefined);
+      }
+    });
+
+    // /raw - Shortcut for /mode raw
     this.bot.command('raw', async (ctx) => {
-      const currentMode = this.outputMode.get(ctx.chat.id) ?? 'raw';
-      const newMode = currentMode === 'raw' ? 'summary' : 'raw';
-      this.outputMode.set(ctx.chat.id, newMode);
-      await this.safeReply(ctx, `📋 출력 모드: *${newMode === 'raw' ? '원문 전체' : '요약'}*\n\n${newMode === 'raw' ? '모든 출력을 원문 그대로 전달합니다.' : '긴 출력을 요약하여 전달합니다.'}`, 'Markdown');
+      this.outputMode.set(ctx.chat.id, 'raw');
+      await this.safeReply(ctx, '📋 출력 모드: *원문 전체 (raw)*\n\n모든 출력을 원문 그대로 전달합니다.', 'Markdown');
     });
 
     // /last - Show last output from active session
@@ -998,9 +1017,22 @@ class OlympusBot {
           }
 
           // Apply output mode
-          const mode = this.outputMode.get(chatId) ?? 'raw';
-          const output = mode === 'summary' ? this.summarizeOutput(content) : content;
-          this.enqueueSessionMessage(sessionId, chatId, `${prefix}\n\n${output}`, prefix);
+          const mode = this.outputMode.get(chatId) ?? 'digest';
+          if (mode === 'digest') {
+            // Digest mode: buffer content and flush with smart extraction
+            let digestSession = this.digestSessions.get(sessionId);
+            if (!digestSession) {
+              digestSession = new DigestSession(
+                prefix,
+                (text) => this.enqueueSessionMessage(sessionId, chatId, text, prefix),
+              );
+              this.digestSessions.set(sessionId, digestSession);
+            }
+            digestSession.push(content);
+          } else {
+            // Raw mode: send immediately (legacy behavior)
+            this.enqueueSessionMessage(sessionId, chatId, `${prefix}\n\n${content}`, prefix);
+          }
         }
         break;
       }
@@ -1039,6 +1071,12 @@ class OlympusBot {
         this.subscribedRuns.delete(sessionId);
         this.sendQueues.delete(sessionId);
         this.outputHistory.delete(sessionId);
+        // Clean up digest session (flush remaining buffer)
+        const digestSession = this.digestSessions.get(sessionId);
+        if (digestSession) {
+          digestSession.destroy();
+          this.digestSessions.delete(sessionId);
+        }
 
         const displayClosed = (closedName || sessionId.slice(0, 8)).replace(/^olympus-/, '');
         this.bot.telegram.sendMessage(
