@@ -1113,7 +1113,24 @@ class OlympusBot {
     console.log(`Allowed users: ${this.config.allowedUsers.length > 0 ? this.config.allowedUsers.join(', ') : 'All'}`);
 
     try {
-      await this.bot.launch();
+      // bot.launch() returns a Promise that resolves only when the bot stops.
+      // We fire-and-forget it and detect readiness via a short delay after launch starts.
+      let launchErrorMsg: string | null = null;
+      this.bot.launch().catch((err: Error) => {
+        launchErrorMsg = err.message;
+        structuredLog('error', 'telegram-bot', 'bot_launch_failed', {
+          category: classifyError(err).category,
+          message: err.message,
+        });
+      });
+
+      // Wait briefly for any immediate launch errors (auth failure, etc.)
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      if (launchErrorMsg) {
+        return { success: false, error: launchErrorMsg };
+      }
+
       structuredLog('info', 'telegram-bot', 'bot_started', {
         gateway: this.config.gatewayUrl,
         allowedUsers: this.config.allowedUsers,
