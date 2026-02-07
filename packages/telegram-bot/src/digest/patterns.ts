@@ -21,9 +21,8 @@ export const TEST_PATTERNS = [
   /\d+\s+passed,\s*\d+\s+failed/i,     // "64 passed, 0 failed" (combined result line)
   /Tests?\s+(\d+)\/(\d+)/i,            // "Tests 64/64"
   /Test:\s*PASS/i,                      // "Test: PASS" explicit
-  /vitest|jest|mocha/i,
+  /^\s*(PASS|FAIL)\s.*\.(test|spec)\./i,   // vitest/jest result lines only
   /✓\s+Test/i,
-  /PASS\s+\S+\.test\./i,               // "PASS src/index.test.ts"
 ];
 
 /** Commit/push info: hash, branch, file counts */
@@ -104,11 +103,17 @@ export const IMMEDIATE_FLUSH_PATTERNS = [
   /\berror\b.*\b(failed|failure)\b/i,
   /All\s+Quality\s+Gates\s+passed/i,
   /작업\s*(이\s+)?완료/,
-  /Phase\s+8.*Judgment/i,
+  /Phase\s+\d+.*(:|\s+완료)/i,
   /ACCEPT|REJECT/,
   /모든\s+작업/,
   /push.*done/i,
   /successfully/i,
+  /build\s+(completed|succeeded|passed)/i,
+  /tests?:\s*\d+\s*passed/i,
+  /Build\s*:\s*PASS/i,
+  /Test\s*:\s*PASS/i,
+  /Lint\s+(completed|passed)/i,
+  /\d+\s+files?\s+changed/i,
 ];
 
 // ===== Secret Patterns (redact) =====

@@ -40,10 +40,11 @@ export class DigestSession {
     this.buffer += (this.buffer ? '\n' : '') + content;
     this.resetTtl();
 
-    // Check for buffer size overflow
+    // Check for buffer size overflow — flush first to preserve error context
     if (this.buffer.length > this.config.maxBufferSize) {
-      // Keep only the most recent content
-      this.buffer = this.buffer.slice(-this.config.maxBufferSize);
+      this.flush();
+      this.buffer = content;
+      return;
     }
 
     // Check for immediate flush triggers

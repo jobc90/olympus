@@ -1069,14 +1069,14 @@ class OlympusBot {
           }
         }
         this.subscribedRuns.delete(sessionId);
-        this.sendQueues.delete(sessionId);
         this.outputHistory.delete(sessionId);
-        // Clean up digest session (flush remaining buffer)
+        // Clean up digest session BEFORE sendQueues so flush can still enqueue
         const digestSession = this.digestSessions.get(sessionId);
         if (digestSession) {
           digestSession.destroy();
           this.digestSessions.delete(sessionId);
         }
+        this.sendQueues.delete(sessionId);
 
         const displayClosed = (closedName || sessionId.slice(0, 8)).replace(/^olympus-/, '');
         this.bot.telegram.sendMessage(

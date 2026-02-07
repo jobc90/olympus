@@ -39,7 +39,7 @@ Olympus extends Claude CLI into a practical development operations platform:
 
 1. **Multi-AI Orchestration (AIOS v5.1)**: Claude + Gemini + Codex with Co-Leadership workflow
 2. **Context OS**: hierarchical context management (Workspace → Project → Task)
-3. **Remote Access**: run and control local sessions through Gateway + Telegram (with output summarization and anti-spam filtering)
+3. **Remote Access**: run and control local sessions through Gateway + Telegram (with Smart Digest for key results extraction, secret masking, and anti-spam filtering)
 4. **Stable Sessions**: tmux-backed long-running Claude sessions
 5. **Visibility**: Web dashboard with auto-config, real-time session output, and context explorer
 
@@ -196,12 +196,27 @@ olympus server start --telegram
 
 Telegram commands:
 
-- `/start`
-- `/sessions`
-- `/use <name>`
-- `/close [name]`
-- `/health`
-- `/orchestration <request>`
+| Command | Description |
+|---|---|
+| `/start` | Help |
+| `/sessions` | List available sessions |
+| `/use <name>` | Connect to session |
+| `/close [name]` | Disconnect session |
+| `/health` | Check status |
+| `/mode raw\|digest` | Switch output mode (default: digest) |
+| `/raw` | Shortcut for raw mode |
+| `/last` | Show last output |
+| `/orchestration <request>` | Run Multi-AI orchestration |
+
+### Smart Digest Mode
+
+The Telegram bot uses **digest mode** by default. It extracts only key results from hundreds of lines of CLI output into a concise summary (max 800 chars).
+
+- **6-category classification**: build, test, commit, error, phase, change
+- **Noise removal**: Reading, Searching, spinners, empty lines
+- **Secret masking**: API keys, Bearer tokens, GitHub PAT, long hex strings
+- **Hybrid triggering**: errors/completion flush immediately, normal output debounces 5s
+- **Priority budgeting**: error(5) > build/test(4) > commit/phase(3) fills 800 chars
 
 ## Multi-AI Orchestration (AIOS v5.1)
 
@@ -262,11 +277,18 @@ Always **restart Gateway** after changing Gateway code.
 
 ### Telegram bot sends too many notifications
 
-Anti-spam filters are applied at the Gateway level:
-- 2s debounce (waits for output to stabilize)
-- 3s minimum interval between sends
+The bot uses **Smart Digest mode** by default. All output passes through the digest engine, extracting only key results (build/test/error/commit info). Switch to raw mode with `/mode raw` if needed.
+
+**Digest Engine Features**:
+- 6-category line classification with priority scoring
+- Noise pattern filtering (tool actions, spinners, dividers)
+- Secret redaction (API keys, tokens, hex strings)
+- Hybrid triggering (immediate on error/completion, 5s debounce otherwise)
+
+**Additional Gateway-level anti-spam**:
+- 2s debounce + 3s throttle
 - 10-char minimum change threshold
-- Noise filtering: user prompt lines (`❯`), status bar (token/cost), spinners, and Claude Code UI elements are stripped
+- Noise filtering: prompts, status bars, spinners
 
 If spam persists, **restart Gateway** to apply the latest filters.
 
