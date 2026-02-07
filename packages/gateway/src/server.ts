@@ -99,24 +99,10 @@ export class Gateway {
       );
 
       // Session reconcile timer (every 30 seconds)
-      // Detects dead tmux sessions and new CLI-created sessions, broadcasts changes
-      let lastKnownTmux = new Set<string>();
+      // Cleans dead sessions, auto-registers new tmux sessions, broadcasts changes
       this.sessionCleanupTimer = setInterval(() => {
         const changed = this.sessionManager.reconcileSessions();
-
-        // Also detect newly created tmux sessions (e.g. from `olympus start`)
-        const currentTmux = new Set(
-          this.sessionManager.discoverTmuxSessions().map(s => s.tmuxSession)
-        );
-        const registeredTmux = new Set(
-          this.sessionManager.getAll().filter(s => s.status === 'active').map(s => s.tmuxSession)
-        );
-        // Check if discovered tmux sessions changed since last poll
-        const newDiscovered = [...currentTmux].some(t => !lastKnownTmux.has(t) && !registeredTmux.has(t));
-        const lostDiscovered = [...lastKnownTmux].some(t => !currentTmux.has(t));
-        lastKnownTmux = currentTmux;
-
-        if (changed || newDiscovered || lostDiscovered) {
+        if (changed) {
           this.broadcastSessionsList();
         }
       }, 30_000);
@@ -325,6 +311,9 @@ export class Gateway {
     // Send list of all runs as initial snapshot
     const runs = this.runManager.getAllRunStatuses();
     this.send(ws, createMessage('runs:list', { runs }));
+
+    // Reconcile first to auto-register any new tmux sessions
+    this.sessionManager.reconcileSessions();
 
     // Send list of active sessions + available tmux sessions
     const sessions = this.sessionManager.getAll().filter(s => s.status === 'active');

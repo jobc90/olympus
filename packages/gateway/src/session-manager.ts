@@ -564,6 +564,7 @@ export class SessionManager {
   /**
    * Reconcile sessions with actual tmux state.
    * - Closes sessions whose tmux has died
+   * - Auto-registers newly discovered tmux sessions (chatId=0)
    * - Optionally cleans up timed-out sessions
    * Returns true if any sessions were changed (useful for triggering broadcasts).
    */
@@ -571,6 +572,7 @@ export class SessionManager {
     const now = Date.now();
     let changed = false;
 
+    // 1. Close dead sessions
     for (const session of this.store.getAll()) {
       if (session.status !== 'active') continue;
 
@@ -586,6 +588,36 @@ export class SessionManager {
         this.closeSession(session.id);
         changed = true;
       }
+    }
+
+    // 2. Auto-register discovered tmux sessions that aren't in the store
+    const discovered = this.discoverTmuxSessions();
+    const registeredTmux = new Set(
+      this.store.getAll().filter(s => s.status === 'active').map(s => s.tmuxSession)
+    );
+
+    for (const tmux of discovered) {
+      if (registeredTmux.has(tmux.tmuxSession)) continue;
+
+      // Auto-register with chatId=0 (unowned, any client can claim)
+      const sessionId = randomUUID().slice(0, 8);
+      const timestamp = Date.now();
+
+      const session: Session = {
+        id: sessionId,
+        name: tmux.tmuxSession,
+        chatId: 0,
+        taskId: '',
+        tmuxSession: tmux.tmuxSession,
+        status: 'active',
+        projectPath: tmux.projectPath,
+        createdAt: timestamp,
+        lastActivityAt: timestamp,
+      };
+
+      this.store.set(session);
+      this.startOutputPolling(sessionId, tmux.tmuxSession);
+      changed = true;
     }
 
     return changed;
