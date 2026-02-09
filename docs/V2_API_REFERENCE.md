@@ -53,6 +53,7 @@ interface WsMessage<T = unknown> {
 | `runs:list` | Run 목록 갱신 | `{ runs: RunStatus[] }` |
 | `sessions:list` | Session 목록 갱신 | `{ sessions, availableSessions? }` |
 | `context:*` | Context 이벤트 | `ContextCreatedPayload` 등 |
+| `codex:session-event` | Codex 세션 상태 변경 | `{ sessionId, status, projectName? }` |
 
 ---
 
@@ -207,6 +208,87 @@ result: {
 }
 ```
 Memory 전체 통계.
+
+### Codex Orchestrator 메서드 (V3)
+
+#### `codex.route`
+```
+params: {
+  text: string,               // 사용자 입력
+  source: string              // 'telegram' | 'dashboard' | 'cli'
+}
+result: {
+  requestId: string,
+  decision: {
+    type: string,              // 'SESSION_FORWARD' | 'SELF_ANSWER' | 'MULTI_SESSION'
+    targetSessions: string[],
+    processedInput: string,
+    confidence: number,
+    reason: string
+  },
+  response?: {
+    type: string,              // 'text' | 'build' | 'test' | 'error' | 'code'
+    content: string,
+    metadata: Record<string, unknown>,
+    rawOutput: string,
+    agentInsight?: string
+  }
+}
+```
+입력을 Codex Orchestrator에 라우팅. Router가 @mention, 글로벌 쿼리, 키워드 매칭 등으로 대상 세션을 결정.
+
+#### `codex.sessions`
+```
+params: (없음)
+result: Array<{
+  id: string,
+  name: string,
+  projectPath: string,
+  status: string,              // 'starting' | 'ready' | 'busy' | 'idle' | 'closed'
+  lastActivity: number
+}>
+```
+Codex가 관리하는 모든 세션 목록.
+
+#### `codex.projects`
+```
+params: (없음)
+result: Array<{
+  name: string,
+  path: string,
+  aliases: string[],
+  techStack: string[]
+}>
+```
+등록된 모든 프로젝트 목록.
+
+#### `codex.search`
+```
+params: {
+  query: string,               // FTS 검색어
+  limit?: number               // 결과 제한
+}
+result: Array<{
+  projectName: string,
+  projectPath: string,
+  matchType: string,           // 'task' | 'pattern'
+  content: string,
+  score: number,
+  timestamp: number
+}>
+```
+모든 프로젝트의 ContextManager에서 병렬 FTS5 검색.
+
+#### `codex.status`
+```
+params: (없음)
+result: {
+  initialized: boolean,
+  sessionCount: number,
+  projectCount: number
+}
+```
+Codex Orchestrator 상태 요약.
 
 ### 세션 메서드 (REST + RPC)
 

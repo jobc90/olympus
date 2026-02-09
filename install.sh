@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Olympus - Claude CLI Enhanced Platform Installer
-# Multi-AI Orchestration Protocol v5.1 통합 버전
+# Multi-AI Orchestration Protocol v5.3 통합 버전
 # macOS / Linux 용
 #
 
@@ -61,7 +61,7 @@ echo -e "${MAGENTA}║  ██║   ██║██║    ╚██╔╝  █�
 echo -e "${MAGENTA}║  ╚██████╔╝███████╗██║   ██║ ╚═╝ ██║██║     ╚██████╔╝███████║      ║${NC}"
 echo -e "${MAGENTA}║   ╚═════╝ ╚══════╝╚═╝   ╚═╝     ╚═╝╚═╝      ╚═════╝ ╚══════╝      ║${NC}"
 echo -e "${MAGENTA}║                                                                    ║${NC}"
-echo -e "${MAGENTA}║          Claude CLI Enhanced Platform + AIOS v5.1                 ║${NC}"
+echo -e "${MAGENTA}║          Claude CLI Enhanced Platform + AIOS v5.3                 ║${NC}"
 echo -e "${MAGENTA}║       \"Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 도구\"            ║${NC}"
 echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
@@ -401,7 +401,7 @@ if [ "$INSTALL_MODE" = "local" ]; then
     # /orchestration 명령어 복사
     step "/orchestration 명령어 설치 중..."
     cp "$ORCHESTRATION_DIR/commands/orchestration.md" "$PROJECT_CLAUDE_DIR/commands/"
-    success "/orchestration v5.1 명령어 설치 완료 (.claude/commands/)"
+    success "/orchestration v5.3 명령어 설치 완료 (.claude/commands/)"
 
     # 번들 스킬 복사
     step "번들 스킬 복사 중..."
@@ -506,7 +506,7 @@ echo ""
 
 # /orchestration 커맨드 설치 (symlink 기반 — git pull 시 자동 최신화)
 migrate_to_symlink "$ORCHESTRATION_DIR/commands/orchestration.md" "$CLAUDE_DIR/commands/orchestration.md"
-success "/orchestration v5.1 명령어 설치 완료 (symlink)"
+success "/orchestration v5.3 명령어 설치 완료 (symlink)"
 
 echo ""
 
@@ -977,35 +977,32 @@ echo ""
 echo -e "${MAGENTA}╔════════════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${MAGENTA}║                                                                    ║${NC}"
 if [ "$INSTALL_MODE" = "local" ]; then
-echo -e "${MAGENTA}║         ✅ Olympus + AIOS v5.1 로컬 설치 완료!                    ║${NC}"
+echo -e "${MAGENTA}║         ✅ Olympus + AIOS v5.3 로컬 설치 완료!                    ║${NC}"
 else
-echo -e "${MAGENTA}║         ✅ Olympus + AIOS v5.1 전역 설치 완료!                    ║${NC}"
+echo -e "${MAGENTA}║         ✅ Olympus + AIOS v5.3 전역 설치 완료!                    ║${NC}"
 fi
 echo -e "${MAGENTA}║                                                                    ║${NC}"
 echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-echo -e "${CYAN}🆕 v5.1 새로운 기능:${NC}"
+echo -e "${CYAN}🆕 v5.3 핵심 기능:${NC}"
 echo ""
-echo "   🧠 Phase -1: Smart Intake"
-echo "      • Complexity Heuristic 기반 자동 모드 결정"
+echo "   🤖 V3 Codex Orchestrator (NEW)"
+echo "      • 멀티 프로젝트 AI 오케스트레이터 (packages/codex/)"
+echo "      • 7개 모듈: Router, SessionManager, OutputMonitor, ResponseProcessor,"
+echo "        ContextManager, AgentBrain, CodexOrchestrator"
+echo "      • CLI: olympus server start --mode codex|hybrid|legacy"
+echo "      • Telegram: /codex <질문> 명령어"
+echo "      • Dashboard: CodexPanel, ProjectBrowser"
 echo ""
-echo "   📋 Contract Document (Phase 0)"
-echo "      • Global Blackboard - 모든 에이전트가 참조하는 진실의 원천"
+echo "   🧠 Deep Engineering Protocol (v5.3)"
+echo "      • 3x 확장 산출물, 4-Section Deep Review"
+echo "      • Trade-off 기반 의사결정 (2-3 옵션 + effort/risk/impact)"
+echo "      • DRY-first, 적정 엔지니어링, 증거 기반"
 echo ""
-echo "   🔀 Multi-Layer DAG (Phase 1)"
-echo "      • UI/Domain/Infra/Integration 레이어"
-echo ""
-echo "   ⚡ Shared Surface 충돌 감지 (Phase 4)"
-echo "      • 병렬 실행 전 파일 겹침 자동 검출"
-echo ""
-echo "   🤝 Claude-Codex Co-Leadership (v5.1 NEW)"
-echo "      • Codex가 Claude와 동급 의사결정 파트너로 격상"
+echo "   🤝 Claude-Codex Co-Leadership"
+echo "      • Codex가 Claude와 동급 의사결정 파트너"
 echo "      • 계획/문서에 Claude-Codex 합의 필수"
-echo ""
-echo "   🎨 UI/UX Design Intelligence (v5.1 NEW)"
-echo "      • ui-ux-pro-max 자동 감지 및 Design System 생성"
-echo "      • 96 색상 팔레트, 57 폰트 페어링, 100 산업별 룰"
 echo ""
 echo "   📊 정량화된 Quality Gate (Phase 8)"
 echo "      • Hard/Behavior/Soft 3단계 Gate"
@@ -1104,14 +1101,13 @@ echo "   /orchestration \"작업 설명\"    # 10 Phase 프로토콜 시작"
 echo ""
 echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo -e "${MAGENTA}v5.1 핵심 원칙:${NC}"
+echo -e "${MAGENTA}v5.3 핵심 원칙:${NC}"
 echo ""
+echo -e "   🤖 ${CYAN}Codex Orchestrator (V3)${NC}: 멀티 프로젝트 AI 오케스트레이터"
 echo -e "   👑 ${CYAN}Claude + Codex = Co-Leaders${NC}: 합의 기반 의사결정"
 echo -e "   🎨 ${CYAN}Gemini = Frontend Specialist${NC}: UI/UX, 컴포넌트 구현"
 echo -e "   ⚙️ ${CYAN}Codex = Co-Architect${NC}: 아키텍처 공동 결정, 백엔드"
-echo -e "   🧠 ${CYAN}find-skills 필수${NC}: 모든 작업에서 스킬 검색 필수"
-echo -e "   📊 ${CYAN}Dashboard${NC}: Gemini/Codex 사용량 실시간 표시"
-echo -e "   🎨 ${CYAN}ui-ux-pro-max${NC}: UI/UX 의도 자동 감지 + Design System"
+echo -e "   📊 ${CYAN}9 Packages${NC}: protocol, core, gateway, cli, client, web, tui, telegram-bot, codex"
 echo ""
 echo -e "   ${YELLOW}🎯 목표: Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 도구${NC}"
 echo ""

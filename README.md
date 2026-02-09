@@ -32,7 +32,7 @@
 - [Usage](#usage)
 - [Model Configuration](#model-configuration)
 - [Telegram Bot Commands](#telegram-bot-commands)
-- [Multi-AI Orchestration (AIOS v5.3)](#multi-ai-orchestration-aios-v51)
+- [Multi-AI Orchestration (AIOS v5.3)](#multi-ai-orchestration-aios-v53)
 - [Architecture](#architecture)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
