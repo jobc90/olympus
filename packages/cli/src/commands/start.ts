@@ -58,24 +58,17 @@ async function startAction(opts: Record<string, unknown>, forceTrust: boolean): 
     process.exit(1);
   }
 
-  // Check if codex or claude is installed (codex preferred)
+  // Check if Claude CLI is installed (Claude is the worker, Codex is the orchestrator)
   let agentBinary = '';
   let agentName = '';
   try {
-    execSync('which codex', { stdio: 'pipe' });
-    agentBinary = 'codex';
-    agentName = 'Codex CLI';
+    execSync('which claude', { stdio: 'pipe' });
+    agentBinary = 'claude';
+    agentName = 'Claude CLI';
   } catch {
-    try {
-      execSync('which claude', { stdio: 'pipe' });
-      agentBinary = 'claude';
-      agentName = 'Claude CLI';
-    } catch {
-      console.log(chalk.red('❌ Codex/Claude CLI가 설치되어 있지 않습니다.'));
-      console.log(chalk.gray('   Codex: npm install -g @openai/codex'));
-      console.log(chalk.gray('   Claude: npm install -g @anthropic-ai/claude-code'));
-      process.exit(1);
-    }
+    console.log(chalk.red('❌ Claude CLI가 설치되어 있지 않습니다.'));
+    console.log(chalk.gray('   설치: npm install -g @anthropic-ai/claude-code'));
+    process.exit(1);
   }
 
   // Check if already inside tmux
@@ -106,12 +99,10 @@ async function startAction(opts: Record<string, unknown>, forceTrust: boolean): 
     // Get agent path to ensure it's found in tmux
     const agentPath = execSync(`which ${agentBinary}`, { encoding: 'utf-8' }).trim();
 
-    // Build trust flag per agent:
-    //   codex: --full-auto (sandboxed auto-execution)
-    //   claude: --dangerously-skip-permissions
+    // Build trust flag for Claude CLI
     let trustFlag = '';
     if (trustMode) {
-      trustFlag = agentBinary === 'codex' ? ' --full-auto' : ' --dangerously-skip-permissions';
+      trustFlag = ' --dangerously-skip-permissions';
     }
 
     // Create tmux session with agent as the command
@@ -160,7 +151,7 @@ async function startAction(opts: Record<string, unknown>, forceTrust: boolean): 
 }
 
 export const startCommand = new Command('start')
-  .description('Start agent CLI in a new tmux session (Codex preferred, Claude fallback)')
+  .description('Start Claude CLI in a new tmux session')
   .option('-p, --project <path>', 'Project directory path', process.cwd())
   .option('-s, --session <name>', 'Tmux session name (auto-generated from project path if not specified)')
   .option('-a, --attach', 'Attach to the session after creation', true)

@@ -539,25 +539,19 @@ async function createMainSession(config: { gatewayUrl: string; apiKey: string })
     return false;
   }
 
-  // Check if codex is available (primary), fallback to claude
+  // Check if Claude CLI is available (Claude is the worker, Codex Orchestrator runs as background service)
   let agentPath = '';
   let agentName = '';
   try {
-    agentPath = execSync('which codex', { encoding: 'utf-8' }).trim();
-    agentName = 'Codex CLI';
+    agentPath = execSync('which claude', { encoding: 'utf-8' }).trim();
+    agentName = 'Claude CLI';
   } catch {
-    try {
-      agentPath = execSync('which claude', { encoding: 'utf-8' }).trim();
-      agentName = 'Claude CLI';
-    } catch {
-      console.log(chalk.yellow('   ⚠ Codex/Claude CLI가 설치되어 있지 않습니다. Main 세션 생략.'));
-      return false;
-    }
+    console.log(chalk.yellow('   ⚠ Claude CLI가 설치되어 있지 않습니다. Main 세션 생략.'));
+    return false;
   }
 
-  // Create main tmux session with agent CLI in trust mode (background, no attach)
-  // Trust flag: codex → --full-auto, claude → --dangerously-skip-permissions
-  const trustFlag = agentPath.includes('codex') ? ' --full-auto' : ' --dangerously-skip-permissions';
+  // Create main tmux session with Claude CLI in trust mode (background, no attach)
+  const trustFlag = ' --dangerously-skip-permissions';
 
   try {
     const projectPath = process.cwd();
