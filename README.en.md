@@ -28,7 +28,7 @@
 - [Usage](#usage)
 - [Model Configuration](#model-configuration)
 - [Telegram Bot Guide](#telegram-bot-guide)
-- [Multi-AI Orchestration (AIOS v5.1)](#multi-ai-orchestration-aios-v51)
+- [Multi-AI Orchestration (AIOS v5.3)](#multi-ai-orchestration-aios-v51)
 - [Architecture](#architecture)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
@@ -37,7 +37,7 @@
 
 Olympus extends Claude CLI into a practical development operations platform:
 
-1. **Multi-AI Orchestration (AIOS v5.1)**: Claude + Gemini + Codex with Co-Leadership workflow
+1. **Multi-AI Orchestration (AIOS v5.3)**: Claude + Gemini + Codex with Co-Leadership workflow
 2. **Context OS**: hierarchical context management (Workspace → Project → Task)
 3. **Remote Access**: run and control local sessions through Gateway + Telegram (with Smart Digest for key results extraction, secret masking, and anti-spam filtering)
 4. **Stable Sessions**: tmux-backed long-running Claude sessions
@@ -218,19 +218,28 @@ The Telegram bot uses **digest mode** by default. It extracts only key results f
 - **Hybrid triggering**: errors/completion flush immediately, normal output debounces 5s
 - **Priority budgeting**: error(5) > build/test(4) > commit/phase(3) fills 800 chars
 
-## Multi-AI Orchestration (AIOS v5.1)
+## Multi-AI Orchestration (AIOS v5.3)
 
-Olympus ships with AIOS v5.1 and Claude-Codex Co-Leadership.
+Olympus ships with AIOS v5.3 — Deep Engineering Protocol with Claude-Codex Co-Leadership.
 
 Run from Claude CLI:
 
 ```bash
+# Auto mode (default) — fully autonomous, no user intervention
 /orchestration "Implement cart feature end-to-end"
+
+# Approval mode — user confirms at Phase 3 (plan lock) and Phase 8 (final)
+/orchestration --plan "Refactor authentication flow"
+
+# Strict mode — user approves every phase transition
+/orchestration --strict "Payment system overhaul"
 ```
 
 Highlights:
 
 - 10-phase workflow (planning → execution → validation)
+- **Auto mode by default** — fully autonomous execution
+- `--plan` for approval checkpoints, `--strict` for full control
 - Consensus checkpoints for critical phases
 - Quality gates (build/lint/type/test)
 - Checkpoint and rollback workflow

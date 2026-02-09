@@ -327,6 +327,10 @@ export class SessionManager {
       execFileSync('tmux', ['new-session', '-d', '-s', tmuxSession, '-c', workDir, claudePath], {
         stdio: 'pipe',
       });
+      // Enable extended-keys for Shift+Enter passthrough (Ghostty/Kitty protocol)
+      try {
+        execFileSync('tmux', ['set', '-t', tmuxSession, 'extended-keys', 'always'], { stdio: 'pipe' });
+      } catch { /* tmux < 3.2 */ }
     } catch (err) {
       // Clean up task if tmux fails
       taskStore.delete(rootTask.id);
@@ -517,22 +521,32 @@ export class SessionManager {
    * Send keys to tmux target with literal mode
    */
   private sendKeys(keys: string, tmuxTarget: string, sessionId?: string): boolean {
-    try {
-      // Use execFileSync to avoid shell interpolation
-      execFileSync('tmux', ['send-keys', '-t', tmuxTarget, '-l', keys], {
-        stdio: 'pipe',
-      });
-      execFileSync('tmux', ['send-keys', '-t', tmuxTarget, 'Enter'], {
-        stdio: 'pipe',
-      });
-      return true;
-    } catch (err) {
-      this.onSessionEvent?.(sessionId || '', {
-        type: 'error',
-        error: (err as Error).message
-      });
-      return false;
+    const MAX_RETRIES = 2;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        // Use execFileSync to avoid shell interpolation
+        execFileSync('tmux', ['send-keys', '-t', tmuxTarget, '-l', keys], {
+          stdio: 'pipe',
+        });
+        execFileSync('tmux', ['send-keys', '-t', tmuxTarget, 'Enter'], {
+          stdio: 'pipe',
+        });
+        return true;
+      } catch (err) {
+        const errMsg = (err as Error).message;
+        // "no current client" is a transient tmux issue — retry after brief delay
+        if (errMsg.includes('no current client') && attempt < MAX_RETRIES) {
+          try { execFileSync('sleep', ['0.3'], { stdio: 'pipe' }); } catch { /* ignore */ }
+          continue;
+        }
+        this.onSessionEvent?.(sessionId || '', {
+          type: 'error',
+          error: errMsg,
+        });
+        return false;
+      }
     }
+    return false;
   }
 
   /**
@@ -710,6 +724,17 @@ export class SessionManager {
       return;
     }
 
+    // Skip existing log content on startup — only send NEW output
+    // This prevents stale log replay when gateway restarts
+    if (!this.logOffsets.has(sessionId)) {
+      try {
+        const stats = statSync(logPath);
+        this.logOffsets.set(sessionId, stats.size);
+      } catch {
+        // File doesn't exist yet — offset 0 is correct
+      }
+    }
+
     // Poll every 500ms for new output
     const poller = setInterval(() => {
       try {
@@ -857,13 +882,18 @@ export class SessionManager {
    */
   private stripAnsi(text: string): string {
     // eslint-disable-next-line no-control-regex
-    return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+    return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, ' ')  // CSI sequences → space (preserve word boundaries)
       // eslint-disable-next-line no-control-regex
       .replace(/\x1b\][^\x07]*\x07/g, '')  // OSC sequences
       // eslint-disable-next-line no-control-regex
       .replace(/\x1b[()][AB012]/g, '')       // Character set selection
       // eslint-disable-next-line no-control-regex
-      .replace(/\x1b\[[\?]?[0-9;]*[hlm]/g, ''); // Mode set/reset
+      .replace(/\x1b\[[\?]?[0-9;]*[hlm]/g, '') // Mode set/reset
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b[=>]/g, '')              // Keypad mode sequences
+      // eslint-disable-next-line no-control-regex
+      .replace(/\x1b\[\??\d*[;]?\d*[A-Za-z]/g, '') // Catch remaining CSI
+      .replace(/\s{2,}/g, ' ');              // Collapse multiple spaces from replacements
   }
 
   /**
@@ -910,10 +940,14 @@ export class SessionManager {
 
       // === BLOCKLIST (noise removal) ===
 
-      // Claude Code banner patterns
-      if (line.includes('▐▛███▜▌') || line.includes('▝▜█████▛▘') || line.includes('▘▘ ▝▝')) continue;
-      if (line.includes('Claude Code v')) continue;
-      if (/Opus \d|Sonnet \d|Haiku \d/.test(line) && line.includes('Claude')) continue;
+      // Claude Code banner patterns (with or without spaces from ANSI stripping)
+      if (line.includes('▐▛███▜▌') || line.includes('▝▜█████▛▘')) continue;
+      if (/▘▘\s*▝▝/.test(line)) continue;
+      if (line.includes('Claude Code v') || line.includes('ClaudeCodev')) continue;
+      if (/Opus \d|Sonnet \d|Haiku \d/.test(line)) continue;
+      // Claude Code notification messages
+      if (/claude\s*install/i.test(line) || /switched.*installer/i.test(line)) continue;
+      if (/native\s*installer/i.test(line)) continue;
 
       // Horizontal dividers (long lines of ─ or ━)
       if (/^[─━]{20,}$/.test(trimmed)) continue;
@@ -927,8 +961,12 @@ export class SessionManager {
       // New-format status bar (pipe-delimited with emojis: 🤖Opus│...│, 📁project│...)
       if (/🤖.*│/.test(line) || /📁.*│/.test(line)) continue;
       if (/🔷.*│/.test(line) || /💎.*│/.test(line)) continue;
+      // Model names as status indicators (with or without emoji prefix)
+      if (/(?:gemini|gpt|claude|sonnet|opus|haiku|o[1-9])-[\w.-]+│/i.test(line)) continue;
       // Legacy status bar (space-separated)
       if (/\d+[kK]?\s*tokens?/i.test(line) && /\$[\d.]+/.test(line)) continue;
+      // Time/cost status lines (e.g., "(5시간3분)" or "(23시간59분)")
+      if (/^\s*\(\d+시간\d+분\)\s*$/.test(trimmed)) continue;
 
       // New-format spinner/progress (star/dot chars + short status text)
       if (/^[\s]*[✶✳✢✻✽·]/.test(line)) continue;
@@ -945,7 +983,13 @@ export class SessionManager {
       if (/Context left until auto-compact/i.test(line)) continue;
 
       // Lines that are only whitespace + box-drawing or block chars
-      if (/^[\s░▒▓█▄▀│├└┘┐┌─━]+$/.test(trimmed)) continue;
+      if (/^[\s░▒▓█▄▀│├└┘┐┌─━▘▝▖▗▚▐▛▜▟]+$/.test(trimmed)) continue;
+
+      // Partial/broken escape sequences leftover from incomplete ANSI stripping
+      if (/^\s*\[<[a-z]?\s*$/.test(trimmed)) continue;
+
+      // Mostly non-ASCII control artifacts (very short lines with no alphanumeric)
+      if (trimmed.length > 0 && trimmed.length <= 3 && !/[a-zA-Z0-9가-힣]/.test(trimmed)) continue;
 
       // Consecutive empty lines (keep max 1)
       if (!trimmed) {

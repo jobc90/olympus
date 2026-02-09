@@ -32,7 +32,7 @@
 - [Usage](#usage)
 - [Model Configuration](#model-configuration)
 - [Telegram Bot Commands](#telegram-bot-commands)
-- [Multi-AI Orchestration (AIOS v5.1)](#multi-ai-orchestration-aios-v51)
+- [Multi-AI Orchestration (AIOS v5.3)](#multi-ai-orchestration-aios-v51)
 - [Architecture](#architecture)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
@@ -41,7 +41,7 @@
 
 Olympus는 Claude CLI의 생산성을 극대화하는 **Multi-AI 협업 플랫폼**입니다:
 
-1. **Multi-AI Orchestration (AIOS v5.1)**: Claude + Gemini + Codex Co-Leadership 기반 협업으로 복잡한 작업 자동화
+1. **Multi-AI Orchestration (AIOS v5.3)**: Claude + Gemini + Codex Co-Leadership 기반 협업으로 복잡한 작업 자동화
 2. **Context OS**: 계층적 컨텍스트 관리 (Workspace → Project → Task), 자동 상향 보고, 병합 워크플로우
 3. **Claude CLI 래퍼**: `olympus` 실행 시 Claude CLI가 실행됩니다 (브랜딩만 Olympus)
 4. **원격 접근**: Gateway를 통해 Telegram 봇으로 핸드폰에서 로컬 Claude CLI 사용
@@ -51,7 +51,7 @@ Olympus는 Claude CLI의 생산성을 극대화하는 **Multi-AI 협업 플랫�
 
 | 기능 | 설명 |
 |------|------|
-| `/orchestration` v5.1 | Claude-Codex Co-Leadership, 10 Phase 합의 기반 워크플로우 |
+| `/orchestration` v5.3 | Claude-Codex Co-Leadership, 10 Phase 합의 기반 워크플로우, Deep Engineering |
 | **Context OS** | 3계층 컨텍스트 (Workspace/Project/Task), SQLite 저장, 자동 상향 보고 |
 | **Context Explorer** | 대시보드에서 트리뷰 + 편집 + 버전 이력 + 병합 요청 |
 | MCP 서버 | ai-agents (Multi-AI), openapi (Swagger 연동) |
@@ -387,7 +387,9 @@ olympus models sync
 | `/mode raw\|digest` | 출력 모드 전환 (기본: digest) |
 | `/raw` | 원문 모드 단축키 |
 | `/last` | 마지막 출력 다시 보기 |
-| `/orchestration <요청>` | Multi-AI 협업 모드 실행 |
+| `/orchestration <요청>` | Multi-AI 협업 (Auto 전자동) |
+| `/orchestration --plan <요청>` | Phase 3, 8에서 사용자 확인 |
+| `/orchestration --strict <요청>` | 모든 Phase 전환 시 승인 |
 | 일반 메시지 | 활성 세션의 Claude에게 전송 |
 | `@이름 메시지` | 특정 세션에 메시지 전송 |
 
@@ -403,17 +405,23 @@ Telegram 봇은 기본적으로 **digest 모드**로 동작합니다. 수백 줄
 | **하이브리드 트리거** | 에러/완료 → 즉시 전달, 일반 → 5초 debounce |
 | **우선순위 기반 예산** | 에러(5점) > 빌드/테스트(4점) > 커밋(3점) 순서로 800자 채움 |
 
-## Multi-AI Orchestration (AIOS v5.1)
+## Multi-AI Orchestration (AIOS v5.3)
 
-Olympus는 **Multi-AI Orchestration Protocol v5.1 (AIOS)**을 완벽하게 내장하고 있습니다. Claude + Codex Co-Leadership 기반으로 `/orchestration` 명령어를 사용하여 Gemini, Codex 등 여러 AI와 협업할 수 있습니다.
+Olympus는 **Multi-AI Orchestration Protocol v5.3 (AIOS)**을 완벽하게 내장하고 있습니다. Claude + Codex Co-Leadership 기반으로 `/orchestration` 명령어를 사용하여 Gemini, Codex 등 여러 AI와 협업할 수 있습니다.
 
 > 💡 **모든 플랫폼에서 사용 가능**: `/orchestration` 프로토콜은 macOS, Linux, Windows 모두에서 작동합니다.
 
 ### 사용 방법
 
 ```bash
-# Claude CLI에서 실행
+# Claude CLI에서 실행 (기본: Auto 모드 — 전자동, 사용자 개입 불필요)
 /orchestration "로그인 페이지 UI 개선"
+
+# Approval 모드 (Phase 3, 8에서 사용자 확인)
+/orchestration --plan "장바구니 기능 추가"
+
+# Strict 모드 (모든 Phase 전환 시 사용자 승인)
+/orchestration --strict "결제 시스템 리팩토링"
 
 # Telegram 봇에서 실행 (macOS만 지원)
 /orchestration 장바구니 기능 추가
@@ -423,8 +431,8 @@ Olympus는 **Multi-AI Orchestration Protocol v5.1 (AIOS)**을 완벽하게 내�
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           AI Operating System v5.1                               │
-│                    (Claude + Codex Co-Leadership Model)                          │
+│                           AI Operating System v5.3                               │
+│              (Claude + Codex Co-Leadership + Deep Engineering)                   │
 └─────────────────────────────────────────────────────────────────────────────────┘
                                       │
                     ┌─────────────────┼─────────────────┐

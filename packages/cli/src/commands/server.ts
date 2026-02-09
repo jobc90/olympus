@@ -228,14 +228,28 @@ serverCommand
       }
     }
 
-    // Stop main session (olympus-main tmux session)
+    // Stop ALL olympus-* tmux sessions (not just main)
     if (stopGateway) {
       try {
-        execSync('tmux kill-session -t "olympus-main" 2>/dev/null');
-        console.log(chalk.green('  ✓ Main 세션 종료됨'));
-        stoppedAny = true;
+        const tmuxSessions = execSync('tmux list-sessions -F "#{session_name}" 2>/dev/null', {
+          encoding: 'utf-8',
+        }).trim().split('\n').filter(s => s.startsWith('olympus-') || s === 'olympus');
+
+        for (const session of tmuxSessions) {
+          try {
+            execSync(`tmux kill-session -t "${session}" 2>/dev/null`);
+            console.log(chalk.green(`  ✓ ${session} 세션 종료됨`));
+            stoppedAny = true;
+          } catch {
+            // Session might already be dead
+          }
+        }
+
+        if (tmuxSessions.length === 0) {
+          console.log(chalk.gray('  - tmux 세션: 없음'));
+        }
       } catch {
-        // Session might not exist
+        // No tmux sessions
       }
     }
 
@@ -512,6 +526,10 @@ async function createMainSession(config: { gatewayUrl: string; apiKey: string })
       `tmux new-session -d -s "${MAIN_SESSION}" -c "${projectPath}" "${claudePath}"`,
       { stdio: 'pipe' }
     );
+    // Enable extended-keys for Shift+Enter passthrough (Ghostty/Kitty protocol)
+    try {
+      execSync(`tmux set -t "${MAIN_SESSION}" extended-keys always`, { stdio: 'pipe' });
+    } catch { /* tmux < 3.2 */ }
     console.log(chalk.green(`   ✓ ${MAIN_SESSION} 세션 생성됨`));
     console.log(chalk.gray(`   경로: ${projectPath}`));
 

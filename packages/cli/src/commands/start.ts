@@ -111,6 +111,14 @@ export const startCommand = new Command('start')
         { stdio: 'pipe' }
       );
 
+      // Enable extended-keys for modifier key passthrough (Shift+Enter → newline)
+      // 'always' forces passthrough even if terminal doesn't advertise support (needed for Ghostty/Kitty protocol)
+      try {
+        execSync(`tmux set -t "${sessionName}" extended-keys always`, { stdio: 'pipe' });
+      } catch {
+        // tmux < 3.2 doesn't support extended-keys, ignore
+      }
+
       console.log(chalk.cyan.bold('✅ Claude CLI 세션 시작됨!\n'));
 
       if (insideTmux) {

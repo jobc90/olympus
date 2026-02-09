@@ -129,14 +129,17 @@ class OlympusBot {
         `⚡ *Olympus Bot*\n\n` +
         `Claude CLI를 원격으로 제어합니다.\n\n` +
         `*세션 시작:*\n` +
-        `터미널에서 \`olympus start\`\n\n` +
+        `터미널에서 \`olympus start\`\n` +
+        `• \`--trust\`: bypass 모드 (tmux에서 Claude CLI 자동 실행)\n\n` +
         `*명령어:*\n` +
         `/sessions - 세션 목록\n` +
         `/use <이름> - 세션 연결/전환\n` +
         `/close [이름] - 세션 해제\n` +
         `/health - 상태 확인\n` +
         `/mode raw|digest - 출력 모드 전환\n` +
-        `/orchestration <요청> - Multi-AI 협업 모드\n\n` +
+        `/orchestration <요청> - Multi-AI 협업 (Auto 전자동)\n` +
+        `/orchestration --plan <요청> - Phase 3,8 확인\n` +
+        `/orchestration --strict <요청> - 매 Phase 승인\n\n` +
         `*출력 모드:*\n` +
         `• *digest* (기본): 핵심 결과만 전달\n` +
         `• *raw*: 원문 전체 전달\n\n` +
@@ -203,16 +206,32 @@ class OlympusBot {
         let msg = '';
 
         // Active registered sessions (all, not just this chat)
+        // Show current active session prominently at the top
+        if (currentDisplayName) {
+          const currentSession = activeSessions.find(s => {
+            const name = (s.name ?? s.tmuxSession).replace(/^olympus-/, '');
+            return name === currentDisplayName && s.chatId === myChatId;
+          });
+          if (currentSession) {
+            const shortPath = currentSession.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
+            const age = this.formatAge(currentSession.createdAt);
+            msg += `🟢 *현재 세션: ${currentDisplayName}*\n`;
+            msg += `    📂 \`${shortPath}\`  ⏱ ${age}\n`;
+            msg += `    💬 메시지를 입력하면 이 세션으로 전송됩니다\n`;
+            msg += '─────────────────\n\n';
+          }
+        }
+
         if (activeSessions.length > 0) {
-          msg += `📋 *활성 세션* (${activeSessions.length}개)\n`;
+          msg += `📋 *전체 세션* (${activeSessions.length}개)\n`;
           msg += '─────────────────\n';
           for (const session of activeSessions) {
             const rawName = session.name ?? session.tmuxSession;
             const displayName = rawName.replace(/^olympus-/, '');
             const isMyChat = session.chatId === myChatId;
             const isCurrent = isMyChat && currentDisplayName === displayName;
-            const icon = isCurrent ? '✅' : isMyChat ? '🔵' : '⚪';
-            const suffix = isCurrent ? ' ← 현재' : isMyChat ? '' : ' (외부)';
+            const icon = isCurrent ? '▶️' : isMyChat ? '🔵' : '⚪';
+            const suffix = isCurrent ? ' ✓' : isMyChat ? '' : ' (외부)';
             const shortPath = session.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
             const age = this.formatAge(session.createdAt);
             msg += `${icon} *${displayName}*${suffix}\n`;
@@ -235,7 +254,8 @@ class OlympusBot {
         }
 
         msg += '─────────────────\n';
-        msg += '💡 `/use 이름` 세션 전환 | `/close 이름` 종료';
+        msg += '💡 `/use 이름` 세션 전환 | `/close 이름` 종료\n';
+        msg += `▶️ = 현재 연결 | 🔵 = 내 세션 | ⚪ = 외부/미연결`;
 
         await ctx.reply(msg, { parse_mode: 'Markdown' });
       } catch (err) {
@@ -310,27 +330,52 @@ class OlympusBot {
       const sessions = this.chatSessions.get(ctx.chat.id);
       const displayName = nameInput.replace(/^olympus-/, '');
 
-      // Check if already connected
+      // Check if already connected AND still valid in gateway
       const connectedName = this.resolveSessionName(ctx.chat.id, nameInput);
       if (connectedName) {
-        // Already connected - just switch
-        this.activeSession.set(ctx.chat.id, connectedName);
+        const cachedSessionId = sessions?.get(connectedName);
+        let sessionStillValid = false;
 
-        // Get session info for banner
+        // Verify session ID is still valid with gateway
         try {
           const sessionsRes = await fetch(`${this.config.gatewayUrl}/api/sessions`, {
             headers: { Authorization: `Bearer ${this.config.apiKey}` },
           });
-          const sessionsData = await sessionsRes.json() as { sessions: Array<{ id: string; name: string; projectPath: string }> };
-          const sessionInfo = sessionsData.sessions.find(s => s.name === connectedName);
-          const projectPath = sessionInfo?.projectPath ?? '';
+          const sessionsData = await sessionsRes.json() as { sessions: Array<{ id: string; name: string; projectPath: string; status: string }> };
+          const sessionInfo = sessionsData.sessions.find(s => s.id === cachedSessionId && s.status === 'active');
 
-          const banner = this.getOlympusBanner(displayName, projectPath);
-          await ctx.reply(banner, { parse_mode: 'Markdown' });
+          if (sessionInfo) {
+            // Session still valid - just switch
+            sessionStillValid = true;
+            this.activeSession.set(ctx.chat.id, connectedName);
+            const banner = this.getOlympusBanner(displayName, sessionInfo.projectPath);
+            await ctx.reply(banner, { parse_mode: 'Markdown' });
+            return;
+          }
+
+          // Session ID is stale - check if gateway has a session with same tmux name
+          const freshSession = sessionsData.sessions.find(s => s.name === connectedName && s.status === 'active');
+          if (freshSession) {
+            // Re-map to fresh session ID
+            sessions?.set(connectedName, freshSession.id);
+            this.subscribedRuns.set(freshSession.id, ctx.chat.id);
+            if (this.ws?.readyState === 1) {
+              this.ws.send(JSON.stringify({ type: 'subscribe', payload: { sessionId: freshSession.id } }));
+            }
+            this.activeSession.set(ctx.chat.id, connectedName);
+            const banner = this.getOlympusBanner(displayName, freshSession.projectPath);
+            await ctx.reply(banner, { parse_mode: 'Markdown' });
+            return;
+          }
         } catch {
-          await ctx.reply(`✅ 활성 세션: *${displayName}*`, { parse_mode: 'Markdown' });
+          // Gateway unreachable — fall through to connect
         }
-        return;
+
+        if (!sessionStillValid) {
+          // Stale local entry — remove and fall through to connect
+          sessions?.delete(connectedName);
+          this.subscribedRuns.delete(cachedSessionId ?? '');
+        }
       }
 
       // Not connected - try to connect to tmux session
@@ -396,7 +441,10 @@ class OlympusBot {
       if (!prompt) {
         await ctx.reply(
           '❌ 요청 내용을 입력해주세요.\n\n' +
-          '예: `/orchestration 로그인 페이지 UI 개선`',
+          '예:\n' +
+          '`/orchestration 로그인 UI 개선` (Auto)\n' +
+          '`/orchestration --plan 장바구니 추가` (확인)\n' +
+          '`/orchestration --strict 결제 리팩토링` (엄격)',
           { parse_mode: 'Markdown' }
         );
         return;
