@@ -18,6 +18,40 @@ export interface SessionOutput {
   timestamp: number;
 }
 
+export interface AgentProgress {
+  taskId: string;
+  state: string;
+  message: string;
+  progress?: number;
+  workerCount?: number;
+  completedWorkers?: number;
+}
+
+export interface WorkerInfo {
+  workerId: string;
+  projectPath: string;
+  status: 'running' | 'completed' | 'failed';
+  output: string;
+}
+
+export interface TaskHistoryItem {
+  id: string;
+  command: string;
+  status: 'success' | 'partial' | 'failed';
+  summary: string;
+  duration: number;
+  timestamp: number;
+  workerCount: number;
+}
+
+export interface PendingApproval {
+  taskId: string;
+  command: string;
+  analysis: Record<string, unknown>;
+  plan: Record<string, unknown>;
+  timestamp: number;
+}
+
 export interface OlympusState {
   connected: boolean;
   phase: PhasePayload | null;
@@ -31,6 +65,13 @@ export interface OlympusState {
   currentSessionId: string | null;
   sessionOutputs: SessionOutput[];
   error: string | null;
+  // V2 Agent/Worker state
+  agentState: string;
+  agentProgress: AgentProgress | null;
+  agentTaskId: string | null;
+  workers: Map<string, WorkerInfo>;
+  taskHistory: TaskHistoryItem[];
+  pendingApproval: PendingApproval | null;
 }
 
 export interface UseOlympusOptions {
@@ -54,6 +95,12 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     currentSessionId: null,
     sessionOutputs: [],
     error: null,
+    agentState: 'IDLE',
+    agentProgress: null,
+    agentTaskId: null,
+    workers: new Map(),
+    taskHistory: [],
+    pendingApproval: null,
   });
 
   const { port, host, apiKey } = options;
@@ -174,6 +221,83 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       }));
     });
 
+    // V2 Agent events
+    client.onAgentProgress((p) => {
+      const progress = p as AgentProgress;
+      setState((s) => ({
+        ...s,
+        agentState: progress.state,
+        agentProgress: progress,
+        agentTaskId: progress.taskId,
+        logs: [...s.logs.slice(-99), { level: 'info', message: `[agent] ${progress.message}` }],
+      }));
+    });
+
+    client.onAgentResult((p) => {
+      const { taskId, report } = p as { taskId: string; report: { status: string; summary: string } };
+      setState((s) => {
+        const historyItem: TaskHistoryItem = {
+          id: taskId,
+          command: s.agentProgress?.message ?? '',
+          status: report.status as 'success' | 'partial' | 'failed',
+          summary: report.summary,
+          duration: 0,
+          timestamp: Date.now(),
+          workerCount: s.workers.size,
+        };
+        return {
+          ...s,
+          agentState: 'IDLE',
+          agentProgress: null,
+          agentTaskId: null,
+          pendingApproval: null,
+          taskHistory: [historyItem, ...s.taskHistory].slice(0, 50),
+          logs: [...s.logs.slice(-99), { level: report.status === 'success' ? 'info' : 'error', message: `[agent:result] ${report.summary}` }],
+        };
+      });
+    });
+
+    client.onAgentApproval((p) => {
+      const { taskId, request } = p as { taskId: string; request: PendingApproval };
+      setState((s) => ({
+        ...s,
+        pendingApproval: { ...request, taskId },
+        logs: [...s.logs.slice(-99), { level: 'warn', message: `[agent:approval] 승인 대기: ${request.command}` }],
+      }));
+    });
+
+    // V2 Worker events
+    client.onWorkerStarted((p) => {
+      setState((s) => {
+        const workers = new Map(s.workers);
+        workers.set(p.workerId, { workerId: p.workerId, projectPath: p.projectPath, status: 'running', output: '' });
+        return { ...s, workers };
+      });
+    });
+
+    client.onWorkerOutput((p) => {
+      setState((s) => {
+        const workers = new Map(s.workers);
+        const existing = workers.get(p.workerId);
+        if (existing) {
+          workers.set(p.workerId, { ...existing, output: (existing.output + p.content).slice(-5000) });
+        }
+        return { ...s, workers };
+      });
+    });
+
+    client.onWorkerDone((p) => {
+      const { workerId, result } = p as { workerId: string; result: { status: string; output: string } };
+      setState((s) => {
+        const workers = new Map(s.workers);
+        const existing = workers.get(workerId);
+        if (existing) {
+          workers.set(workerId, { ...existing, status: result.status === 'completed' ? 'completed' : 'failed', output: result.output || existing.output });
+        }
+        return { ...s, workers };
+      });
+    });
+
     client.onError((e) => {
       setState((s) => ({
         ...s,
@@ -255,5 +379,41 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     }
   }, [host, port, apiKey]);
 
-  return { ...state, subscribe, unsubscribe, subscribeSession, unsubscribeSession, cancel, connectAvailableSession };
+  const sendAgentCommand = useCallback(async (command: string) => {
+    try {
+      const result = await clientRef.current?.sendCommand(command);
+      return result;
+    } catch (e) {
+      setState(s => ({ ...s, error: `Agent error: ${(e as Error).message}` }));
+      return null;
+    }
+  }, []);
+
+  const cancelAgentTask = useCallback(async () => {
+    try {
+      await clientRef.current?.cancelAgent();
+    } catch (e) {
+      setState(s => ({ ...s, error: `Cancel error: ${(e as Error).message}` }));
+    }
+  }, []);
+
+  const approveTask = useCallback(async (taskId: string) => {
+    try {
+      await clientRef.current?.approveTask(taskId);
+      setState(s => ({ ...s, pendingApproval: null }));
+    } catch (e) {
+      setState(s => ({ ...s, error: `Approve error: ${(e as Error).message}` }));
+    }
+  }, []);
+
+  const rejectTask = useCallback(async (taskId: string) => {
+    try {
+      await clientRef.current?.rejectTask(taskId);
+      setState(s => ({ ...s, pendingApproval: null }));
+    } catch (e) {
+      setState(s => ({ ...s, error: `Reject error: ${(e as Error).message}` }));
+    }
+  }, []);
+
+  return { ...state, subscribe, unsubscribe, subscribeSession, unsubscribeSession, cancel, connectAvailableSession, sendAgentCommand, cancelAgentTask, approveTask, rejectTask };
 }

@@ -961,6 +961,10 @@ export class SessionManager {
       // New-format status bar (pipe-delimited with emojis: 🤖Opus│...│, 📁project│...)
       if (/🤖.*│/.test(line) || /📁.*│/.test(line)) continue;
       if (/🔷.*│/.test(line) || /💎.*│/.test(line)) continue;
+      // Status bar with speed/time/todo indicators (🔥 9.7K/min │ ⏱ 5분 │ 할일: -)
+      if (/🔥.*│/.test(line) || /⏱.*│/.test(line)) continue;
+      // Generic pipe-delimited status bar (3+ pipe segments)
+      if ((line.match(/│/g)?.length ?? 0) >= 3) continue;
       // Model names as status indicators (with or without emoji prefix)
       if (/(?:gemini|gpt|claude|sonnet|opus|haiku|o[1-9])-[\w.-]+│/i.test(line)) continue;
       // Legacy status bar (space-separated)
@@ -970,8 +974,13 @@ export class SessionManager {
 
       // New-format spinner/progress (star/dot chars + short status text)
       if (/^[\s]*[✶✳✢✻✽·]/.test(line)) continue;
+      // Lines containing spinner glyphs mixed with text (broken ANSI artifacts)
+      if (/[✶✳✢✻✽⏺]/.test(line) && (line.match(/[✶✳✢✻✽·⏺]/g)?.length ?? 0) >= 2) continue;
       // Legacy braille spinner
       if (/^[\s]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(line)) continue;
+
+      // Thinking indicator lines (Claude CLI thinking animation)
+      if (/\(thinking\)/i.test(line)) continue;
 
       // Progress status lines (exact match: "Thinking...", "Harmonizing...", etc.)
       if (/^[\s]*(Thinking|Working|Reading|Writing|Searching|Running|Harmonizing|Schlepping)\.{2,}$/i.test(trimmed)) continue;

@@ -105,7 +105,7 @@ export const startCommand = new Command('start')
       // Create tmux session with claude as the command
       // Use login shell (-l) to ensure proper environment
       // When claude exits, the session will automatically close
-      const claudeArgs = trustMode ? `${claudePath} --dangerously-skip-permissions` : claudePath;
+      const claudeArgs = trustMode ? `${claudePath} --trust` : claudePath;
       execSync(
         `tmux new-session -d -s "${sessionName}" -c "${projectPath}" "${claudeArgs}"`,
         { stdio: 'pipe' }

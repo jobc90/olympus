@@ -3,6 +3,8 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { AgentConfig, WorkerConfig, MemoryConfig, SecurityConfig } from '@olympus-dev/protocol';
+import { DEFAULT_AGENT_CONFIG, DEFAULT_WORKER_CONFIG, DEFAULT_MEMORY_CONFIG, DEFAULT_SECURITY_CONFIG } from '@olympus-dev/protocol';
 
 const CONFIG_DIR = join(homedir(), '.olympus');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
@@ -18,6 +20,34 @@ export interface OlympusClientConfig {
   gatewayHost: string;
   gatewayPort: number;
   telegram?: TelegramConfig;
+  // V2 config sections
+  configVersion?: number;
+  agent?: Partial<AgentConfig>;
+  worker?: Partial<WorkerConfig>;
+  memory?: Partial<MemoryConfig>;
+  security?: Partial<SecurityConfig>;
+}
+
+/**
+ * Resolved V2 config with all defaults applied
+ */
+export interface ResolvedV2Config {
+  agent: AgentConfig;
+  worker: WorkerConfig;
+  memory: MemoryConfig;
+  security: SecurityConfig;
+}
+
+/**
+ * Resolve V2 config sections from partial user config + defaults
+ */
+export function resolveV2Config(config: OlympusClientConfig): ResolvedV2Config {
+  return {
+    agent: { ...DEFAULT_AGENT_CONFIG, ...config.agent },
+    worker: { ...DEFAULT_WORKER_CONFIG, ...config.worker },
+    memory: { ...DEFAULT_MEMORY_CONFIG, ...config.memory },
+    security: { ...DEFAULT_SECURITY_CONFIG, ...config.security },
+  };
 }
 
 /**
@@ -65,10 +95,18 @@ export function loadConfig(): OlympusClientConfig {
     const loaded = JSON.parse(content) as OlympusClientConfig;
 
     // Ensure all fields exist (migration for older configs)
-    return {
+    const merged = {
       ...getDefaultConfig(),
       ...loaded,
     };
+
+    // Auto-migrate to v2 if needed
+    if (!merged.configVersion || merged.configVersion < 2) {
+      merged.configVersion = 2;
+      saveConfig(merged);
+    }
+
+    return merged;
   } catch {
     // If config is corrupted, regenerate
     const config = getDefaultConfig();

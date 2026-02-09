@@ -8,6 +8,12 @@ import { SettingsModal } from './components/SettingsModal';
 import { PhaseProgress } from './components/PhaseProgress';
 import { TaskList } from './components/TaskList';
 import { AgentStream } from './components/AgentStream';
+import { AgentPanel } from './components/AgentPanel';
+import { CommandInput } from './components/CommandInput';
+import { WorkerGrid } from './components/WorkerGrid';
+import { WorkerDetailModal } from './components/WorkerDetailModal';
+import { TaskTimeline } from './components/TaskTimeline';
+import { AgentApprovalDialog } from './components/AgentApprovalDialog';
 import { LogPanel } from './components/LogPanel';
 import { Card, CardHeader } from './components/Card';
 import { ContextExplorer } from './components/ContextExplorer';
@@ -66,11 +72,23 @@ export default function App() {
     currentSessionId,
     sessionOutputs,
     error,
+    agentState,
+    agentProgress,
+    agentTaskId,
+    workers,
+    taskHistory,
+    pendingApproval,
     subscribe,
     subscribeSession,
     cancel,
     connectAvailableSession,
+    sendAgentCommand,
+    cancelAgentTask,
+    approveTask,
+    rejectTask,
   } = useOlympus(config);
+
+  const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
 
   const contextTree = useContextTree({
     baseUrl: `http://${config.host}:${config.port}`,
@@ -174,7 +192,24 @@ export default function App() {
             ) : currentSessionId && currentSession ? (
               <SessionOutputPanel session={currentSession} outputs={sessionOutputs.filter(o => o.sessionId === currentSessionId)} />
             ) : (
-              <EmptyState config={config} hasRuns={runs.length > 0} hasSessions={sessions.filter(s => s.status === 'active').length > 0} />
+              <>
+                {/* V2 Agent Interface */}
+                <AgentPanel
+                  state={agentState}
+                  progress={agentProgress}
+                  taskId={agentTaskId}
+                  onCancel={cancelAgentTask}
+                />
+                <CommandInput
+                  onSubmit={sendAgentCommand}
+                  agentState={agentState}
+                  disabled={!connected}
+                />
+                <WorkerGrid workers={workers} />
+                <TaskTimeline tasks={taskHistory} />
+
+                <EmptyState config={config} hasRuns={runs.length > 0} hasSessions={sessions.filter(s => s.status === 'active').length > 0} />
+              </>
             )}
           </section>
 
@@ -202,6 +237,29 @@ export default function App() {
           config={config}
           onSave={handleConfigSave}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {/* Worker Detail Modal */}
+      {selectedWorker && workers.get(selectedWorker) && (
+        <WorkerDetailModal
+          worker={workers.get(selectedWorker)!}
+          onClose={() => setSelectedWorker(null)}
+          onTerminate={async (id) => {
+            try {
+              const client = (window as unknown as { __olympusClient?: { terminateWorker: (id: string) => Promise<unknown> } }).__olympusClient;
+              if (client) await client.terminateWorker(id);
+            } catch { /* best effort */ }
+          }}
+        />
+      )}
+
+      {/* Approval Dialog */}
+      {pendingApproval && (
+        <AgentApprovalDialog
+          request={pendingApproval as unknown as import('./components/AgentApprovalDialog').ApprovalRequestData}
+          onApprove={approveTask}
+          onReject={rejectTask}
         />
       )}
     </div>

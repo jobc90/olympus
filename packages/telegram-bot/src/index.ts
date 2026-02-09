@@ -254,7 +254,24 @@ class OlympusBot {
         }
 
         msg += '─────────────────\n';
-        msg += '💡 `/use 이름` 세션 전환 | `/close 이름` 종료\n';
+
+        // Collect all session names for /use examples
+        const allNames: string[] = [];
+        for (const session of activeSessions) {
+          allNames.push((session.name ?? session.tmuxSession).replace(/^olympus-/, ''));
+        }
+        for (const tmux of availableTmux) {
+          const name = tmux.tmuxSession.replace(/^olympus-/, '');
+          if (!allNames.includes(name)) allNames.push(name);
+        }
+
+        if (allNames.length > 0) {
+          msg += '💡 세션 전환:\n';
+          for (const name of allNames) {
+            msg += `  \`/use ${name}\`\n`;
+          }
+          msg += '\n';
+        }
         msg += `▶️ = 현재 연결 | 🔵 = 내 세션 | ⚪ = 외부/미연결`;
 
         await ctx.reply(msg, { parse_mode: 'Markdown' });

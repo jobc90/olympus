@@ -12,7 +12,19 @@ export {
   isTelegramConfigured,
   getConfigDir,
   getConfigPath,
+  resolveV2Config,
   type OlympusClientConfig,
   type TelegramConfig,
+  type ResolvedV2Config,
 } from './auth.js';
 export { setCorsHeaders, handleCorsPrefllight } from './cors.js';
+export { RpcRouter, registerSystemMethods, registerAgentMethods } from './rpc/index.js';
+export type { RpcHandler, RpcContext } from './rpc/index.js';
+export { CodexAgent, CommandAnalyzer, ExecutionPlanner, ResultReviewer, AgentReporter, ANALYZER_SYSTEM_PROMPT, PLANNER_SYSTEM_PROMPT, REVIEWER_SYSTEM_PROMPT, CommandQueue, SecurityGuard, createAIProvider, MockProvider, OpenAIProvider } from './agent/index.js';
+export type { CodexAgentOptions, UserCommand, AIProvider, AIProviderConfig, QueuedCommand, SecurityCheckResult } from './agent/index.js';
+export { WorkerManager, ClaudeCliWorker } from './workers/index.js';
+export type { WorkerStatus } from './workers/index.js';
+export { ChannelManager, DashboardChannel, TelegramChannel } from './channels/index.js';
+export type { TelegramChannelConfig } from './channels/index.js';
+export type { ChannelPlugin, ChannelMessage, IncomingChannelMessage } from './channels/index.js';
+export { MemoryStore } from './memory/index.js';

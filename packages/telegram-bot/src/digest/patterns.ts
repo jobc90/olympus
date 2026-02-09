@@ -90,6 +90,9 @@ export const NOISE_PATTERNS = [
   /^(Thinking|Working|Loading|Searching|Globbing|Grepping)\.\.\.$/i,
   /^Using \w+ (tool|agent)/i,
   /^\s*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/,
+  /\(thinking\)/i,                    // Claude CLI thinking animation
+  /[✶✳✢✻✽·⏺].*[✶✳✢✻✽·⏺]/,          // lines with 2+ spinner glyphs (broken ANSI artifacts)
+  /│.*│.*│/,                          // pipe-delimited status bar (3+ segments)
   /^\s*\.\.\.\s*$/,
   /^[\s─━═]{20,}$/,                  // horizontal dividers
   /^\s*$/,                            // empty lines

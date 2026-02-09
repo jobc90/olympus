@@ -745,6 +745,50 @@ info "Gemini 3 모델: Flash(기본, 빠른 작업) / Pro(복잡한 분석/리�
 echo ""
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Phase 5.6: Codex/Gemini 글로벌 설정 배포
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+phase "Phase 5.6: Codex/Gemini 글로벌 설정 배포"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# Codex 글로벌 설정 배포 (~/.codex/AGENTS.md)
+CODEX_DIR="$HOME/.codex"
+CODEX_GLOBAL_TEMPLATE="$ORCHESTRATION_DIR/templates/CODEX.global.md"
+if [ -f "$CODEX_GLOBAL_TEMPLATE" ]; then
+    if [ -d "$CODEX_DIR" ]; then
+        if [ -f "$CODEX_DIR/AGENTS.md" ]; then
+            cp "$CODEX_DIR/AGENTS.md" "$CODEX_DIR/AGENTS.md.backup.$(date +%Y%m%d)" 2>/dev/null
+        fi
+        cp "$CODEX_GLOBAL_TEMPLATE" "$CODEX_DIR/AGENTS.md"
+        success "Codex 글로벌 설정 배포 완료 (~/.codex/AGENTS.md)"
+    else
+        warn "~/.codex/ 디렉토리가 없습니다. codex CLI를 먼저 실행하세요."
+    fi
+else
+    warn "CODEX.global.md 템플릿을 찾을 수 없습니다"
+fi
+
+# Gemini 글로벌 설정 배포 (~/.gemini/GEMINI.md)
+GEMINI_DIR="$HOME/.gemini"
+GEMINI_GLOBAL_TEMPLATE="$ORCHESTRATION_DIR/templates/GEMINI.global.md"
+if [ -f "$GEMINI_GLOBAL_TEMPLATE" ]; then
+    if [ -d "$GEMINI_DIR" ]; then
+        if [ -f "$GEMINI_DIR/GEMINI.md" ]; then
+            cp "$GEMINI_DIR/GEMINI.md" "$GEMINI_DIR/GEMINI.md.backup.$(date +%Y%m%d)" 2>/dev/null
+        fi
+        cp "$GEMINI_GLOBAL_TEMPLATE" "$GEMINI_DIR/GEMINI.md"
+        success "Gemini 글로벌 설정 배포 완료 (~/.gemini/GEMINI.md)"
+    else
+        warn "~/.gemini/ 디렉토리가 없습니다. gemini CLI를 먼저 실행하세요."
+    fi
+else
+    warn "GEMINI.global.md 템플릿을 찾을 수 없습니다"
+fi
+
+echo ""
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Phase 6: settings.json 설정
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

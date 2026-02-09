@@ -19,7 +19,19 @@ import {
 import { RunManager, type RunOptions } from './run-manager.js';
 import { SessionManager, type SessionEvent } from './session-manager.js';
 import { createApiHandler } from './api.js';
-import { validateWsApiKey, loadConfig } from './auth.js';
+import { validateWsApiKey, loadConfig, resolveV2Config } from './auth.js';
+import { RpcRouter, registerSystemMethods, registerAgentMethods } from './rpc/index.js';
+import type { RpcRequestPayload } from '@olympus-dev/protocol';
+import { DEFAULT_AGENT_CONFIG } from '@olympus-dev/protocol';
+import { CodexAgent } from './agent/agent.js';
+import { CommandAnalyzer } from './agent/analyzer.js';
+import { ExecutionPlanner } from './agent/planner.js';
+import { ResultReviewer } from './agent/reviewer.js';
+import { AgentReporter } from './agent/reporter.js';
+import { createAIProvider } from './agent/providers/index.js';
+import { WorkerManager } from './workers/manager.js';
+import { ChannelManager, DashboardChannel, TelegramChannel } from './channels/index.js';
+import { MemoryStore } from './memory/store.js';
 
 export interface GatewayOptions {
   port?: number;
@@ -43,8 +55,14 @@ export class Gateway {
   private clients = new Map<string, ClientInfo>();
   private runManager: RunManager;
   private sessionManager: SessionManager;
+  private rpcRouter: RpcRouter;
+  private agent: CodexAgent;
+  private workerManager: WorkerManager;
+  private channelManager: ChannelManager;
+  private memoryStore: MemoryStore;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private sessionCleanupTimer: ReturnType<typeof setInterval> | null = null;
+  private startTime = Date.now();
   private port: number;
   private host: string;
 
@@ -62,9 +80,107 @@ export class Gateway {
     this.sessionManager = new SessionManager({
       onSessionEvent: (sessionId, event) => this.broadcastSessionEvent(sessionId, event),
     });
+
+    // Load V2 config (user overrides + defaults)
+    const userConfig = loadConfig();
+    const v2Config = resolveV2Config(userConfig);
+
+    // Initialize Worker Manager
+    this.workerManager = new WorkerManager({
+      maxConcurrent: v2Config.agent.maxConcurrentWorkers,
+    });
+
+    // Initialize Agent components with resolved config + AI Provider
+    const agentConfig = v2Config.agent;
+    const provider = createAIProvider(agentConfig);
+    const analyzer = new CommandAnalyzer(provider);
+    const planner = new ExecutionPlanner(provider);
+    const reviewer = new ResultReviewer(provider);
+    const reporter = new AgentReporter();
+
+    this.agent = new CodexAgent({
+      config: agentConfig,
+      analyzer,
+      planner,
+      reviewer,
+      reporter,
+      workerManager: this.workerManager,
+      securityConfig: v2Config.security,
+    });
+
+    // Initialize Channel Manager
+    this.channelManager = new ChannelManager();
+    const dashboardChannel = new DashboardChannel();
+    dashboardChannel.setBroadcast((event, payload) => {
+      this.broadcastToAll(event, payload);
+    });
+    // Register channel (async, fire-and-forget in constructor)
+    this.channelManager.register(dashboardChannel).catch(() => {});
+
+    // Register Telegram channel if configured
+    try {
+      const telegramConfig = loadConfig().telegram;
+      if (telegramConfig?.token && telegramConfig.allowedUsers?.length > 0) {
+        const telegramChannel = new TelegramChannel(telegramConfig);
+        this.channelManager.register(telegramChannel).catch(() => {});
+      }
+    } catch {
+      // Telegram channel is optional
+    }
+
+    // Wire agent events to channel broadcasts + memory persistence
+    this.agent.on('progress', (payload: unknown) => {
+      this.broadcastToAll('agent:progress', payload);
+    });
+    this.agent.on('result', (payload: unknown) => {
+      this.broadcastToAll('agent:result', payload);
+      // Persist completed task to memory
+      this.persistAgentResult(payload);
+    });
+    this.agent.on('error', (payload: unknown) => {
+      this.broadcastToAll('agent:error', payload);
+    });
+    this.agent.on('approval', (payload: unknown) => {
+      this.broadcastToAll('agent:approval', payload);
+    });
+
+    // Wire worker events
+    this.workerManager.on('worker:started', (payload: unknown) => {
+      this.broadcastToAll('worker:started', payload);
+    });
+    this.workerManager.on('worker:output', (payload: unknown) => {
+      this.broadcastToAll('worker:output', payload);
+    });
+    this.workerManager.on('worker:done', (payload: unknown) => {
+      this.broadcastToAll('worker:done', payload);
+    });
+
+    // Initialize Memory Store with V2 config
+    this.memoryStore = new MemoryStore(v2Config.memory);
+
+    // Initialize RPC Router with system methods
+    this.rpcRouter = new RpcRouter();
+    registerSystemMethods(this.rpcRouter, {
+      getUptime: () => Date.now() - this.startTime,
+      getAgentState: () => this.agent.state,
+      getActiveWorkerCount: () => this.workerManager.getActiveCount(),
+      getConnectedClientCount: () => this.clients.size,
+      getActiveSessionCount: () => this.sessionManager.getAll().filter(s => s.status === 'active').length,
+    });
+
+    // Register agent/worker/session RPC methods
+    registerAgentMethods(this.rpcRouter, {
+      agent: this.agent,
+      workerManager: this.workerManager,
+      sessionManager: this.sessionManager,
+      memoryStore: this.memoryStore,
+    });
   }
 
   async start(): Promise<{ port: number; host: string; apiKey: string }> {
+    // Initialize memory store (lazy, may fail if better-sqlite3 not available)
+    await this.memoryStore.initialize().catch(() => {});
+
     // Ensure API key exists (creates one if not)
     const config = loadConfig();
 
@@ -118,6 +234,12 @@ export class Gateway {
     // Cancel all active runs
     this.runManager.cancelAllRuns();
 
+    // Terminate all workers and agent
+    this.agent.cancel();
+    this.workerManager.terminateAll();
+    await this.channelManager.destroyAll();
+    this.memoryStore.close();
+
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.sessionCleanupTimer) clearInterval(this.sessionCleanupTimer);
     for (const [, client] of this.clients) {
@@ -141,6 +263,30 @@ export class Gateway {
 
   getRunManager(): RunManager {
     return this.runManager;
+  }
+
+  getRpcRouter(): RpcRouter {
+    return this.rpcRouter;
+  }
+
+  getSessionManager(): SessionManager {
+    return this.sessionManager;
+  }
+
+  getAgent(): CodexAgent {
+    return this.agent;
+  }
+
+  getWorkerManager(): WorkerManager {
+    return this.workerManager;
+  }
+
+  getChannelManager(): ChannelManager {
+    return this.channelManager;
+  }
+
+  getMemoryStore(): MemoryStore {
+    return this.memoryStore;
   }
 
   private handleConnection(ws: WebSocket): void {
@@ -277,6 +423,20 @@ export class Gateway {
           this.send(ws, createMessage('pong', {}));
           break;
         }
+
+        case 'rpc': {
+          const client = this.clients.get(clientId);
+          this.rpcRouter.handleRpc(
+            msg as WsMessage<RpcRequestPayload>,
+            {
+              clientId,
+              ws,
+              authenticated: client?.authenticated ?? false,
+            },
+            (targetWs, message) => this.send(targetWs as WebSocket, message as WsMessage),
+          );
+          break;
+        }
       }
     });
 
@@ -404,6 +564,47 @@ export class Gateway {
    * Broadcast context events to ALL authenticated clients
    */
   broadcastContextEvent(eventType: string, payload: unknown): void {
+    const message = createMessage(eventType, payload);
+    const raw = JSON.stringify(message);
+
+    for (const [, client] of this.clients) {
+      if (client.authenticated && client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(raw);
+      }
+    }
+  }
+
+  /**
+   * Broadcast event to ALL authenticated clients
+   */
+  /**
+   * Persist agent task result to memory store for learning
+   */
+  private persistAgentResult(payload: unknown): void {
+    try {
+      const { taskId, report } = payload as {
+        taskId: string;
+        report: { status: string; summary: string; changedFiles: string[] };
+      };
+      const task = this.agent.currentTask;
+      this.memoryStore.saveTask({
+        id: taskId,
+        command: task?.command ?? '',
+        analysis: task?.analysis ? JSON.stringify(task.analysis) : '',
+        plan: task?.plan ? JSON.stringify(task.plan) : '',
+        result: report?.summary ?? '',
+        success: report?.status === 'success',
+        duration: task?.startedAt ? Date.now() - task.startedAt : 0,
+        timestamp: Date.now(),
+        projectPath: task?.analysis?.targetProject ?? '',
+        workerCount: task?.workers.length ?? 0,
+      });
+    } catch {
+      // Memory persistence is best-effort
+    }
+  }
+
+  private broadcastToAll(eventType: string, payload: unknown): void {
     const message = createMessage(eventType, payload);
     const raw = JSON.stringify(message);
 

@@ -77,3 +77,69 @@ export {
 
 // Helpers
 export { createMessage, parseMessage } from './helpers.js';
+
+// RPC types (v2.0)
+export type {
+  RpcRequestPayload,
+  RpcAckPayload,
+  RpcResultPayload,
+  RpcErrorPayload,
+  RpcErrorCode,
+  RpcMethods,
+  HealthResult,
+  StatusResult,
+  AgentCommandParams,
+  AgentCommandResult,
+  AgentCancelParams,
+  AgentCancelResult,
+  AgentStatusResult,
+  AgentTaskSummary,
+  AgentHistoryParams,
+  AgentHistoryResult,
+  CompletedAgentTask,
+  WorkersListResult,
+  WorkerInfo,
+  WorkerTerminateParams,
+  WorkerTerminateResult,
+  WorkerOutputParams,
+  WorkerOutputResult,
+  AgentApproveParams,
+  AgentApproveResult,
+  AgentRejectParams,
+  AgentRejectResult,
+  SessionsListRpcResult,
+  SessionsDiscoverResult,
+} from './rpc.js';
+
+// Agent & Worker types (v2.0)
+export type {
+  AgentState,
+  AgentTask,
+  Analysis,
+  ExecutionPlan,
+  WorkerTask,
+  WorkerResult,
+  ReviewReport,
+  AgentProgressPayload,
+  AgentResultPayload,
+  ApprovalRequest,
+  AgentApprovalPayload,
+  WorkerStartedPayload,
+  WorkerOutputPayload,
+  WorkerDonePayload,
+  CompletedTask,
+  LearningPattern,
+  AgentConfig,
+  WorkerConfig,
+  MemoryConfig,
+  SecurityConfig,
+  ProjectConfig,
+} from './agent.js';
+
+export {
+  AGENT_STATE_TRANSITIONS,
+  DEFAULT_AGENT_CONFIG,
+  DEFAULT_WORKER_CONFIG,
+  DEFAULT_MEMORY_CONFIG,
+  DEFAULT_SECURITY_CONFIG,
+} from './agent.js';

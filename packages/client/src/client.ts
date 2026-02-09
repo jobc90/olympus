@@ -218,6 +218,135 @@ export class OlympusClient {
     this.send(createMessage('cancel', { runId, taskId }));
   }
 
+  // ── RPC Methods ─────────────────────────────
+
+  /**
+   * Send an RPC request and return a promise that resolves with the result.
+   * Handles rpc:ack → rpc:result/rpc:error flow.
+   */
+  rpc<T = unknown>(method: string, params?: Record<string, unknown>, timeoutMs = 60_000): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const msg = createMessage('rpc', { method, params });
+      const requestId = msg.id;
+
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let cleanupResult: (() => void) | null = null;
+      let cleanupError: (() => void) | null = null;
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        if (cleanupResult) cleanupResult();
+        if (cleanupError) cleanupError();
+      };
+
+      cleanupResult = this.on('rpc:result', (m) => {
+        const payload = m.payload as { requestId: string; result: unknown };
+        if (payload.requestId === requestId) {
+          cleanup();
+          resolve(payload.result as T);
+        }
+      });
+
+      cleanupError = this.on('rpc:error', (m) => {
+        const payload = m.payload as { requestId: string; code: string; message: string };
+        if (payload.requestId === requestId) {
+          cleanup();
+          reject(new Error(`RPC Error [${payload.code}]: ${payload.message}`));
+        }
+      });
+
+      timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`RPC timeout after ${timeoutMs}ms: ${method}`));
+      }, timeoutMs);
+
+      this.send(msg);
+    });
+  }
+
+  /** Send a command to the Codex Agent */
+  async sendCommand(command: string, projectPath?: string, autoApprove?: boolean): Promise<{ taskId: string; status: string; message: string }> {
+    return this.rpc('agent.command', { command, projectPath, autoApprove });
+  }
+
+  /** Get current agent status */
+  async getAgentStatus(): Promise<{ state: string; currentTask: unknown; activeWorkers: number }> {
+    return this.rpc('agent.status');
+  }
+
+  /** Cancel current agent task */
+  async cancelAgent(): Promise<{ cancelled: boolean; message: string }> {
+    return this.rpc('agent.cancel');
+  }
+
+  /** Get agent task history */
+  async getAgentHistory(limit?: number, offset?: number): Promise<{ tasks: unknown[]; total: number }> {
+    return this.rpc('agent.history', { limit, offset });
+  }
+
+  /** List active workers */
+  async listWorkers(): Promise<{ workers: unknown[] }> {
+    return this.rpc('workers.list');
+  }
+
+  /** Terminate a worker */
+  async terminateWorker(workerId: string): Promise<{ terminated: boolean; message: string }> {
+    return this.rpc('workers.terminate', { workerId });
+  }
+
+  /** Get worker output */
+  async getWorkerOutput(workerId: string): Promise<{ output: string; totalLength: number }> {
+    return this.rpc('workers.output', { workerId });
+  }
+
+  /** Approve a pending agent task */
+  async approveTask(taskId: string): Promise<{ approved: boolean; message: string }> {
+    return this.rpc('agent.approve', { taskId });
+  }
+
+  /** Reject a pending agent task */
+  async rejectTask(taskId: string, reason?: string): Promise<{ rejected: boolean; message: string }> {
+    return this.rpc('agent.reject', { taskId, reason });
+  }
+
+  /** Subscribe to agent approval events */
+  onAgentApproval(handler: (p: { taskId: string; request: unknown }) => void): () => void {
+    return this.on('agent:approval', (m) => handler(m.payload as { taskId: string; request: unknown }));
+  }
+
+  /** Get system health */
+  async getHealth(): Promise<{ status: string; uptime: number; version: string }> {
+    return this.rpc('health');
+  }
+
+  /** Get system status */
+  async getStatus(): Promise<{ agentState: string; activeWorkers: number; connectedClients: number }> {
+    return this.rpc('status');
+  }
+
+  /** Subscribe to agent progress events */
+  onAgentProgress(handler: (p: { taskId: string; state: string; message: string; progress?: number }) => void): () => void {
+    return this.on('agent:progress', (m) => handler(m.payload as { taskId: string; state: string; message: string; progress?: number }));
+  }
+
+  /** Subscribe to agent result events */
+  onAgentResult(handler: (p: { taskId: string; report: unknown }) => void): () => void {
+    return this.on('agent:result', (m) => handler(m.payload as { taskId: string; report: unknown }));
+  }
+
+  /** Subscribe to worker events */
+  onWorkerStarted(handler: (p: { workerId: string; projectPath: string }) => void): () => void {
+    return this.on('worker:started', (m) => handler(m.payload as { workerId: string; projectPath: string }));
+  }
+
+  onWorkerOutput(handler: (p: { workerId: string; content: string }) => void): () => void {
+    return this.on('worker:output', (m) => handler(m.payload as { workerId: string; content: string }));
+  }
+
+  onWorkerDone(handler: (p: { workerId: string; result: unknown }) => void): () => void {
+    return this.on('worker:done', (m) => handler(m.payload as { workerId: string; result: unknown }));
+  }
+
   private send(msg: WsMessage): void {
     if (this.ws?.readyState === 1 /* OPEN */) {
       this.ws.send(JSON.stringify(msg));
