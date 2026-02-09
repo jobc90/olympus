@@ -92,7 +92,7 @@ export function registerAgentMethods(
           startedAt: task.startedAt,
         } : null,
         activeWorkers: workerManager.getActiveCount(),
-        queuedCommands: 0, // No queue yet
+        queuedCommands: agent.queueSize,
       };
     },
   );
@@ -207,6 +207,52 @@ export function registerAgentMethods(
         workerId,
         output,
         totalLength: output.length,
+      };
+    },
+  );
+
+  // ── Memory methods (K5) ─────────────────────
+
+  router.register(
+    'memory.search',
+    (params: unknown): { tasks: Array<{ id: string; command: string; result: string; success: boolean }> } => {
+      const { query = '', limit = 10 } = (params || {}) as { query?: string; limit?: number };
+      const tasks = memoryStore.searchTasks(query, limit);
+      return {
+        tasks: tasks.map(t => ({
+          id: t.id,
+          command: t.command,
+          result: t.result,
+          success: t.success,
+        })),
+      };
+    },
+  );
+
+  router.register(
+    'memory.patterns',
+    (params: unknown): { patterns: Array<{ id: string; trigger: string; action: string; confidence: number }> } => {
+      const { command, minConfidence = 0.3 } = (params || {}) as { command?: string; minConfidence?: number };
+      const patterns = command
+        ? memoryStore.findPatterns(command, minConfidence)
+        : memoryStore.getPatterns();
+      return {
+        patterns: patterns.map(p => ({
+          id: p.id,
+          trigger: p.trigger,
+          action: p.action,
+          confidence: p.confidence,
+        })),
+      };
+    },
+  );
+
+  router.register(
+    'memory.stats',
+    (): { taskCount: number; patternCount: number } => {
+      return {
+        taskCount: memoryStore.getTaskCount(),
+        patternCount: memoryStore.getPatternCount(),
       };
     },
   );

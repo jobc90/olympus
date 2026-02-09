@@ -27,9 +27,9 @@ describe('WorkerManager', () => {
     expect(manager.terminate('nonexistent')).toBe(false);
   });
 
-  it('should reject when concurrent limit exceeded', async () => {
-    // Mock execute to be slow
-    const slowManager = new WorkerManager({ maxConcurrent: 0 });
+  it('should reject when concurrent limit and queue both exceeded', async () => {
+    // G1: maxConcurrent=0 now queues; need maxQueueSize=0 to reject immediately
+    const slowManager = new WorkerManager({ maxConcurrent: 0, maxQueueSize: 0 });
 
     const result = await slowManager.execute({
       id: 'w1',
@@ -43,7 +43,7 @@ describe('WorkerManager', () => {
     });
 
     expect(result.status).toBe('failed');
-    expect(result.error).toContain('동시 워커 한계 초과');
+    expect(result.error).toContain('큐 가득 참');
   });
 
   it('should emit worker:started event', async () => {

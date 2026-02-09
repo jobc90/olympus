@@ -7,6 +7,7 @@ import type {
 } from '@olympus-dev/protocol';
 import { DEFAULT_MEMORY_CONFIG } from '@olympus-dev/protocol';
 import type Database from 'better-sqlite3';
+import { PatternManager } from './patterns.js';
 
 /**
  * Memory Store — SQLite + FTS5 backed task history and learning patterns.
@@ -20,9 +21,11 @@ export class MemoryStore {
   private db: Database.Database | null = null;
   private config: MemoryConfig;
   private initialized = false;
+  private patternManager: PatternManager;
 
   constructor(config?: Partial<MemoryConfig>) {
     this.config = { ...DEFAULT_MEMORY_CONFIG, ...config };
+    this.patternManager = new PatternManager(null);
   }
 
   /**
@@ -99,10 +102,12 @@ export class MemoryStore {
         END;
       `);
 
+      this.patternManager.setDb(this.db);
       this.initialized = true;
     } catch {
       // better-sqlite3 not available — operate in memory-only mode
       this.db = null;
+      this.patternManager.setDb(null);
       this.initialized = true;
     }
   }
@@ -181,63 +186,46 @@ export class MemoryStore {
   }
 
   /**
-   * Save or update a learning pattern
+   * Save or update a learning pattern (delegates to PatternManager)
    */
   savePattern(pattern: LearningPattern): void {
-    if (!this.db) return;
-
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO learning_patterns (id, trigger, action, confidence, usage_count, last_used)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      pattern.id,
-      pattern.trigger,
-      pattern.action,
-      pattern.confidence,
-      pattern.usageCount,
-      pattern.lastUsed,
-    );
+    this.patternManager.save(pattern);
   }
 
   /**
-   * Find matching patterns for a command
+   * Find matching patterns for a command.
+   * I2 fix: uses SQL-level WHERE filtering via PatternManager.
    */
   findPatterns(command: string, minConfidence = 0.3): LearningPattern[] {
-    if (!this.db) return [];
-
-    const stmt = this.db.prepare(`
-      SELECT * FROM learning_patterns
-      WHERE confidence >= ?
-      ORDER BY confidence DESC, usage_count DESC
-      LIMIT 10
-    `);
-
-    const allPatterns = stmt.all(minConfidence) as Array<{
-      id: string;
-      trigger: string;
-      action: string;
-      confidence: number;
-      usage_count: number;
-      last_used: number;
-    }>;
-
-    // Filter by trigger match
-    const lower = command.toLowerCase();
-    return allPatterns
-      .filter(p => lower.includes(p.trigger.toLowerCase()))
-      .map(this.rowToPattern);
+    return this.patternManager.findMatching(command, minConfidence);
   }
 
   /**
    * Get all patterns
    */
   getPatterns(): LearningPattern[] {
-    if (!this.db) return [];
+    return this.patternManager.getAll();
+  }
 
-    const stmt = this.db.prepare('SELECT * FROM learning_patterns ORDER BY confidence DESC');
-    return stmt.all().map(this.rowToPattern);
+  /**
+   * Get pattern count
+   */
+  getPatternCount(): number {
+    return this.patternManager.getCount();
+  }
+
+  /**
+   * Delete a pattern
+   */
+  deletePattern(id: string): boolean {
+    return this.patternManager.delete(id);
+  }
+
+  /**
+   * Record pattern usage
+   */
+  recordPatternUsage(id: string): void {
+    this.patternManager.recordUsage(id);
   }
 
   /**
@@ -298,15 +286,4 @@ export class MemoryStore {
     };
   }
 
-  private rowToPattern(row: unknown): LearningPattern {
-    const r = row as Record<string, unknown>;
-    return {
-      id: r.id as string,
-      trigger: r.trigger as string,
-      action: r.action as string,
-      confidence: r.confidence as number,
-      usageCount: r.usage_count as number,
-      lastUsed: r.last_used as number,
-    };
-  }
 }

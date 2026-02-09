@@ -390,10 +390,28 @@ export class CodexAgent extends EventEmitter {
       }
 
       case 'pipeline': {
-        // Pipeline = sequential with output chaining (treated as sequential for now)
+        // Pipeline = sequential with output chaining
+        // Each worker receives the previous worker's output as context
+        let previousOutput = '';
         for (const workerTask of plan.workers) {
+          if (previousOutput) {
+            workerTask.prompt = `${workerTask.prompt}\n\n--- Previous step output ---\n${previousOutput}`;
+          }
           const result = await this.workerManager.execute(workerTask);
           results.push(result);
+
+          // Chain output to next worker (only on success)
+          if (result.status === 'completed' && result.output) {
+            previousOutput = result.output;
+          } else if (result.status === 'failed') {
+            // Stop pipeline on failure
+            break;
+          }
+
+          this.emitProgress(
+            `파이프라인 ${results.length}/${plan.workers.length} 완료`,
+            30 + (50 * results.length / plan.workers.length),
+          );
         }
         break;
       }
@@ -403,11 +421,16 @@ export class CodexAgent extends EventEmitter {
   }
 
   private resetToIdle(): void {
-    if (this._state !== 'IDLE') {
+    const prevState = this._state;
+    if (prevState !== 'IDLE') {
       try {
-        this.transitionTo(this._state === 'INTERRUPT' ? 'IDLE' : 'IDLE');
+        this.transitionTo('IDLE');
       } catch {
-        // Force reset if transition isn't valid
+        // Log forced reset for debugging (A2 fix: visibility into forced resets)
+        this.emit('error', {
+          taskId: this._currentTask?.id ?? '',
+          error: `Forced reset from ${prevState} → IDLE (invalid transition)`,
+        });
         this._state = 'IDLE';
       }
     }

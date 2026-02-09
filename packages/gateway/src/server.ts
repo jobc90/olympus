@@ -141,8 +141,9 @@ export class Gateway {
     });
     this.agent.on('result', (payload: unknown) => {
       this.broadcastToAll('agent:result', payload);
-      // Persist completed task to memory
-      this.persistAgentResult(payload);
+      // L2 fix: capture task snapshot before resetToIdle nulls currentTask
+      const taskSnapshot = this.agent.currentTask ? { ...this.agent.currentTask } : null;
+      this.persistAgentResult(payload, taskSnapshot);
     });
     this.agent.on('error', (payload: unknown) => {
       this.broadcastToAll('agent:error', payload);
@@ -182,8 +183,10 @@ export class Gateway {
   }
 
   async start(): Promise<{ port: number; host: string; apiKey: string }> {
-    // Initialize memory store (lazy, may fail if better-sqlite3 not available)
-    await this.memoryStore.initialize().catch(() => {});
+    // I3/L1: Initialize memory store with warning on failure
+    await this.memoryStore.initialize().catch((err) => {
+      console.warn(`[Gateway] Memory store init failed (operating without persistence): ${(err as Error).message}`);
+    });
 
     // Ensure API key exists (creates one if not)
     const config = loadConfig();
@@ -235,6 +238,10 @@ export class Gateway {
   }
 
   async stop(): Promise<void> {
+    // L5: Graceful shutdown — stop accepting new work, drain existing
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    if (this.sessionCleanupTimer) clearInterval(this.sessionCleanupTimer);
+
     // Cancel all active runs
     this.runManager.cancelAllRuns();
 
@@ -242,14 +249,19 @@ export class Gateway {
     this.agent.cancel();
     this.workerManager.terminateAll();
     await this.channelManager.destroyAll();
-    this.memoryStore.close();
 
-    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-    if (this.sessionCleanupTimer) clearInterval(this.sessionCleanupTimer);
+    // Notify clients before closing
     for (const [, client] of this.clients) {
-      client.ws.close(1001, 'Gateway shutting down');
+      try {
+        client.ws.close(1001, 'Gateway shutting down');
+      } catch {
+        // Client may already be disconnected
+      }
     }
     this.clients.clear();
+
+    // Close memory store last (may have pending writes)
+    this.memoryStore.close();
 
     return new Promise((resolve) => {
       if (this.wss)
@@ -445,6 +457,12 @@ export class Gateway {
     });
 
     ws.on('close', () => {
+      // O2: Clean up client subscriptions on disconnect
+      const client = this.clients.get(clientId);
+      if (client) {
+        client.subscribedRuns.clear();
+        client.subscribedSessions.clear();
+      }
       this.clients.delete(clientId);
     });
     ws.on('error', () => {
@@ -582,15 +600,16 @@ export class Gateway {
    * Broadcast event to ALL authenticated clients
    */
   /**
-   * Persist agent task result to memory store for learning
+   * Persist agent task result to memory store for learning.
+   * L2 fix: accepts a pre-captured task snapshot to avoid race with resetToIdle.
    */
-  private persistAgentResult(payload: unknown): void {
+  private persistAgentResult(payload: unknown, taskSnapshot?: import('@olympus-dev/protocol').AgentTask | null): void {
     try {
       const { taskId, report } = payload as {
         taskId: string;
         report: { status: string; summary: string; changedFiles: string[] };
       };
-      const task = this.agent.currentTask;
+      const task = taskSnapshot ?? this.agent.currentTask;
       this.memoryStore.saveTask({
         id: taskId,
         command: task?.command ?? '',
@@ -612,9 +631,14 @@ export class Gateway {
     const message = createMessage(eventType, payload);
     const raw = JSON.stringify(message);
 
-    for (const [, client] of this.clients) {
+    for (const [clientId, client] of this.clients) {
       if (client.authenticated && client.ws.readyState === WebSocket.OPEN) {
-        client.ws.send(raw);
+        try {
+          client.ws.send(raw);
+        } catch (err) {
+          // J1: Log broadcast errors instead of silently ignoring
+          console.warn(`[Gateway] Broadcast to ${clientId} failed: ${(err as Error).message}`);
+        }
       }
     }
   }
