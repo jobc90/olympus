@@ -52,6 +52,7 @@ Olympus는 Claude CLI의 생산성을 극대화하는 **Multi-AI 협업 플랫�
 | 기능 | 설명 |
 |------|------|
 | `/orchestration` v5.3 | Claude-Codex Co-Leadership, 10 Phase 합의 기반 워크플로우, Deep Engineering |
+| **Codex Orchestrator (V3)** | 멀티 프로젝트 AI 오케스트레이터 — 라우팅, 세션 관리, 컨텍스트 DB, 에이전트 브레인 |
 | **Codex Agent (V2)** | 자율 AI 에이전트 — 명령 분석 → 계획 → 실행 → 검토 → 보고 자동 파이프라인 |
 | **Worker Factory (V2)** | 4종 워커 (Claude CLI / Anthropic API SSE / tmux / Docker), FIFO 큐, 태스크별 자동 선택 |
 | **Memory Store (V2)** | SQLite + FTS5 기반 작업 학습, PatternManager 분리, 유사 태스크 조회, Memory RPC |
@@ -61,10 +62,10 @@ Olympus는 Claude CLI의 생산성을 극대화하는 **Multi-AI 협업 플랫�
 | MCP 서버 | ai-agents (Multi-AI), openapi (Swagger 연동) |
 | Skills | frontend-ui-ux, git-master, agent-browser 등 |
 | Plugins | claude-dashboard (상태줄, 사용량 표시) |
-| **Telegram 봇** | 원격 Claude CLI 조작, Smart Digest 핵심 결과 전달, 비밀 마스킹 |
-| **웹 대시보드** | 자동 연결(설정 불필요), 실시간 세션 출력, 컨텍스트 탐색기 |
+| **Telegram 봇** | 원격 Claude CLI 조작, Smart Digest 핵심 결과 전달, `/codex` RPC 질의 |
+| **웹 대시보드** | 자동 연결(설정 불필요), 실시간 세션 출력, Codex Q&A 패널, 프로젝트 브라우저 |
 | **tmux 세션 관리** | 안정적인 세션 유지 및 스크롤 지원 |
-| **통합 CLI** | `olympus` 명령어로 모든 기능 접근 |
+| **통합 CLI** | `olympus` 명령어 + `--mode legacy|hybrid|codex` 선택 |
 
 ## Quick Start (60s)
 
@@ -391,6 +392,7 @@ olympus models sync
 | `/mode raw\|digest` | 출력 모드 전환 (기본: digest) |
 | `/raw` | 원문 모드 단축키 |
 | `/last` | 마지막 출력 다시 보기 |
+| `/codex <질문>` | Codex Orchestrator에 RPC 질의 (라우팅 + 응답) |
 | `/orchestration <요청>` | Multi-AI 협업 (Auto 전자동) |
 | `/orchestration --plan <요청>` | Phase 3, 8에서 사용자 확인 |
 | `/orchestration --strict <요청>` | 모든 Phase 전환 시 승인 |
@@ -598,43 +600,51 @@ Skills (자동 설치됨):
 ┌─────────────────────────────────────────────────────────┐
 │              Client Layer                                │
 │  Telegram Bot  │  Web Dashboard  │  TUI  │  CLI         │
+│  (/codex RPC)  │  (CodexPanel)   │       │  (--mode)    │
 └────────────────┴─────────────────┴───────┴──────────────┘
                          ↕ WebSocket + REST
 ┌─────────────────────────────────────────────────────────┐
 │                    Gateway (Core)                        │
 │  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐  │
-│  │RPC Router│  │ Channels │  │    Codex Agent (V2)   │  │
-│  │(JSON-RPC)│  │Dashboard │  │ IDLE→ANALYZING→PLANNING│  │
-│  │          │  │Telegram  │  │ →EXECUTING→REVIEWING   │  │
-│  └──────────┘  └──────────┘  │ →REPORTING→IDLE        │  │
-│                              └──────────────────────┘  │
+│  │RPC Router│  │ Channels │  │  Codex Agent (V2)    │  │
+│  │(JSON-RPC)│  │Dashboard │  │  IDLE→ANALYZING→...  │  │
+│  │ +codex.* │  │Telegram  │  │  (legacy/hybrid mode)│  │
+│  └──────────┘  └──────────┘  └──────────────────────┘  │
 │  ┌──────────────────────────────────────────────────┐  │
-│  │ WorkerManager (Factory)                           │  │
-│  │ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐│  │
-│  │ │Claude CLI│ │  API     │ │  tmux    │ │ Docker ││  │
-│  │ │ Worker   │ │ Worker   │ │ Worker   │ │ Worker ││  │
-│  │ └──────────┘ └──────────┘ └──────────┘ └────────┘│  │
-│  │ FIFO Queue (maxQueueSize=20)                      │  │
+│  │ CodexAdapter ──→ Codex Orchestrator (V3)          │  │
+│  │ RPC: codex.route | sessions | projects | search   │  │
+│  │ Events: session:output | session:status            │  │
+│  └──────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ WorkerManager (Factory) — legacy/hybrid mode only │  │
+│  │ Claude CLI │ API │ tmux │ Docker │ FIFO Queue(20) │  │
 │  └──────────────────────────────────────────────────┘  │
 │  ┌────────────┐  ┌───────────────┐  ┌──────────────┐  │
 │  │MemoryStore │  │SecurityGuard  │  │ProjectRegistry│  │
 │  │(SQLite+FTS5)│  │+CommandQueue  │  │(auto-scan)   │  │
 │  └────────────┘  └───────────────┘  └──────────────┘  │
 └─────────────────────────────────────────────────────────┘
+                         ↕
+┌─────────────────────────────────────────────────────────┐
+│              Codex Orchestrator (packages/codex/)        │
+│  Router │ SessionManager │ OutputMonitor │ AgentBrain   │
+│  ResponseProcessor │ ContextManager (FTS5 per-project)  │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### 패키지 구조 (8개)
+### 패키지 구조 (9개)
 
 ```
 packages/
-├── protocol/     # 메시지 타입, Agent 상태머신, 상수
+├── protocol/     # 메시지 타입, Agent 상태머신, Codex 타입, 상수
 ├── core/         # 오케스트레이션, TaskStore (SQLite)
-├── gateway/      # HTTP+WS 서버, Agent, Worker, Memory, Channel
-├── cli/          # CLI 진입점 + Claude 래퍼
-├── client/       # WebSocket 클라이언트 (자동 재연결)
-├── web/          # React 대시보드 (Vite, Tailwind)
+├── gateway/      # HTTP+WS 서버, Agent, Worker, Memory, Channel, CodexAdapter
+├── cli/          # CLI 진입점 + Claude 래퍼 + --mode 선택
+├── client/       # WebSocket 클라이언트 (자동 재연결, Codex RPC)
+├── web/          # React 대시보드 (Vite, Tailwind, CodexPanel, ProjectBrowser)
 ├── tui/          # 터미널 UI (Ink)
-└── telegram-bot/ # Telegram 봇 (Telegraf, Smart Digest)
+├── telegram-bot/ # Telegram 봇 (Telegraf, Smart Digest, /codex RPC)
+└── codex/        # ⭐ Codex Orchestrator (멀티 프로젝트 AI 오케스트레이터)
 
 orchestration/    # Multi-AI Orchestration 리소스
 ├── commands/     # 슬래시 명령어
@@ -647,14 +657,44 @@ orchestration/    # Multi-AI Orchestration 리소스
 
 | 패키지 | 역할 |
 |--------|------|
-| `protocol` | WebSocket 메시지 타입, Agent 상태머신, Worker/Task 인터페이스 |
+| `protocol` | WebSocket 메시지 타입, Agent 상태머신, Codex 타입, Worker/Task 인터페이스 |
 | `core` | 멀티-AI 오케스트레이션, TaskStore (SQLite) |
-| `gateway` | HTTP + WebSocket 서버, Codex Agent, Worker Factory, Memory Store, Channel Manager, RPC Router |
-| `client` | 클라이언트 라이브러리 (자동 재연결, 이벤트 구독) |
-| `cli` | 메인 CLI, Claude CLI 래퍼 |
-| `web` | React 대시보드 (Vite, Tailwind) |
-| `telegram-bot` | Telegram 봇 (Telegraf, Smart Digest, 비밀 마스킹) |
+| `gateway` | HTTP + WebSocket 서버, Codex Agent, Worker Factory, Memory Store, Channel Manager, RPC Router, CodexAdapter |
+| `client` | 클라이언트 라이브러리 (자동 재연결, 이벤트 구독, Codex RPC) |
+| `cli` | 메인 CLI, Claude CLI 래퍼, `--mode legacy\|hybrid\|codex` |
+| `web` | React 대시보드 (Vite, Tailwind, CodexPanel, ProjectBrowser) |
+| `telegram-bot` | Telegram 봇 (Telegraf, Smart Digest, `/codex` RPC 질의) |
 | `tui` | 터미널 UI (React + Ink) |
+| `codex` | Codex Orchestrator — 멀티 프로젝트 라우팅, 세션 관리, 컨텍스트 DB, AgentBrain |
+
+### V3 Codex Orchestrator
+
+복수의 Claude CLI 세션을 관리하는 멀티 프로젝트 AI 오케스트레이터입니다:
+
+```
+사용자 입력 (Telegram/Dashboard/CLI)
+        ↓
+[Router] @mention → 세션 포워드 / 글로벌 쿼리 → 자체 응답 / 키워드 → 프로젝트 매칭
+        ↓
+[SessionManager] tmux 세션 생성/발견/전송, 6-state 생명주기
+        ↓
+[OutputMonitor] pipe-pane 기반 출력 감시, 패턴 매칭 (PROMPT/BUSY/COMPLETION)
+        ↓
+[ResponseProcessor] 타입 감지(build/test/error/code/text), 파일 변경 파싱, Telegram 포맷
+        ↓
+[AgentBrain] 의도 분석, 유사 작업 조회, 실패 패턴 감지, 컨텍스트 주입
+```
+
+**7개 모듈**: Router, CodexSessionManager, OutputMonitor, ResponseProcessor, ContextManager (FTS5), AgentBrain, CodexOrchestrator
+
+**Gateway 연동**: CodexAdapter (duck-typed) + RPC 5개 (`codex.route`, `codex.sessions`, `codex.projects`, `codex.search`, `codex.status`)
+
+**CLI `--mode` 옵션**:
+| 모드 | 동작 |
+|------|------|
+| `legacy` | 기존 V2 Agent/Worker/Memory 전체 초기화 |
+| `hybrid` | V2 + Codex Orchestrator 동시 실행 |
+| `codex` (기본) | Codex Orchestrator만 실행, V2 Agent/Worker/Memory 비활성화 |
 
 ### V2 Agent 시스템
 
@@ -698,10 +738,10 @@ pnpm install
 # Build all packages
 pnpm build
 
-# Run tests — 323 tests (gateway 248 + telegram 51 + core 24)
+# Run tests — 458 tests (gateway 280 + codex 103 + telegram 51 + core 24)
 pnpm test
 
-# Type check (5 packages)
+# Type check (6 packages)
 pnpm lint
 
 # Run in development mode

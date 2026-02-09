@@ -38,13 +38,14 @@
 Olympus extends Claude CLI into a practical development operations platform:
 
 1. **Multi-AI Orchestration (AIOS v5.3)**: Claude + Gemini + Codex with Co-Leadership workflow
-2. **Codex Agent (V2)**: Autonomous AI agent — command analysis → planning → execution → review → reporting pipeline
-3. **Worker Factory (V2)**: 4 worker types (Claude CLI / Anthropic API SSE / tmux / Docker), FIFO queue, pipeline output chaining, auto-selected per task
-4. **Memory Store (V2)**: SQLite + FTS5 task learning, PatternManager (SQL-level filtering), similar task retrieval, Memory RPC methods
-5. **Context OS**: hierarchical context management (Workspace → Project → Task)
-6. **Remote Access**: run and control local sessions through Gateway + Telegram (with Smart Digest for key results extraction, secret masking, and anti-spam filtering)
-7. **Stable Sessions**: tmux-backed long-running Claude sessions
-8. **Visibility**: Web dashboard with auto-config, real-time session output, and context explorer
+2. **Codex Orchestrator (V3)**: Multi-project AI orchestrator — routing, session management, context DB, agent brain
+3. **Codex Agent (V2)**: Autonomous AI agent — command analysis → planning → execution → review → reporting pipeline
+4. **Worker Factory (V2)**: 4 worker types (Claude CLI / Anthropic API SSE / tmux / Docker), FIFO queue, pipeline output chaining, auto-selected per task
+5. **Memory Store (V2)**: SQLite + FTS5 task learning, PatternManager (SQL-level filtering), similar task retrieval, Memory RPC methods
+6. **Context OS**: hierarchical context management (Workspace → Project → Task)
+7. **Remote Access**: run and control local sessions through Gateway + Telegram (with Smart Digest, `/codex` RPC queries, secret masking)
+8. **Stable Sessions**: tmux-backed long-running Claude sessions
+9. **Visibility**: Web dashboard with auto-config, CodexPanel, ProjectBrowser, real-time session output
 
 ## Quick Start (60s)
 
@@ -209,6 +210,7 @@ Telegram commands:
 | `/mode raw\|digest` | Switch output mode (default: digest) |
 | `/raw` | Shortcut for raw mode |
 | `/last` | Show last output |
+| `/codex <question>` | Query Codex Orchestrator via RPC (routing + response) |
 | `/orchestration <request>` | Run Multi-AI orchestration |
 
 ### Smart Digest Mode
@@ -254,27 +256,36 @@ Highlights:
 ┌─────────────────────────────────────────────────────────┐
 │              Client Layer                                │
 │  Telegram Bot  │  Web Dashboard  │  TUI  │  CLI         │
+│  (/codex RPC)  │  (CodexPanel)   │       │  (--mode)    │
 └────────────────┴─────────────────┴───────┴──────────────┘
                          ↕ WebSocket + REST
 ┌─────────────────────────────────────────────────────────┐
 │                    Gateway (Core)                        │
-│  RPC Router  │  Channels  │  Codex Agent (V2)           │
-│  WorkerManager: CLI / API / tmux / Docker Workers       │
-│  FIFO Queue │ PatternManager │ Memory RPC               │
-│  MemoryStore (SQLite+FTS5) │ SecurityGuard │ Registry   │
+│  RPC Router (+codex.*) │ Channels │ Codex Agent (V2)    │
+│  CodexAdapter ──→ Codex Orchestrator (V3)               │
+│  WorkerManager (legacy/hybrid) │ Memory │ Security      │
+└─────────────────────────────────────────────────────────┘
+                         ↕
+┌─────────────────────────────────────────────────────────┐
+│              Codex Orchestrator (packages/codex/)        │
+│  Router │ SessionManager │ OutputMonitor │ AgentBrain   │
+│  ResponseProcessor │ ContextManager (FTS5 per-project)  │
 └─────────────────────────────────────────────────────────┘
 ```
 
+### Packages (9)
+
 ```text
 packages/
-├── protocol/     # Message types, Agent state machine
+├── protocol/     # Message types, Agent state machine, Codex types
 ├── core/         # Orchestration, TaskStore (SQLite)
-├── gateway/      # HTTP+WS server, Agent, Workers, Memory, Channels
-├── cli/          # CLI entry point + Claude wrapper
-├── client/       # WebSocket client (auto-reconnect)
-├── web/          # React dashboard (Vite, Tailwind)
+├── gateway/      # HTTP+WS server, Agent, Workers, Memory, Channels, CodexAdapter
+├── cli/          # CLI entry point + Claude wrapper + --mode selection
+├── client/       # WebSocket client (auto-reconnect, Codex RPC)
+├── web/          # React dashboard (Vite, Tailwind, CodexPanel, ProjectBrowser)
 ├── tui/          # Terminal UI (Ink)
-└── telegram-bot/ # Telegram bot (Telegraf, Smart Digest)
+├── telegram-bot/ # Telegram bot (Telegraf, Smart Digest, /codex RPC)
+└── codex/        # ⭐ Codex Orchestrator (multi-project AI orchestrator)
 
 orchestration/
 ├── commands/     # Slash commands
@@ -282,6 +293,14 @@ orchestration/
 ├── skills/       # Bundled skills
 └── plugins/      # Plugins
 ```
+
+### CLI `--mode` option
+
+| Mode | Behavior |
+|------|----------|
+| `legacy` | Full V2 Agent/Worker/Memory initialization |
+| `hybrid` | V2 + Codex Orchestrator running simultaneously |
+| `codex` (default) | Codex Orchestrator only, V2 Agent/Worker/Memory disabled |
 
 > Detailed architecture: [`docs/V2_ARCHITECTURE.md`](docs/V2_ARCHITECTURE.md)
 > API reference: [`docs/V2_API_REFERENCE.md`](docs/V2_API_REFERENCE.md)
@@ -291,8 +310,8 @@ orchestration/
 ```bash
 pnpm install
 pnpm build
-pnpm test       # 323 tests (gateway 248 + telegram 51 + core 24)
-pnpm lint       # tsc --noEmit (5 packages)
+pnpm test       # 458 tests (gateway 280 + codex 103 + telegram 51 + core 24)
+pnpm lint       # tsc --noEmit (6 packages)
 ```
 
 ## Troubleshooting

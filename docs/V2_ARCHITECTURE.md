@@ -11,10 +11,11 @@
 - 강력한 보안 정책 및 승인 흐름
 
 ### 현재 상태 (v0.3.0)
-- 8개 통합 패키지 (protocol, core, gateway, cli, client, tui, web, telegram-bot)
-- 323/323 테스트 통과 (gateway 248 + telegram 51 + core 24)
+- 9개 통합 패키지 (protocol, core, gateway, cli, client, tui, web, telegram-bot, codex)
+- 458/458 테스트 통과 (gateway 280 + codex 103 + telegram 51 + core 24)
 - 프로덕션 준비 완료 (v5.3 Deep Engineering Protocol)
 - V2 전체 완료 — 88개 이슈 전부 구현
+- V3 Codex Orchestrator 구현 완료 (Phase 1-3)
 
 ---
 
@@ -345,18 +346,19 @@ interface AIProvider {
 
 ---
 
-## 6. 패키지 의존성 구조 (8개 통합)
+## 6. 패키지 의존성 구조 (9개 통합)
 
 ```
-@olympus-dev/protocol (핵심 타입 + 상수)
+@olympus-dev/protocol (핵심 타입 + 상수 + Codex 타입)
     ↑
     ├─→ @olympus-dev/core (RunManager, SessionManager, auth)
-    ├─→ @olympus-dev/gateway (여기!)
-    ├─→ @olympus-dev/client (WebSocket 클라이언트)
-    ├─→ @olympus-dev/cli (Node.js CLI 명령)
+    ├─→ @olympus-dev/gateway (여기! + CodexAdapter)
+    ├─→ @olympus-dev/client (WebSocket 클라이언트 + Codex RPC)
+    ├─→ @olympus-dev/cli (Node.js CLI 명령 + --mode)
     ├─→ @olympus-dev/tui (Ink 터미널)
-    ├─→ @olympus-dev/web (Next.js 대시보드)
-    └─→ @olympus-dev/telegram-bot (Telegraf Bot)
+    ├─→ @olympus-dev/web (React 대시보드 + CodexPanel)
+    ├─→ @olympus-dev/telegram-bot (Telegraf Bot + /codex)
+    └─→ @olympus-dev/codex (⭐ Codex Orchestrator)
 ```
 
 **각 의존성**:
@@ -525,10 +527,94 @@ class CustomProvider implements AIProvider {
 
 ---
 
+## 13. V3 Codex Orchestrator
+
+### 개요
+
+Codex Orchestrator는 복수의 Claude CLI 세션을 관리하는 멀티 프로젝트 AI 오케스트레이터입니다. Gateway의 V2 Agent와 별개로 동작하며, `--mode codex`(기본값)에서 활성화됩니다.
+
+**위치**: `/packages/codex/`
+
+### 7개 모듈
+
+| 모듈 | 위치 | 역할 |
+|------|------|------|
+| **Router** | `router.ts` | 5단계 우선순위 라우팅 (@mention → multi-session → global query → keyword → last active) |
+| **CodexSessionManager** | `session-manager.ts` | tmux 세션 생성/발견/전송/종료, 6-state lifecycle (starting→ready↔busy↔idle→closed) |
+| **OutputMonitor** | `output-monitor.ts` | pipe-pane 기반 500ms 폴링, PROMPT/BUSY/COMPLETION 패턴 감지 |
+| **ResponseProcessor** | `response-processor.ts` | 출력 타입 감지 (build/test/error/code/text/question), `⏺ Edit/Write` 파일 변경 파싱 |
+| **ContextManager** | `context-manager.ts` | global.db (FTS5) + 프로젝트별 memory.db 샤드, 글로벌 검색, 태스크 저장 |
+| **AgentBrain** | `agent-brain.ts` | 의도 분석 (session cmd/history/status/cross-project/forward), 유사 작업/실패 패턴 조회, 컨텍스트 주입 |
+| **CodexOrchestrator** | `orchestrator.ts` | initialize→processInput→shutdown 파이프라인, session:output 이벤트 브로드캐스트 |
+
+### Gateway 연동 (CodexAdapter)
+
+**위치**: `/packages/gateway/src/codex-adapter.ts`
+
+Gateway는 `codex` 패키지를 직접 import하지 않고 **duck-typed 인터페이스** (`CodexOrchestratorLike`)로 연동합니다:
+
+```typescript
+interface CodexOrchestratorLike {
+  initialized: boolean;
+  on(event: string, listener: (...args: unknown[]) => void): void;
+  processInput(input: { text: string; source: string; timestamp?: number }): Promise<unknown>;
+  getSessions(): Array<{ id, name, projectPath, status, lastActivity }>;
+  getProjects(): Promise<Array<{ name, path, aliases, techStack }>>;
+  globalSearch(query: string, limit?: number): Promise<Array<unknown>>;
+  shutdown(): Promise<void>;
+}
+```
+
+**등록 RPC 메서드** (5개):
+- `codex.route` — 입력 라우팅 + 응답
+- `codex.sessions` — 세션 목록
+- `codex.projects` — 프로젝트 목록
+- `codex.search` — 크로스 프로젝트 FTS 검색
+- `codex.status` — 오케스트레이터 상태
+
+**이벤트 포워딩**:
+- `session:output` → 클라이언트에 session:output 브로드캐스트
+- `session:status` → 클라이언트에 codex:session-event 브로드캐스트
+
+### CLI `--mode` 옵션
+
+| 모드 | Gateway 동작 |
+|------|-------------|
+| `legacy` | V2 Agent/Worker/Memory 전체 초기화, Codex 비활성 |
+| `hybrid` | V2 + Codex Orchestrator 동시 실행 |
+| `codex` (기본값) | Codex Orchestrator만, `getAgent()` → null, `getMemoryStore()` → null |
+
+### 데이터 플로우
+
+```
+사용자 입력 (Telegram /codex, Dashboard CodexPanel, CLI)
+    ↓
+Gateway RPC Router → codex.route
+    ↓
+CodexAdapter.handleInput() → requestId 생성
+    ↓
+CodexOrchestrator.processInput()
+    ├─ Router: @mention 감지 → SESSION_FORWARD
+    ├─ Router: 상태 질의 → SELF_ANSWER (AgentBrain 생성)
+    ├─ Router: 키워드 매칭 → SESSION_FORWARD
+    └─ Router: 폴백 → lastActiveSession
+    ↓
+결과: { decision, response } → RPC 응답으로 반환
+```
+
+### 테스트
+
+- **유닛 테스트**: 80개 (`packages/codex/src/__tests__/`)
+- **E2E 테스트**: 23개 (`packages/codex/src/__tests__/e2e.test.ts`)
+- **Gateway 통합 테스트**: 15개 (`packages/gateway/src/__tests__/codex-integration.test.ts`)
+
+---
+
 ## 참고 자료
 
-- **Protocol**: `/packages/protocol/` — 타입 + 상수
+- **Protocol**: `/packages/protocol/` — 타입 + 상수 + Codex 타입
 - **Worker 구현**: `/packages/gateway/src/workers/` — 4 타입 (CLI, API, tmux, Docker)
 - **Memory**: `/packages/gateway/src/memory/` — MemoryStore, PatternManager
-- **테스트**: `/packages/gateway/src/__tests__/` — 248개 테스트
+- **Codex**: `/packages/codex/` — Codex Orchestrator (7 모듈, 103 테스트)
+- **테스트**: `/packages/gateway/src/__tests__/` — 280개 테스트
 - **명령**: `/packages/cli/src/commands/` — CLI 진입점
