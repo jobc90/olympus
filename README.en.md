@@ -290,7 +290,7 @@ orchestration/
 ```bash
 pnpm install
 pnpm build
-pnpm test       # 230 tests (gateway 155 + telegram 51 + core 24)
+pnpm test       # 304 tests (gateway 229 + telegram 51 + core 24)
 pnpm lint       # tsc --noEmit (5 packages)
 ```
 

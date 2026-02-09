@@ -4,6 +4,7 @@ import { DEFAULT_WORKER_CONFIG } from '@olympus-dev/protocol';
 import { ClaudeCliWorker } from './claude-worker.js';
 import { ApiWorker } from './api-worker.js';
 import { TmuxWorker } from './tmux-worker.js';
+import { DockerWorker } from './docker-worker.js';
 import type { Worker } from './types.js';
 
 /**
@@ -145,6 +146,8 @@ export class WorkerManager extends EventEmitter {
         return new ApiWorker(task, this.config, this.apiKey, this.apiModel);
       case 'tmux':
         return new TmuxWorker(task, this.config);
+      case 'docker':
+        return new DockerWorker(task, this.config);
       case 'claude-cli':
       default:
         return new ClaudeCliWorker(task, this.config);

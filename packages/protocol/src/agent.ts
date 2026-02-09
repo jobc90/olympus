@@ -77,7 +77,7 @@ export interface ExecutionPlan {
 
 export interface WorkerTask {
   id: string;
-  type: 'claude-cli' | 'claude-api' | 'tmux';
+  type: 'claude-cli' | 'claude-api' | 'tmux' | 'docker';
   prompt: string;
   projectPath: string;
   dependencies: string[];
@@ -213,7 +213,7 @@ export interface AgentConfig {
 }
 
 export interface WorkerConfig {
-  type: 'child_process' | 'tmux';
+  type: 'child_process' | 'tmux' | 'docker';
   claudePath?: string;
   logDir: string;
   maxOutputBuffer: number;
