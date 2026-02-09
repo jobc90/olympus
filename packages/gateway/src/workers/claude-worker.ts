@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import type { WorkerTask, WorkerResult, WorkerConfig } from '@olympus-dev/protocol';
+import type { Worker } from './types.js';
 
 /**
  * Claude CLI Worker — executes a task via `claude` CLI in non-interactive mode.
@@ -8,7 +9,7 @@ import type { WorkerTask, WorkerResult, WorkerConfig } from '@olympus-dev/protoc
  * Uses child_process.spawn() for precise stdout/stderr control.
  * Emits: 'output', 'error', 'done'
  */
-export class ClaudeCliWorker extends EventEmitter {
+export class ClaudeCliWorker extends EventEmitter implements Worker {
   private process: ChildProcess | null = null;
   private output = '';
   private errorOutput = '';

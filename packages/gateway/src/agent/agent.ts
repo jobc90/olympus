@@ -31,6 +31,7 @@ export interface CodexAgentOptions {
   workerManager: WorkerManager;
   securityConfig?: SecurityConfig;
   maxQueueSize?: number;
+  memoryStore?: import('../memory/store.js').MemoryStore;
 }
 
 /**
@@ -57,6 +58,7 @@ export class CodexAgent extends EventEmitter {
   private _approvalResolve: ((approved: boolean) => void) | null = null;
   private commandQueue: CommandQueue;
   private securityGuard: SecurityGuard;
+  private memoryStore?: import('../memory/store.js').MemoryStore;
 
   constructor(options: CodexAgentOptions) {
     super();
@@ -68,6 +70,7 @@ export class CodexAgent extends EventEmitter {
     this.workerManager = options.workerManager;
     this.commandQueue = new CommandQueue(options.maxQueueSize ?? 50);
     this.securityGuard = new SecurityGuard(options.securityConfig ?? DEFAULT_SECURITY_CONFIG);
+    this.memoryStore = options.memoryStore;
   }
 
   get state(): AgentState {
@@ -241,7 +244,9 @@ export class CodexAgent extends EventEmitter {
     task.state = 'PLANNING';
     this.emitProgress('실행 계획 수립 중...', 20);
 
-    const plan = await this.planner.plan(analysis);
+    // Build planner context with memory (similar tasks + learned patterns)
+    const plannerContext = await this.buildPlannerContext(cmd.command);
+    const plan = await this.planner.plan(analysis, plannerContext);
     task.plan = plan;
     task.workers = plan.workers;
 
@@ -423,5 +428,31 @@ export class CodexAgent extends EventEmitter {
     this.handleCommand(next.command).catch((err) => {
       this.emit('error', { taskId: next.taskId, error: (err as Error).message });
     });
+  }
+
+  /**
+   * Build PlannerContext from MemoryStore (similar tasks + learned patterns).
+   */
+  private async buildPlannerContext(command: string): Promise<import('./providers/types.js').PlannerContext> {
+    if (!this.memoryStore) return {};
+
+    try {
+      const similarTasks = this.memoryStore.searchTasks(command, 3).map(t => ({
+        command: t.command,
+        plan: t.plan || '',
+      }));
+
+      const patterns = this.memoryStore.findPatterns(command, 0.3).map(p => ({
+        trigger: p.trigger,
+        action: p.action,
+      }));
+
+      return {
+        similarTasks: similarTasks.length > 0 ? similarTasks : undefined,
+        learnedPatterns: patterns.length > 0 ? patterns : undefined,
+      };
+    } catch {
+      return {};
+    }
   }
 }

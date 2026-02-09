@@ -85,9 +85,15 @@ export class Gateway {
     const userConfig = loadConfig();
     const v2Config = resolveV2Config(userConfig);
 
-    // Initialize Worker Manager
+    // Initialize Memory Store early (needed by Agent)
+    this.memoryStore = new MemoryStore(v2Config.memory);
+
+    // Initialize Worker Manager (factory pattern — creates worker by task.type)
     this.workerManager = new WorkerManager({
+      config: v2Config.worker,
       maxConcurrent: v2Config.agent.maxConcurrentWorkers,
+      apiKey: v2Config.agent.apiKey,
+      apiModel: v2Config.agent.model,
     });
 
     // Initialize Agent components with resolved config + AI Provider
@@ -106,6 +112,7 @@ export class Gateway {
       reporter,
       workerManager: this.workerManager,
       securityConfig: v2Config.security,
+      memoryStore: this.memoryStore,
     });
 
     // Initialize Channel Manager
@@ -154,9 +161,6 @@ export class Gateway {
     this.workerManager.on('worker:done', (payload: unknown) => {
       this.broadcastToAll('worker:done', payload);
     });
-
-    // Initialize Memory Store with V2 config
-    this.memoryStore = new MemoryStore(v2Config.memory);
 
     // Initialize RPC Router with system methods
     this.rpcRouter = new RpcRouter();

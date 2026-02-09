@@ -91,6 +91,12 @@ export class MemoryStore {
         CREATE TRIGGER IF NOT EXISTS tasks_fts_delete AFTER DELETE ON completed_tasks BEGIN
           INSERT INTO tasks_fts(tasks_fts, rowid, command, result, analysis) VALUES ('delete', OLD.rowid, OLD.command, OLD.result, OLD.analysis);
         END;
+
+        -- FTS5 UPDATE trigger (I1 fix: keep FTS in sync on task updates)
+        CREATE TRIGGER IF NOT EXISTS tasks_fts_update AFTER UPDATE ON completed_tasks BEGIN
+          INSERT INTO tasks_fts(tasks_fts, rowid, command, result, analysis) VALUES ('delete', OLD.rowid, OLD.command, OLD.result, OLD.analysis);
+          INSERT INTO tasks_fts(rowid, command, result, analysis) VALUES (NEW.rowid, NEW.command, NEW.result, NEW.analysis);
+        END;
       `);
 
       this.initialized = true;

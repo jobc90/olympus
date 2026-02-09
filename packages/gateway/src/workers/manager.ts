@@ -2,25 +2,39 @@ import { EventEmitter } from 'node:events';
 import type { WorkerTask, WorkerResult, WorkerConfig } from '@olympus-dev/protocol';
 import { DEFAULT_WORKER_CONFIG } from '@olympus-dev/protocol';
 import { ClaudeCliWorker } from './claude-worker.js';
+import { ApiWorker } from './api-worker.js';
+import { TmuxWorker } from './tmux-worker.js';
+import type { Worker } from './types.js';
 
 /**
- * Worker Manager — manages a pool of Claude CLI worker processes.
+ * Worker Manager — manages a pool of worker processes.
+ *
+ * Factory pattern: creates the appropriate worker based on task.type:
+ * - 'claude-cli' (default): spawns Claude CLI as child process
+ * - 'claude-api': calls Claude API directly (streaming)
+ * - 'tmux': runs Claude CLI inside a tmux session
  *
  * Enforces concurrent worker limits and provides lifecycle management.
- * Emits: 'worker:started', 'worker:output', 'worker:done'
+ * Emits: 'worker:started', 'worker:output', 'worker:done', 'worker:error'
  */
 export class WorkerManager extends EventEmitter {
-  private workers = new Map<string, ClaudeCliWorker>();
+  private workers = new Map<string, Worker>();
   private config: WorkerConfig;
   private maxConcurrent: number;
+  private apiKey?: string;
+  private apiModel?: string;
 
   constructor(options?: {
     config?: Partial<WorkerConfig>;
     maxConcurrent?: number;
+    apiKey?: string;
+    apiModel?: string;
   }) {
     super();
     this.config = { ...DEFAULT_WORKER_CONFIG, ...options?.config };
     this.maxConcurrent = options?.maxConcurrent ?? 3;
+    this.apiKey = options?.apiKey;
+    this.apiModel = options?.apiModel;
   }
 
   /**
@@ -40,7 +54,7 @@ export class WorkerManager extends EventEmitter {
       };
     }
 
-    const worker = new ClaudeCliWorker(task, this.config);
+    const worker = this.createWorker(task);
     this.workers.set(task.id, worker);
 
     // Forward events
@@ -120,5 +134,20 @@ export class WorkerManager extends EventEmitter {
       if (worker.getStatus() === 'running') count++;
     }
     return count;
+  }
+
+  /**
+   * Factory — create the appropriate worker based on task.type.
+   */
+  private createWorker(task: WorkerTask): Worker {
+    switch (task.type) {
+      case 'claude-api':
+        return new ApiWorker(task, this.config, this.apiKey, this.apiModel);
+      case 'tmux':
+        return new TmuxWorker(task, this.config);
+      case 'claude-cli':
+      default:
+        return new ClaudeCliWorker(task, this.config);
+    }
   }
 }

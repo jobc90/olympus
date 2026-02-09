@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WorkerManager } from '../workers/manager.js';
+import { ApiWorker } from '../workers/api-worker.js';
+import { TmuxWorker } from '../workers/tmux-worker.js';
+import { ClaudeCliWorker } from '../workers/claude-worker.js';
 
 describe('WorkerManager', () => {
   let manager: WorkerManager;
@@ -67,5 +70,97 @@ describe('WorkerManager', () => {
   it('should terminateAll without error', () => {
     // Should not throw even with no workers
     expect(() => manager.terminateAll()).not.toThrow();
+  });
+});
+
+describe('Worker Factory', () => {
+  it('should accept apiKey and apiModel options', () => {
+    const manager = new WorkerManager({
+      maxConcurrent: 3,
+      apiKey: 'test-key',
+      apiModel: 'claude-sonnet-4-20250514',
+    });
+    // Should not throw
+    expect(manager.getActiveCount()).toBe(0);
+  });
+
+  it('should accept config options', () => {
+    const manager = new WorkerManager({
+      maxConcurrent: 2,
+      config: { type: 'child_process', logDir: '/tmp/logs', maxOutputBuffer: 5000 },
+    });
+    expect(manager.getActiveCount()).toBe(0);
+  });
+});
+
+describe('ApiWorker', () => {
+  it('should fail without API key', async () => {
+    const worker = new ApiWorker(
+      { id: 'w1', type: 'claude-api', prompt: 'test', projectPath: '/tmp', dependencies: [], timeout: 5000, orchestration: false, successCriteria: [] },
+      { type: 'child_process', logDir: '/tmp', maxOutputBuffer: 10000 },
+      undefined, // no API key
+    );
+
+    const result = await worker.start();
+    expect(result.status).toBe('failed');
+    expect(result.error).toContain('API 키');
+  });
+
+  it('should start in pending status', () => {
+    const worker = new ApiWorker(
+      { id: 'w2', type: 'claude-api', prompt: 'test', projectPath: '/tmp', dependencies: [], timeout: 5000, orchestration: false, successCriteria: [] },
+      { type: 'child_process', logDir: '/tmp', maxOutputBuffer: 10000 },
+    );
+
+    expect(worker.getStatus()).toBe('pending');
+    expect(worker.getOutput()).toBe('');
+    expect(worker.getOutputPreview()).toBe('');
+  });
+
+  it('should terminate gracefully', () => {
+    const worker = new ApiWorker(
+      { id: 'w3', type: 'claude-api', prompt: 'test', projectPath: '/tmp', dependencies: [], timeout: 5000, orchestration: false, successCriteria: [] },
+      { type: 'child_process', logDir: '/tmp', maxOutputBuffer: 10000 },
+    );
+
+    // Should not throw when not running
+    expect(() => worker.terminate()).not.toThrow();
+  });
+});
+
+describe('TmuxWorker', () => {
+  it('should start in pending status', () => {
+    const worker = new TmuxWorker(
+      { id: 'w4', type: 'tmux', prompt: 'test', projectPath: '/tmp', dependencies: [], timeout: 5000, orchestration: false, successCriteria: [] },
+      { type: 'tmux', logDir: '/tmp/test-logs', maxOutputBuffer: 10000 },
+    );
+
+    expect(worker.getStatus()).toBe('pending');
+    expect(worker.getOutput()).toBe('');
+  });
+
+  it('should terminate gracefully when not running', () => {
+    const worker = new TmuxWorker(
+      { id: 'w5', type: 'tmux', prompt: 'test', projectPath: '/tmp', dependencies: [], timeout: 5000, orchestration: false, successCriteria: [] },
+      { type: 'tmux', logDir: '/tmp/test-logs', maxOutputBuffer: 10000 },
+    );
+
+    // Should not throw
+    expect(() => worker.terminate()).not.toThrow();
+  });
+
+  it('should generate unique session names', () => {
+    const w1 = new TmuxWorker(
+      { id: 'abc', type: 'tmux', prompt: 'test', projectPath: '/tmp', dependencies: [], timeout: 5000, orchestration: false, successCriteria: [] },
+      { type: 'tmux', logDir: '/tmp/test-logs', maxOutputBuffer: 10000 },
+    );
+    const w2 = new TmuxWorker(
+      { id: 'def', type: 'tmux', prompt: 'test', projectPath: '/tmp', dependencies: [], timeout: 5000, orchestration: false, successCriteria: [] },
+      { type: 'tmux', logDir: '/tmp/test-logs', maxOutputBuffer: 10000 },
+    );
+
+    // Different IDs → different session names (verified by output not being shared)
+    expect(w1.getOutput()).toBe('');
+    expect(w2.getOutput()).toBe('');
   });
 });

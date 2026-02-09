@@ -10,3 +10,4 @@ export { ANALYZER_SYSTEM_PROMPT, PLANNER_SYSTEM_PROMPT, REVIEWER_SYSTEM_PROMPT }
 export { createAIProvider, type AIProvider, type AIProviderConfig } from './providers/index.js';
 export { MockProvider } from './providers/mock.js';
 export { OpenAIProvider } from './providers/openai.js';
+export { ProjectRegistry } from './project-registry.js';
