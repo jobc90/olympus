@@ -491,25 +491,34 @@ class OlympusBot {
       const statusMsg = await ctx.reply(`🚀 '${displayName}' 세션에서 *Multi-AI Orchestration* 시작 중...`, { parse_mode: 'Markdown' });
 
       try {
-        const sessionId = await this.getSessionId(ctx.chat.id, targetName);
+        let sessionId: string;
+        try {
+          sessionId = await this.getSessionId(ctx.chat.id, targetName);
+        } catch {
+          await this.syncSessionsFromGateway(ctx.chat.id);
+          sessionId = await this.getSessionId(ctx.chat.id, targetName);
+        }
         // Send the full command including /orchestration to Claude CLI
         await this.sendToClaude(sessionId, `/orchestration "${prompt}"`);
         await ctx.telegram.editMessageText(
           ctx.chat.id,
           statusMsg.message_id,
           undefined,
-          `✅ '${displayName}' 세션에서 *Orchestration* 실행됨\n\n` +
-          `📤 \`${prompt.slice(0, 100)}${prompt.length > 100 ? '...' : ''}\`\n\n` +
-          `진행 상황이 알림으로 전달됩니다.`,
-          { parse_mode: 'Markdown' }
+          `✅ '${displayName}' 세션에서 Orchestration 실행됨\n\n` +
+          `📤 ${prompt.slice(0, 100)}${prompt.length > 100 ? '...' : ''}\n\n` +
+          `진행 상황이 알림으로 전달됩니다.`
         );
       } catch (err) {
-        await ctx.telegram.editMessageText(
-          ctx.chat.id,
-          statusMsg.message_id,
-          undefined,
-          `❌ 전송 실패: ${(err as Error).message}`
-        );
+        try {
+          await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            statusMsg.message_id,
+            undefined,
+            `❌ 전송 실패: ${(err as Error).message}`
+          );
+        } catch {
+          await this.safeReply(ctx, `❌ 전송 실패: ${(err as Error).message}`, undefined);
+        }
       }
     });
 
@@ -666,22 +675,34 @@ class OlympusBot {
       const statusMsg = await ctx.reply(`⏳ '${displayName}' 세션으로 전송 중...`);
 
       try {
-        const sessionId = await this.getSessionId(ctx.chat.id, targetName);
+        let sessionId: string;
+        try {
+          sessionId = await this.getSessionId(ctx.chat.id, targetName);
+        } catch {
+          // Session not found in local cache — sync from gateway and retry
+          await this.syncSessionsFromGateway(ctx.chat.id);
+          sessionId = await this.getSessionId(ctx.chat.id, targetName);
+        }
         await this.sendToClaude(sessionId, message);
+        // Use plain text to avoid Markdown parse errors with special characters
         await ctx.telegram.editMessageText(
           ctx.chat.id,
           statusMsg.message_id,
           undefined,
-          `✅ '${displayName}' 세션으로 전송됨\n\n📤 \`${message.slice(0, 100)}${message.length > 100 ? '...' : ''}\`\n\n응답이 오면 알려드립니다.`,
-          { parse_mode: 'Markdown' }
+          `✅ '${displayName}' 세션으로 전송됨\n\n📤 ${message.slice(0, 100)}${message.length > 100 ? '...' : ''}\n\n응답이 오면 알려드립니다.`
         );
       } catch (err) {
-        await ctx.telegram.editMessageText(
-          ctx.chat.id,
-          statusMsg.message_id,
-          undefined,
-          `❌ 전송 실패: ${(err as Error).message}`
-        );
+        try {
+          await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            statusMsg.message_id,
+            undefined,
+            `❌ 전송 실패: ${(err as Error).message}`
+          );
+        } catch {
+          // editMessageText failed — send as new message
+          await this.safeReply(ctx, `❌ 전송 실패: ${(err as Error).message}`, undefined);
+        }
       }
     });
 
@@ -811,13 +832,16 @@ class OlympusBot {
     const sessionId = sessions?.get(name);
 
     if (!sessionId) {
-      throw new Error(`세션 '${name}'에 연결되어 있지 않습니다.\n\n/sessions로 연결 가능한 세션을 확인하고\n/use ${name}으로 연결하세요.`);
+      throw new Error(`세션 '${name}'에 연결되어 있지 않습니다. /use ${name.replace(/^olympus-/, '')} 으로 연결하세요.`);
     }
 
-    // Verify session is still active
+    // Verify session is still active (with timeout to avoid hanging)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     try {
       const res = await fetch(`${this.config.gatewayUrl}/api/sessions/${sessionId}`, {
         headers: { Authorization: `Bearer ${this.config.apiKey}` },
+        signal: controller.signal,
       });
       if (res.ok) {
         const data = await res.json() as { session: { status: string } };
@@ -826,7 +850,9 @@ class OlympusBot {
         }
       }
     } catch {
-      // Session not found or error
+      // Session not found, timeout, or network error — assume stale
+    } finally {
+      clearTimeout(timeout);
     }
 
     // Clear invalid session
@@ -834,7 +860,7 @@ class OlympusBot {
     if (this.activeSession.get(chatId) === name) {
       this.activeSession.delete(chatId);
     }
-    throw new Error(`세션 '${name}'이 종료되었습니다.\n\n/sessions로 연결 가능한 세션을 확인하세요.`);
+    throw new Error(`세션 '${name}'이 종료되었습니다. /sessions 로 확인하세요.`);
   }
 
   /**
@@ -1030,18 +1056,26 @@ class OlympusBot {
   }
 
   private async sendToClaude(sessionId: string, message: string): Promise<void> {
-    const res = await fetch(`${this.config.gatewayUrl}/api/sessions/${sessionId}/input`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify({ message }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
-    if (!res.ok) {
-      const error = await res.json() as { message: string };
-      throw new Error(error.message);
+    try {
+      const res = await fetch(`${this.config.gatewayUrl}/api/sessions/${sessionId}/input`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({ message }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const error = await res.json() as { message: string };
+        throw new Error(error.message);
+      }
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
