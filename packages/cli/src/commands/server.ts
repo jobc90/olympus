@@ -15,9 +15,14 @@ serverCommand
   .option('--web-port <port>', 'Dashboard port', '18791')
   .option('--skip-update', 'Skip CLI update check (default: true)', true)
   .option('--update-tools', 'Force CLI tools update on start')
+  .option('--mode <mode>', 'Server mode: legacy | hybrid | codex', 'codex')
   .action(async (opts) => {
     const { loadConfig, isTelegramConfigured } = await import('@olympus-dev/gateway');
     const config = loadConfig();
+
+    // Validate mode
+    const validModes = ['legacy', 'hybrid', 'codex'];
+    const mode: string = validModes.includes(opts.mode) ? opts.mode : 'legacy';
 
     // Determine what to start
     const startAll = !opts.gateway && !opts.dashboard && !opts.telegram;
@@ -26,6 +31,10 @@ serverCommand
     const startTelegram = startAll || opts.telegram;
 
     console.log(chalk.cyan.bold('\n⚡ Olympus Server\n'));
+    if (mode !== 'legacy') {
+      console.log(chalk.magenta(`  Mode: ${mode.toUpperCase()}`));
+      console.log();
+    }
 
     // Update CLI tools only when explicitly requested
     if (opts.updateTools) {
@@ -48,9 +57,15 @@ serverCommand
     let gateway: Awaited<ReturnType<typeof startGatewayServer>> | null = null;
     let dashboard: Awaited<ReturnType<typeof startDashboardServer>> | null = null;
 
+    // Initialize Codex Orchestrator if hybrid or codex mode
+    let codexAdapter: Awaited<ReturnType<typeof initCodexAdapter>> | null = null;
+    if (mode === 'hybrid' || mode === 'codex') {
+      codexAdapter = await initCodexAdapter(config);
+    }
+
     // Start Gateway
     if (startGateway) {
-      gateway = await startGatewayServer(opts.port, config);
+      gateway = await startGatewayServer(opts.port, config, codexAdapter ?? undefined, mode);
     }
 
     // Start Dashboard
@@ -109,6 +124,12 @@ serverCommand
     // Graceful shutdown
     const shutdown = async () => {
       console.log(chalk.yellow('\n\nShutting down...'));
+      if (codexAdapter) {
+        try {
+          const { CodexOrchestrator } = await import('@olympus-dev/codex');
+          // codexAdapter holds reference internally, but orchestrator shutdown is via the stored ref
+        } catch { /* ignore */ }
+      }
       if (gateway) {
         await gateway.stop();
       }
@@ -288,13 +309,21 @@ serverCommand
     console.log();
   });
 
-async function startGatewayServer(port: string, config: { gatewayHost: string; apiKey: string }) {
+async function startGatewayServer(port: string, config: { gatewayHost: string; apiKey: string }, codexAdapter?: unknown, mode?: string) {
   const { Gateway } = await import('@olympus-dev/gateway');
 
-  const gateway = new Gateway({
+  const gatewayOpts: Record<string, unknown> = {
     port: Number(port),
     host: config.gatewayHost,
-  });
+  };
+  if (codexAdapter) {
+    gatewayOpts.codexAdapter = codexAdapter;
+  }
+  if (mode) {
+    gatewayOpts.mode = mode;
+  }
+
+  const gateway = new Gateway(gatewayOpts as never);
 
   await gateway.start();
 
@@ -510,27 +539,38 @@ async function createMainSession(config: { gatewayUrl: string; apiKey: string })
     return false;
   }
 
-  // Check if claude is available
-  let claudePath = 'claude';
+  // Check if codex is available (primary), fallback to claude
+  let agentPath = '';
+  let agentName = '';
   try {
-    claudePath = execSync('which claude', { encoding: 'utf-8' }).trim();
+    agentPath = execSync('which codex', { encoding: 'utf-8' }).trim();
+    agentName = 'Codex CLI';
   } catch {
-    console.log(chalk.yellow('   ⚠ Claude CLI가 설치되어 있지 않습니다. Main 세션 생략.'));
-    return false;
+    try {
+      agentPath = execSync('which claude', { encoding: 'utf-8' }).trim();
+      agentName = 'Claude CLI';
+    } catch {
+      console.log(chalk.yellow('   ⚠ Codex/Claude CLI가 설치되어 있지 않습니다. Main 세션 생략.'));
+      return false;
+    }
   }
 
-  // Create main tmux session with Claude CLI (background, no attach)
+  // Create main tmux session with agent CLI in trust mode (background, no attach)
+  // Trust flag: codex → --full-auto, claude → --dangerously-skip-permissions
+  const trustFlag = agentPath.includes('codex') ? ' --full-auto' : ' --dangerously-skip-permissions';
+
   try {
     const projectPath = process.cwd();
+    // Don't quote "path --flag" as one token — tmux needs them as separate args
     execSync(
-      `tmux new-session -d -s "${MAIN_SESSION}" -c "${projectPath}" "${claudePath}"`,
+      `tmux new-session -d -s "${MAIN_SESSION}" -c "${projectPath}" ${agentPath}${trustFlag}`,
       { stdio: 'pipe' }
     );
     // Enable extended-keys for Shift+Enter passthrough (Ghostty/Kitty protocol)
     try {
       execSync(`tmux set -t "${MAIN_SESSION}" extended-keys always`, { stdio: 'pipe' });
     } catch { /* tmux < 3.2 */ }
-    console.log(chalk.green(`   ✓ ${MAIN_SESSION} 세션 생성됨`));
+    console.log(chalk.green(`   ✓ ${MAIN_SESSION} 세션 생성됨 (${agentName})`));
     console.log(chalk.gray(`   경로: ${projectPath}`));
 
     // Connect to Gateway
@@ -575,6 +615,67 @@ async function connectMainSessionToGateway(
     console.log(chalk.yellow(`   ⚠ Gateway 연결 실패: ${(err as Error).message}`));
   }
   console.log();
+}
+
+/**
+ * Initialize Codex Orchestrator and create adapter for Gateway integration
+ */
+async function initCodexAdapter(config: { gatewayHost: string; gatewayPort: number; apiKey: string }) {
+  try {
+    const { CodexOrchestrator } = await import('@olympus-dev/codex');
+    const { CodexAdapter } = await import('@olympus-dev/gateway');
+    const path = await import('node:path');
+    const fs = await import('node:fs');
+
+    console.log(chalk.cyan('🧠 Codex Orchestrator 시작 중...'));
+
+    // Scan for projects in current directory
+    const workspacePath = process.cwd();
+    const projects: Array<{ name: string; path: string; aliases: string[]; techStack: string[] }> = [];
+
+    const entries = fs.readdirSync(workspacePath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const projectPath = path.join(workspacePath, entry.name);
+      const hasProjectMarker =
+        fs.existsSync(path.join(projectPath, '.git')) ||
+        fs.existsSync(path.join(projectPath, 'package.json'));
+      if (!hasProjectMarker) continue;
+
+      projects.push({
+        name: entry.name,
+        path: projectPath,
+        aliases: [],
+        techStack: [],
+      });
+    }
+
+    const codex = new CodexOrchestrator({
+      maxSessions: 5,
+      projects,
+    });
+
+    await codex.initialize();
+
+    const adapter = new CodexAdapter(
+      codex,
+      // Broadcast function — will be connected to Gateway later
+      () => {},
+    );
+
+    console.log(chalk.green(`   ✓ Codex Orchestrator 초기화 완료 (프로젝트 ${projects.length}개)`));
+    for (const p of projects) {
+      console.log(chalk.gray(`     - ${p.name}: ${p.path}`));
+    }
+    console.log();
+
+    return adapter;
+  } catch (err) {
+    console.log(chalk.yellow(`   ⚠ Codex Orchestrator 초기화 실패: ${(err as Error).message}`));
+    console.log(chalk.gray('   Legacy 모드로 계속합니다.'));
+    console.log();
+    return null;
+  }
 }
 
 /**

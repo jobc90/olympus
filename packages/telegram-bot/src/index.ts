@@ -73,6 +73,9 @@ class OlympusBot {
   // Throttle for sessions:list sync (prevent burst REST calls)
   private syncThrottleTimer: NodeJS.Timeout | null = null;
   private syncThrottleMs = 1000;
+  // Pending RPC calls (requestId -> resolve/reject)
+  private pendingRpc = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
+  private static readonly RPC_TIMEOUT_MS = 30000;
 
   constructor(config: BotConfig) {
     this.config = config;
@@ -136,6 +139,7 @@ class OlympusBot {
         `/use <이름> - 세션 연결/전환\n` +
         `/close [이름] - 세션 해제\n` +
         `/health - 상태 확인\n` +
+        `/codex <질문> - Codex Orchestrator에 질문\n` +
         `/mode raw|digest - 출력 모드 전환\n` +
         `/orchestration <요청> - Multi-AI 협업 (Auto 전자동)\n` +
         `/orchestration --plan <요청> - Phase 3,8 확인\n` +
@@ -527,6 +531,70 @@ class OlympusBot {
     this.bot.command('raw', async (ctx) => {
       this.outputMode.set(ctx.chat.id, 'raw');
       await this.safeReply(ctx, '📋 출력 모드: *원문 전체 (raw)*\n\n모든 출력을 원문 그대로 전달합니다.', 'Markdown');
+    });
+
+    // /codex - Send query to Codex Orchestrator via RPC
+    this.bot.command('codex', async (ctx) => {
+      const text = ctx.message.text.replace(/^\/codex\s*/, '').trim();
+
+      if (!text) {
+        await this.safeReply(ctx,
+          '🤖 *Codex Orchestrator*\n\n' +
+          '사용법: `/codex <질문>`\n\n' +
+          '예:\n' +
+          '`/codex 알파 프로젝트 빌드해줘`\n' +
+          '`/codex 모든 프로젝트 상태`\n' +
+          '`/codex deploy 관련 작업 검색`',
+          'Markdown'
+        );
+        return;
+      }
+
+      if (!this.isConnected) {
+        await this.safeReply(ctx, '❌ Gateway에 연결되지 않았습니다.', undefined);
+        return;
+      }
+
+      const statusMsg = await ctx.reply('🤖 Codex 처리 중...');
+
+      try {
+        const result = await this.rpc('codex.route', { text, source: 'telegram' }) as {
+          requestId: string;
+          decision: { type: string; targetSessions: string[]; processedInput: string; confidence: number; reason: string };
+          response?: { type: string; content: string; metadata: Record<string, unknown>; rawOutput?: string; agentInsight?: string };
+        };
+
+        const d = result.decision;
+        const r = result.response;
+        const confPercent = Math.round(d.confidence * 100);
+
+        let reply = `🤖 *Codex 응답*\n\n`;
+        reply += `📋 유형: ${d.type} (${confPercent}%)\n`;
+        if (d.targetSessions.length > 0) {
+          reply += `🎯 대상: ${d.targetSessions.join(', ')}\n`;
+        }
+        if (r?.content) {
+          reply += `\n${r.content}`;
+        }
+        if (r?.agentInsight) {
+          reply += `\n\n💡 ${r.agentInsight}`;
+        }
+
+        await ctx.telegram.editMessageText(
+          ctx.chat.id,
+          statusMsg.message_id,
+          undefined,
+          reply.slice(0, TELEGRAM_MSG_LIMIT),
+          { parse_mode: 'Markdown' }
+        );
+      } catch (err) {
+        await ctx.telegram.editMessageText(
+          ctx.chat.id,
+          statusMsg.message_id,
+          undefined,
+          `❌ Codex 오류: ${(err as Error).message}`
+        );
+      }
     });
 
     // /last - Show last output from active session
@@ -938,6 +1006,29 @@ class OlympusBot {
     });
   }
 
+  /**
+   * Send an RPC call via WebSocket and wait for result.
+   */
+  private rpc(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        reject(new Error('WebSocket not connected'));
+        return;
+      }
+
+      const msg = createMessage('rpc', { method, params });
+      const requestId = msg.id;
+
+      const timer = setTimeout(() => {
+        this.pendingRpc.delete(requestId);
+        reject(new Error(`RPC timeout: ${method}`));
+      }, OlympusBot.RPC_TIMEOUT_MS);
+
+      this.pendingRpc.set(requestId, { resolve, reject, timer });
+      this.ws.send(JSON.stringify(msg));
+    });
+  }
+
   private async sendToClaude(sessionId: string, message: string): Promise<void> {
     const res = await fetch(`${this.config.gatewayUrl}/api/sessions/${sessionId}/input`, {
       method: 'POST',
@@ -1052,10 +1143,41 @@ class OlympusBot {
     this.reconnectTimer = setTimeout(() => this.connectWebSocket(), 5000);
   }
 
-  private handleWebSocketMessage(msg: { type: string; payload: unknown }) {
+  private handleWebSocketMessage(msg: { type: string; payload: unknown; id?: string }) {
+    // Handle RPC responses — requestId is in payload (gateway uses msg.id of original request)
+    if (msg.type === 'rpc:result' || msg.type === 'rpc:error' || msg.type === 'rpc:ack') {
+      const requestId = (msg.payload as { requestId?: string }).requestId;
+      if (msg.type === 'rpc:ack') return; // Ignore ack, wait for result
+      if (requestId && this.pendingRpc.has(requestId)) {
+        const pending = this.pendingRpc.get(requestId)!;
+        this.pendingRpc.delete(requestId);
+        clearTimeout(pending.timer);
+        if (msg.type === 'rpc:result') {
+          pending.resolve((msg.payload as { result: unknown }).result);
+        } else {
+          pending.reject(new Error((msg.payload as { message: string }).message ?? 'RPC error'));
+        }
+      }
+      return;
+    }
+
     // Handle broadcast events (no sessionId) before the sessionId guard
     if (msg.type === 'sessions:list') {
       this.throttledSyncAllChats();
+      return;
+    }
+
+    // Handle codex:session-event (broadcast to all chats)
+    if (msg.type === 'codex:session-event') {
+      const event = msg.payload as { sessionId?: string; status?: string; projectName?: string };
+      if (event.sessionId && event.status) {
+        const statusIcon = event.status === 'ready' ? '🟢' : event.status === 'busy' ? '🔵' : event.status === 'closed' ? '🔴' : '⚪';
+        const text = `${statusIcon} Codex 세션 [${event.projectName ?? event.sessionId.slice(0, 8)}]: ${event.status}`;
+        // Notify all known chats
+        for (const chatId of this.chatSessions.keys()) {
+          this.bot.telegram.sendMessage(chatId, text).catch(() => {});
+        }
+      }
       return;
     }
 
@@ -1279,6 +1401,12 @@ class OlympusBot {
     console.log(`\nReceived ${signal}, shutting down...`);
     this.stopPing();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    // Reject all pending RPC calls
+    for (const [id, pending] of this.pendingRpc) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error('Bot shutting down'));
+      this.pendingRpc.delete(id);
+    }
     this.ws?.close();
     this.bot.stop(signal);
   }

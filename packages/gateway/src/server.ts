@@ -32,11 +32,15 @@ import { createAIProvider } from './agent/providers/index.js';
 import { WorkerManager } from './workers/manager.js';
 import { ChannelManager, DashboardChannel, TelegramChannel } from './channels/index.js';
 import { MemoryStore } from './memory/store.js';
+import type { CodexAdapter } from './codex-adapter.js';
 
 export interface GatewayOptions {
   port?: number;
   host?: string;
   maxConcurrentRuns?: number;
+  codexAdapter?: CodexAdapter;
+  /** Server mode: legacy (full agent/worker), hybrid (both), codex (slim — no agent/worker) */
+  mode?: 'legacy' | 'hybrid' | 'codex';
 }
 
 interface ClientInfo {
@@ -56,19 +60,22 @@ export class Gateway {
   private runManager: RunManager;
   private sessionManager: SessionManager;
   private rpcRouter: RpcRouter;
-  private agent: CodexAgent;
-  private workerManager: WorkerManager;
+  private agent: CodexAgent | null = null;
+  private workerManager: WorkerManager | null = null;
   private channelManager: ChannelManager;
-  private memoryStore: MemoryStore;
+  private memoryStore: MemoryStore | null = null;
+  private codexAdapter: CodexAdapter | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private sessionCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private startTime = Date.now();
   private port: number;
   private host: string;
+  private mode: 'legacy' | 'hybrid' | 'codex';
 
   constructor(options: GatewayOptions = {}) {
     this.port = options.port ?? DEFAULT_GATEWAY_PORT;
     this.host = options.host ?? DEFAULT_GATEWAY_HOST;
+    this.mode = options.mode ?? 'legacy';
 
     // Initialize RunManager with event forwarding
     this.runManager = new RunManager({
@@ -81,47 +88,12 @@ export class Gateway {
       onSessionEvent: (sessionId, event) => this.broadcastSessionEvent(sessionId, event),
     });
 
-    // Load V2 config (user overrides + defaults)
-    const userConfig = loadConfig();
-    const v2Config = resolveV2Config(userConfig);
-
-    // Initialize Memory Store early (needed by Agent)
-    this.memoryStore = new MemoryStore(v2Config.memory);
-
-    // Initialize Worker Manager (factory pattern — creates worker by task.type)
-    this.workerManager = new WorkerManager({
-      config: v2Config.worker,
-      maxConcurrent: v2Config.agent.maxConcurrentWorkers,
-      apiKey: v2Config.agent.apiKey,
-      apiModel: v2Config.agent.model,
-    });
-
-    // Initialize Agent components with resolved config + AI Provider
-    const agentConfig = v2Config.agent;
-    const provider = createAIProvider(agentConfig);
-    const analyzer = new CommandAnalyzer(provider);
-    const planner = new ExecutionPlanner(provider);
-    const reviewer = new ResultReviewer(provider);
-    const reporter = new AgentReporter();
-
-    this.agent = new CodexAgent({
-      config: agentConfig,
-      analyzer,
-      planner,
-      reviewer,
-      reporter,
-      workerManager: this.workerManager,
-      securityConfig: v2Config.security,
-      memoryStore: this.memoryStore,
-    });
-
-    // Initialize Channel Manager
+    // Initialize Channel Manager (always needed for broadcast)
     this.channelManager = new ChannelManager();
     const dashboardChannel = new DashboardChannel();
     dashboardChannel.setBroadcast((event, payload) => {
       this.broadcastToAll(event, payload);
     });
-    // Register channel (async, fire-and-forget in constructor)
     this.channelManager.register(dashboardChannel).catch(() => {});
 
     // Register Telegram channel if configured
@@ -135,58 +107,110 @@ export class Gateway {
       // Telegram channel is optional
     }
 
-    // Wire agent events to channel broadcasts + memory persistence
-    this.agent.on('progress', (payload: unknown) => {
-      this.broadcastToAll('agent:progress', payload);
-    });
-    this.agent.on('result', (payload: unknown) => {
-      this.broadcastToAll('agent:result', payload);
-      // L2 fix: capture task snapshot before resetToIdle nulls currentTask
-      const taskSnapshot = this.agent.currentTask ? { ...this.agent.currentTask } : null;
-      this.persistAgentResult(payload, taskSnapshot);
-    });
-    this.agent.on('error', (payload: unknown) => {
-      this.broadcastToAll('agent:error', payload);
-    });
-    this.agent.on('approval', (payload: unknown) => {
-      this.broadcastToAll('agent:approval', payload);
-    });
-
-    // Wire worker events
-    this.workerManager.on('worker:started', (payload: unknown) => {
-      this.broadcastToAll('worker:started', payload);
-    });
-    this.workerManager.on('worker:output', (payload: unknown) => {
-      this.broadcastToAll('worker:output', payload);
-    });
-    this.workerManager.on('worker:done', (payload: unknown) => {
-      this.broadcastToAll('worker:done', payload);
-    });
-
-    // Initialize RPC Router with system methods
+    // Initialize RPC Router
     this.rpcRouter = new RpcRouter();
-    registerSystemMethods(this.rpcRouter, {
-      getUptime: () => Date.now() - this.startTime,
-      getAgentState: () => this.agent.state,
-      getActiveWorkerCount: () => this.workerManager.getActiveCount(),
-      getConnectedClientCount: () => this.clients.size,
-      getActiveSessionCount: () => this.sessionManager.getAll().filter(s => s.status === 'active').length,
-    });
 
-    // Register agent/worker/session RPC methods
-    registerAgentMethods(this.rpcRouter, {
-      agent: this.agent,
-      workerManager: this.workerManager,
-      sessionManager: this.sessionManager,
-      memoryStore: this.memoryStore,
-    });
+    // ── Mode-specific initialization ──
+    if (this.mode !== 'codex') {
+      // Legacy/Hybrid: full Agent + Worker + Memory initialization
+      const userConfig = loadConfig();
+      const v2Config = resolveV2Config(userConfig);
+
+      this.memoryStore = new MemoryStore(v2Config.memory);
+
+      this.workerManager = new WorkerManager({
+        config: v2Config.worker,
+        maxConcurrent: v2Config.agent.maxConcurrentWorkers,
+        apiKey: v2Config.agent.apiKey,
+        apiModel: v2Config.agent.model,
+      });
+
+      const agentConfig = v2Config.agent;
+      const provider = createAIProvider(agentConfig);
+      const analyzer = new CommandAnalyzer(provider);
+      const planner = new ExecutionPlanner(provider);
+      const reviewer = new ResultReviewer(provider);
+      const reporter = new AgentReporter();
+
+      this.agent = new CodexAgent({
+        config: agentConfig,
+        analyzer,
+        planner,
+        reviewer,
+        reporter,
+        workerManager: this.workerManager,
+        securityConfig: v2Config.security,
+        memoryStore: this.memoryStore,
+      });
+
+      // Wire agent events
+      this.agent.on('progress', (payload: unknown) => {
+        this.broadcastToAll('agent:progress', payload);
+      });
+      this.agent.on('result', (payload: unknown) => {
+        this.broadcastToAll('agent:result', payload);
+        const taskSnapshot = this.agent!.currentTask ? { ...this.agent!.currentTask } : null;
+        this.persistAgentResult(payload, taskSnapshot);
+      });
+      this.agent.on('error', (payload: unknown) => {
+        this.broadcastToAll('agent:error', payload);
+      });
+      this.agent.on('approval', (payload: unknown) => {
+        this.broadcastToAll('agent:approval', payload);
+      });
+
+      // Wire worker events
+      this.workerManager.on('worker:started', (payload: unknown) => {
+        this.broadcastToAll('worker:started', payload);
+      });
+      this.workerManager.on('worker:output', (payload: unknown) => {
+        this.broadcastToAll('worker:output', payload);
+      });
+      this.workerManager.on('worker:done', (payload: unknown) => {
+        this.broadcastToAll('worker:done', payload);
+      });
+
+      // Register system methods with agent/worker info
+      registerSystemMethods(this.rpcRouter, {
+        getUptime: () => Date.now() - this.startTime,
+        getAgentState: () => this.agent!.state,
+        getActiveWorkerCount: () => this.workerManager!.getActiveCount(),
+        getConnectedClientCount: () => this.clients.size,
+        getActiveSessionCount: () => this.sessionManager.getAll().filter(s => s.status === 'active').length,
+      });
+
+      // Register agent/worker RPC methods
+      registerAgentMethods(this.rpcRouter, {
+        agent: this.agent,
+        workerManager: this.workerManager,
+        sessionManager: this.sessionManager,
+        memoryStore: this.memoryStore,
+      });
+    } else {
+      // Codex mode: slim Gateway — no Agent/Worker, only Codex RPC
+      registerSystemMethods(this.rpcRouter, {
+        getUptime: () => Date.now() - this.startTime,
+        getAgentState: () => 'CODEX_MODE',
+        getActiveWorkerCount: () => 0,
+        getConnectedClientCount: () => this.clients.size,
+        getActiveSessionCount: () => this.sessionManager.getAll().filter(s => s.status === 'active').length,
+      });
+    }
+
+    // Wire Codex Adapter if provided (hybrid/codex mode)
+    if (options.codexAdapter) {
+      this.codexAdapter = options.codexAdapter;
+      this.codexAdapter.registerRpcMethods(this.rpcRouter);
+    }
   }
 
   async start(): Promise<{ port: number; host: string; apiKey: string }> {
     // I3/L1: Initialize memory store with warning on failure
-    await this.memoryStore.initialize().catch((err) => {
-      console.warn(`[Gateway] Memory store init failed (operating without persistence): ${(err as Error).message}`);
-    });
+    if (this.memoryStore) {
+      await this.memoryStore.initialize().catch((err) => {
+        console.warn(`[Gateway] Memory store init failed (operating without persistence): ${(err as Error).message}`);
+      });
+    }
 
     // Ensure API key exists (creates one if not)
     const config = loadConfig();
@@ -245,9 +269,9 @@ export class Gateway {
     // Cancel all active runs
     this.runManager.cancelAllRuns();
 
-    // Terminate all workers and agent
-    this.agent.cancel();
-    this.workerManager.terminateAll();
+    // Terminate agent and workers (if initialized)
+    if (this.agent) this.agent.cancel();
+    if (this.workerManager) this.workerManager.terminateAll();
     await this.channelManager.destroyAll();
 
     // Notify clients before closing
@@ -261,7 +285,7 @@ export class Gateway {
     this.clients.clear();
 
     // Close memory store last (may have pending writes)
-    this.memoryStore.close();
+    if (this.memoryStore) this.memoryStore.close();
 
     return new Promise((resolve) => {
       if (this.wss)
@@ -289,11 +313,11 @@ export class Gateway {
     return this.sessionManager;
   }
 
-  getAgent(): CodexAgent {
+  getAgent(): CodexAgent | null {
     return this.agent;
   }
 
-  getWorkerManager(): WorkerManager {
+  getWorkerManager(): WorkerManager | null {
     return this.workerManager;
   }
 
@@ -301,8 +325,12 @@ export class Gateway {
     return this.channelManager;
   }
 
-  getMemoryStore(): MemoryStore {
+  getMemoryStore(): MemoryStore | null {
     return this.memoryStore;
+  }
+
+  getMode(): string {
+    return this.mode;
   }
 
   private handleConnection(ws: WebSocket): void {
@@ -604,12 +632,13 @@ export class Gateway {
    * L2 fix: accepts a pre-captured task snapshot to avoid race with resetToIdle.
    */
   private persistAgentResult(payload: unknown, taskSnapshot?: import('@olympus-dev/protocol').AgentTask | null): void {
+    if (!this.memoryStore) return;
     try {
       const { taskId, report } = payload as {
         taskId: string;
         report: { status: string; summary: string; changedFiles: string[] };
       };
-      const task = taskSnapshot ?? this.agent.currentTask;
+      const task = taskSnapshot ?? this.agent?.currentTask;
       this.memoryStore.saveTask({
         id: taskId,
         command: task?.command ?? '',

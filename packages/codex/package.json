@@ -1,0 +1,32 @@
+{
+  "name": "@olympus-dev/codex",
+  "version": "0.3.0",
+  "type": "module",
+  "description": "Codex Orchestrator — AI Agent coordinator for Olympus",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@olympus-dev/protocol": "workspace:*",
+    "@olympus-dev/core": "workspace:*"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "vitest": "^3.0.0",
+    "typescript": "^5.7.0"
+  }
+}

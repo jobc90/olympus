@@ -221,6 +221,14 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       }));
     });
 
+    // Codex session events
+    client.onCodexSessionEvent((p) => {
+      setState((s) => ({
+        ...s,
+        logs: [...s.logs.slice(-99), { level: 'info', message: `[codex:session] ${p.projectName ?? p.sessionId}: ${p.status}` }],
+      }));
+    });
+
     // V2 Agent events
     client.onAgentProgress((p) => {
       const progress = p as AgentProgress;
@@ -415,5 +423,39 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     }
   }, []);
 
-  return { ...state, subscribe, unsubscribe, subscribeSession, unsubscribeSession, cancel, connectAvailableSession, sendAgentCommand, cancelAgentTask, approveTask, rejectTask };
+  // Codex RPC methods
+  const codexRoute = useCallback(async (text: string) => {
+    try {
+      return await clientRef.current?.codexRoute(text, 'dashboard') ?? null;
+    } catch (e) {
+      setState(s => ({ ...s, error: `Codex route error: ${(e as Error).message}` }));
+      return null;
+    }
+  }, []);
+
+  const codexProjects = useCallback(async () => {
+    try {
+      return await clientRef.current?.codexProjects() ?? [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const codexSessions = useCallback(async () => {
+    try {
+      return await clientRef.current?.codexSessions() ?? [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const codexSearch = useCallback(async (query: string) => {
+    try {
+      return await clientRef.current?.codexSearch(query) ?? [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  return { ...state, subscribe, unsubscribe, subscribeSession, unsubscribeSession, cancel, connectAvailableSession, sendAgentCommand, cancelAgentTask, approveTask, rejectTask, codexRoute, codexProjects, codexSessions, codexSearch };
 }

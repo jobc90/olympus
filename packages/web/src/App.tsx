@@ -17,6 +17,8 @@ import { AgentApprovalDialog } from './components/AgentApprovalDialog';
 import { LogPanel } from './components/LogPanel';
 import { Card, CardHeader } from './components/Card';
 import { ContextExplorer } from './components/ContextExplorer';
+import { CodexPanel } from './components/CodexPanel';
+import { ProjectBrowser } from './components/ProjectBrowser';
 import { useContextTree } from './hooks/useContextTree';
 
 // Config priority: server-injected > URL params > localStorage > defaults
@@ -86,6 +88,10 @@ export default function App() {
     cancelAgentTask,
     approveTask,
     rejectTask,
+    codexRoute,
+    codexProjects,
+    codexSessions,
+    codexSearch,
   } = useOlympus(config);
 
   const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
@@ -213,8 +219,15 @@ export default function App() {
             )}
           </section>
 
-          {/* Right Sidebar: Context + Logs */}
+          {/* Right Sidebar: Codex + Context + Logs */}
           <aside className="lg:col-span-3 space-y-4">
+            <CodexPanel connected={connected} onRoute={codexRoute} />
+            <ProjectBrowser
+              connected={connected}
+              getProjects={codexProjects}
+              getSessions={codexSessions}
+              search={codexSearch}
+            />
             <ContextExplorer ctx={contextTree} onSettingsClick={() => setShowSettings(true)} />
             <LogPanel logs={logs} />
           </aside>

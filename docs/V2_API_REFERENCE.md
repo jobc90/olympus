@@ -171,6 +171,43 @@ result: { terminated: boolean, message: string }
 ```
 실행 중인 워커 강제 종료.
 
+### Memory 메서드
+
+#### `memory.search`
+```
+params: {
+  query: string,                // FTS 검색어
+  limit?: number                // 결과 제한 (기본 10)
+}
+result: {
+  tasks: CompletedAgentTask[]
+}
+```
+MemoryStore에서 FTS5 검색으로 유사 작업 조회.
+
+#### `memory.patterns`
+```
+params: {
+  command?: string,             // 매칭할 명령어 (없으면 전체 조회)
+  minConfidence?: number        // 최소 신뢰도 (기본 0.3)
+}
+result: {
+  patterns: LearningPattern[]
+}
+```
+PatternManager에서 학습 패턴 조회. command 지정 시 SQL LIKE 필터링.
+
+#### `memory.stats`
+```
+params: (없음)
+result: {
+  taskCount: number,
+  patternCount: number,
+  recentTasks: CompletedAgentTask[]  // 최근 5개
+}
+```
+Memory 전체 통계.
+
 ### 세션 메서드 (REST + RPC)
 
 #### `sessions.list`
@@ -326,7 +363,7 @@ interface ReviewReport {
 ```typescript
 interface WorkerTask {
   id: string;
-  type: 'claude-cli' | 'claude-api' | 'tmux';
+  type: 'claude-cli' | 'claude-api' | 'tmux' | 'docker';
   prompt: string;
   projectPath: string;
   dependencies: string[];
@@ -417,8 +454,9 @@ type RpcErrorCode =
   | 'INTERNAL_ERROR'           // 서버 내부 오류
   | 'UNAUTHORIZED'             // 인증 필요
   | 'TIMEOUT'                  // 요청 초과 시간
-  | 'AGENT_BUSY'               // 에이전트 작업 중
-  | 'WORKER_LIMIT_REACHED';    // 워커 수 초과
+  | 'AGENT_BUSY'               // 에이전트 작업 중 (CommandQueue 가득)
+  | 'WORKER_LIMIT_REACHED'     // 워커 수 + 큐 초과
+  | 'QUEUE_FULL';              // 워커 FIFO 큐 가득 참
 ```
 
 ### HTTP 상태 코드

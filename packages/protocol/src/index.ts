@@ -143,3 +143,26 @@ export {
   DEFAULT_MEMORY_CONFIG,
   DEFAULT_SECURITY_CONFIG,
 } from './agent.js';
+
+// Codex Orchestrator types (v3.0)
+export type {
+  CodexMessageType,
+  CodexInputSource,
+  CodexUserInput,
+  CodexRoutingType,
+  CodexRoutingDecision,
+  CodexResponseType,
+  CodexProcessedResponse,
+  CodexRoutePayload,
+  CodexRouteResultPayload,
+  CodexSessionOutputPayload,
+  CodexSessionCommand,
+  CodexSessionCmdPayload,
+  CodexSessionEventPayload,
+  CodexStatusPayload,
+  CodexRouteParams,
+  CodexSearchParams,
+  CodexSessionInfo,
+  CodexProjectInfo,
+  CodexSearchResult,
+} from './codex.js';

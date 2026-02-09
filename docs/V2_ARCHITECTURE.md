@@ -12,8 +12,9 @@
 
 ### 현재 상태 (v0.3.0)
 - 8개 통합 패키지 (protocol, core, gateway, cli, client, tui, web, telegram-bot)
-- 92/92 테스트 통과
+- 323/323 테스트 통과 (gateway 248 + telegram 51 + core 24)
 - 프로덕션 준비 완료 (v5.3 Deep Engineering Protocol)
+- V2 전체 완료 — 88개 이슈 전부 구현
 
 ---
 
@@ -51,22 +52,25 @@
 │                                 ↓                              │
 │  ┌─────────────────┐    ┌──────────────────────────┐          │
 │  │ WorkerManager   │←───│ CommandQueue             │          │
-│  │ (3 타입)        │    │ SecurityGuard            │          │
-│  │                 │    │ Memory Store (SQLite)    │          │
-│  │ • ClaudeWorker  │    └──────────────────────────┘          │
-│  │ • ApiWorker     │                                          │
+│  │ (4 타입+FIFO큐) │    │ SecurityGuard            │          │
+│  │                 │    │ PatternManager           │          │
+│  │ • ClaudeWorker  │    │ Memory Store (SQLite)    │          │
+│  │ • ApiWorker     │    └──────────────────────────┘          │
 │  │ • TmuxWorker    │                                          │
+│  │ • DockerWorker  │    Memory RPC: search/patterns/stats    │
+│  │ FIFO Queue(20)  │                                          │
 │  └─────────────────┘                                          │
 │         ↓                                                      │
 └─────────────────────────────────────────────────────────────────┘
          ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │              Worker Layer (실제 작업 실행)                      │
-├──────────────┬──────────────┬─────────────────────────────────┤
-│  Claude CLI  │   Claude     │   tmux Sessions                 │
-│  Child       │   API        │   (자동 발견/등록)              │
-│  Process     │   Streaming  │                                 │
-└──────────────┴──────────────┴─────────────────────────────────┘
+├──────────┬──────────┬──────────────┬────────────────────────────┤
+│ Claude   │ Claude   │ tmux         │  Docker                    │
+│ CLI      │ API      │ Sessions     │  Container                 │
+│ Child    │ SSE      │ (자동발견)   │  (격리실행)                │
+│ Process  │ Stream   │              │                            │
+└──────────┴──────────┴──────────────┴────────────────────────────┘
 ```
 
 ---
@@ -94,10 +98,16 @@ IDLE → ANALYZING → PLANNING → EXECUTING → REVIEWING → REPORTING → ID
 
 **이벤트**:
 - `progress`: 상태 전이 + 진행도 (10% → 95%)
-- `result`: 완료된 작업 보고서
-- `error`: 파이프라인 실패
+- `result`: 완료된 작업 보고서 (task snapshot 사전 캡처로 race condition 방지)
+- `error`: 파이프라인 실패 + 강제 상태 리셋 시 에러 발행 (A2)
 - `approval`: 사용자 승인 대기
 - `queued`: 명령 큐잉 (위치 정보)
+
+**안정성 개선**:
+- **A2 (resetToIdle)**: 비정상 상태 전이 시 `error` 이벤트 발행 (디버깅 가시성)
+- **L2 (persistAgentResult)**: task snapshot 사전 캡처로 resetToIdle과의 race condition 해결
+- **O2 (클라이언트 disconnect)**: WebSocket close 시 구독(subscription) 자동 정리
+- **J1 (broadcast 안정성)**: broadcastToAll 에러 시 console.warn 로깅 (전체 실패 방지)
 
 ### 3.2 WorkerManager — 워커 풀 관리
 
@@ -108,11 +118,27 @@ IDLE → ANALYZING → PLANNING → EXECUTING → REVIEWING → REPORTING → ID
 **팩토리 패턴** (WorkerTask.type에 따라):
 ```typescript
 switch (task.type) {
-  case 'claude-api':   → ApiWorker (직접 Claude API 호출)
+  case 'claude-api':   → ApiWorker (직접 Claude API 호출, SSE 스트리밍)
   case 'tmux':         → TmuxWorker (tmux 세션 내 실행)
+  case 'docker':       → DockerWorker (컨테이너 격리 실행)
   case 'claude-cli':   → ClaudeCliWorker (자식 프로세스, 기본값)
 }
 ```
+
+**FIFO 큐** (G1):
+- 풀이 가득 차면 즉시 거부 대신 FIFO 큐에 대기
+- `maxQueueSize` (기본 20): 큐 크기 한계
+- `drainQueue()`: 워커 완료 시 자동으로 큐에서 다음 작업 실행
+- `worker:queued` 이벤트: 큐잉 위치 정보 포함
+
+**파이프라인 출력 체이닝** (A1):
+- `strategy: 'pipeline'` 시 이전 워커 출력을 다음 워커 프롬프트에 주입
+- `--- Previous step output ---\n{output}` 형식으로 컨텍스트 전달
+- 파이프라인 중간 실패 시 즉시 중단
+
+**워커 로그 파일** (H2):
+- 각 워커 결과를 `~/.olympus/worker-logs/{workerId}.log`에 기록
+- 디렉토리 자동 생성 (`mkdirSync`)
 
 **제약**:
 - 동시 워커 한계: `maxConcurrent` (기본 3개)
@@ -145,11 +171,24 @@ interface Worker extends EventEmitter {
 - FTS5 트리거로 자동 인덱싱
 - 최대 히스토리: `maxHistory` (기본 1000개)
 
+**PatternManager** (A4/C1 분리):
+- MemoryStore에서 패턴 관리 로직 추출 (단일 책임 원칙)
+- SQL-level LIKE 필터링 (I2): 키워드를 `%keyword%` 형태로 WHERE 조건에 전달
+- `findMatching(command, minConfidence)`: 명령어에서 키워드 추출 → SQL LIKE → confidence/usage 정렬
+
 **API**:
 - `saveTask(task)`: 완료된 작업 저장
 - `searchTasks(query, limit)`: FTS 검색 + LIKE 폴백
-- `savePattern(pattern)`: 학습된 패턴 저장
-- `findPatterns(command, minConfidence)`: 매칭 패턴 검색
+- `savePattern(pattern)`: 학습된 패턴 저장 (→ PatternManager 위임)
+- `findPatterns(command, minConfidence)`: 매칭 패턴 검색 (→ PatternManager 위임)
+- `getPatternCount()`: 저장된 패턴 수
+- `deletePattern(id)`: 패턴 삭제
+- `recordPatternUsage(id)`: 사용 횟수 증가 + 마지막 사용 시간 갱신
+
+**Memory RPC 메서드** (K5):
+- `memory.search`: 작업 히스토리 FTS 검색 (`query`, `limit` 파라미터)
+- `memory.patterns`: 패턴 조회 (`command`로 필터링 또는 전체 조회)
+- `memory.stats`: 통계 반환 (taskCount, patternCount, recentTasks)
 
 **에이전트 활용**:
 - 분석 단계: 유사 작업 3개 조회 (`similarTasks`)
@@ -173,7 +212,9 @@ interface ChannelPlugin {
 
 **내장 채널**:
 - `DashboardChannel`: 웹 대시보드 (WebSocket 직접 연결)
-- `TelegramChannel`: Telegram Bot (Telegraf, 선택사항)
+- `TelegramChannel`: Telegram Bot (fetch 기반 event bridge)
+- `SlackChannel`: Slack Block Kit 기반 알림 (P2)
+- `DiscordChannel`: Discord Rich Embeds 기반 알림 (P2)
 
 **사용**:
 - `register(channel)`: 채널 등록 (비동기 초기화)
@@ -192,11 +233,13 @@ interface ChannelPlugin {
 3. Client: `{ type: 'subscribe', payload: { runId or sessionId } }`
 
 **핵심 메서드**:
-- `agent:submit`: 명령 제출 → taskId 반환
-- `agent:approve`: 승인 대기 중인 계획 승인
-- `agent:cancel`: 실행 중인 작업 취소
+- `agent:submit` / `agent.command`: 명령 제출 → taskId 반환
+- `agent:approve` / `agent.approve`: 승인 대기 중인 계획 승인
+- `agent:cancel` / `agent.cancel`: 실행 중인 작업 취소
 - `session:execute`: tmux 세션 명령 실행
-- `memory:search`: 작업 히스토리 검색
+- `memory.search`: 작업 히스토리 FTS 검색
+- `memory.patterns`: 학습 패턴 조회/필터링
+- `memory.stats`: 메모리 통계 (taskCount, patternCount, recentTasks)
 
 ### 3.6 SecurityGuard — 명령 검증 + 승인
 
@@ -215,7 +258,7 @@ interface ChannelPlugin {
 1. 에이전트 PLANNING 단계에서 승인 필요 감지
 2. `emit('approval', { taskId, plan })`
 3. 채널 UI에서 사용자 승인/거부
-4. 300초(5분) 타임아웃 후 자동 거부
+4. 300초(5분) 타임아웃 후 **자동 거부** (A5: 기존 자동 승인 → 자동 거부로 수정)
 
 ### 3.7 CommandQueue — 바쁜 에이전트용 FIFO
 
@@ -379,12 +422,13 @@ interface GatewayOptions {
 1. 상태 전이 → `progress` 이벤트
 2. 완료 → `result` 이벤트 + MemoryStore 저장
 
-**Gateway 종료 (`stop()`)**:
-1. 모든 실행 중인 runs 취소
-2. 모든 워커 종료
-3. 채널 정리
-4. MemoryStore 닫기
+**Gateway 종료 (`stop()`)** — L5 Graceful Shutdown:
+1. 하트비트/자동발견 타이머 정리
+2. 모든 실행 중인 runs 취소
+3. 모든 워커 종료 (terminateAll)
+4. 채널 정리 (destroyAll)
 5. WebSocket 클라이언트 연결 해제
+6. MemoryStore 닫기 (마지막에 안전하게)
 
 ---
 
@@ -421,8 +465,9 @@ SecurityGuard.requiresApproval(cmd)
 | 메트릭 | 값 |
 |--------|-----|
 | 동시 워커 | 3 (설정 가능) |
+| 워커 큐 크기 | 20 (maxQueueSize) |
 | 동시 runs | 5 (설정 가능) |
-| 명령 큐 크기 | 50 |
+| 명령 큐 크기 | 50 (CommandQueue) |
 | Heartbeat | 20초 |
 | Session 자동 발견 | 30초 |
 | 승인 타임아웃 | 300초 |
@@ -431,13 +476,31 @@ SecurityGuard.requiresApproval(cmd)
 
 ---
 
-## 11. 확장 포인트
+## 11. P2-P3 고급 기능
+
+### Embeddings (벡터 임베딩)
+- MemoryStore의 작업/패턴에 벡터 임베딩 지원
+- 의미 기반 유사도 검색 (FTS5 키워드 검색 보완)
+
+### Nonce Handshake (HMAC-SHA256)
+- 클라이언트-게이트웨이 간 challenge-response 인증
+- API Key 도청 방지를 위한 일회성 nonce 기반 핸드셰이크
+
+### Docker Worker
+- 격리된 컨테이너 환경에서 워커 실행
+- WorkerTask `type: 'docker'` 지정 시 DockerWorker 팩토리 생성
+- 호스트 시스템과 격리된 안전한 실행 환경
+
+---
+
+## 12. 확장 포인트
 
 ### 새 Worker 타입 추가
 ```typescript
 // WorkerManager.createWorker()에서
 case 'custom-type':
   return new CustomWorker(task, this.config);
+// 기존 4 타입: claude-cli, claude-api, tmux, docker
 ```
 
 ### 새 Channel 플러그인
@@ -465,6 +528,7 @@ class CustomProvider implements AIProvider {
 ## 참고 자료
 
 - **Protocol**: `/packages/protocol/` — 타입 + 상수
-- **Worker 구현**: `/packages/gateway/src/workers/` — 3 타입
-- **테스트**: `/packages/gateway/test/` — 92개 테스트
+- **Worker 구현**: `/packages/gateway/src/workers/` — 4 타입 (CLI, API, tmux, Docker)
+- **Memory**: `/packages/gateway/src/memory/` — MemoryStore, PatternManager
+- **테스트**: `/packages/gateway/src/__tests__/` — 248개 테스트
 - **명령**: `/packages/cli/src/commands/` — CLI 진입점

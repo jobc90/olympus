@@ -39,8 +39,8 @@ Olympus extends Claude CLI into a practical development operations platform:
 
 1. **Multi-AI Orchestration (AIOS v5.3)**: Claude + Gemini + Codex with Co-Leadership workflow
 2. **Codex Agent (V2)**: Autonomous AI agent — command analysis → planning → execution → review → reporting pipeline
-3. **Worker Factory (V2)**: 3 worker types (Claude CLI / Anthropic API SSE / tmux), auto-selected per task
-4. **Memory Store (V2)**: SQLite + FTS5 task learning, similar task retrieval, pattern matching
+3. **Worker Factory (V2)**: 4 worker types (Claude CLI / Anthropic API SSE / tmux / Docker), FIFO queue, pipeline output chaining, auto-selected per task
+4. **Memory Store (V2)**: SQLite + FTS5 task learning, PatternManager (SQL-level filtering), similar task retrieval, Memory RPC methods
 5. **Context OS**: hierarchical context management (Workspace → Project → Task)
 6. **Remote Access**: run and control local sessions through Gateway + Telegram (with Smart Digest for key results extraction, secret masking, and anti-spam filtering)
 7. **Stable Sessions**: tmux-backed long-running Claude sessions
@@ -259,7 +259,8 @@ Highlights:
 ┌─────────────────────────────────────────────────────────┐
 │                    Gateway (Core)                        │
 │  RPC Router  │  Channels  │  Codex Agent (V2)           │
-│  WorkerManager: CLI / API / tmux Workers                │
+│  WorkerManager: CLI / API / tmux / Docker Workers       │
+│  FIFO Queue │ PatternManager │ Memory RPC               │
 │  MemoryStore (SQLite+FTS5) │ SecurityGuard │ Registry   │
 └─────────────────────────────────────────────────────────┘
 ```

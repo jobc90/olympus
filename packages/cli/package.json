@@ -31,6 +31,7 @@
     "@olympus-dev/tui": "workspace:*",
     "@olympus-dev/protocol": "workspace:*",
     "@olympus-dev/client": "workspace:*",
+    "@olympus-dev/codex": "workspace:*",
     "@olympus-dev/telegram-bot": "workspace:*",
     "chalk": "^5.4.0",
     "commander": "^13.1.0",

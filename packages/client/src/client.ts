@@ -213,6 +213,11 @@ export class OlympusClient {
     return this.on('session:closed', (m) => handler(m.payload as { sessionId: string }));
   }
 
+  /** Convenience: subscribe to codex session events */
+  onCodexSessionEvent(handler: (p: { sessionId: string; status: string; projectName?: string }) => void): () => void {
+    return this.on('codex:session-event', (m) => handler(m.payload as { sessionId: string; status: string; projectName?: string }));
+  }
+
   /** Cancel a run or task */
   cancel(runId?: string, taskId?: string): void {
     this.send(createMessage('cancel', { runId, taskId }));
@@ -322,6 +327,33 @@ export class OlympusClient {
   /** Get system status */
   async getStatus(): Promise<{ agentState: string; activeWorkers: number; connectedClients: number }> {
     return this.rpc('status');
+  }
+
+  // ── Codex RPC Methods ──────────────────────────
+
+  /** Route input through Codex Orchestrator */
+  async codexRoute(text: string, source: string): Promise<{ requestId: string; decision: { type: string; targetSessions: string[]; processedInput: string; confidence: number; reason: string }; response?: { type: string; content: string; metadata: Record<string, unknown>; rawOutput: string; agentInsight?: string } }> {
+    return this.rpc('codex.route', { text, source });
+  }
+
+  /** List Codex-managed sessions */
+  async codexSessions(): Promise<Array<{ id: string; name: string; projectPath: string; status: string; lastActivity: number }>> {
+    return this.rpc('codex.sessions');
+  }
+
+  /** List Codex-registered projects */
+  async codexProjects(): Promise<Array<{ name: string; path: string; aliases: string[]; techStack: string[] }>> {
+    return this.rpc('codex.projects');
+  }
+
+  /** Search across all Codex projects */
+  async codexSearch(query: string, limit?: number): Promise<Array<{ projectName: string; projectPath: string; matchType: string; content: string; score: number; timestamp: number }>> {
+    return this.rpc('codex.search', { query, limit });
+  }
+
+  /** Get Codex status */
+  async codexStatus(): Promise<{ initialized: boolean; sessionCount: number; projectCount: number }> {
+    return this.rpc('codex.status');
   }
 
   /** Subscribe to agent progress events */

@@ -28,3 +28,5 @@ export { ChannelManager, DashboardChannel, TelegramChannel } from './channels/in
 export type { TelegramChannelConfig } from './channels/index.js';
 export type { ChannelPlugin, ChannelMessage, IncomingChannelMessage } from './channels/index.js';
 export { MemoryStore } from './memory/index.js';
+export { CodexAdapter } from './codex-adapter.js';
+export type { CodexOrchestratorLike } from './codex-adapter.js';
