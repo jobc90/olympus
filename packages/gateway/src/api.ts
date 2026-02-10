@@ -9,10 +9,12 @@ import type { CreateTaskInput, UpdateTaskInput, CreateContextInput, UpdateContex
 export interface ApiHandlerOptions {
   runManager: RunManager;
   sessionManager: SessionManager;
+  cliSessionStore?: import('./cli-session-store.js').CliSessionStore;
   onRunCreated?: () => void;  // Callback to broadcast runs:list
   onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
   onContextEvent?: (eventType: string, payload: unknown) => void;
   onSessionsChanged?: () => void;  // Callback to broadcast sessions:list
+  onCliComplete?: (result: import('@olympus-dev/protocol').CliRunResult) => void;
 }
 
 /**
@@ -139,6 +141,19 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     }
   }
 
+  // /api/cli routes
+  if (parts[0] === 'api' && parts[1] === 'cli') {
+    if (parts[2] === 'run') {
+      return { path: '/api/cli/run', query };
+    }
+    if (parts[2] === 'sessions') {
+      if (parts[3]) {
+        return { path: '/api/cli/sessions/:id', id: parts[3], query };
+      }
+      return { path: '/api/cli/sessions', query };
+    }
+  }
+
   // /api/operations/:id
   if (parts[0] === 'api' && parts[1] === 'operations' && parts[2]) {
     return { path: '/api/operations/:id', id: parts[2], query };
@@ -151,7 +166,7 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
  * Create HTTP API request handler
  */
 export function createApiHandler(options: ApiHandlerOptions) {
-  const { runManager, sessionManager, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged } = options;
+  const { runManager, sessionManager, cliSessionStore, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete } = options;
 
   return async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Handle CORS
@@ -207,6 +222,109 @@ export function createApiHandler(options: ApiHandlerOptions) {
           }
         } catch {
           sendJson(res, 200, { reply: '죄송합니다. 응답을 생성할 수 없습니다.' });
+        }
+        return;
+      }
+
+      // ── CLI Runner endpoints ──
+
+      // POST /api/cli/run — 동기 CLI 실행
+      if (path === '/api/cli/run' && method === 'POST') {
+        const body = await parseBody<{
+          prompt?: string;
+          provider?: string;
+          model?: string;
+          sessionKey?: string;
+          sessionId?: string;
+          resumeSession?: boolean;
+          workspaceDir?: string;
+          timeoutMs?: number;
+          systemPrompt?: string;
+          dangerouslySkipPermissions?: boolean;
+          allowedTools?: string[];
+        }>(req);
+
+        if (!body.prompt) {
+          sendJson(res, 400, { error: 'Bad Request', message: 'prompt is required' });
+          return;
+        }
+
+        // Lazy import to avoid circular deps
+        const { runCli } = await import('./cli-runner.js');
+        type CliRunParams = import('@olympus-dev/protocol').CliRunParams;
+
+        const params: CliRunParams = {
+          prompt: body.prompt,
+          provider: (body.provider as 'claude' | 'codex') ?? 'claude',
+          model: body.model,
+          workspaceDir: body.workspaceDir,
+          timeoutMs: body.timeoutMs,
+          systemPrompt: body.systemPrompt,
+          dangerouslySkipPermissions: body.dangerouslySkipPermissions,
+          allowedTools: body.allowedTools,
+        };
+
+        // 세션 복원: sessionKey → 저장소 조회 → resumeSession=true
+        if (body.sessionKey && cliSessionStore) {
+          const existing = cliSessionStore.get(body.sessionKey);
+          if (existing) {
+            params.sessionId = existing.cliSessionId;
+            params.resumeSession = true;
+          }
+        } else if (body.sessionId) {
+          params.sessionId = body.sessionId;
+          params.resumeSession = body.resumeSession;
+        }
+
+        const result = await runCli(params);
+
+        // 세션 영속화
+        if (result.sessionId && body.sessionKey && cliSessionStore) {
+          cliSessionStore.save({
+            key: body.sessionKey,
+            provider: params.provider ?? 'claude',
+            cliSessionId: result.sessionId,
+            model: result.model,
+            lastPrompt: body.prompt.slice(0, 500),
+            lastResponse: result.text.slice(0, 500),
+            totalInputTokens: result.usage.inputTokens,
+            totalOutputTokens: result.usage.outputTokens,
+            totalCostUsd: result.cost,
+            turnCount: result.numTurns || 1,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+        }
+
+        onCliComplete?.(result);
+        sendJson(res, 200, { result });
+        return;
+      }
+
+      // GET /api/cli/sessions — 저장된 CLI 세션 목록
+      if (path === '/api/cli/sessions' && method === 'GET') {
+        if (!cliSessionStore) {
+          sendJson(res, 200, { sessions: [] });
+          return;
+        }
+        const provider = query?.provider as 'claude' | 'codex' | undefined;
+        const limit = Number(query?.limit) || 50;
+        const sessions = cliSessionStore.list(provider || undefined, limit);
+        sendJson(res, 200, { sessions });
+        return;
+      }
+
+      // DELETE /api/cli/sessions/:id — CLI 세션 삭제
+      if (path === '/api/cli/sessions/:id' && method === 'DELETE' && id) {
+        if (!cliSessionStore) {
+          sendJson(res, 404, { error: 'Not Found' });
+          return;
+        }
+        const deleted = cliSessionStore.delete(id);
+        if (deleted) {
+          sendJson(res, 200, { success: true });
+        } else {
+          sendJson(res, 404, { error: 'Not Found', message: 'Session not found' });
         }
         return;
       }

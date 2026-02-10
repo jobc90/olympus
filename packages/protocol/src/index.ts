@@ -166,3 +166,17 @@ export type {
   CodexProjectInfo,
   CodexSearchResult,
 } from './codex.js';
+
+// CLI Runner types (Phase 1)
+export type {
+  CliProvider,
+  ClaudeCliOutput,
+  ClaudeCliUsage,
+  CliRunParams,
+  CliRunResult,
+  CliRunUsage,
+  CliRunError,
+  CliErrorType,
+  CliBackendConfig,
+  CliSessionRecord,
+} from './cli-runner.js';

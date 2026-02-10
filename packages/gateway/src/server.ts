@@ -32,6 +32,7 @@ import { createAIProvider } from './agent/providers/index.js';
 import { WorkerManager } from './workers/manager.js';
 import { ChannelManager, DashboardChannel, TelegramChannel } from './channels/index.js';
 import { MemoryStore } from './memory/store.js';
+import { CliSessionStore } from './cli-session-store.js';
 import type { CodexAdapter } from './codex-adapter.js';
 
 export interface GatewayOptions {
@@ -64,6 +65,7 @@ export class Gateway {
   private workerManager: WorkerManager | null = null;
   private channelManager: ChannelManager;
   private memoryStore: MemoryStore | null = null;
+  private cliSessionStore: CliSessionStore;
   private codexAdapter: CodexAdapter | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private sessionCleanupTimer: ReturnType<typeof setInterval> | null = null;
@@ -87,6 +89,9 @@ export class Gateway {
     this.sessionManager = new SessionManager({
       onSessionEvent: (sessionId, event) => this.broadcastSessionEvent(sessionId, event),
     });
+
+    // Initialize CLI Session Store (모드 불문 — CLI Runner는 항상 사용 가능)
+    this.cliSessionStore = new CliSessionStore();
 
     // Initialize Channel Manager (always needed for broadcast)
     this.channelManager = new ChannelManager();
@@ -212,6 +217,11 @@ export class Gateway {
       });
     }
 
+    // Initialize CLI session store
+    await this.cliSessionStore.initialize().catch((err) => {
+      console.warn(`[Gateway] CLI session store init failed (operating without persistence): ${(err as Error).message}`);
+    });
+
     // Ensure API key exists (creates one if not)
     const config = loadConfig();
 
@@ -220,10 +230,12 @@ export class Gateway {
       const apiHandler = createApiHandler({
         runManager: this.runManager,
         sessionManager: this.sessionManager,
+        cliSessionStore: this.cliSessionStore,
         onRunCreated: () => this.broadcastRunsList(),
         onSessionEvent: (sessionId, event) => this.broadcastSessionEvent(sessionId, event),
         onContextEvent: (eventType, payload) => this.broadcastContextEvent(eventType, payload),
         onSessionsChanged: () => this.broadcastSessionsList(),
+        onCliComplete: (result) => this.broadcastToAll('cli:complete', result),
       });
 
       this.httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -284,8 +296,9 @@ export class Gateway {
     }
     this.clients.clear();
 
-    // Close memory store last (may have pending writes)
+    // Close stores last (may have pending writes)
     if (this.memoryStore) this.memoryStore.close();
+    this.cliSessionStore.close();
 
     return new Promise((resolve) => {
       if (this.wss)
