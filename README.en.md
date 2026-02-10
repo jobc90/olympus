@@ -215,13 +215,13 @@ Telegram commands:
 
 ### Smart Digest Mode
 
-The Telegram bot uses **digest mode** by default. It extracts only key results from hundreds of lines of CLI output into a concise summary (max 800 chars).
+The Telegram bot uses **digest mode** by default. It extracts only key results from hundreds of lines of CLI output into a concise summary (max 1500 chars).
 
 - **6-category classification**: build, test, commit, error, phase, change
 - **Noise removal**: Reading, Searching, spinners, empty lines
 - **Secret masking**: API keys, Bearer tokens, GitHub PAT, long hex strings
 - **Hybrid triggering**: errors/completion flush immediately, normal output debounces 5s
-- **Priority budgeting**: error(5) > build/test(4) > commit/phase(3) fills 800 chars
+- **Priority budgeting**: error(5) > build/test(4) > commit/phase(3) fills 1500 chars
 
 ## Multi-AI Orchestration (AIOS v5.3)
 

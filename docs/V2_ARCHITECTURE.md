@@ -10,12 +10,13 @@
 - 자동 학습을 통한 지속적 개선
 - 강력한 보안 정책 및 승인 흐름
 
-### 현재 상태 (v0.3.0)
+### 현재 상태 (v0.4.0)
 - 9개 통합 패키지 (protocol, core, gateway, cli, client, tui, web, telegram-bot, codex)
-- 458/458 테스트 통과 (gateway 280 + codex 103 + telegram 51 + core 24)
+- 483/483 테스트 통과 (gateway 329 + codex 103 + telegram 51)
 - 프로덕션 준비 완료 (v5.3 Deep Engineering Protocol)
 - V2 전체 완료 — 88개 이슈 전부 구현
 - V3 Codex Orchestrator 구현 완료 (Phase 1-3)
+- Orchestrator 파이프라인 개선 — 세션 명명, 자동승인, 노이즈 필터링
 
 ---
 
@@ -616,5 +617,5 @@ CodexOrchestrator.processInput()
 - **Worker 구현**: `/packages/gateway/src/workers/` — 4 타입 (CLI, API, tmux, Docker)
 - **Memory**: `/packages/gateway/src/memory/` — MemoryStore, PatternManager
 - **Codex**: `/packages/codex/` — Codex Orchestrator (7 모듈, 103 테스트)
-- **테스트**: `/packages/gateway/src/__tests__/` — 280개 테스트
+- **테스트**: `/packages/gateway/src/__tests__/` — 329개 테스트
 - **명령**: `/packages/cli/src/commands/` — CLI 진입점

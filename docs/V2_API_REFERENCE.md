@@ -634,4 +634,4 @@ curl http://localhost:3333/api/operations/op-xyz \
 
 ---
 
-**최종 업데이트**: 2026-02-09 | **Protocol v0.2.0** | **Olympus v0.3.0+**
+**최종 업데이트**: 2026-02-10 | **Protocol v0.2.0** | **Olympus v0.4.0+**
