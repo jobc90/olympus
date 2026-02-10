@@ -36,7 +36,7 @@ if (!hasArgs && !isHelpOrVersion) {
   program
     .name('olympus')
     .description('⚡ Olympus - AI-powered development platform')
-    .version('0.2.0');
+    .version('0.3.0');
 
   // Main commands (most common)
   program.addCommand(quickstartCommand); // Quick setup + start

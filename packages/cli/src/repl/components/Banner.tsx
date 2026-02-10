@@ -5,7 +5,7 @@ interface BannerProps {
   version?: string;
 }
 
-export function Banner({ version = '0.2.0' }: BannerProps) {
+export function Banner({ version = '0.3.0' }: BannerProps) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Text bold color="cyan">

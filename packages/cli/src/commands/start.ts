@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { execSync } from 'child_process';
 import { basename, resolve } from 'path';
+import { loadConfig } from '@olympus-dev/gateway';
 
 /**
  * Generate session name from project path
@@ -41,6 +42,26 @@ function findAvailableSessionName(baseName: string): string {
   }
 
   throw new Error('Too many sessions with the same base name (max 99)');
+}
+
+/**
+ * Try to register the new session with a running Gateway.
+ * Best-effort: silently ignored if Gateway is not running.
+ */
+async function registerWithGateway(sessionName: string, gatewayPort: number): Promise<boolean> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${gatewayPort}/healthz`);
+    if (!res.ok) return false;
+
+    const connectRes = await fetch(`http://127.0.0.1:${gatewayPort}/api/sessions/connect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId: 0, tmuxSession: sessionName }),
+    });
+    return connectRes.ok || connectRes.status === 201;
+  } catch {
+    return false;
+  }
 }
 
 async function startAction(opts: Record<string, unknown>, forceTrust: boolean): Promise<void> {
@@ -84,7 +105,7 @@ async function startAction(opts: Record<string, unknown>, forceTrust: boolean): 
   }
 
   // Create new session
-  const trustMode = forceTrust || !!opts.trust;
+  const trustMode = forceTrust;
 
   console.log(chalk.white('Starting:'));
   console.log(chalk.green(`  ✓ tmux session: ${sessionName}`));
@@ -123,6 +144,17 @@ async function startAction(opts: Record<string, unknown>, forceTrust: boolean): 
 
     console.log(chalk.cyan.bold(`✅ ${agentName} 세션 시작됨!\n`));
 
+    // Auto-register with Gateway if running
+    const config = loadConfig();
+    const gatewayPort = parseInt(String(opts.gatewayPort), 10) || config.gatewayPort || 18790;
+    const registered = await registerWithGateway(sessionName, gatewayPort);
+    if (registered) {
+      console.log(chalk.green(`  ✓ Gateway 연동 완료 (port ${gatewayPort})`));
+    } else {
+      console.log(chalk.gray(`  ℹ Gateway 미실행 — 나중에 자동 감지됩니다`));
+    }
+    console.log();
+
     if (insideTmux) {
       // Already inside tmux, can't attach directly
       console.log(chalk.yellow('현재 tmux 내부에서 실행 중입니다.'));
@@ -156,13 +188,14 @@ export const startCommand = new Command('start')
   .option('-s, --session <name>', 'Tmux session name (auto-generated from project path if not specified)')
   .option('-a, --attach', 'Attach to the session after creation', true)
   .option('--no-attach', 'Do not attach to the session')
-  .option('--trust', 'Run agent CLI in trust mode (bypass permissions)')
+  .option('--gateway-port <port>', 'Gateway port for auto-registration', '18790')
   .action((opts) => startAction(opts, false));
 
 export const startTrustCommand = new Command('start-trust')
-  .description('Start agent CLI in trust mode (bypass permissions)')
+  .description('Start Claude CLI in trust mode (--dangerously-skip-permissions)')
   .option('-p, --project <path>', 'Project directory path', process.cwd())
   .option('-s, --session <name>', 'Tmux session name (auto-generated from project path if not specified)')
   .option('-a, --attach', 'Attach to the session after creation', true)
   .option('--no-attach', 'Do not attach to the session')
+  .option('--gateway-port <port>', 'Gateway port for auto-registration', '18790')
   .action((opts) => startAction(opts, true));

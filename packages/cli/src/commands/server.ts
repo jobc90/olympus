@@ -598,13 +598,13 @@ tmux capture-pane -t <session-name> -p -S -100
  * Set up the orchestrator directory with CLAUDE.md
  * Returns the directory path for the main session working directory
  */
-function setupOrchestratorDir(homedir: string): string {
-  const { mkdirSync, writeFileSync } = require('fs') as typeof import('fs');
-  const { join } = require('path') as typeof import('path');
+async function setupOrchestratorDir(homedir: string): Promise<string> {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
 
-  const dir = join(homedir, '.olympus', 'orchestrator');
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'CLAUDE.md'), ORCHESTRATOR_CLAUDE_MD);
+  const dir = path.join(homedir, '.olympus', 'orchestrator');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'CLAUDE.md'), ORCHESTRATOR_CLAUDE_MD);
   return dir;
 }
 
@@ -653,7 +653,7 @@ async function createMainSession(config: { gatewayUrl: string; apiKey: string })
   }
 
   // Set up orchestrator directory with CLAUDE.md
-  const orchestratorDir = setupOrchestratorDir(homedir());
+  const orchestratorDir = await setupOrchestratorDir(homedir());
 
   // Create main tmux session with Claude CLI in trust mode (background, no attach)
   const trustFlag = ' --dangerously-skip-permissions';
