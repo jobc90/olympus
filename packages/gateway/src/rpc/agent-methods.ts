@@ -211,7 +211,43 @@ export function registerAgentMethods(
     },
   );
 
-  // ── Memory methods (K5) ─────────────────────
+  // ── Memory methods (K5) — delegated to registerMemoryMethods
+  registerMemoryMethods(router, { memoryStore });
+
+  // ── Session methods ──────────────────────────
+
+  router.register(
+    'sessions.list',
+    (): SessionsListRpcResult => {
+      const sessions = sessionManager.getAll().filter(s => s.status === 'active');
+      const discovered = sessionManager.discoverTmuxSessions();
+      const registeredTmux = new Set(sessions.map(s => s.tmuxSession));
+      const availableSessions = discovered.filter(d => !registeredTmux.has(d.tmuxSession));
+
+      return { sessions, availableSessions };
+    },
+  );
+
+  router.register(
+    'sessions.discover',
+    (): SessionsDiscoverResult => {
+      const sessions = sessionManager.discoverTmuxSessions();
+      return { sessions };
+    },
+  );
+}
+
+/**
+ * Register Memory-only RPC methods.
+ *
+ * Separated so codex mode (no Agent/Worker) can still expose
+ * memory.search, memory.patterns, memory.stats.
+ */
+export function registerMemoryMethods(
+  router: RpcRouter,
+  deps: { memoryStore: MemoryStore },
+): void {
+  const { memoryStore } = deps;
 
   router.register(
     'memory.search',
@@ -254,28 +290,6 @@ export function registerAgentMethods(
         taskCount: memoryStore.getTaskCount(),
         patternCount: memoryStore.getPatternCount(),
       };
-    },
-  );
-
-  // ── Session methods ──────────────────────────
-
-  router.register(
-    'sessions.list',
-    (): SessionsListRpcResult => {
-      const sessions = sessionManager.getAll().filter(s => s.status === 'active');
-      const discovered = sessionManager.discoverTmuxSessions();
-      const registeredTmux = new Set(sessions.map(s => s.tmuxSession));
-      const availableSessions = discovered.filter(d => !registeredTmux.has(d.tmuxSession));
-
-      return { sessions, availableSessions };
-    },
-  );
-
-  router.register(
-    'sessions.discover',
-    (): SessionsDiscoverResult => {
-      const sessions = sessionManager.discoverTmuxSessions();
-      return { sessions };
     },
   );
 }

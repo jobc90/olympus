@@ -10,6 +10,7 @@ export interface ApiHandlerOptions {
   runManager: RunManager;
   sessionManager: SessionManager;
   cliSessionStore?: import('./cli-session-store.js').CliSessionStore;
+  memoryStore?: import('./memory/store.js').MemoryStore;
   onRunCreated?: () => void;  // Callback to broadcast runs:list
   onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
   onContextEvent?: (eventType: string, payload: unknown) => void;
@@ -166,7 +167,7 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
  * Create HTTP API request handler
  */
 export function createApiHandler(options: ApiHandlerOptions) {
-  const { runManager, sessionManager, cliSessionStore, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete } = options;
+  const { runManager, sessionManager, cliSessionStore, memoryStore, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete } = options;
 
   return async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Handle CORS
@@ -294,6 +295,25 @@ export function createApiHandler(options: ApiHandlerOptions) {
             createdAt: Date.now(),
             updatedAt: Date.now(),
           });
+        }
+
+        // 메모리에 결과 저장 (비동기, 실패 무시)
+        if (memoryStore && result.success) {
+          try {
+            const { randomUUID } = await import('node:crypto');
+            memoryStore.saveTask({
+              id: randomUUID(),
+              command: body.prompt!,
+              analysis: '',
+              plan: '',
+              result: result.text.slice(0, 2000),
+              success: result.success,
+              duration: result.durationMs ?? 0,
+              timestamp: Date.now(),
+              projectPath: body.workspaceDir ?? '',
+              workerCount: 0,
+            });
+          } catch { /* 저장 실패해도 응답은 정상 반환 */ }
         }
 
         onCliComplete?.(result);

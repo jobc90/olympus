@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { RpcRouter } from '../rpc/handler.js';
-import { registerAgentMethods } from '../rpc/agent-methods.js';
+import { registerAgentMethods, registerMemoryMethods } from '../rpc/agent-methods.js';
 import { MemoryStore } from '../memory/store.js';
 import { CodexAgent } from '../agent/agent.js';
 import { CommandAnalyzer } from '../agent/analyzer.js';
@@ -74,5 +74,31 @@ describe('Memory RPC Methods (K5)', () => {
     expect(methods).toContain('memory.stats');
     expect(methods).toContain('sessions.list');
     expect(methods).toContain('sessions.discover');
+  });
+});
+
+describe('registerMemoryMethods (standalone — codex mode)', () => {
+  let router: RpcRouter;
+  let memoryStore: MemoryStore;
+
+  beforeEach(() => {
+    router = new RpcRouter();
+    memoryStore = new MemoryStore({ enabled: false });
+    registerMemoryMethods(router, { memoryStore });
+  });
+
+  it('should register only memory.* methods', () => {
+    const methods = router.listMethods();
+    expect(methods).toContain('memory.search');
+    expect(methods).toContain('memory.patterns');
+    expect(methods).toContain('memory.stats');
+    expect(methods).toHaveLength(3);
+  });
+
+  it('should NOT register agent/worker/session methods', () => {
+    const methods = router.listMethods();
+    expect(methods).not.toContain('agent.command');
+    expect(methods).not.toContain('workers.list');
+    expect(methods).not.toContain('sessions.list');
   });
 });

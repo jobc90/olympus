@@ -20,7 +20,7 @@ import { RunManager, type RunOptions } from './run-manager.js';
 import { SessionManager, type SessionEvent } from './session-manager.js';
 import { createApiHandler } from './api.js';
 import { validateWsApiKey, loadConfig, resolveV2Config } from './auth.js';
-import { RpcRouter, registerSystemMethods, registerAgentMethods } from './rpc/index.js';
+import { RpcRouter, registerSystemMethods, registerAgentMethods, registerMemoryMethods } from './rpc/index.js';
 import type { RpcRequestPayload } from '@olympus-dev/protocol';
 import { DEFAULT_AGENT_CONFIG } from '@olympus-dev/protocol';
 import { CodexAgent } from './agent/agent.js';
@@ -115,13 +115,14 @@ export class Gateway {
     // Initialize RPC Router
     this.rpcRouter = new RpcRouter();
 
+    // ── MemoryStore: 모든 모드에서 초기화 (CLI Runner 결과 저장) ──
+    const userConfig = loadConfig();
+    const v2Config = resolveV2Config(userConfig);
+    this.memoryStore = new MemoryStore(v2Config.memory);
+
     // ── Mode-specific initialization ──
     if (this.mode !== 'codex') {
-      // Legacy/Hybrid: full Agent + Worker + Memory initialization
-      const userConfig = loadConfig();
-      const v2Config = resolveV2Config(userConfig);
-
-      this.memoryStore = new MemoryStore(v2Config.memory);
+      // Legacy/Hybrid: full Agent + Worker initialization
 
       this.workerManager = new WorkerManager({
         config: v2Config.worker,
@@ -200,6 +201,11 @@ export class Gateway {
         getConnectedClientCount: () => this.clients.size,
         getActiveSessionCount: () => this.sessionManager.getAll().filter(s => s.status === 'active').length,
       });
+
+      // Memory RPC — codex 모드에서도 검색/통계 제공
+      if (this.memoryStore) {
+        registerMemoryMethods(this.rpcRouter, { memoryStore: this.memoryStore });
+      }
     }
 
     // Wire Codex Adapter if provided (hybrid/codex mode)
@@ -231,6 +237,7 @@ export class Gateway {
         runManager: this.runManager,
         sessionManager: this.sessionManager,
         cliSessionStore: this.cliSessionStore,
+        memoryStore: this.memoryStore ?? undefined,
         onRunCreated: () => this.broadcastRunsList(),
         onSessionEvent: (sessionId, event) => this.broadcastSessionEvent(sessionId, event),
         onContextEvent: (eventType, payload) => this.broadcastContextEvent(eventType, payload),
