@@ -40,7 +40,7 @@ export interface DigestConfig {
 }
 
 export const DEFAULT_DIGEST_CONFIG: DigestConfig = {
-  maxLength: 800,
+  maxLength: 1500,
   bufferDebounceMs: 5000,
   maxBufferSize: 8000,
   bufferTtlMs: 30000,

@@ -38,6 +38,10 @@ coverage/
 !.claude/settings.json
 !CLAUDE.md
 
+# Olympus orchestrator auto-generated files (created by `olympus server start`)
+.olympus-orchestrator.md
+AGENTS.md
+
 # Claude Code local settings (machine-specific, NOT committed)
 .claude/settings.local.json
 

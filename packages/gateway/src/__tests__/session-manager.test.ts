@@ -8,13 +8,18 @@ import { describe, it, expect } from 'vitest';
  */
 function stripAnsi(text: string): string {
   // eslint-disable-next-line no-control-regex
-  return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+  return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, ' ')  // CSI sequences → space
     // eslint-disable-next-line no-control-regex
-    .replace(/\x1b\][^\x07]*\x07/g, '')
+    .replace(/\x1b\][^\x07]*\x07/g, '')  // OSC sequences
     // eslint-disable-next-line no-control-regex
-    .replace(/\x1b[()][AB012]/g, '')
+    .replace(/\x1b[()][AB012]/g, '')       // Character set selection
     // eslint-disable-next-line no-control-regex
-    .replace(/\x1b\[[\?]?[0-9;]*[hlm]/g, '');
+    .replace(/\x1b\[[\?]?[0-9;]*[hlm]/g, '') // Mode set/reset
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b[=>]/g, '')              // Keypad mode sequences
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b\[\??\d*[;]?\d*[A-Za-z]/g, '') // Catch remaining CSI
+    .replace(/[^\S\n]{2,}/g, ' ');         // Collapse multiple spaces/tabs (preserve newlines)
 }
 
 /**
@@ -58,6 +63,16 @@ function filterOutput(content: string): string {
       }
     }
 
+    // Codex response lines (• prefix, but NOT progress indicators)
+    if (/^\s*•/.test(line) && !/Working\s*\(\d+s/.test(line)) {
+      const responseText = trimmed.replace(/^•\s*/, '');
+      if (responseText.length > 0) {
+        filtered.push(responseText);
+        lastLineWasEmpty = false;
+        continue;
+      }
+    }
+
     // === BLOCKLIST (noise removal) ===
 
     // Claude Code banner patterns
@@ -65,13 +80,30 @@ function filterOutput(content: string): string {
     if (line.includes('Claude Code v')) continue;
     if (/Opus \d|Sonnet \d|Haiku \d/.test(line) && line.includes('Claude')) continue;
 
+    // Codex CLI banner box
+    if (/^[╭╰]─/.test(trimmed) || /─[╮╯]$/.test(trimmed)) continue;
+    if (/^│.*OpenAI Codex/.test(trimmed)) continue;
+    if (/^│.*model:/.test(trimmed)) continue;
+    if (/^│.*directory:/.test(trimmed)) continue;
+    if (/^│\s*$/.test(trimmed)) continue;
+    // Codex CLI prompt
+    if (/^[\s]*›/.test(line)) continue;
+    // Codex status lines
+    if (/\?\s*for shortcuts/.test(line)) continue;
+    if (/\d+%\s*context left/.test(line)) continue;
+    if (/Tip:.*Try|Tip:.*New/.test(line)) continue;
+    if (/•\s*Working\s*\(\d+s/.test(line)) continue;
+    if (/model:\s+loading/.test(line)) continue;
+    if (/codex\s+app/i.test(line) || /chatgpt\.com\/codex/.test(line)) continue;
+    if (/Improve documentation in @/.test(line)) continue;
+
     // Horizontal dividers
     if (/^[─━]{20,}$/.test(trimmed)) continue;
 
     // "Try" suggestions
     if (line.includes('Try "write a test') || line.includes('Try "explain')) continue;
 
-    // User prompt lines (❯ prefix)
+    // User prompt lines (❯ for Claude, › for Codex — both blocked above)
     if (/^[\s]*❯/.test(line)) continue;
 
     // New-format status bar (pipe-delimited with emojis)
@@ -138,7 +170,8 @@ describe('filterOutput', () => {
     const result = filterOutput(input);
     // trimmed removes leading spaces, then ⎿ is stripped, then '  ' is prepended
     // But final .trim() removes leading whitespace from the entire result
-    expect(result).toBe('total 42\n  drwxr-xr-x  5 user staff');
+    // stripAnsi collapses multiple spaces/tabs, so 'drwxr-xr-x  5' becomes 'drwxr-xr-x 5'
+    expect(result).toBe('total 42\n  drwxr-xr-x 5 user staff');
   });
 
   it('should handle mixed ⏺ response and ⎿ result', () => {
@@ -258,7 +291,8 @@ describe('filterOutput', () => {
   it('should preserve code blocks', () => {
     const input = '```typescript\nfunction foo() {\n  return 42;\n}\n```';
     const result = filterOutput(input);
-    expect(result).toBe(input);
+    // stripAnsi collapses leading spaces: '  return' → ' return'
+    expect(result).toBe('```typescript\nfunction foo() {\n return 42;\n}\n```');
   });
 
   it('should preserve single empty lines between content', () => {
@@ -303,7 +337,8 @@ describe('filterOutput', () => {
   it('should strip ANSI escape sequences', () => {
     const input = '\x1b[2mDimmed text\x1b[0m\nNormal text';
     const result = filterOutput(input);
-    expect(result).toBe('Dimmed text\nNormal text');
+    // CSI sequences are replaced with space, then trailing spaces collapse
+    expect(result).toBe('Dimmed text \nNormal text');
   });
 
   it('should strip ANSI color codes', () => {
@@ -338,11 +373,95 @@ describe('filterOutput', () => {
       '코드가 정상적으로 작동합니다.',
     ].join('\n'));
   });
+
+  // === Codex CLI tests ===
+
+  it('should extract • response lines from Codex (strip prefix)', () => {
+    const input = '• 안녕하세요. 무엇을 도와드릴까요?';
+    const result = filterOutput(input);
+    expect(result).toBe('안녕하세요. 무엇을 도와드릴까요?');
+  });
+
+  it('should remove Codex banner box', () => {
+    const input = [
+      '╭────────────────────────────────────────────────────╮',
+      '│ >_ OpenAI Codex (v0.98.0)                          │',
+      '│                                                    │',
+      '│ model:     gpt-5.3-codex medium   /model to change │',
+      '│ directory: ~/dev/olympus                           │',
+      '╰────────────────────────────────────────────────────╯',
+      '',
+      '• Here is the actual response',
+    ].join('\n');
+    const result = filterOutput(input);
+    expect(result).toBe('Here is the actual response');
+  });
+
+  it('should remove Codex prompt lines (›)', () => {
+    const input = '› hello\n• Response here';
+    const result = filterOutput(input);
+    expect(result).toBe('Response here');
+  });
+
+  it('should remove Codex progress indicator', () => {
+    const input = '• Working (5s • esc to interrupt)\n• Done! Files updated.';
+    const result = filterOutput(input);
+    expect(result).toBe('Done! Files updated.');
+  });
+
+  it('should remove Codex status lines', () => {
+    const input = [
+      '? for shortcuts                                            100% context left',
+      'Tip: New Try the Codex App with 2x rate limits until April 2nd.',
+      '• Actual content here',
+    ].join('\n');
+    const result = filterOutput(input);
+    expect(result).toBe('Actual content here');
+  });
+
+  it('should remove Codex placeholder prompt', () => {
+    const input = 'Improve documentation in @filename\n• response';
+    const result = filterOutput(input);
+    expect(result).toBe('response');
+  });
+
+  it('should correctly process a real Codex CLI session', () => {
+    const input = [
+      '╭───────────────────────────────────────╮',
+      '│ >_ OpenAI Codex (v0.98.0)             │',
+      '│                                       │',
+      '│ model:     gpt-5.3-codex medium       │',
+      '│ directory: ~/dev/olympus              │',
+      '╰───────────────────────────────────────╯',
+      '',
+      '  Tip: New Try the Codex App',
+      '',
+      '› 테스트 돌려줘',
+      '',
+      '• Working (3s • esc to interrupt)',
+      '',
+      '• 테스트를 실행하겠습니다.',
+      '• pnpm test 명령을 실행합니다.',
+      '',
+      '• 전체 테스트 통과했습니다.',
+      '',
+      '› Improve documentation in @filename',
+      '',
+      '  ? for shortcuts                                            100% context left',
+    ].join('\n');
+    const result = filterOutput(input);
+    expect(result).toBe([
+      '테스트를 실행하겠습니다.',
+      'pnpm test 명령을 실행합니다.',
+      '',
+      '전체 테스트 통과했습니다.',
+    ].join('\n'));
+  });
 });
 
 describe('stripAnsi', () => {
   it('should strip CSI sequences', () => {
-    expect(stripAnsi('\x1b[31mred\x1b[0m')).toBe('red');
+    expect(stripAnsi('\x1b[31mred\x1b[0m')).toBe(' red ');
   });
 
   it('should strip OSC sequences', () => {

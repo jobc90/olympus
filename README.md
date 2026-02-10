@@ -228,7 +228,7 @@ olympus quickstart
 1. Telegram 앱에서 생성한 봇 검색 (예: `@my_claude_bot`)
 2. `/start` - 도움말 보기
 3. `/sessions` - 연결 가능한 Claude 세션 목록
-4. `/use olympus-myproject` - 세션 연결
+4. `/use myproject` - 세션 연결
 5. 이제 메시지를 보내면 Claude가 응답!
 
 ```
@@ -269,7 +269,7 @@ olympus start -s my-session
 olympus start --no-attach
 ```
 
-`olympus start`는 Claude CLI를 tmux 세션에서 실행합니다. 세션 이름은 자동으로 `olympus-{폴더명}` 형식으로 생성됩니다.
+`olympus start`는 Claude CLI를 tmux 세션에서 실행합니다. 세션 이름은 자동으로 `{폴더명}` 형식으로 생성됩니다.
 
 ### 서버 관리 (Gateway + Dashboard + Telegram)
 

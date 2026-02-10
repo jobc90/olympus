@@ -261,7 +261,7 @@ describe('digestOutput', () => {
   it('should extract key results from orchestration output', () => {
     const result = digestOutput(ORCHESTRATION_OUTPUT);
     expect(result.summary).toBeTruthy();
-    expect(result.summary.length).toBeLessThanOrEqual(900); // allow some margin
+    expect(result.summary.length).toBeLessThanOrEqual(1700); // allow some margin (maxLength=1500)
     expect(result.hasErrors).toBe(false);
     expect(result.signalCount).toBeGreaterThan(5);
     // Should contain key results

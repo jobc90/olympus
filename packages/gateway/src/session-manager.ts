@@ -170,12 +170,12 @@ export class SessionManager {
   }
 
   /**
-   * Discover all olympus-* tmux sessions created by `olympus start`
+   * Discover all Olympus tmux sessions created by `olympus start`
    * Returns array of { tmuxSession, projectPath }
    */
   discoverTmuxSessions(): Array<{ tmuxSession: string; projectPath: string }> {
     try {
-      // List all tmux sessions and filter for olympus-*
+      // List all tmux sessions and filter for known names (main, olympus, olympus-*)
       const output = execSync('tmux list-sessions -F "#{session_name}:#{session_path}" 2>/dev/null', {
         encoding: 'utf-8',
       });
@@ -187,7 +187,7 @@ export class SessionManager {
         if (colonIdx === -1) continue;
         const sessionName = line.slice(0, colonIdx);
         const sessionPath = line.slice(colonIdx + 1);
-        if (sessionName.startsWith('olympus-') || sessionName === 'olympus') {
+        if (sessionName === 'main' || sessionName === 'olympus' || sessionName.startsWith('olympus-')) {
           sessions.push({
             tmuxSession: sessionName,
             projectPath: sessionPath || process.cwd(),
@@ -545,6 +545,9 @@ export class SessionManager {
         execFileSync('tmux', ['send-keys', '-t', tmuxTarget, '-l', keys], {
           stdio: 'pipe',
         });
+        // Brief delay before Enter — Codex CLI TUI needs time to process
+        // text input before Enter can trigger submission (race condition fix)
+        execFileSync('sleep', ['0.1'], { stdio: 'pipe' });
         execFileSync('tmux', ['send-keys', '-t', tmuxTarget, 'Enter'], {
           stdio: 'pipe',
         });
@@ -940,7 +943,7 @@ export class SessionManager {
       .replace(/\x1b[=>]/g, '')              // Keypad mode sequences
       // eslint-disable-next-line no-control-regex
       .replace(/\x1b\[\??\d*[;]?\d*[A-Za-z]/g, '') // Catch remaining CSI
-      .replace(/\s{2,}/g, ' ');              // Collapse multiple spaces from replacements
+      .replace(/[^\S\n]{2,}/g, ' ');         // Collapse multiple spaces/tabs (preserve newlines!)
   }
 
   /**
@@ -969,6 +972,10 @@ export class SessionManager {
         // Strip the ⏺ prefix and trailing tool UI noise for cleaner output
         const responseText = trimmed.replace(/^⏺\s*/, '');
         if (responseText.length > 0) {
+          // Skip tool invocation lines (Bash(...), Read(...), etc.)
+          if (/^(Bash|Read|Write|Edit|Glob|Grep|Notebook|MultiTool|Task|WebFetch|WebSearch)\s*\(/.test(responseText)) continue;
+          // Skip tool result summary lines ("Ran tmux ...", "Ran bash ...")
+          if (/^Ran\s+(tmux|bash|git|node|npm|pnpm|cd|ls)\b/i.test(responseText)) continue;
           filtered.push(responseText);
           lastLineWasEmpty = false;
           continue;
@@ -979,7 +986,20 @@ export class SessionManager {
       if (/^\s*⎿/.test(line)) {
         const resultText = trimmed.replace(/^⎿\s*/, '');
         if (resultText.length > 0) {
+          // Skip tool result noise (file read metadata, search counts, etc.)
+          if (/^(Reading|Wrote|Updated|Found)\s+\d+/i.test(resultText)) continue;
+          if (/^\d+\s+(lines?|files?|results?|matches?)\b/i.test(resultText)) continue;
           filtered.push('  ' + resultText);
+          lastLineWasEmpty = false;
+          continue;
+        }
+      }
+
+      // Codex response lines (• prefix, but NOT progress indicators)
+      if (/^\s*•/.test(line) && !/Working\s*\(\d+s/.test(line)) {
+        const responseText = trimmed.replace(/^•\s*/, '');
+        if (responseText.length > 0) {
+          filtered.push(responseText);
           lastLineWasEmpty = false;
           continue;
         }
@@ -996,13 +1016,34 @@ export class SessionManager {
       if (/claude\s*install/i.test(line) || /switched.*installer/i.test(line)) continue;
       if (/native\s*installer/i.test(line)) continue;
 
+      // Codex CLI banner box (╭╮╰╯│ with OpenAI Codex)
+      if (/^[╭╰]─/.test(trimmed) || /─[╮╯]$/.test(trimmed)) continue;
+      if (/^│.*OpenAI Codex/.test(trimmed)) continue;
+      if (/^│.*model:/.test(trimmed)) continue;
+      if (/^│.*directory:/.test(trimmed)) continue;
+      if (/^│\s*$/.test(trimmed)) continue;
+      // Codex CLI prompt (› prefix)
+      if (/^[\s]*›/.test(line)) continue;
+      // Codex status lines
+      if (/\?\s*for shortcuts/.test(line)) continue;
+      if (/\d+%\s*context left/.test(line)) continue;
+      if (/Tip:.*Try/.test(line) || /Tip:.*New/.test(line)) continue;
+      // Codex progress indicator (• Working (Ns • esc to interrupt))
+      if (/•\s*Working\s*\(\d+s/.test(line)) continue;
+      // Codex model loading
+      if (/model:\s+loading/.test(line)) continue;
+      // Codex app promotion
+      if (/codex\s+app/i.test(line) || /chatgpt\.com\/codex/.test(line)) continue;
+
       // Horizontal dividers (long lines of ─ or ━)
       if (/^[─━]{20,}$/.test(trimmed)) continue;
 
-      // "Try" suggestions
+      // "Try" suggestions (Claude)
       if (line.includes('Try "write a test') || line.includes('Try "explain')) continue;
+      // Codex "Improve documentation" placeholder
+      if (/Improve documentation in @/.test(line)) continue;
 
-      // User prompt lines (❯ prefix)
+      // User prompt lines (❯ prefix for Claude, › prefix for Codex — both blocked above)
       if (/^[\s]*❯/.test(line)) continue;
 
       // New-format status bar (pipe-delimited with emojis: 🤖Opus│...│, 📁project│...)
@@ -1010,8 +1051,8 @@ export class SessionManager {
       if (/🔷.*│/.test(line) || /💎.*│/.test(line)) continue;
       // Status bar with speed/time/todo indicators (🔥 9.7K/min │ ⏱ 5분 │ 할일: -)
       if (/🔥.*│/.test(line) || /⏱.*│/.test(line)) continue;
-      // Generic pipe-delimited status bar (3+ pipe segments)
-      if ((line.match(/│/g)?.length ?? 0) >= 3) continue;
+      // Status bar: 3+ pipe segments WITH emoji/model/token indicators (not plain table content)
+      if ((line.match(/│/g)?.length ?? 0) >= 3 && (/[🤖📁🔷💎🔥⏱]/.test(line) || /\d+[kK]?\s*tokens?/i.test(line) || /\$[\d.]+/.test(line) || /\d+%\s*context/i.test(line))) continue;
       // Model names as status indicators (with or without emoji prefix)
       if (/(?:gemini|gpt|claude|sonnet|opus|haiku|o[1-9])-[\w.-]+│/i.test(line)) continue;
       // Legacy status bar (space-separated)
@@ -1034,6 +1075,33 @@ export class SessionManager {
 
       // Permission bypass prompt
       if (/^[\s]*⏵/.test(line)) continue;
+
+      // Codex/Claude CLI permission dialog noise
+      if (/Would you like to run the following command/i.test(line)) continue;
+      if (/^\s*Reason:\s+.+/.test(line)) continue;
+      if (/Press enter to confirm/i.test(line)) continue;
+      if (/esc to (interrupt|cancel)/i.test(line)) continue;
+      if (/^\s*\d+\.\s*(Yes|No),?\s+(and|or)\s/i.test(line)) continue;
+      if (/don't ask again for commands/i.test(line)) continue;
+      if (/tell Codex what to do differently/i.test(line)) continue;
+
+      // Codex CLI background/progress status noise
+      if (/Waiting for background terminal/i.test(line)) continue;
+      if (/Preparing\s+\w+.*\(\d+s/i.test(line)) continue;
+      if (/\[…\s*\d+\s*lines?\]/i.test(line)) continue;
+      if (/ctrl\s*\+\s*a\s*view\s*all/i.test(line)) continue;
+      if (/^\s*\$\s+(bash|tmux|set|while|sleep)\s/i.test(line)) continue;  // Shell commands in prompts
+
+      // Claude CLI thinking/status indicators
+      if (/Cogitated\s+for\s+\d+/i.test(line)) continue;
+      if (/Running\s*…/i.test(line) || /Running\.{3}/i.test(line)) continue;
+      // Collapsed output markers ("… +N lines (ctrl+o to expand)")
+      if (/…\s*\+?\d+\s*lines?/i.test(line)) continue;
+      if (/ctrl\s*\+\s*o\s*(to\s+)?expand/i.test(line)) continue;
+      // "Updated X files" / "Created X files" tool action summaries
+      if (/^(Updated|Created|Deleted|Modified)\s+\d+\s+(file|dir)/i.test(trimmed)) continue;
+      // Codex "Applied edit to ..." lines
+      if (/Applied\s+edit\s+to\s+/i.test(line)) continue;
 
       // Context/compact notification lines
       if (/Context left until auto-compact/i.test(line)) continue;

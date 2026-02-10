@@ -357,7 +357,7 @@ class OlympusBot {
       // /use main or /use orchestrator → switch back to orchestrator mode
       if (nameInput === 'main' || nameInput === 'orchestrator') {
         this.directMode.delete(ctx.chat.id);
-        this.activeSession.set(ctx.chat.id, 'olympus-main');
+        this.activeSession.set(ctx.chat.id, 'main');
         await ctx.reply('🤖 오케스트레이터 모드로 전환됨\n\n모든 메시지가 AI 오케스트레이터를 통해 라우팅됩니다.');
         return;
       }
@@ -420,8 +420,8 @@ class OlympusBot {
         }
       }
 
-      // Not connected - try to connect to tmux session
-      const tmuxSession = actualName.startsWith('olympus-') ? actualName : `olympus-${actualName}`;
+      // Not connected - try to connect to tmux session (use name as-is)
+      const tmuxSession = actualName;
       const statusMsg = await ctx.reply(`🔗 '${displayName}' 연결 중...`);
 
       try {
@@ -670,8 +670,8 @@ class OlympusBot {
         return;
       }
 
-      // Orchestrator mode (default): always send to olympus-main
-      const MAIN_SESSION = 'olympus-main';
+      // Orchestrator mode (default): always send to main
+      const MAIN_SESSION = 'main';
 
       // Ensure main session is connected
       await this.ensureMainSessionConnected(ctx.chat.id);
@@ -680,7 +680,7 @@ class OlympusBot {
       const mainSessionId = sessions?.get(MAIN_SESSION);
 
       if (!mainSessionId) {
-        await ctx.reply('❌ 메인 세션(olympus-main)에 연결할 수 없습니다.\n\nGateway와 메인 세션 상태를 확인하세요.');
+        await ctx.reply('❌ 메인 세션(main)에 연결할 수 없습니다.\n\nGateway와 메인 세션 상태를 확인하세요.');
         return;
       }
 
@@ -827,11 +827,11 @@ class OlympusBot {
   }
 
   /**
-   * Ensure the main session (olympus-main) is connected for this chat.
+   * Ensure the main session (main) is connected for this chat.
    * Auto-connects to Gateway if not already in local state.
    */
   private async ensureMainSessionConnected(chatId: number): Promise<void> {
-    const MAIN_SESSION = 'olympus-main';
+    const MAIN_SESSION = 'main';
     const sessions = this.chatSessions.get(chatId);
 
     // Already connected? Verify still alive
@@ -1375,15 +1375,25 @@ class OlympusBot {
           }
 
           // Route A/B split:
-          // - Orchestrator mode (default): only forward olympus-main output to Telegram
+          // - Orchestrator mode (default): only forward main output to Telegram
           //   Work session output goes to Dashboard only (Route B via Gateway broadcast)
           // - Direct mode: forward active session output to Telegram (user explicitly chose)
           const isDirectMode = this.directMode.get(chatId);
-          const isMainSession = sessionName === 'olympus-main';
+          const isMainSession = sessionName === 'main';
 
           if (!isDirectMode && !isMainSession) {
-            // Route B only — work session output in orchestrator mode
-            // Dashboard already receives via Gateway WebSocket broadcast
+            // Work session output in orchestrator mode — forward via digest only
+            // (main session output goes through normal mode selection below)
+            let workerDigest = this.digestSessions.get(sessionId);
+            if (!workerDigest) {
+              workerDigest = new DigestSession(
+                prefix,
+                (text) => this.enqueueSessionMessage(sessionId, chatId, text, prefix),
+                { bufferDebounceMs: 10000 },  // longer debounce for worker sessions to reduce spam
+              );
+              this.digestSessions.set(sessionId, workerDigest);
+            }
+            workerDigest.push(content);
             break;
           }
 
@@ -1671,8 +1681,8 @@ class OlympusBot {
       }
 
       // Set active session: prefer main session in orchestrator mode
-      if (!this.directMode.get(chatId) && sessionsMap.has('olympus-main')) {
-        this.activeSession.set(chatId, 'olympus-main');
+      if (!this.directMode.get(chatId) && sessionsMap.has('main')) {
+        this.activeSession.set(chatId, 'main');
       } else if (!this.activeSession.get(chatId) && sessionsMap.size > 0) {
         const firstName = sessionsMap.keys().next().value as string;
         if (firstName) {

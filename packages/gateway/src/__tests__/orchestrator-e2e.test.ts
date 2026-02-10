@@ -39,9 +39,9 @@ interface WsClient {
 function createMockSession(overrides: Partial<MockSession> = {}): MockSession {
   return {
     id: 'sess-' + Math.random().toString(36).slice(2, 8),
-    name: 'olympus-main',
+    name: 'main',
     chatId: 123456,
-    tmuxSession: 'olympus-main',
+    tmuxSession: 'main',
     status: 'active',
     projectPath: '/home/user/.olympus/orchestrator',
     ...overrides,
@@ -132,7 +132,7 @@ function sendInput(
 
 /**
  * Replicated orchestrator mode text handler logic
- * Always routes to olympus-main session
+ * Always routes to main session
  */
 function handleOrchestratorMessage(
   chatSessions: Map<number, Map<string, string>>,
@@ -152,13 +152,13 @@ function handleOrchestratorMessage(
     return { target: firstName, sessionId };
   }
 
-  // Orchestrator mode: always route to olympus-main
-  const MAIN_SESSION = 'olympus-main';
+  // Orchestrator mode: always route to main
+  const MAIN_SESSION = 'main';
   const sessions = chatSessions.get(chatId);
   const mainSessionId = sessions?.get(MAIN_SESSION);
 
   if (!mainSessionId) {
-    return { error: '메인 세션(olympus-main)에 연결할 수 없습니다.' };
+    return { error: '메인 세션(main)에 연결할 수 없습니다.' };
   }
 
   return { target: MAIN_SESSION, sessionId: mainSessionId };
@@ -175,7 +175,7 @@ function handleUseCommand(
 ): { mode: 'orchestrator' | 'direct'; session?: string } {
   if (nameInput === 'main' || nameInput === 'orchestrator') {
     directMode.delete(chatId);
-    activeSession.set(chatId, 'olympus-main');
+    activeSession.set(chatId, 'main');
     return { mode: 'orchestrator' };
   }
 
@@ -198,7 +198,7 @@ function ensureMainSessionConnected(
   chatId: number,
   gatewaySession: MockSession | null,
 ): boolean {
-  const MAIN_SESSION = 'olympus-main';
+  const MAIN_SESSION = 'main';
 
   // Already connected?
   const sessions = chatSessions.get(chatId);
@@ -229,8 +229,8 @@ function syncActiveSession(
   sessionsMap: Map<string, string>,
   chatId: number,
 ): void {
-  if (!directMode.get(chatId) && sessionsMap.has('olympus-main')) {
-    activeSession.set(chatId, 'olympus-main');
+  if (!directMode.get(chatId) && sessionsMap.has('main')) {
+    activeSession.set(chatId, 'main');
   } else if (!activeSession.get(chatId) && sessionsMap.size > 0) {
     const firstName = sessionsMap.keys().next().value as string;
     if (firstName) {
@@ -286,8 +286,8 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
     // Gateway state
     const mainSession = createMockSession({
       id: MAIN_SESSION_ID,
-      name: 'olympus-main',
-      tmuxSession: 'olympus-main',
+      name: 'main',
+      tmuxSession: 'main',
       projectPath: '/home/user/.olympus/orchestrator',
     });
     const workSession = createMockSession({
@@ -313,20 +313,20 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
 
     // Pre-connect bot to both sessions
     const sessMap = new Map<string, string>([
-      ['olympus-main', MAIN_SESSION_ID],
+      ['main', MAIN_SESSION_ID],
       ['olympus-console', WORK_SESSION_ID],
     ]);
     chatSessions.set(CHAT_ID, sessMap);
-    activeSession.set(CHAT_ID, 'olympus-main');
+    activeSession.set(CHAT_ID, 'main');
   });
 
   // ── 1. Orchestrator Mode Basic Flow ──
 
   describe('Orchestrator Mode', () => {
-    it('should route text message to olympus-main by default', () => {
+    it('should route text message to main by default', () => {
       const result = handleOrchestratorMessage(chatSessions, directMode, CHAT_ID, 'console 프로젝트 빌드해줘');
 
-      expect(result).toHaveProperty('target', 'olympus-main');
+      expect(result).toHaveProperty('target', 'main');
       expect(result).toHaveProperty('sessionId', MAIN_SESSION_ID);
     });
 
@@ -340,12 +340,12 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
 
       for (const msg of messages) {
         const result = handleOrchestratorMessage(chatSessions, directMode, CHAT_ID, msg);
-        expect(result).toHaveProperty('target', 'olympus-main');
+        expect(result).toHaveProperty('target', 'main');
       }
     });
 
     it('should return error when main session not connected', () => {
-      chatSessions.get(CHAT_ID)!.delete('olympus-main');
+      chatSessions.get(CHAT_ID)!.delete('main');
 
       const result = handleOrchestratorMessage(chatSessions, directMode, CHAT_ID, 'hello');
       expect(result).toHaveProperty('error');
@@ -369,7 +369,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
       const result = handleOrchestratorMessage(chatSessions, directMode, CHAT_ID, 'pnpm test');
       expect(result).toHaveProperty('sessionId');
       // First session in the map
-      expect(result).toHaveProperty('target', 'olympus-main');
+      expect(result).toHaveProperty('target', 'main');
     });
 
     it('should return error in direct mode with no sessions', () => {
@@ -390,7 +390,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
 
       expect(result.mode).toBe('orchestrator');
       expect(directMode.has(CHAT_ID)).toBe(false);
-      expect(activeSession.get(CHAT_ID)).toBe('olympus-main');
+      expect(activeSession.get(CHAT_ID)).toBe('main');
     });
 
     it('should switch to orchestrator mode with /use orchestrator', () => {
@@ -429,7 +429,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
       // Switch back to orchestrator
       handleUseCommand(directMode, activeSession, CHAT_ID, 'main');
       expect(directMode.has(CHAT_ID)).toBe(false);
-      expect(activeSession.get(CHAT_ID)).toBe('olympus-main');
+      expect(activeSession.get(CHAT_ID)).toBe('main');
     });
   });
 
@@ -454,9 +454,9 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
       );
 
       expect(result).toBe(true);
-      expect(chatSessions.get(CHAT_ID)?.get('olympus-main')).toBe(MAIN_SESSION_ID);
+      expect(chatSessions.get(CHAT_ID)?.get('main')).toBe(MAIN_SESSION_ID);
       expect(subscribedRuns.get(MAIN_SESSION_ID)).toBe(CHAT_ID);
-      expect(activeSession.get(CHAT_ID)).toBe('olympus-main');
+      expect(activeSession.get(CHAT_ID)).toBe('main');
     });
 
     it('should return false when gateway has no main session', () => {
@@ -480,20 +480,20 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
       );
 
       expect(chatSessions.has(NEW_CHAT_ID)).toBe(true);
-      expect(chatSessions.get(NEW_CHAT_ID)?.get('olympus-main')).toBe(MAIN_SESSION_ID);
+      expect(chatSessions.get(NEW_CHAT_ID)?.get('main')).toBe(MAIN_SESSION_ID);
     });
   });
 
   // ── 5. syncSessionsFromGateway Active Session ──
 
   describe('syncSessionsFromGateway Active Session', () => {
-    it('should set olympus-main as active in orchestrator mode', () => {
+    it('should set main as active in orchestrator mode', () => {
       activeSession.delete(CHAT_ID);
       const sessMap = chatSessions.get(CHAT_ID)!;
 
       syncActiveSession(directMode, activeSession, sessMap, CHAT_ID);
 
-      expect(activeSession.get(CHAT_ID)).toBe('olympus-main');
+      expect(activeSession.get(CHAT_ID)).toBe('main');
     });
 
     it('should set first session as active in direct mode', () => {
@@ -506,16 +506,16 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
       expect(activeSession.get(CHAT_ID)).toBe('olympus-console');
     });
 
-    it('should prefer olympus-main even when other sessions exist', () => {
+    it('should prefer main even when other sessions exist', () => {
       activeSession.delete(CHAT_ID);
       const sessMap = new Map([
         ['olympus-console', WORK_SESSION_ID],
-        ['olympus-main', MAIN_SESSION_ID],
+        ['main', MAIN_SESSION_ID],
       ]);
 
       syncActiveSession(directMode, activeSession, sessMap, CHAT_ID);
 
-      expect(activeSession.get(CHAT_ID)).toBe('olympus-main');
+      expect(activeSession.get(CHAT_ID)).toBe('main');
     });
   });
 
@@ -526,7 +526,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
       const result = sendInput(gatewaySessions, MAIN_SESSION_ID, '안녕하세요', sendKeysSpy);
 
       expect(result).toBe(true);
-      expect(sendKeysSpy).toHaveBeenCalledWith('olympus-main', '안녕하세요');
+      expect(sendKeysSpy).toHaveBeenCalledWith('main', '안녕하세요');
     });
 
     it('should reject sending to closed session', () => {
@@ -660,7 +660,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
         chatSessions, directMode, CHAT_ID,
         'console 프로젝트 테스트 돌려줘',
       );
-      expect(routing).toHaveProperty('target', 'olympus-main');
+      expect(routing).toHaveProperty('target', 'main');
 
       // Step 2: Gateway sends input to main session (orchestrator)
       const sent = sendInput(
@@ -670,7 +670,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
         sendKeysSpy,
       );
       expect(sent).toBe(true);
-      expect(sendKeysSpy).toHaveBeenCalledWith('olympus-main', 'console 프로젝트 테스트 돌려줘');
+      expect(sendKeysSpy).toHaveBeenCalledWith('main', 'console 프로젝트 테스트 돌려줘');
 
       // Step 3: Main session AI processes and outputs response
       broadcastSessionEvent(wsClients, MAIN_SESSION_ID, {
@@ -713,19 +713,19 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
 
       // Start in orchestrator mode
       const result1 = handleOrchestratorMessage(chatSessions, directMode, CHAT_ID, 'hello');
-      expect(result1).toHaveProperty('target', 'olympus-main');
+      expect(result1).toHaveProperty('target', 'main');
 
       // Switch to direct
       handleUseCommand(directMode, activeSession, CHAT_ID, 'direct console');
 
       // Now routes to console directly
       const result2 = handleOrchestratorMessage(chatSessions, directMode, CHAT_ID, 'hello');
-      expect(result2).toHaveProperty('target', 'olympus-main'); // first in map order
+      expect(result2).toHaveProperty('target', 'main'); // first in map order
 
       // Switch back
       handleUseCommand(directMode, activeSession, CHAT_ID, 'main');
       const result3 = handleOrchestratorMessage(chatSessions, directMode, CHAT_ID, 'hello');
-      expect(result3).toHaveProperty('target', 'olympus-main');
+      expect(result3).toHaveProperty('target', 'main');
       expect(result3).toHaveProperty('sessionId', MAIN_SESSION_ID);
     });
   });
@@ -734,7 +734,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
 
   describe('Session Connect', () => {
     it('should connect chatId to existing tmux session', () => {
-      const session = connectSession(gatewaySessions, 'olympus-main', 999);
+      const session = connectSession(gatewaySessions, 'main', 999);
 
       expect(session).not.toBeNull();
       expect(session!.chatId).toBe(999);
@@ -749,7 +749,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
     it('should not connect to closed session', () => {
       gatewaySessions.get(MAIN_SESSION_ID)!.status = 'closed';
 
-      const session = connectSession(gatewaySessions, 'olympus-main', 999);
+      const session = connectSession(gatewaySessions, 'main', 999);
 
       expect(session).toBeNull();
     });

@@ -251,12 +251,12 @@ serverCommand
       }
     }
 
-    // Stop ALL olympus-* tmux sessions (not just main)
+    // Stop ALL olympus tmux sessions (main, and any others)
     if (stopGateway) {
       try {
         const tmuxSessions = execSync('tmux list-sessions -F "#{session_name}" 2>/dev/null', {
           encoding: 'utf-8',
-        }).trim().split('\n').filter(s => s.startsWith('olympus-') || s === 'olympus');
+        }).trim().split('\n').filter(s => s === 'main' || s === 'olympus' || s.startsWith('olympus-'));
 
         for (const session of tmuxSessions) {
           try {
@@ -488,7 +488,7 @@ async function autoConnectMainSessionForUsers(
   config: { gatewayUrl: string; apiKey: string },
   allowedUsers: number[]
 ): Promise<void> {
-  const MAIN_SESSION = 'olympus-main';
+  const MAIN_SESSION = 'main';
 
   for (const chatId of allowedUsers) {
     try {
@@ -533,11 +533,11 @@ You are the Olympus message orchestrator. You receive all user messages from Tel
 ## Session Discovery
 
 \`\`\`bash
-tmux list-sessions -F "#{session_name}:#{pane_current_path}" | grep "^olympus-"
+tmux list-sessions -F "#{session_name}:#{pane_current_path}"
 \`\`\`
 
-- \`olympus-main\` = myself (do NOT route to self)
-- \`olympus-*\` = routable sessions
+- \`main\` = myself (do NOT route to self)
+- Other sessions = routable sessions
 
 ## Routing Protocol
 
@@ -597,12 +597,32 @@ Olympus stores data in \`~/.olympus/\`:
 - \`worker-logs/\` — Worker output logs
 - \`context.db\` — Context OS workspace/project/task layer data
 
-## Rules
+## Response Rules
 
-- Do NOT expose internal routing process (tmux commands) to the user
-- Deliver clean results only
+- Do NOT expose internal routing process (tmux commands, send-keys, capture-pane) to the user
+- **모든 결과를 요약하여 반드시 전달하라** — 중간 상태가 아닌 최종 결과를 보고
+- **Maximum autonomy**: do NOT ask the user for confirmation on commands. Execute immediately.
 - If target session is busy: notify "처리 중입니다..." and wait
 - On timeout: summarize output so far
+
+## CRITICAL: Response Content Rules
+
+1. **완전한 결과 전달**: "작업이 완료되었습니다" 같은 빈 확인 메시지 금지. 반드시 **실제 결과 내용**을 포함하라.
+2. **문서 요약 시**: 문서를 읽고 요약을 요청받으면, 요약 본문 전체를 응답에 포함하라. "요약을 만들었습니다"는 무의미한 응답이다.
+3. **빌드/테스트 결과**: 성공/실패 수, 에러 메시지, 변경 파일 목록을 구체적으로 보고하라.
+4. **코드 변경 결과**: 어떤 파일에 무엇을 변경했는지 핵심만 간결하게 전달하라.
+5. **에러 발생 시**: 에러 메시지 원문과 위치를 반드시 포함하라.
+6. **간결하되 구체적**: 2000자 제한 내에서 핵심 내용을 우선 포함. 불필요한 인사말/마무리 생략.
+
+### 좋은 응답 예시
+- "빌드 성공 (8/8 패키지). 테스트 323개 전체 통과. 린트 에러 0개."
+- "README.md 요약: 프로젝트는 Multi-AI 오케스트레이션 플랫폼으로, 8개 패키지로 구성..."
+- "server.ts 45번줄 TS2345 에러: string 타입을 number에 할당 불가. SessionManager.connect()의 port 인자 타입 수정 필요."
+
+### 나쁜 응답 예시
+- "작업이 완료되었습니다." ← 내용 없음
+- "문서를 읽고 요약을 만들었습니다." ← 요약 본문 없음
+- "빌드를 실행했습니다." ← 결과 없음
 `;
 
 /**
@@ -640,7 +660,7 @@ async function createMainSession(config: { gatewayUrl: string; apiKey: string },
   const { execSync } = await import('child_process');
   const { resolve } = await import('path');
 
-  const MAIN_SESSION = 'olympus-main';
+  const MAIN_SESSION = 'main';
   const resolvedRoot = resolve(projectRoot);
 
   console.log(chalk.cyan('🖥️  Main 세션 (오케스트레이터) 시작 중...'));
@@ -648,11 +668,32 @@ async function createMainSession(config: { gatewayUrl: string; apiKey: string },
   // Check if main session already exists
   try {
     execSync(`tmux has-session -t "${MAIN_SESSION}" 2>/dev/null`, { stdio: 'pipe' });
-    console.log(chalk.yellow(`   ⚠ '${MAIN_SESSION}' 이미 실행 중`));
 
-    // Connect existing session to Gateway
-    await connectMainSessionToGateway(config, MAIN_SESSION);
-    return true;
+    // Check if existing session was started with --full-auto (Codex) or --dangerously-skip-permissions (Claude)
+    // by checking the initial command in the pane
+    let isFullAuto = false;
+    try {
+      const paneCmd = execSync(`tmux display-message -t "${MAIN_SESSION}" -p "#{pane_start_command}"`, {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+      isFullAuto = paneCmd.includes('--dangerously-bypass-approvals-and-sandbox') || paneCmd.includes('--full-auto') || paneCmd.includes('--dangerously-skip-permissions');
+    } catch { /* ignore */ }
+
+    if (!isFullAuto) {
+      console.log(chalk.yellow(`   ⚠ '${MAIN_SESSION}' 이미 실행 중 (--full-auto 없음 → 재시작)`));
+      try {
+        execSync(`tmux kill-session -t "${MAIN_SESSION}" 2>/dev/null`, { stdio: 'pipe' });
+        // Brief pause for tmux cleanup
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch { /* ignore */ }
+      // Fall through to create new session with --full-auto
+    } else {
+      console.log(chalk.yellow(`   ⚠ '${MAIN_SESSION}' 이미 실행 중`));
+      // Connect existing session to Gateway
+      await connectMainSessionToGateway(config, MAIN_SESSION);
+      return true;
+    }
   } catch {
     // Session doesn't exist, create it
   }
@@ -672,7 +713,7 @@ async function createMainSession(config: { gatewayUrl: string; apiKey: string },
   try {
     agentPath = execSync('which codex', { encoding: 'utf-8' }).trim();
     agentName = 'Codex CLI';
-    trustFlag = ' --full-auto';
+    trustFlag = ' --dangerously-bypass-approvals-and-sandbox';
   } catch {
     try {
       agentPath = execSync('which claude', { encoding: 'utf-8' }).trim();
@@ -700,6 +741,13 @@ async function createMainSession(config: { gatewayUrl: string; apiKey: string },
     console.log(chalk.green(`   ✓ ${MAIN_SESSION} 세션 생성됨 (${agentName} 오케스트레이터)`));
     console.log(chalk.gray(`   프로젝트 루트: ${resolvedRoot}`));
 
+    // Wait for CLI to be ready (prompt visible) before accepting messages
+    const promptChar = agentName === 'Codex CLI' ? '›' : '❯';
+    const ready = await waitForCliReady(MAIN_SESSION, promptChar);
+    if (!ready) {
+      console.log(chalk.yellow('   ⚠ CLI 프롬프트 대기 타임아웃 — 세션은 생성됨'));
+    }
+
     // Connect to Gateway
     await connectMainSessionToGateway(config, MAIN_SESSION);
     return true;
@@ -707,6 +755,42 @@ async function createMainSession(config: { gatewayUrl: string; apiKey: string },
     console.log(chalk.red(`   ✗ Main 세션 생성 실패: ${(err as Error).message}`));
     return false;
   }
+}
+
+/**
+ * Wait for CLI tool (Codex/Claude) to be ready by polling for prompt character.
+ * Returns true when prompt is detected, false on timeout.
+ */
+async function waitForCliReady(
+  tmuxSession: string,
+  promptChar: string,
+  timeoutMs = 30000,
+  intervalMs = 1000
+): Promise<boolean> {
+  const { execFileSync } = await import('child_process');
+  const deadline = Date.now() + timeoutMs;
+
+  process.stdout.write(chalk.gray('   CLI 준비 대기 중'));
+
+  while (Date.now() < deadline) {
+    try {
+      const screen = execFileSync('tmux', [
+        'capture-pane', '-t', tmuxSession, '-p', '-S', '-20',
+      ], { encoding: 'utf-8', timeout: 3000 });
+
+      // Look for the CLI prompt character at the start of a line
+      if (screen.includes(promptChar)) {
+        process.stdout.write(chalk.green(' ✓\n'));
+        return true;
+      }
+    } catch { /* tmux not ready yet */ }
+
+    process.stdout.write(chalk.gray('.'));
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+
+  process.stdout.write(chalk.yellow(' 타임아웃\n'));
+  return false;
 }
 
 /**

@@ -281,7 +281,7 @@ class Gateway {
 
 **HTTP API**:
 - `/api/sessions/connect` — tmux 세션 연결
-- `/api/sessions/discover` — olympus-* tmux 세션 탐색
+- `/api/sessions/discover` — Olympus tmux 세션 탐색
 - `/api/sessions/:id/input` — tmux에 입력 전송
 - `/api/sessions/:id/output` — 세션 출력 조회
 - `/api/runs` — 오케스트레이션 실행 관리

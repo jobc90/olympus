@@ -580,10 +580,10 @@ export class CodexSessionManager extends EventEmitter {
   }
 
   /**
-   * 기존 tmux 세션 자동 발견 — olympus-* 패턴 매칭
+   * 기존 tmux 세션 자동 발견
    *
    * 기존 구현 재사용: `tmux list-sessions -F "#{session_name}:#{session_path}"`
-   * olympus-* 또는 olympus 이름의 세션만 필터링
+   * main, olympus, olympus-* 이름의 세션 필터링
    */
   async discoverExistingSessions(): Promise<ManagedSession[]> {
     const discovered: ManagedSession[] = [];

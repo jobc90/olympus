@@ -16,11 +16,11 @@
 ## 세션 발견
 
 ```bash
-tmux list-sessions -F "#{session_name}:#{pane_current_path}" | grep "^olympus-"
+tmux list-sessions -F "#{session_name}:#{pane_current_path}"
 ```
 
-- `olympus-main` = 나 자신 (라우팅하지 않음)
-- `olympus-*` = 라우팅 가능한 세션
+- `main` = 나 자신 (라우팅하지 않음)
+- 다른 세션 = 라우팅 가능한 세션
 
 ## 라우팅 프로토콜
 

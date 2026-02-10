@@ -100,7 +100,49 @@ export const NOISE_PATTERNS = [
   /^\$?\s*tmux\s+(send-keys|capture-pane|list-sessions)/i,  // orchestrator tmux routing commands
   /^\s*[\d,.]+[kKmM]?\s*$/,             // standalone numbers (token counts, costs)
   /^\s*\$[\d.]+\s*$/,                   // standalone dollar amounts ($1.23)
-  /^\s*❯/,                              // prompt lines
+  /^\s*❯/,                              // Claude prompt lines
+  /^\s*›/,                              // Codex prompt lines
+  /^[╭╰]─/,                            // Codex banner box top/bottom
+  /─[╮╯]$/,                            // Codex banner box top/bottom (right)
+  /^│.*OpenAI Codex/,                  // Codex banner content
+  /^│.*model:/,                        // Codex model line
+  /^│.*directory:/,                    // Codex directory line
+  /^│\s*$/,                            // Codex empty box line
+  /\?\s*for shortcuts/,               // Codex shortcuts hint
+  /\d+%\s*context left/,              // Codex context indicator
+  /Tip:.*Try|Tip:.*New/,             // Codex tips
+  /•\s*Working\s*\(\d+s/,             // Codex progress indicator
+  /model:\s+loading/,                  // Codex loading state
+  /codex\s+app/i,                      // Codex app promotion
+  /chatgpt\.com\/codex/,              // Codex app URL
+  /Improve documentation in @/,       // Codex placeholder prompt
+  // Codex/Claude CLI permission dialog noise
+  /Would you like to run the following command/i,
+  /^\s*Reason:\s+.+/,
+  /Press enter to confirm/i,
+  /esc to (interrupt|cancel)/i,
+  /^\s*\d+\.\s*(Yes|No),?\s+(and|or)\s/i,
+  /don't ask again for commands/i,
+  /tell Codex what to do differently/i,
+  // Codex CLI background/progress status noise
+  /Waiting for background terminal/i,
+  /Preparing\s+\w+.*\(\d+s/i,
+  /\[…\s*\d+\s*lines?\]/i,
+  /ctrl\s*\+\s*a\s*view\s*all/i,
+  /^\s*\$\s+(bash|tmux|set|while|sleep)\s/i,  // Shell commands in permission prompts
+  // Claude CLI tool invocation lines (⏺ prefix stripped)
+  /^(Bash|Read|Write|Edit|Glob|Grep|Notebook|MultiTool|Task|WebFetch|WebSearch)\s*\(/,
+  /^Ran\s+(tmux|bash|git|node|npm|pnpm|cd|ls)\b/i,  // Tool result summary
+  // Claude CLI thinking/status indicators
+  /Cogitated\s+for\s+\d+/i,
+  /^Running\s*…/i,
+  /^Running\.{3}/i,
+  /…\s*\+?\d+\s*lines?/i,      // Collapsed output markers
+  /ctrl\s*\+\s*o\s*(to\s+)?expand/i,
+  /Applied\s+edit\s+to\s+/i,    // Codex edit markers
+  // Tool result metadata
+  /^\s*⎿\s*(Reading|Wrote|Updated|Found)\s+\d+/i,
+  /^\s*⎿\s*\d+\s+(lines?|files?|results?|matches?)\b/i,
 ];
 
 // ===== Immediate Flush Triggers =====

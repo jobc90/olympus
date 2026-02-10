@@ -112,7 +112,7 @@ export class CodexSessionManager extends EventEmitter {
   }
 
   /**
-   * 기존 tmux 세션 자동 발견 — olympus-* 패턴
+   * 기존 tmux 세션 자동 발견
    */
   async discoverExistingSessions(): Promise<ManagedSession[]> {
     const discovered: ManagedSession[] = [];

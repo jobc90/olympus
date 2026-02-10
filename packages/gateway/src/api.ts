@@ -309,7 +309,7 @@ export function createApiHandler(options: ApiHandlerOptions) {
         return;
       }
 
-      // GET /api/sessions/discover - Discover all olympus-* tmux sessions
+      // GET /api/sessions/discover - Discover all Olympus tmux sessions
       if (path === '/api/sessions/discover' && method === 'GET') {
         const tmuxSessions = sessionManager.discoverTmuxSessions();
         sendJson(res, 200, { tmuxSessions });
