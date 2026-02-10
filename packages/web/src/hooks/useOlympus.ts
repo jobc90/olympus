@@ -204,7 +204,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       setState((s) => ({
         ...s,
         sessionOutputs: [...s.sessionOutputs.slice(-49), { sessionId: payload.sessionId, content: payload.content, timestamp: payload.timestamp ?? Date.now() }],
-        logs: [...s.logs.slice(-99), { level: 'info', message: `[session:output] ${payload.content.slice(0, 200)}${payload.content.length > 200 ? '...' : ''}` }],
+        logs: [...s.logs.slice(-99), { level: 'info', message: `[session:screen] ${payload.content.slice(0, 200)}${payload.content.length > 200 ? '...' : ''}` }],
       }));
     });
 

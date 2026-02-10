@@ -1189,7 +1189,7 @@ class OlympusBot {
     if (!chatId) return;
 
     switch (msg.type) {
-      case 'session:output': {
+      case 'session:screen': {
         const content = (payload as { content?: string }).content;
         if (content && content.trim()) {
           // Find session name

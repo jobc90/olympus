@@ -38,8 +38,7 @@ export interface SessionManagerOptions {
 }
 
 export type SessionEvent =
-  | { type: 'output'; content: string }
-  | { type: 'screen'; content: string }   // Full terminal snapshot (ANSI-stripped, for Dashboard mirror)
+  | { type: 'screen'; content: string }   // Terminal snapshot diff (ANSI-stripped, for Dashboard mirror)
   | { type: 'error'; error: string }
   | { type: 'closed' };
 
@@ -115,10 +114,8 @@ export class SessionManager {
   private sessionTimeout: number;
   private onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
   private outputPollers: Map<string, NodeJS.Timeout> = new Map();
-  private screenPollers: Map<string, NodeJS.Timeout> = new Map();  // Dashboard terminal mirror
-  private lastScreenContent: Map<string, string> = new Map();     // screen snapshot dedup
   private outputDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
-  private lastSentTimestamps: Map<string, number> = new Map(); // Anti-spam: last sent time per session
+  private lastSentTimestamps: Map<string, number> = new Map();
   private workspaceRoot: string;
   private outputLogDir: string;
   private logOffsets: Map<string, number> = new Map();  // kept for worker log file offsets
@@ -127,15 +124,11 @@ export class SessionManager {
   private outputBuffers: Map<string, Array<{ content: string; timestamp: number }>> = new Map();
   private static readonly OUTPUT_BUFFER_SIZE = 20;
 
-  // Minimum interval between output events (ms) - prevents keystroke spam
+  // Minimum interval between screen events (ms) - prevents WS spam
   private static readonly OUTPUT_MIN_INTERVAL = 2000;
-  // Minimum content change (chars) to trigger notification
-  private static readonly OUTPUT_MIN_CHANGE = 5;
-  // Debounce wait time after output stabilizes (ms)
+  // Debounce wait time after screen stabilizes (ms)
   private static readonly OUTPUT_DEBOUNCE_MS = 1000;
-  // Screen mirror poll interval (ms) - Dashboard terminal sync
-  private static readonly SCREEN_POLL_INTERVAL = 1000;
-  // Screen capture lines for Dashboard (more than output's 50)
+  // Screen capture lines for Dashboard terminal mirror
   private static readonly SCREEN_CAPTURE_LINES = 100;
 
   constructor(options: SessionManagerOptions = {}) {
@@ -160,7 +153,7 @@ export class SessionManager {
       if (session.status === 'active') {
         // Check if window is alive (for multi-window mode)
         if (this.isTmuxWindowAlive(session.tmuxSession, session.tmuxWindow)) {
-          this.startOutputPolling(session.id, session.tmuxSession, session.tmuxWindow);
+          this.startScreenPolling(session.id);
         } else {
           // Session died while we were offline
           this.closeSession(session.id);
@@ -227,7 +220,7 @@ export class SessionManager {
       }
       // Ensure polling is running (might have stopped after server restart)
       if (!this.outputPollers.has(existing.id)) {
-        this.startOutputPolling(existing.id, existing.tmuxSession);
+        this.startScreenPolling(existing.id);
       }
       this.ensureSessionContextLink(existing);
       this.store.set(existing);
@@ -279,7 +272,7 @@ export class SessionManager {
 
     this.ensureSessionContextLink(session);
     this.store.set(session);
-    this.startOutputPolling(sessionId, tmuxSession);
+    this.startScreenPolling(sessionId);
 
     return session;
   }
@@ -359,7 +352,7 @@ export class SessionManager {
 
     this.ensureSessionContextLink(session);
     this.store.set(session);
-    this.startOutputPolling(sessionId, tmuxSession);
+    this.startScreenPolling(sessionId);
 
     return session;
   }
@@ -425,20 +418,12 @@ export class SessionManager {
     const session = this.store.get(sessionId);
     if (!session) return false;
 
-    // Stop output polling
+    // Stop screen polling
     const poller = this.outputPollers.get(sessionId);
     if (poller) {
       clearInterval(poller);
       this.outputPollers.delete(sessionId);
     }
-
-    // Stop screen mirror polling
-    const screenPoller = this.screenPollers.get(sessionId);
-    if (screenPoller) {
-      clearInterval(screenPoller);
-      this.screenPollers.delete(sessionId);
-    }
-    this.lastScreenContent.delete(sessionId);
 
     // Stop pipe-pane
     const target = this.getTmuxTarget(session);
@@ -506,7 +491,7 @@ export class SessionManager {
   }
 
   /**
-   * Send input to Claude CLI via tmux send-keys with -l (literal) option
+   * @deprecated Phase 4: 텔레그램은 POST /api/cli/run 사용. 대시보드 터미널 미러 전용.
    */
   sendInput(sessionId: string, input: string): boolean {
     const session = this.store.get(sessionId);
@@ -656,7 +641,7 @@ export class SessionManager {
       };
 
       this.store.set(session);
-      this.startOutputPolling(sessionId, tmux.tmuxSession);
+      this.startScreenPolling(sessionId);
       changed = true;
     }
 
@@ -727,64 +712,46 @@ export class SessionManager {
   }
 
   /**
-   * Start polling for output changes using capture-pane (rendered screen content).
-   * Unlike pipe-pane which captures raw PTY bytes (ANSI/cursor codes),
-   * capture-pane returns the rendered text as displayed on screen.
+   * Start screen polling — captures raw terminal content for Dashboard mirror.
+   * Uses capture-pane with ANSI stripping only (no content filtering).
+   * Diff-based: only emits when new lines appear. Debounced to prevent WS spam.
    */
-  private startOutputPolling(sessionId: string, _tmuxSession?: string, _tmuxWindow?: string): void {
+  private startScreenPolling(sessionId: string): void {
     const session = this.store.get(sessionId);
     if (!session) return;
+    if (this.outputPollers.has(sessionId)) return; // Guard against duplicate pollers
 
     const target = this.getTmuxTarget(session);
-
-    // Store the last captured content to detect changes (diff-based)
     this.lastCapturedContent.set(sessionId, '');
 
-    // Poll every 500ms for new output via capture-pane
     const poller = setInterval(() => {
       try {
-        // capture-pane -p: print to stdout (rendered screen, no ANSI codes)
-        // -S -50: last 50 lines of scrollback
-        const captured = execFileSync('tmux', ['capture-pane', '-t', target, '-p', '-S', '-50'], {
-          encoding: 'utf-8',
-          timeout: 3000,
-        });
+        const raw = execFileSync('tmux', [
+          'capture-pane', '-t', target, '-p',
+          '-S', `-${SessionManager.SCREEN_CAPTURE_LINES}`,
+        ], { encoding: 'utf-8', timeout: 3000 });
 
-        const previousCapture = this.lastCapturedContent.get(sessionId) ?? '';
+        // ANSI strip + clean control chars (no content filtering)
+        const screen = this.stripAnsi(raw)
+          // eslint-disable-next-line no-control-regex
+          .replace(/[\x00-\x08\x0e-\x1f]/g, '')
+          .replace(/\r/g, '');
 
-        // Filter noise from the captured content
-        const filtered = this.filterOutput(captured);
-        if (!filtered || !filtered.trim()) {
-          this.lastCapturedContent.set(sessionId, captured);
-          return;
-        }
+        const previousScreen = this.lastCapturedContent.get(sessionId) ?? '';
+        if (screen === previousScreen) return; // No change
 
-        // Compare with previous capture to detect new content
-        const previousFiltered = this.filterOutput(previousCapture);
-        if (filtered === previousFiltered) {
-          return; // No change
-        }
-
-        // Find new lines (lines in current but not in previous)
-        const prevLines = new Set((previousFiltered || '').split('\n').map(l => l.trim()).filter(Boolean));
-        const currentLines = filtered.split('\n').map(l => l.trim()).filter(Boolean);
+        // Find new lines (diff-based)
+        const prevLines = new Set(previousScreen.split('\n').map(l => l.trim()).filter(Boolean));
+        const currentLines = screen.split('\n').map(l => l.trim()).filter(Boolean);
         const newLines = currentLines.filter(l => !prevLines.has(l));
 
         if (newLines.length === 0) {
-          this.lastCapturedContent.set(sessionId, captured);
+          this.lastCapturedContent.set(sessionId, screen);
           return;
         }
 
         const newContent = newLines.join('\n');
-
-        // Anti-spam: skip if change is too small
-        if (newContent.trim().length < SessionManager.OUTPUT_MIN_CHANGE) {
-          this.lastCapturedContent.set(sessionId, captured);
-          return;
-        }
-
-        // Update stored capture
-        this.lastCapturedContent.set(sessionId, captured);
+        this.lastCapturedContent.set(sessionId, screen);
 
         // Clear existing debounce timer
         const existingTimer = this.outputDebounceTimers.get(sessionId);
@@ -793,10 +760,9 @@ export class SessionManager {
           this.outputDebounceTimers.delete(sessionId);
         }
 
-        // Set debounce timer — wait for output to stabilize before sending
+        // Debounce — wait for output to stabilize before sending
         const capturedNewContent = newContent;
         const timer = setTimeout(() => {
-          // Anti-spam: throttle check at send time
           const now = Date.now();
           const lastSentTime = this.lastSentTimestamps.get(sessionId) ?? 0;
           const elapsed = now - lastSentTime;
@@ -805,7 +771,7 @@ export class SessionManager {
             const retryTimer = setTimeout(() => {
               this.lastSentTimestamps.set(sessionId, Date.now());
               this.bufferOutput(sessionId, capturedNewContent);
-              this.onSessionEvent?.(sessionId, { type: 'output', content: capturedNewContent });
+              this.onSessionEvent?.(sessionId, { type: 'screen', content: capturedNewContent });
               this.updateSessionContext(sessionId, capturedNewContent);
               this.outputDebounceTimers.delete(sessionId);
             }, SessionManager.OUTPUT_MIN_INTERVAL - elapsed);
@@ -815,69 +781,23 @@ export class SessionManager {
 
           this.lastSentTimestamps.set(sessionId, Date.now());
           this.bufferOutput(sessionId, capturedNewContent);
-          this.onSessionEvent?.(sessionId, { type: 'output', content: capturedNewContent });
+          this.onSessionEvent?.(sessionId, { type: 'screen', content: capturedNewContent });
           this.updateSessionContext(sessionId, capturedNewContent);
           this.outputDebounceTimers.delete(sessionId);
         }, SessionManager.OUTPUT_DEBOUNCE_MS);
 
         this.outputDebounceTimers.set(sessionId, timer);
       } catch (err) {
-        // tmux session might have died
-        if ((err as Error).message?.includes('no current')) {
-          return; // Session not ready yet
-        }
+        if ((err as Error).message?.includes('no current')) return;
         const errCode = (err as NodeJS.ErrnoException).code;
-        if (errCode === 'ETIMEDOUT') return; // capture-pane timed out, retry next cycle
+        if (errCode === 'ETIMEDOUT') return;
         this.closeSession(sessionId);
       }
     }, 500);
 
     this.outputPollers.set(sessionId, poller);
-
-    // Start screen mirror polling (for Dashboard terminal sync)
-    this.startScreenPolling(sessionId);
   }
 
-  /**
-   * Start screen mirror polling — sends full terminal snapshot for Dashboard.
-   * Unlike output polling which extracts diffs, this sends the complete screen
-   * so the Dashboard can render a live terminal mirror (replace, not append).
-   */
-  private startScreenPolling(sessionId: string): void {
-    const session = this.store.get(sessionId);
-    if (!session) return;
-
-    const target = this.getTmuxTarget(session);
-    this.lastScreenContent.set(sessionId, '');
-
-    const poller = setInterval(() => {
-      try {
-        const raw = execFileSync('tmux', [
-          'capture-pane', '-t', target, '-p',
-          '-S', `-${SessionManager.SCREEN_CAPTURE_LINES}`,
-        ], {
-          encoding: 'utf-8',
-          timeout: 3000,
-        });
-
-        // ANSI strip only — no content filtering
-        const screen = this.stripAnsi(raw)
-          // eslint-disable-next-line no-control-regex
-          .replace(/[\x00-\x08\x0e-\x1f]/g, '')
-          .replace(/\r/g, '');
-
-        const prev = this.lastScreenContent.get(sessionId) ?? '';
-        if (screen === prev) return; // No change
-
-        this.lastScreenContent.set(sessionId, screen);
-        this.onSessionEvent?.(sessionId, { type: 'screen', content: screen });
-      } catch {
-        // Ignore — session might be dead, output poller will handle cleanup
-      }
-    }, SessionManager.SCREEN_POLL_INTERVAL);
-
-    this.screenPollers.set(sessionId, poller);
-  }
 
   /**
    * Update session's task context with latest output summary
@@ -946,191 +866,6 @@ export class SessionManager {
       .replace(/[^\S\n]{2,}/g, ' ');         // Collapse multiple spaces/tabs (preserve newlines!)
   }
 
-  /**
-   * Filter out Claude Code UI noise from output.
-   * Uses allowlist-first approach: known Claude response markers pass immediately,
-   * then blocklist removes known noise patterns.
-   */
-  private filterOutput(content: string): string {
-    // Strip ANSI escape codes and control characters first
-    let cleaned = this.stripAnsi(content);
-    // eslint-disable-next-line no-control-regex
-    cleaned = cleaned.replace(/[\x00-\x08\x0e-\x1f]/g, '');
-    cleaned = cleaned.replace(/\r/g, '');
-
-    const lines = cleaned.split('\n');
-    const filtered: string[] = [];
-    let lastLineWasEmpty = false;
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-
-      // === ALLOWLIST (pass immediately) ===
-
-      // Claude response lines (⏺ prefix = AI output or tool call)
-      if (/^\s*⏺/.test(line)) {
-        // Strip the ⏺ prefix and trailing tool UI noise for cleaner output
-        const responseText = trimmed.replace(/^⏺\s*/, '');
-        if (responseText.length > 0) {
-          // Skip tool invocation lines (Bash(...), Read(...), etc.)
-          if (/^(Bash|Read|Write|Edit|Glob|Grep|Notebook|MultiTool|Task|WebFetch|WebSearch)\s*\(/.test(responseText)) continue;
-          // Skip tool result summary lines ("Ran tmux ...", "Ran bash ...")
-          if (/^Ran\s+(tmux|bash|git|node|npm|pnpm|cd|ls)\b/i.test(responseText)) continue;
-          filtered.push(responseText);
-          lastLineWasEmpty = false;
-          continue;
-        }
-      }
-
-      // Tool result lines (⎿ prefix)
-      if (/^\s*⎿/.test(line)) {
-        const resultText = trimmed.replace(/^⎿\s*/, '');
-        if (resultText.length > 0) {
-          // Skip tool result noise (file read metadata, search counts, etc.)
-          if (/^(Reading|Wrote|Updated|Found)\s+\d+/i.test(resultText)) continue;
-          if (/^\d+\s+(lines?|files?|results?|matches?)\b/i.test(resultText)) continue;
-          filtered.push('  ' + resultText);
-          lastLineWasEmpty = false;
-          continue;
-        }
-      }
-
-      // Codex response lines (• prefix, but NOT progress indicators)
-      if (/^\s*•/.test(line) && !/Working\s*\(\d+s/.test(line)) {
-        const responseText = trimmed.replace(/^•\s*/, '');
-        if (responseText.length > 0) {
-          filtered.push(responseText);
-          lastLineWasEmpty = false;
-          continue;
-        }
-      }
-
-      // === BLOCKLIST (noise removal) ===
-
-      // Claude Code banner patterns (with or without spaces from ANSI stripping)
-      if (line.includes('▐▛███▜▌') || line.includes('▝▜█████▛▘')) continue;
-      if (/▘▘\s*▝▝/.test(line)) continue;
-      if (line.includes('Claude Code v') || line.includes('ClaudeCodev')) continue;
-      if (/Opus \d|Sonnet \d|Haiku \d/.test(line)) continue;
-      // Claude Code notification messages
-      if (/claude\s*install/i.test(line) || /switched.*installer/i.test(line)) continue;
-      if (/native\s*installer/i.test(line)) continue;
-
-      // Codex CLI banner box (╭╮╰╯│ with OpenAI Codex)
-      if (/^[╭╰]─/.test(trimmed) || /─[╮╯]$/.test(trimmed)) continue;
-      if (/^│.*OpenAI Codex/.test(trimmed)) continue;
-      if (/^│.*model:/.test(trimmed)) continue;
-      if (/^│.*directory:/.test(trimmed)) continue;
-      if (/^│\s*$/.test(trimmed)) continue;
-      // Codex CLI prompt (› prefix)
-      if (/^[\s]*›/.test(line)) continue;
-      // Codex status lines
-      if (/\?\s*for shortcuts/.test(line)) continue;
-      if (/\d+%\s*context left/.test(line)) continue;
-      if (/Tip:.*Try/.test(line) || /Tip:.*New/.test(line)) continue;
-      // Codex progress indicator (• Working (Ns • esc to interrupt))
-      if (/•\s*Working\s*\(\d+s/.test(line)) continue;
-      // Codex model loading
-      if (/model:\s+loading/.test(line)) continue;
-      // Codex app promotion
-      if (/codex\s+app/i.test(line) || /chatgpt\.com\/codex/.test(line)) continue;
-
-      // Horizontal dividers (long lines of ─ or ━)
-      if (/^[─━]{20,}$/.test(trimmed)) continue;
-
-      // "Try" suggestions (Claude)
-      if (line.includes('Try "write a test') || line.includes('Try "explain')) continue;
-      // Codex "Improve documentation" placeholder
-      if (/Improve documentation in @/.test(line)) continue;
-
-      // User prompt lines (❯ prefix for Claude, › prefix for Codex — both blocked above)
-      if (/^[\s]*❯/.test(line)) continue;
-
-      // New-format status bar (pipe-delimited with emojis: 🤖Opus│...│, 📁project│...)
-      if (/🤖.*│/.test(line) || /📁.*│/.test(line)) continue;
-      if (/🔷.*│/.test(line) || /💎.*│/.test(line)) continue;
-      // Status bar with speed/time/todo indicators (🔥 9.7K/min │ ⏱ 5분 │ 할일: -)
-      if (/🔥.*│/.test(line) || /⏱.*│/.test(line)) continue;
-      // Status bar: 3+ pipe segments WITH emoji/model/token indicators (not plain table content)
-      if ((line.match(/│/g)?.length ?? 0) >= 3 && (/[🤖📁🔷💎🔥⏱]/.test(line) || /\d+[kK]?\s*tokens?/i.test(line) || /\$[\d.]+/.test(line) || /\d+%\s*context/i.test(line))) continue;
-      // Model names as status indicators (with or without emoji prefix)
-      if (/(?:gemini|gpt|claude|sonnet|opus|haiku|o[1-9])-[\w.-]+│/i.test(line)) continue;
-      // Legacy status bar (space-separated)
-      if (/\d+[kK]?\s*tokens?/i.test(line) && /\$[\d.]+/.test(line)) continue;
-      // Time/cost status lines (e.g., "(5시간3분)" or "(23시간59분)")
-      if (/^\s*\(\d+시간\d+분\)\s*$/.test(trimmed)) continue;
-
-      // New-format spinner/progress (star/dot chars + short status text)
-      if (/^[\s]*[✶✳✢✻✽·]/.test(line)) continue;
-      // Lines containing spinner glyphs mixed with text (broken ANSI artifacts)
-      if (/[✶✳✢✻✽⏺]/.test(line) && (line.match(/[✶✳✢✻✽·⏺]/g)?.length ?? 0) >= 2) continue;
-      // Legacy braille spinner
-      if (/^[\s]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(line)) continue;
-
-      // Thinking indicator lines (Claude CLI thinking animation)
-      if (/\(thinking\)/i.test(line)) continue;
-
-      // Progress status lines (exact match: "Thinking...", "Harmonizing...", etc.)
-      if (/^[\s]*(Thinking|Working|Reading|Writing|Searching|Running|Harmonizing|Schlepping)\.{2,}$/i.test(trimmed)) continue;
-
-      // Permission bypass prompt
-      if (/^[\s]*⏵/.test(line)) continue;
-
-      // Codex/Claude CLI permission dialog noise
-      if (/Would you like to run the following command/i.test(line)) continue;
-      if (/^\s*Reason:\s+.+/.test(line)) continue;
-      if (/Press enter to confirm/i.test(line)) continue;
-      if (/esc to (interrupt|cancel)/i.test(line)) continue;
-      if (/^\s*\d+\.\s*(Yes|No),?\s+(and|or)\s/i.test(line)) continue;
-      if (/don't ask again for commands/i.test(line)) continue;
-      if (/tell Codex what to do differently/i.test(line)) continue;
-
-      // Codex CLI background/progress status noise
-      if (/Waiting for background terminal/i.test(line)) continue;
-      if (/Preparing\s+\w+.*\(\d+s/i.test(line)) continue;
-      if (/\[…\s*\d+\s*lines?\]/i.test(line)) continue;
-      if (/ctrl\s*\+\s*a\s*view\s*all/i.test(line)) continue;
-      if (/^\s*\$\s+(bash|tmux|set|while|sleep)\s/i.test(line)) continue;  // Shell commands in prompts
-
-      // Claude CLI thinking/status indicators
-      if (/Cogitated\s+for\s+\d+/i.test(line)) continue;
-      if (/Running\s*…/i.test(line) || /Running\.{3}/i.test(line)) continue;
-      // Collapsed output markers ("… +N lines (ctrl+o to expand)")
-      if (/…\s*\+?\d+\s*lines?/i.test(line)) continue;
-      if (/ctrl\s*\+\s*o\s*(to\s+)?expand/i.test(line)) continue;
-      // "Updated X files" / "Created X files" tool action summaries
-      if (/^(Updated|Created|Deleted|Modified)\s+\d+\s+(file|dir)/i.test(trimmed)) continue;
-      // Codex "Applied edit to ..." lines
-      if (/Applied\s+edit\s+to\s+/i.test(line)) continue;
-
-      // Context/compact notification lines
-      if (/Context left until auto-compact/i.test(line)) continue;
-
-      // Lines that are only whitespace + box-drawing or block chars
-      if (/^[\s░▒▓█▄▀│├└┘┐┌─━▘▝▖▗▚▐▛▜▟]+$/.test(trimmed)) continue;
-
-      // Partial/broken escape sequences leftover from incomplete ANSI stripping
-      if (/^\s*\[<[a-z]?\s*$/.test(trimmed)) continue;
-
-      // Mostly non-ASCII control artifacts (very short lines with no alphanumeric)
-      if (trimmed.length > 0 && trimmed.length <= 3 && !/[a-zA-Z0-9가-힣]/.test(trimmed)) continue;
-
-      // Standalone numbers (token counts, costs, line numbers leaking from status bar)
-      if (/^\s*[\d,.]+[kKmM]?\s*$/.test(trimmed)) continue;
-
-      // Consecutive empty lines (keep max 1)
-      if (!trimmed) {
-        if (lastLineWasEmpty) continue;
-        lastLineWasEmpty = true;
-      } else {
-        lastLineWasEmpty = false;
-      }
-
-      filtered.push(line);
-    }
-
-    return filtered.join('\n').trim();
-  }
 
   /**
    * Ensure a session is linked to workspace/project/task contexts.

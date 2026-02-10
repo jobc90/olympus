@@ -418,7 +418,7 @@ export class Gateway {
             // Replay buffered output for this session
             const bufferedOutputs = this.sessionManager.getOutputBuffer(payload.sessionId);
             for (const entry of bufferedOutputs) {
-              this.send(ws, createMessage('session:output', {
+              this.send(ws, createMessage('session:screen', {
                 sessionId: payload.sessionId,
                 content: entry.content,
                 timestamp: entry.timestamp,
@@ -564,10 +564,6 @@ export class Gateway {
     let payload: Record<string, unknown>;
 
     switch (event.type) {
-      case 'output':
-        messageType = 'session:output';
-        payload = { sessionId, content: event.content };
-        break;
       case 'screen':
         messageType = 'session:screen';
         payload = { sessionId, content: event.content };

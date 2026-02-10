@@ -23,7 +23,7 @@ import type {
  * 4. orchestrator.shutdown()           ← 정리
  *
  * Events:
- * - 'session:output'  — 가공된 세션 출력 (브로드캐스트용)
+ * - 'session:screen'  — 가공된 세션 출력 (브로드캐스트용)
  * - 'session:status'  — 세션 상태 변경
  * - 'error'           — 에러
  */
@@ -48,7 +48,7 @@ export class CodexOrchestrator extends EventEmitter {
     this.agentBrain = new AgentBrain(this.contextManager, this.sessionManager);
 
     // Wire session output → ResponseProcessor → external broadcast
-    this.sessionManager.on('session:output', async (event: {
+    this.sessionManager.on('session:screen', async (event: {
       sessionId: string;
       content: string;
     }) => {
@@ -64,7 +64,7 @@ export class CodexOrchestrator extends EventEmitter {
 
         const enriched = await this.agentBrain.enrichResponse(response, session.projectPath);
 
-        this.emit('session:output', {
+        this.emit('session:screen', {
           sessionId: event.sessionId,
           projectName: session.name,
           response: enriched,
@@ -143,7 +143,7 @@ export class CodexOrchestrator extends EventEmitter {
         await this.sessionManager.sendToSession(sessionId, decision.processedInput);
         this.router.recordLastSession(input.source, sessionId);
         return { decision };
-        // Response will come via session:output event asynchronously
+        // Response will come via session:screen event asynchronously
       }
 
       case 'MULTI_SESSION': {

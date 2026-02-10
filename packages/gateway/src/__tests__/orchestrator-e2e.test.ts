@@ -22,7 +22,7 @@ interface MockSession {
 }
 
 interface SessionEvent {
-  type: 'output' | 'error' | 'closed';
+  type: 'screen' | 'error' | 'closed';  // 'output' → 'screen' (Phase 4)
   content?: string;
   error?: string;
 }
@@ -72,8 +72,8 @@ function broadcastSessionEvent(
   let payload: Record<string, unknown>;
 
   switch (event.type) {
-    case 'output':
-      messageType = 'session:output';
+    case 'screen':
+      messageType = 'session:screen';
       payload = { sessionId, content: event.content };
       break;
     case 'error':
@@ -563,12 +563,12 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
       wsClients.set('dashboard-1', dashboard);
 
       broadcastSessionEvent(wsClients, MAIN_SESSION_ID, {
-        type: 'output',
+        type: 'screen',
         content: '⏺ 빌드가 완료되었습니다. 8개 패키지 모두 성공.',
       });
 
       expect(telegramBot.messages).toHaveLength(1);
-      expect(telegramBot.messages[0].type).toBe('session:output');
+      expect(telegramBot.messages[0].type).toBe('session:screen');
       expect(telegramBot.messages[0].payload.content).toContain('빌드가 완료되었습니다');
 
       expect(dashboard.messages).toHaveLength(1);
@@ -581,7 +581,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
       wsClients.set('other-1', unsubscribed);
 
       broadcastSessionEvent(wsClients, MAIN_SESSION_ID, {
-        type: 'output',
+        type: 'screen',
         content: 'test output',
       });
 
@@ -595,7 +595,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
       wsClients.set('bot-1', unauthClient);
 
       broadcastSessionEvent(wsClients, MAIN_SESSION_ID, {
-        type: 'output',
+        type: 'screen',
         content: 'secret output',
       });
 
@@ -608,13 +608,13 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
 
       // Main session output (orchestrator response)
       broadcastSessionEvent(wsClients, MAIN_SESSION_ID, {
-        type: 'output',
+        type: 'screen',
         content: '[console] 테스트 248개 통과, 실패 0개',
       });
 
       // Work session output (raw)
       broadcastSessionEvent(wsClients, WORK_SESSION_ID, {
-        type: 'output',
+        type: 'screen',
         content: 'Tests: 248 passed, 0 failed',
       });
 
@@ -674,13 +674,13 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
 
       // Step 3: Main session AI processes and outputs response
       broadcastSessionEvent(wsClients, MAIN_SESSION_ID, {
-        type: 'output',
+        type: 'screen',
         content: '[console] 테스트 결과: 248개 통과, 실패 0개. 빌드 성공.',
       });
 
       // Step 4: Telegram bot receives the output
       expect(telegramBot.messages).toHaveLength(1);
-      expect(telegramBot.messages[0].type).toBe('session:output');
+      expect(telegramBot.messages[0].type).toBe('session:screen');
       expect(telegramBot.messages[0].payload.content).toContain('248개 통과');
     });
 
@@ -699,7 +699,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
 
       // Step 3: Work session output goes directly to Telegram
       broadcastSessionEvent(wsClients, WORK_SESSION_ID, {
-        type: 'output',
+        type: 'screen',
         content: 'Tests: 248 passed',
       });
 
@@ -814,7 +814,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
 
       // Main session output
       broadcastSessionEvent(wsClients, MAIN_SESSION_ID, {
-        type: 'output',
+        type: 'screen',
         content: '작업이 완료되었습니다.',
       });
 
@@ -823,7 +823,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
 
       // Work session output (only dashboard subscribed)
       broadcastSessionEvent(wsClients, WORK_SESSION_ID, {
-        type: 'output',
+        type: 'screen',
         content: 'Build: 9/9 passed',
       });
 

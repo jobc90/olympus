@@ -242,9 +242,9 @@ describe('Codex Integration: Adapter + RPC Pipeline', () => {
         response: { type: 'text', content: 'Build successful' },
       };
 
-      orchestrator.emit('session:output', payload);
+      orchestrator.emit('session:screen', payload);
 
-      expect(broadcastSpy).toHaveBeenCalledWith('session:output', payload);
+      expect(broadcastSpy).toHaveBeenCalledWith('session:screen', payload);
     });
 
     it('should broadcast session status changes', () => {
@@ -256,8 +256,8 @@ describe('Codex Integration: Adapter + RPC Pipeline', () => {
     });
 
     it('should handle multiple events in sequence', () => {
-      orchestrator.emit('session:output', { sessionId: 'sess-alpha', content: 'step 1' });
-      orchestrator.emit('session:output', { sessionId: 'sess-alpha', content: 'step 2' });
+      orchestrator.emit('session:screen', { sessionId: 'sess-alpha', content: 'step 1' });
+      orchestrator.emit('session:screen', { sessionId: 'sess-alpha', content: 'step 2' });
       orchestrator.emit('session:status', { sessionId: 'sess-alpha', status: 'idle' });
 
       expect(broadcastSpy).toHaveBeenCalledTimes(3);

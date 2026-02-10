@@ -22,7 +22,7 @@ import { SESSION_CONSTANTS } from './types.js';
  *                        error → closed
  *
  * Events:
- * - 'session:output'       — 세션에서 필터링된 출력 도착
+ * - 'session:screen'       — 세션에서 필터링된 출력 도착
  * - 'session:status'       — 세션 상태 변경
  * - 'session:command-sent'  — 명령 전송 완료
  */
@@ -90,7 +90,7 @@ export class CodexSessionManager extends EventEmitter {
     // Wire monitor events
     monitor.on('output', (content: string) => {
       session.lastActivity = Date.now();
-      this.emit('session:output', { sessionId, content });
+      this.emit('session:screen', { sessionId, content });
     });
 
     monitor.on('prompt-detected', () => {

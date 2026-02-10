@@ -125,7 +125,7 @@ vi.mock('../context-manager.js', () => ({
 // ── Helper: emit session output from mock SessionManager ──
 
 function emitSessionOutput(sessionId: string, content: string) {
-  const listeners = sessionListeners.get('session:output') ?? [];
+  const listeners = sessionListeners.get('session:screen') ?? [];
   for (const fn of listeners) {
     fn({ sessionId, content });
   }
@@ -246,10 +246,10 @@ describe('Codex E2E: Full Pipeline', () => {
 
   // ── Event Pipeline ──
 
-  describe('Event Pipeline: session:output → ResponseProcessor → broadcast', () => {
+  describe('Event Pipeline: session:screen → ResponseProcessor → broadcast', () => {
     it('should process and emit session output', async () => {
       const outputPromise = new Promise<unknown>((resolve) => {
-        orchestrator.on('session:output', resolve);
+        orchestrator.on('session:screen', resolve);
       });
 
       emitSessionOutput('sess-alpha', 'Build successful! 0 errors, 0 warnings.');
@@ -269,7 +269,7 @@ describe('Codex E2E: Full Pipeline', () => {
 
     it('should detect build output type', async () => {
       const outputPromise = new Promise<unknown>((resolve) => {
-        orchestrator.on('session:output', resolve);
+        orchestrator.on('session:screen', resolve);
       });
 
       emitSessionOutput('sess-alpha', 'Build succeeded in 2.5s\n\n9 packages built');
@@ -280,7 +280,7 @@ describe('Codex E2E: Full Pipeline', () => {
 
     it('should detect error output type', async () => {
       const outputPromise = new Promise<unknown>((resolve) => {
-        orchestrator.on('session:output', resolve);
+        orchestrator.on('session:screen', resolve);
       });
 
       emitSessionOutput('sess-beta', '3 errors found\nTypeError: Cannot find module \'missing-dep\'');
@@ -291,7 +291,7 @@ describe('Codex E2E: Full Pipeline', () => {
 
     it('should detect test output type', async () => {
       const outputPromise = new Promise<unknown>((resolve) => {
-        orchestrator.on('session:output', resolve);
+        orchestrator.on('session:screen', resolve);
       });
 
       emitSessionOutput('sess-alpha', 'Tests: 51 passed (51)\nDuration: 188ms');
@@ -433,7 +433,7 @@ describe('Codex E2E: Full Pipeline', () => {
   describe('ResponseProcessor: formatForTelegram', () => {
     it('should process output with file changes', async () => {
       const outputPromise = new Promise<unknown>((resolve) => {
-        orchestrator.on('session:output', resolve);
+        orchestrator.on('session:screen', resolve);
       });
 
       emitSessionOutput('sess-alpha', '⏺ Edit packages/core/src/index.ts\n⏺ Write packages/core/src/new.ts\nDone.');

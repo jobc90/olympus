@@ -37,8 +37,8 @@ export class CodexAdapter {
     this.codex = codex;
 
     // Codex 이벤트 → Gateway 브로드캐스트
-    this.codex.on('session:output', (...args: unknown[]) => {
-      this.broadcast('session:output', args[0] as CodexSessionOutputPayload);
+    this.codex.on('session:screen', (...args: unknown[]) => {
+      this.broadcast('session:screen', args[0] as CodexSessionOutputPayload);
     });
     this.codex.on('session:status', (...args: unknown[]) => {
       this.broadcast('codex:session-event', args[0] as CodexSessionEventPayload);

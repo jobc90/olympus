@@ -64,18 +64,18 @@ describe('WebSocket message routing', () => {
 
   it('should drop messages with unknown sessionId', () => {
     const result = routeMessage(
-      { type: 'session:output', payload: { sessionId: 'unknown-id' } },
+      { type: 'session:screen', payload: { sessionId: 'unknown-id' } },
       subscribedRuns,
     );
     expect(result).toEqual({ route: 'dropped', reason: 'no-chatId' });
   });
 
-  it('should route session:output to subscribed session', () => {
+  it('should route session:screen to subscribed session', () => {
     const result = routeMessage(
-      { type: 'session:output', payload: { sessionId: 'session-abc' } },
+      { type: 'session:screen', payload: { sessionId: 'session-abc' } },
       subscribedRuns,
     );
-    expect(result).toEqual({ route: 'session-event', sessionId: 'session-abc', type: 'session:output' });
+    expect(result).toEqual({ route: 'session-event', sessionId: 'session-abc', type: 'session:screen' });
   });
 
   it('should route session:closed to subscribed session', () => {

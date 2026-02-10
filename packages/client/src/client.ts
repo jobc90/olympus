@@ -198,9 +198,11 @@ export class OlympusClient {
     this.send(createMessage('unsubscribe', { sessionId }));
   }
 
-  /** Convenience: subscribe to session output events */
+  /**
+   * @deprecated Use onSessionScreen instead. session:output has been replaced by session:screen.
+   */
   onSessionOutput(handler: (p: { sessionId: string; content: string }) => void): () => void {
-    return this.on('session:output', (m) => handler(m.payload as { sessionId: string; content: string }));
+    return this.on('session:screen', (m) => handler(m.payload as { sessionId: string; content: string }));
   }
 
   /** Convenience: subscribe to session screen snapshot (terminal mirror for Dashboard) */

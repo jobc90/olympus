@@ -81,14 +81,14 @@ describe('CodexAdapter', () => {
       expect(adapter).toBeDefined();
     });
 
-    it('should forward session:output events to broadcast', () => {
+    it('should forward session:screen events to broadcast', () => {
       const payload = {
         sessionId: 'sess-1',
         projectName: 'test',
         response: { type: 'text', content: 'hello' },
       };
-      (mockOrchestrator as unknown as { emit: (event: string, ...args: unknown[]) => void }).emit('session:output', payload);
-      expect(broadcastSpy).toHaveBeenCalledWith('session:output', payload);
+      (mockOrchestrator as unknown as { emit: (event: string, ...args: unknown[]) => void }).emit('session:screen', payload);
+      expect(broadcastSpy).toHaveBeenCalledWith('session:screen', payload);
     });
 
     it('should forward session:status events to broadcast', () => {
