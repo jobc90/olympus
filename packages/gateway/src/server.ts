@@ -243,6 +243,7 @@ export class Gateway {
         onContextEvent: (eventType, payload) => this.broadcastContextEvent(eventType, payload),
         onSessionsChanged: () => this.broadcastSessionsList(),
         onCliComplete: (result) => this.broadcastToAll('cli:complete', result),
+        onCliStream: (chunk) => this.broadcastToAll('cli:stream', chunk),
       });
 
       this.httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -265,7 +266,7 @@ export class Gateway {
       );
 
       // Session reconcile timer (every 30 seconds)
-      // Cleans dead sessions, auto-registers new tmux sessions, broadcasts changes
+      // Cleans timed-out sessions, broadcasts changes
       this.sessionCleanupTimer = setInterval(() => {
         const changed = this.sessionManager.reconcileSessions();
         if (changed) {
@@ -542,18 +543,12 @@ export class Gateway {
     const runs = this.runManager.getAllRunStatuses();
     this.send(ws, createMessage('runs:list', { runs }));
 
-    // Reconcile first to auto-register any new tmux sessions
+    // Reconcile sessions (timeout cleanup)
     this.sessionManager.reconcileSessions();
 
-    // Send list of active sessions + available tmux sessions
+    // Send list of active sessions
     const sessions = this.sessionManager.getAll().filter(s => s.status === 'active');
-    const discovered = this.sessionManager.discoverTmuxSessions();
-
-    // Filter out already-registered tmux sessions from discovered
-    const registeredTmux = new Set(sessions.map(s => s.tmuxSession));
-    const availableSessions = discovered.filter(d => !registeredTmux.has(d.tmuxSession));
-
-    this.send(ws, createMessage('sessions:list', { sessions, availableSessions }));
+    this.send(ws, createMessage('sessions:list', { sessions, availableSessions: [] }));
   }
 
   /**
@@ -600,11 +595,8 @@ export class Gateway {
    */
   broadcastSessionsList(): void {
     const sessions = this.sessionManager.getAll().filter(s => s.status === 'active');
-    const discovered = this.sessionManager.discoverTmuxSessions();
-    const registeredTmux = new Set(sessions.map(s => s.tmuxSession));
-    const availableSessions = discovered.filter(d => !registeredTmux.has(d.tmuxSession));
 
-    const message = createMessage('sessions:list', { sessions, availableSessions });
+    const message = createMessage('sessions:list', { sessions, availableSessions: [] });
     const raw = JSON.stringify(message);
 
     for (const [, client] of this.clients) {

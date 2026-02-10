@@ -16,6 +16,7 @@ export interface ApiHandlerOptions {
   onContextEvent?: (eventType: string, payload: unknown) => void;
   onSessionsChanged?: () => void;  // Callback to broadcast sessions:list
   onCliComplete?: (result: import('@olympus-dev/protocol').CliRunResult) => void;
+  onCliStream?: (chunk: import('@olympus-dev/protocol').CliStreamChunk) => void;
 }
 
 /**
@@ -175,7 +176,7 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
  * Create HTTP API request handler
  */
 export function createApiHandler(options: ApiHandlerOptions) {
-  const { runManager, sessionManager, cliSessionStore, memoryStore, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete } = options;
+  const { runManager, sessionManager, cliSessionStore, memoryStore, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete, onCliStream } = options;
 
   // 비동기 CLI 실행 태스크 저장소 (in-memory, 1시간 TTL)
   const asyncTasks = new Map<string, { status: 'running' | 'completed' | 'failed'; result?: import('@olympus-dev/protocol').CliRunResult; error?: string; startedAt: number }>();
@@ -265,6 +266,8 @@ export function createApiHandler(options: ApiHandlerOptions) {
         const { runCli } = await import('./cli-runner.js');
         type CliRunParams = import('@olympus-dev/protocol').CliRunParams;
 
+        const sessionKey = body.sessionKey || `cli-${Date.now()}`;
+
         const params: CliRunParams = {
           prompt: body.prompt,
           provider: (body.provider as 'claude' | 'codex') ?? 'claude',
@@ -274,6 +277,9 @@ export function createApiHandler(options: ApiHandlerOptions) {
           systemPrompt: body.systemPrompt,
           dangerouslySkipPermissions: body.dangerouslySkipPermissions,
           allowedTools: body.allowedTools,
+          onStream: onCliStream
+            ? (chunk) => onCliStream({ sessionKey, chunk, timestamp: Date.now() })
+            : undefined,
         };
 
         // 세션 복원: sessionKey → 저장소 조회 → resumeSession=true
@@ -293,7 +299,7 @@ export function createApiHandler(options: ApiHandlerOptions) {
         // 세션 영속화
         if (result.sessionId && body.sessionKey && cliSessionStore) {
           cliSessionStore.save({
-            key: body.sessionKey,
+            key: sessionKey,
             provider: params.provider ?? 'claude',
             cliSessionId: result.sessionId,
             model: result.model,
@@ -346,6 +352,8 @@ export function createApiHandler(options: ApiHandlerOptions) {
         const { runCli } = await import('./cli-runner.js');
         type CliRunParams = import('@olympus-dev/protocol').CliRunParams;
 
+        const asyncSessionKey = (body.sessionKey as string) || `cli-async-${taskId}`;
+
         const params: CliRunParams = {
           prompt: body.prompt as string,
           provider: (body.provider as 'claude' | 'codex') ?? 'claude',
@@ -355,6 +363,9 @@ export function createApiHandler(options: ApiHandlerOptions) {
           systemPrompt: body.systemPrompt as string | undefined,
           dangerouslySkipPermissions: body.dangerouslySkipPermissions as boolean | undefined,
           allowedTools: body.allowedTools as string[] | undefined,
+          onStream: onCliStream
+            ? (chunk) => onCliStream({ sessionKey: asyncSessionKey, chunk, timestamp: Date.now() })
+            : undefined,
         };
 
         // 세션 복원
@@ -537,48 +548,15 @@ export function createApiHandler(options: ApiHandlerOptions) {
         return;
       }
 
-      // GET /api/sessions - List all sessions (registered + discovered)
+      // GET /api/sessions - List all active sessions
       if (path === '/api/sessions' && method === 'GET') {
-        // Reconcile with actual tmux state first (close dead sessions)
         const changed = sessionManager.reconcileSessions();
         if (changed) {
           onSessionsChanged?.();
         }
 
         const sessions = sessionManager.getAll().filter(s => s.status === 'active');
-        const discovered = sessionManager.discoverTmuxSessions();
-
-        // Filter out already-registered tmux sessions from discovered
-        const registeredTmux = new Set(sessions.map(s => s.tmuxSession));
-        const availableSessions = discovered.filter(d => !registeredTmux.has(d.tmuxSession));
-
-        sendJson(res, 200, { sessions, availableSessions });
-        return;
-      }
-
-      // GET /api/sessions/discover - Discover all Olympus tmux sessions
-      if (path === '/api/sessions/discover' && method === 'GET') {
-        const tmuxSessions = sessionManager.discoverTmuxSessions();
-        sendJson(res, 200, { tmuxSessions });
-        return;
-      }
-
-      // POST /api/sessions/connect - Connect to existing tmux session
-      if (path === '/api/sessions/connect' && method === 'POST') {
-        const body = await parseBody<{ chatId: number; tmuxSession: string }>(req);
-
-        if (typeof body.chatId !== 'number' || !body.tmuxSession) {
-          sendJson(res, 400, { error: 'Bad Request', message: 'chatId (number) and tmuxSession are required' });
-          return;
-        }
-
-        try {
-          const session = await sessionManager.connectToTmuxSession(body.chatId, body.tmuxSession);
-          sendJson(res, 201, { session });
-          onSessionsChanged?.();
-        } catch (e) {
-          sendJson(res, 404, { error: 'Not Found', message: (e as Error).message });
-        }
+        sendJson(res, 200, { sessions, availableSessions: [] });
         return;
       }
 
@@ -616,34 +594,15 @@ export function createApiHandler(options: ApiHandlerOptions) {
         return;
       }
 
-      // POST /api/sessions/:id/input - Send input to Claude CLI
+      // POST /api/sessions/:id/input — deprecated (use POST /api/cli/run instead)
       if (path === '/api/sessions/:id/input' && method === 'POST' && id) {
-        const body = await parseBody<{ message: string }>(req);
-
-        if (!body.message) {
-          sendJson(res, 400, { error: 'Bad Request', message: 'message is required' });
-          return;
-        }
-
-        // sendInput returns immediately, Claude runs async and streams via WebSocket
-        const sent = sessionManager.sendInput(id, body.message);
-        if (!sent) {
-          sendJson(res, 404, { error: 'Not Found', message: `Session ${id} not found or closed` });
-          return;
-        }
-        sendJson(res, 200, { sent: true, sessionId: id });
+        sendJson(res, 410, { error: 'Gone', message: 'Use POST /api/cli/run instead' });
         return;
       }
 
-      // GET /api/sessions/:id/output - Capture output from tmux
+      // GET /api/sessions/:id/output — deprecated (use CLI streaming instead)
       if (path === '/api/sessions/:id/output' && method === 'GET' && id) {
-        const lines = parseInt(query?.lines ?? '100', 10);
-        const output = sessionManager.captureOutput(id, lines);
-        if (output === null) {
-          sendJson(res, 404, { error: 'Not Found', message: `Session ${id} not found or closed` });
-          return;
-        }
-        sendJson(res, 200, { output, sessionId: id });
+        sendJson(res, 410, { error: 'Gone', message: 'Use CLI streaming instead' });
         return;
       }
 

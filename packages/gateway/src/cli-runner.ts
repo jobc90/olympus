@@ -290,7 +290,7 @@ function buildSafeEnv(): NodeJS.ProcessEnv {
 function spawnCli(
   command: string,
   args: string[],
-  options: { cwd?: string; timeoutMs: number },
+  options: { cwd?: string; timeoutMs: number; onStdout?: (chunk: string) => void },
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
     let stdout = '';
@@ -324,7 +324,9 @@ function spawnCli(
     }
 
     proc.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      stdout += text;
+      options.onStdout?.(text);
     });
     proc.stderr?.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
@@ -385,7 +387,7 @@ export async function runCli(params: CliRunParams): Promise<CliRunResult> {
     const { exitCode, stdout, stderr, timedOut } = await spawnCli(
       backend.command,
       args,
-      { cwd: params.workspaceDir, timeoutMs },
+      { cwd: params.workspaceDir, timeoutMs, onStdout: params.onStream },
     );
     const wallDuration = Date.now() - startTime;
 

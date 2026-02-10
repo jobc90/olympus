@@ -4,7 +4,7 @@
  * Tests the full pipeline: Telegram → Gateway → Main Session (Orchestrator) → Work Sessions → Telegram
  * Validates that all components work together organically.
  *
- * Since real tmux/Telegraf/WebSocket are external dependencies, we replicate
+ * Since real Telegraf/WebSocket are external dependencies, we replicate
  * the critical logic flows and test them with mocks — following the same pattern
  * as codex-integration.test.ts and session-manager.test.ts.
  */
@@ -16,7 +16,6 @@ interface MockSession {
   id: string;
   name: string;
   chatId: number;
-  tmuxSession: string;
   status: 'active' | 'closed';
   projectPath: string;
 }
@@ -41,7 +40,6 @@ function createMockSession(overrides: Partial<MockSession> = {}): MockSession {
     id: 'sess-' + Math.random().toString(36).slice(2, 8),
     name: 'main',
     chatId: 123456,
-    tmuxSession: 'main',
     status: 'active',
     projectPath: '/home/user/.olympus/orchestrator',
     ...overrides,
@@ -95,36 +93,34 @@ function broadcastSessionEvent(
 
 /**
  * Replicated session connect logic from api.ts
- * Connects a chatId to a tmux session via the Gateway
+ * Connects a chatId to a session by name
  */
 function connectSession(
   sessions: Map<string, MockSession>,
-  tmuxSession: string,
+  sessionName: string,
   chatId: number,
 ): MockSession | null {
-  // Check if already connected
   for (const [, session] of sessions) {
-    if (session.tmuxSession === tmuxSession && session.status === 'active') {
+    if (session.name === sessionName && session.status === 'active') {
       session.chatId = chatId;
       return session;
     }
   }
-  return null; // Session not found
+  return null;
 }
 
 /**
- * Replicated sendInput logic from session-manager.ts
- * Returns true if message was sent to tmux session
+ * Replicated sendInput logic — sends message to session
  */
 function sendInput(
   sessions: Map<string, MockSession>,
   sessionId: string,
   _message: string,
-  sendKeysSpy: ReturnType<typeof vi.fn>,
+  sendSpy: ReturnType<typeof vi.fn>,
 ): boolean {
   const session = sessions.get(sessionId);
   if (!session || session.status !== 'active') return false;
-  sendKeysSpy(session.tmuxSession, _message);
+  sendSpy(session.name, _message);
   return true;
 }
 
@@ -287,13 +283,11 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
     const mainSession = createMockSession({
       id: MAIN_SESSION_ID,
       name: 'main',
-      tmuxSession: 'main',
       projectPath: '/home/user/.olympus/orchestrator',
     });
     const workSession = createMockSession({
       id: WORK_SESSION_ID,
       name: 'olympus-console',
-      tmuxSession: 'olympus-console',
       projectPath: '/home/user/dev/console',
     });
 
@@ -522,7 +516,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
   // ── 6. Gateway Session Input (sendInput) ──
 
   describe('Gateway sendInput', () => {
-    it('should send message to active session via tmux send-keys', () => {
+    it('should send message to active session', () => {
       const result = sendInput(gatewaySessions, MAIN_SESSION_ID, '안녕하세요', sendKeysSpy);
 
       expect(result).toBe(true);
@@ -639,7 +633,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
 
       broadcastSessionEvent(wsClients, MAIN_SESSION_ID, {
         type: 'error',
-        error: 'tmux session terminated unexpectedly',
+        error: 'session terminated unexpectedly',
       });
 
       expect(telegramBot.messages).toHaveLength(1);
@@ -733,7 +727,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
   // ── 9. Session Connect ──
 
   describe('Session Connect', () => {
-    it('should connect chatId to existing tmux session', () => {
+    it('should connect chatId to existing session', () => {
       const session = connectSession(gatewaySessions, 'main', 999);
 
       expect(session).not.toBeNull();
@@ -741,7 +735,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
     });
 
     it('should return null for non-existent session', () => {
-      const session = connectSession(gatewaySessions, 'olympus-nonexistent', 999);
+      const session = connectSession(gatewaySessions, 'nonexistent', 999);
 
       expect(session).toBeNull();
     });
@@ -784,7 +778,7 @@ describe('Orchestrator E2E: Telegram → Gateway → Sessions → Telegram', () 
     });
 
     it('should filter tmux list-sessions commands', () => {
-      expect(isNoise('tmux list-sessions -F "#{session_name}"')).toBe(true);
+      expect(isNoise('tmux list-sessions -F "#{session_name}"')).toBe(true);  // Legacy pattern
     });
 
     it('should NOT filter actual content', () => {

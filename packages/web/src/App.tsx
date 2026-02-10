@@ -19,6 +19,7 @@ import { Card, CardHeader } from './components/Card';
 import { ContextExplorer } from './components/ContextExplorer';
 import { CodexPanel } from './components/CodexPanel';
 import { AgentHistoryPanel } from './components/AgentHistoryPanel';
+import { LiveOutputPanel } from './components/LiveOutputPanel';
 import { SessionCostTracker } from './components/SessionCostTracker';
 import { ProjectBrowser } from './components/ProjectBrowser';
 import { useContextTree } from './hooks/useContextTree';
@@ -96,6 +97,7 @@ export default function App() {
     codexSessions,
     codexSearch,
     cliHistory,
+    cliStreams,
   } = useOlympus(config);
 
   const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
@@ -210,6 +212,7 @@ export default function App() {
                   taskId={agentTaskId}
                   onCancel={cancelAgentTask}
                 />
+                <LiveOutputPanel streams={cliStreams} />
                 <CommandInput
                   onSubmit={sendAgentCommand}
                   agentState={agentState}

@@ -50,6 +50,7 @@ export interface CliRunParams {
   systemPrompt?: string;
   dangerouslySkipPermissions?: boolean;
   allowedTools?: string[];
+  onStream?: (chunk: string) => void;
 }
 
 // ──────────────────────────────────────────────
@@ -137,3 +138,14 @@ export type AgentEvent =
   | { type: 'agent:start'; sessionKey: string; prompt: string }
   | { type: 'agent:complete'; sessionKey: string; result: CliRunResult }
   | { type: 'agent:error'; sessionKey: string; error: string };
+
+// ──────────────────────────────────────────────
+// CLI Stream Chunk (실시간 stdout 스트리밍)
+// ──────────────────────────────────────────────
+
+/** CLI 실시간 스트림 청크 */
+export interface CliStreamChunk {
+  sessionKey: string;
+  chunk: string;
+  timestamp: number;
+}

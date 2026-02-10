@@ -220,19 +220,14 @@ export function registerAgentMethods(
     'sessions.list',
     (): SessionsListRpcResult => {
       const sessions = sessionManager.getAll().filter(s => s.status === 'active');
-      const discovered = sessionManager.discoverTmuxSessions();
-      const registeredTmux = new Set(sessions.map(s => s.tmuxSession));
-      const availableSessions = discovered.filter(d => !registeredTmux.has(d.tmuxSession));
-
-      return { sessions, availableSessions };
+      return { sessions, availableSessions: [] };
     },
   );
 
   router.register(
     'sessions.discover',
     (): SessionsDiscoverResult => {
-      const sessions = sessionManager.discoverTmuxSessions();
-      return { sessions };
+      return { sessions: [] };
     },
   );
 }

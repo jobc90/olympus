@@ -16,6 +16,7 @@ import {
   type LogPayload,
   type RunStatus,
   type CliRunResult,
+  type CliStreamChunk,
 } from '@olympus-dev/protocol';
 
 export interface OlympusClientOptions {
@@ -390,6 +391,11 @@ export class OlympusClient {
   /** Subscribe to CLI run completion events */
   onCliComplete(handler: (p: CliRunResult) => void): () => void {
     return this.on('cli:complete', (m) => handler(m.payload as CliRunResult));
+  }
+
+  /** Subscribe to CLI real-time stream chunks */
+  onCliStream(handler: (p: CliStreamChunk) => void): () => void {
+    return this.on('cli:stream', (m) => handler(m.payload as CliStreamChunk));
   }
 
   private send(msg: WsMessage): void {

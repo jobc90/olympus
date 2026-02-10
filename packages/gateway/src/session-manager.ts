@@ -1,20 +1,17 @@
 import { randomUUID } from 'node:crypto';
-import { execSync, execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir, tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import { TaskStore, ContextStore, ContextService } from '@olympus-dev/core';
 
 /**
- * Session represents an active Claude CLI tmux session
+ * Session represents an active CLI session (tmux dependency removed)
  */
 export interface Session {
   id: string;
   name: string;  // Session name (e.g., "backend", "frontend", "main")
   chatId: number;
   taskId: string;
-  tmuxSession: string;
-  tmuxWindow?: string;  // Window name within tmux session (for multi-window mode)
   status: 'active' | 'closed';
   projectPath: string;
   workspaceContextId?: string;
@@ -38,12 +35,12 @@ export interface SessionManagerOptions {
 }
 
 export type SessionEvent =
-  | { type: 'screen'; content: string }   // Terminal snapshot diff (ANSI-stripped, for Dashboard mirror)
+  | { type: 'screen'; content: string }   // Terminal snapshot diff (for Dashboard mirror)
   | { type: 'error'; error: string }
   | { type: 'closed' };
 
 /**
- * Simple SQLite-like JSON file storage for sessions
+ * Simple JSON file storage for sessions
  */
 class SessionStore {
   private dbPath: string;
@@ -107,29 +104,13 @@ class SessionStore {
 }
 
 /**
- * SessionManager - Manages Claude CLI tmux sessions
+ * SessionManager - Manages CLI sessions (tmux-free)
  */
 export class SessionManager {
   private store: SessionStore;
   private sessionTimeout: number;
   private onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
-  private outputPollers: Map<string, NodeJS.Timeout> = new Map();
-  private outputDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
-  private lastSentTimestamps: Map<string, number> = new Map();
   private workspaceRoot: string;
-  private outputLogDir: string;
-  private logOffsets: Map<string, number> = new Map();  // kept for worker log file offsets
-  private lastCapturedContent: Map<string, string> = new Map();
-  // Per-session output ring buffer for replay on subscribe (last N outputs)
-  private outputBuffers: Map<string, Array<{ content: string; timestamp: number }>> = new Map();
-  private static readonly OUTPUT_BUFFER_SIZE = 20;
-
-  // Minimum interval between screen events (ms) - prevents WS spam
-  private static readonly OUTPUT_MIN_INTERVAL = 2000;
-  // Debounce wait time after screen stabilizes (ms)
-  private static readonly OUTPUT_DEBOUNCE_MS = 1000;
-  // Screen capture lines for Dashboard terminal mirror
-  private static readonly SCREEN_CAPTURE_LINES = 100;
 
   constructor(options: SessionManagerOptions = {}) {
     const dataDir = options.dataDir ?? join(homedir(), '.olympus');
@@ -137,213 +118,47 @@ export class SessionManager {
       mkdirSync(dataDir, { recursive: true });
     }
 
-    this.outputLogDir = join(tmpdir(), 'olympus-logs');
-    if (!existsSync(this.outputLogDir)) {
-      mkdirSync(this.outputLogDir, { recursive: true, mode: 0o700 });
-    }
-
     this.store = new SessionStore(dataDir);
     // Default behavior: no idle timeout. Set a positive value to enable timeout cleanup.
     this.sessionTimeout = options.sessionTimeout ?? 0;
     this.onSessionEvent = options.onSessionEvent;
     this.workspaceRoot = process.cwd();
-
-    // Restart output polling for active sessions
-    for (const session of this.store.getAll()) {
-      if (session.status === 'active') {
-        // Check if window is alive (for multi-window mode)
-        if (this.isTmuxWindowAlive(session.tmuxSession, session.tmuxWindow)) {
-          this.startScreenPolling(session.id);
-        } else {
-          // Session died while we were offline
-          this.closeSession(session.id);
-        }
-      }
-    }
   }
 
   /**
-   * Discover all Olympus tmux sessions created by `olympus start`
-   * Returns array of { tmuxSession, projectPath }
-   */
-  discoverTmuxSessions(): Array<{ tmuxSession: string; projectPath: string }> {
-    try {
-      // List all tmux sessions and filter for known names (main, olympus, olympus-*)
-      const output = execSync('tmux list-sessions -F "#{session_name}:#{session_path}" 2>/dev/null', {
-        encoding: 'utf-8',
-      });
-
-      const sessions: Array<{ tmuxSession: string; projectPath: string }> = [];
-      for (const line of output.trim().split('\n')) {
-        if (!line) continue;
-        const colonIdx = line.indexOf(':');
-        if (colonIdx === -1) continue;
-        const sessionName = line.slice(0, colonIdx);
-        const sessionPath = line.slice(colonIdx + 1);
-        if (sessionName === 'main' || sessionName === 'olympus' || sessionName.startsWith('olympus-')) {
-          sessions.push({
-            tmuxSession: sessionName,
-            projectPath: sessionPath || process.cwd(),
-          });
-        }
-      }
-      return sessions;
-    } catch {
-      return [];
-    }
-  }
-
-  /**
-   * Get session by tmux session name
-   */
-  getByTmuxSession(tmuxSession: string): Session | null {
-    for (const session of this.store.getAll()) {
-      if (session.tmuxSession === tmuxSession && session.status === 'active') {
-        return session;
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Connect Telegram chat to an existing tmux session
-   * This is used when user selects a session from the list
-   */
-  async connectToTmuxSession(chatId: number, tmuxSession: string): Promise<Session> {
-    // Check if already connected
-    const existing = this.getByTmuxSession(tmuxSession);
-    if (existing && existing.status === 'active') {
-      // Update chatId if different (reconnecting from different chat)
-      if (existing.chatId !== chatId) {
-        existing.chatId = chatId;
-        this.store.set(existing);
-      }
-      // Ensure polling is running (might have stopped after server restart)
-      if (!this.outputPollers.has(existing.id)) {
-        this.startScreenPolling(existing.id);
-      }
-      this.ensureSessionContextLink(existing);
-      this.store.set(existing);
-      return existing;
-    }
-
-    // Check if tmux session is alive
-    if (!this.isTmuxSessionAlive(tmuxSession)) {
-      throw new Error(`Tmux session '${tmuxSession}' not found`);
-    }
-
-    // Get session path from tmux
-    let workDir = process.cwd();
-    try {
-      workDir = execFileSync('tmux', ['display-message', '-t', tmuxSession, '-p', '#{pane_current_path}'], {
-        encoding: 'utf-8',
-      }).trim();
-    } catch {
-      // Fallback to cwd
-    }
-
-    const sessionId = randomUUID().slice(0, 8);
-    const timestamp = Date.now();
-
-    // Create task for tracking
-    const taskStore = TaskStore.getInstance();
-    const rootTask = taskStore.create({
-      name: `Connected Session: ${tmuxSession}`,
-      context: `Telegram chat ${chatId} connected to tmux session ${tmuxSession}`,
-      metadata: {
-        source: 'telegram',
-        chatId,
-        sessionId,
-        tmuxSession,
-      },
-    }, 'telegram-bot');
-
-    const session: Session = {
-      id: sessionId,
-      name: tmuxSession, // Use tmux session name as the session name
-      chatId,
-      taskId: rootTask.id,
-      tmuxSession,
-      status: 'active',
-      projectPath: workDir,
-      createdAt: timestamp,
-      lastActivityAt: timestamp,
-    };
-
-    this.ensureSessionContextLink(session);
-    this.store.set(session);
-    this.startScreenPolling(sessionId);
-
-    return session;
-  }
-
-  /**
-   * Create a new Claude CLI session
-   * If connecting to existing tmux session, just link it
+   * Create a new session record
    */
   async create(chatId: number, projectPath?: string, name?: string): Promise<Session> {
     const sessionName = name ?? 'main';
 
     // Check if session with same name exists for this chat
     const existingByName = this.getByName(chatId, sessionName);
-    if (existingByName && this.isTmuxSessionAlive(existingByName.tmuxSession)) {
-      return existingByName;
-    }
     if (existingByName) {
-      // Clean up dead session
-      this.store.delete(existingByName.id);
+      return existingByName;
     }
 
     const sessionId = randomUUID().slice(0, 8);
     const timestamp = Date.now();
     const workDir = projectPath ?? process.cwd();
 
-    // For Telegram-created sessions: create unique tmux session
-    const tmuxSession = `olympus-telegram-${sessionId}`;
-
-    // Get claude absolute path
-    let claudePath = 'claude';
-    try {
-      claudePath = execFileSync('which', ['claude'], { encoding: 'utf-8' }).trim();
-    } catch {
-      // Fall back to 'claude' if which fails
-    }
-
     // Create root task for this session
     const taskStore = TaskStore.getInstance();
     const rootTask = taskStore.create({
-      name: `Telegram Chat Session: ${sessionName}`,
-      context: `Claude CLI session '${sessionName}' started from Telegram chat ${chatId}`,
+      name: `Session: ${sessionName}`,
+      context: `CLI session '${sessionName}' started for chat ${chatId}`,
       metadata: {
-        source: 'telegram',
+        source: 'cli',
         chatId,
         sessionId,
         sessionName,
-        tmuxSession,
       },
-    }, 'telegram-bot');
-
-    try {
-      // Create new tmux session with Claude CLI
-      execFileSync('tmux', ['new-session', '-d', '-s', tmuxSession, '-c', workDir, claudePath], {
-        stdio: 'pipe',
-      });
-      // Enable extended-keys for Shift+Enter passthrough (Ghostty/Kitty protocol)
-      try {
-        execFileSync('tmux', ['set', '-t', tmuxSession, 'extended-keys', 'always'], { stdio: 'pipe' });
-      } catch { /* tmux < 3.2 */ }
-    } catch (err) {
-      // Clean up task if tmux fails
-      taskStore.delete(rootTask.id);
-      throw new Error(`Failed to create tmux session: ${(err as Error).message}`);
-    }
+    }, 'session-manager');
 
     const session: Session = {
       id: sessionId,
       name: sessionName,
       chatId,
       taskId: rootTask.id,
-      tmuxSession,
       status: 'active',
       projectPath: workDir,
       createdAt: timestamp,
@@ -352,7 +167,6 @@ export class SessionManager {
 
     this.ensureSessionContextLink(session);
     this.store.set(session);
-    this.startScreenPolling(sessionId);
 
     return session;
   }
@@ -418,61 +232,6 @@ export class SessionManager {
     const session = this.store.get(sessionId);
     if (!session) return false;
 
-    // Stop screen polling
-    const poller = this.outputPollers.get(sessionId);
-    if (poller) {
-      clearInterval(poller);
-      this.outputPollers.delete(sessionId);
-    }
-
-    // Stop pipe-pane
-    const target = this.getTmuxTarget(session);
-    if (this.validateTmuxTarget(target)) {
-      try {
-        execFileSync('tmux', ['pipe-pane', '-t', target], { stdio: 'pipe' });
-      } catch {
-        // Ignore if already stopped
-      }
-    }
-
-    // Clean up log file
-    const logPath = this.getLogPath(sessionId);
-    try {
-      unlinkSync(logPath);
-    } catch {
-      // Ignore if file doesn't exist
-    }
-
-    // Clean up offset and captured content
-    this.logOffsets.delete(sessionId);
-    this.lastCapturedContent.delete(sessionId);
-
-    // Clear debounce timer
-    const debounceTimer = this.outputDebounceTimers.get(sessionId);
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-      this.outputDebounceTimers.delete(sessionId);
-    }
-    this.lastSentTimestamps.delete(sessionId);
-    this.outputBuffers.delete(sessionId);
-
-    // Kill tmux window (not entire session) if alive
-    if (session.tmuxWindow && this.isTmuxWindowAlive(session.tmuxSession, session.tmuxWindow)) {
-      try {
-        // Kill just the window, not the entire session
-        execFileSync('tmux', ['kill-window', '-t', `${session.tmuxSession}:${session.tmuxWindow}`], { stdio: 'pipe' });
-      } catch {
-        // Ignore if already dead
-      }
-    } else if (!session.tmuxWindow && this.isTmuxSessionAlive(session.tmuxSession)) {
-      // Legacy: kill entire session if no window specified
-      try {
-        execFileSync('tmux', ['kill-session', '-t', session.tmuxSession], { stdio: 'pipe' });
-      } catch {
-        // Ignore if already dead
-      }
-    }
-
     // Update task status to archived (closed sessions)
     const taskStore = TaskStore.getInstance();
     try {
@@ -481,7 +240,7 @@ export class SessionManager {
       // Task might already be deleted
     }
 
-    // Delete session from store (no more accumulating closed records)
+    // Delete session from store
     this.store.delete(sessionId);
 
     // Emit closed event
@@ -491,100 +250,8 @@ export class SessionManager {
   }
 
   /**
-   * @deprecated Phase 4: 텔레그램은 POST /api/cli/run 사용. 대시보드 터미널 미러 전용.
-   */
-  sendInput(sessionId: string, input: string): boolean {
-    const session = this.store.get(sessionId);
-    if (!session || session.status !== 'active') return false;
-
-    // Check if window is alive (for multi-window mode)
-    if (!this.isTmuxWindowAlive(session.tmuxSession, session.tmuxWindow)) {
-      this.closeSession(sessionId);
-      return false;
-    }
-
-    const target = this.getTmuxTarget(session);
-    if (!this.validateTmuxTarget(target)) {
-      this.onSessionEvent?.(sessionId, { type: 'error', error: 'Invalid tmux target name' });
-      return false;
-    }
-
-    // No sanitization needed — execFileSync + send-keys -l handles safety
-    const success = this.sendKeys(input, target, sessionId);
-
-    if (success) {
-      this.store.updateActivity(sessionId);
-    }
-
-    return success;
-  }
-
-  /**
-   * Send keys to tmux target with literal mode
-   */
-  private sendKeys(keys: string, tmuxTarget: string, sessionId?: string): boolean {
-    const MAX_RETRIES = 2;
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        // Use execFileSync to avoid shell interpolation
-        execFileSync('tmux', ['send-keys', '-t', tmuxTarget, '-l', keys], {
-          stdio: 'pipe',
-        });
-        // Brief delay before Enter — Codex CLI TUI needs time to process
-        // text input before Enter can trigger submission (race condition fix)
-        execFileSync('sleep', ['0.1'], { stdio: 'pipe' });
-        execFileSync('tmux', ['send-keys', '-t', tmuxTarget, 'Enter'], {
-          stdio: 'pipe',
-        });
-        return true;
-      } catch (err) {
-        const errMsg = (err as Error).message;
-        // "no current client" is a transient tmux issue — retry after brief delay
-        if (errMsg.includes('no current client') && attempt < MAX_RETRIES) {
-          try { execFileSync('sleep', ['0.3'], { stdio: 'pipe' }); } catch { /* ignore */ }
-          continue;
-        }
-        this.onSessionEvent?.(sessionId || '', {
-          type: 'error',
-          error: errMsg,
-        });
-        return false;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Capture current output from tmux
-   */
-  captureOutput(sessionId: string, lines: number = 100): string | null {
-    const session = this.store.get(sessionId);
-    if (!session) return null;
-
-    // Check if window is alive
-    if (!this.isTmuxWindowAlive(session.tmuxSession, session.tmuxWindow)) {
-      this.closeSession(sessionId);
-      return null;
-    }
-
-    try {
-      const target = this.getTmuxTarget(session);
-      const output = execFileSync('tmux', ['capture-pane', '-t', target, '-p', '-S', `-${lines}`], {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      return output;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Reconcile sessions with actual tmux state.
-   * - Closes sessions whose tmux has died
-   * - Auto-registers newly discovered tmux sessions (chatId=0)
-   * - Optionally cleans up timed-out sessions
-   * Returns true if any sessions were changed (useful for triggering broadcasts).
+   * Reconcile sessions — clean up timed-out and closed sessions.
+   * Returns true if any sessions were changed.
    */
   reconcileSessions(): boolean {
     const now = Date.now();
@@ -597,52 +264,14 @@ export class SessionManager {
       changed = true;
     }
 
-    // 2. Close dead active sessions
+    // 2. Timeout cleanup for active sessions
     for (const session of this.store.getAll()) {
       if (session.status !== 'active') continue;
 
-      // Optional timeout cleanup
       if (this.sessionTimeout > 0 && now - session.lastActivityAt > this.sessionTimeout) {
         this.closeSession(session.id);
         changed = true;
-        continue;
       }
-
-      // Check if tmux window/session is still alive
-      if (!this.isTmuxWindowAlive(session.tmuxSession, session.tmuxWindow)) {
-        this.closeSession(session.id);
-        changed = true;
-      }
-    }
-
-    // 3. Auto-register discovered tmux sessions that aren't in the store
-    const discovered = this.discoverTmuxSessions();
-    const registeredTmux = new Set(
-      this.store.getAll().filter(s => s.status === 'active').map(s => s.tmuxSession)
-    );
-
-    for (const tmux of discovered) {
-      if (registeredTmux.has(tmux.tmuxSession)) continue;
-
-      // Auto-register with chatId=0 (unowned, any client can claim)
-      const sessionId = randomUUID().slice(0, 8);
-      const timestamp = Date.now();
-
-      const session: Session = {
-        id: sessionId,
-        name: tmux.tmuxSession,
-        chatId: 0,
-        taskId: '',
-        tmuxSession: tmux.tmuxSession,
-        status: 'active',
-        projectPath: tmux.projectPath,
-        createdAt: timestamp,
-        lastActivityAt: timestamp,
-      };
-
-      this.store.set(session);
-      this.startScreenPolling(sessionId);
-      changed = true;
     }
 
     return changed;
@@ -659,213 +288,11 @@ export class SessionManager {
   }
 
   /**
-   * Validate tmux target name
-   */
-  private validateTmuxTarget(target: string): boolean {
-    // Allowlist: only alphanumeric, dash, underscore, colon (for session:window)
-    return /^[a-zA-Z0-9_:-]+$/.test(target);
-  }
-
-  /**
-   * Check if tmux session is alive
-   */
-  private isTmuxSessionAlive(tmuxSession: string): boolean {
-    try {
-      execFileSync('tmux', ['has-session', '-t', tmuxSession], { stdio: 'pipe' });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Check if tmux window is alive within a session
-   */
-  private isTmuxWindowAlive(tmuxSession: string, windowName?: string): boolean {
-    if (!windowName) return this.isTmuxSessionAlive(tmuxSession);
-    try {
-      const output = execFileSync('tmux', ['list-windows', '-t', tmuxSession, '-F', '#{window_name}'], {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      return output.split('\n').some(line => line.trim() === windowName);
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Get tmux target for a session (session:window format)
-   */
-  private getTmuxTarget(session: Session): string {
-    if (session.tmuxWindow) {
-      return `${session.tmuxSession}:${session.tmuxWindow}`;
-    }
-    return session.tmuxSession;
-  }
-
-  /**
-   * Get log file path for a session
-   */
-  private getLogPath(sessionId: string): string {
-    return join(this.outputLogDir, `session-${sessionId}.log`);
-  }
-
-  /**
-   * Start screen polling — captures raw terminal content for Dashboard mirror.
-   * Uses capture-pane with ANSI stripping only (no content filtering).
-   * Diff-based: only emits when new lines appear. Debounced to prevent WS spam.
-   */
-  private startScreenPolling(sessionId: string): void {
-    const session = this.store.get(sessionId);
-    if (!session) return;
-    if (this.outputPollers.has(sessionId)) return; // Guard against duplicate pollers
-
-    const target = this.getTmuxTarget(session);
-    this.lastCapturedContent.set(sessionId, '');
-
-    const poller = setInterval(() => {
-      try {
-        const raw = execFileSync('tmux', [
-          'capture-pane', '-t', target, '-p',
-          '-S', `-${SessionManager.SCREEN_CAPTURE_LINES}`,
-        ], { encoding: 'utf-8', timeout: 3000 });
-
-        // ANSI strip + clean control chars (no content filtering)
-        const screen = this.stripAnsi(raw)
-          // eslint-disable-next-line no-control-regex
-          .replace(/[\x00-\x08\x0e-\x1f]/g, '')
-          .replace(/\r/g, '');
-
-        const previousScreen = this.lastCapturedContent.get(sessionId) ?? '';
-        if (screen === previousScreen) return; // No change
-
-        // Find new lines (diff-based)
-        const prevLines = new Set(previousScreen.split('\n').map(l => l.trim()).filter(Boolean));
-        const currentLines = screen.split('\n').map(l => l.trim()).filter(Boolean);
-        const newLines = currentLines.filter(l => !prevLines.has(l));
-
-        if (newLines.length === 0) {
-          this.lastCapturedContent.set(sessionId, screen);
-          return;
-        }
-
-        const newContent = newLines.join('\n');
-        this.lastCapturedContent.set(sessionId, screen);
-
-        // Clear existing debounce timer
-        const existingTimer = this.outputDebounceTimers.get(sessionId);
-        if (existingTimer) {
-          clearTimeout(existingTimer);
-          this.outputDebounceTimers.delete(sessionId);
-        }
-
-        // Debounce — wait for output to stabilize before sending
-        const capturedNewContent = newContent;
-        const timer = setTimeout(() => {
-          const now = Date.now();
-          const lastSentTime = this.lastSentTimestamps.get(sessionId) ?? 0;
-          const elapsed = now - lastSentTime;
-
-          if (elapsed < SessionManager.OUTPUT_MIN_INTERVAL) {
-            const retryTimer = setTimeout(() => {
-              this.lastSentTimestamps.set(sessionId, Date.now());
-              this.bufferOutput(sessionId, capturedNewContent);
-              this.onSessionEvent?.(sessionId, { type: 'screen', content: capturedNewContent });
-              this.updateSessionContext(sessionId, capturedNewContent);
-              this.outputDebounceTimers.delete(sessionId);
-            }, SessionManager.OUTPUT_MIN_INTERVAL - elapsed);
-            this.outputDebounceTimers.set(sessionId, retryTimer);
-            return;
-          }
-
-          this.lastSentTimestamps.set(sessionId, Date.now());
-          this.bufferOutput(sessionId, capturedNewContent);
-          this.onSessionEvent?.(sessionId, { type: 'screen', content: capturedNewContent });
-          this.updateSessionContext(sessionId, capturedNewContent);
-          this.outputDebounceTimers.delete(sessionId);
-        }, SessionManager.OUTPUT_DEBOUNCE_MS);
-
-        this.outputDebounceTimers.set(sessionId, timer);
-      } catch (err) {
-        if ((err as Error).message?.includes('no current')) return;
-        const errCode = (err as NodeJS.ErrnoException).code;
-        if (errCode === 'ETIMEDOUT') return;
-        this.closeSession(sessionId);
-      }
-    }, 500);
-
-    this.outputPollers.set(sessionId, poller);
-  }
-
-
-  /**
-   * Update session's task context with latest output summary
-   */
-  private updateSessionContext(sessionId: string, newContent: string): void {
-    const session = this.store.get(sessionId);
-    if (!session?.taskContextId) return;
-
-    try {
-      const contextService = ContextService.getInstance({ autoReportPolicy: 'on-threshold', autoReportThreshold: 500 });
-      const context = contextService.getById(session.taskContextId);
-      if (!context) return;
-
-      // Append new output to context content (keep last 2000 chars)
-      const existing = context.content ?? '';
-      const updated = (existing + '\n' + newContent).slice(-2000);
-
-      contextService.update(session.taskContextId, {
-        content: updated,
-        summary: `Session ${session.name}: ${newContent.slice(0, 100)}`,
-        expectedVersion: context.version,
-      }, 'session-manager');
-    } catch {
-      // Non-fatal: context update failure shouldn't affect session
-    }
-  }
-
-  /**
-   * Buffer output for replay on subscribe
-   */
-  private bufferOutput(sessionId: string, content: string): void {
-    let buffer = this.outputBuffers.get(sessionId);
-    if (!buffer) {
-      buffer = [];
-      this.outputBuffers.set(sessionId, buffer);
-    }
-    buffer.push({ content, timestamp: Date.now() });
-    if (buffer.length > SessionManager.OUTPUT_BUFFER_SIZE) {
-      buffer.shift();
-    }
-  }
-
-  /**
-   * Get buffered outputs for a session (for replay on subscribe)
+   * Get buffered outputs for a session (stub — streaming replaces polling)
    */
   getOutputBuffer(sessionId: string): Array<{ content: string; timestamp: number }> {
-    return this.outputBuffers.get(sessionId) ?? [];
+    return [];
   }
-
-  /**
-   * Strip ANSI escape sequences from text
-   */
-  private stripAnsi(text: string): string {
-    // eslint-disable-next-line no-control-regex
-    return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, ' ')  // CSI sequences → space (preserve word boundaries)
-      // eslint-disable-next-line no-control-regex
-      .replace(/\x1b\][^\x07]*\x07/g, '')  // OSC sequences
-      // eslint-disable-next-line no-control-regex
-      .replace(/\x1b[()][AB012]/g, '')       // Character set selection
-      // eslint-disable-next-line no-control-regex
-      .replace(/\x1b\[[\?]?[0-9;]*[hlm]/g, '') // Mode set/reset
-      // eslint-disable-next-line no-control-regex
-      .replace(/\x1b[=>]/g, '')              // Keypad mode sequences
-      // eslint-disable-next-line no-control-regex
-      .replace(/\x1b\[\??\d*[;]?\d*[A-Za-z]/g, '') // Catch remaining CSI
-      .replace(/[^\S\n]{2,}/g, ' ');         // Collapse multiple spaces/tabs (preserve newlines!)
-  }
-
 
   /**
    * Ensure a session is linked to workspace/project/task contexts.
@@ -884,7 +311,7 @@ export class SessionManager {
           path: taskPath,
           parentId: project.id,
           summary: `Session ${session.name}`,
-          content: `Session ${session.id} linked to tmux ${session.tmuxSession}`,
+          content: `Session ${session.id}`,
         }, 'session-manager');
       }
 

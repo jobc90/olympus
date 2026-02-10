@@ -180,4 +180,5 @@ export type {
   CliBackendConfig,
   CliSessionRecord,
   AgentEvent,
+  CliStreamChunk,
 } from './cli-runner.js';

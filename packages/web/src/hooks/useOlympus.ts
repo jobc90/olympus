@@ -45,6 +45,13 @@ export interface CliHistoryItem {
   timestamp: number;
 }
 
+export interface CliStreamState {
+  sessionKey: string;
+  chunks: string[];
+  startedAt: number;
+  active: boolean;
+}
+
 export interface TaskHistoryItem {
   id: string;
   command: string;
@@ -86,6 +93,7 @@ export interface OlympusState {
   taskHistory: TaskHistoryItem[];
   pendingApproval: PendingApproval | null;
   cliHistory: CliHistoryItem[];
+  cliStreams: Map<string, CliStreamState>;
 }
 
 export interface UseOlympusOptions {
@@ -117,6 +125,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     taskHistory: [],
     pendingApproval: null,
     cliHistory: [],
+    cliStreams: new Map(),
   });
 
   const { port, host, apiKey } = options;
@@ -324,6 +333,22 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       });
     });
 
+    // CLI stream chunks (real-time stdout)
+    client.on('cli:stream', (m) => {
+      const payload = m.payload as { sessionKey: string; chunk: string };
+      setState((s) => {
+        const streams = new Map(s.cliStreams);
+        const existing = streams.get(payload.sessionKey);
+        if (existing) {
+          const chunks = [...existing.chunks, payload.chunk];
+          streams.set(payload.sessionKey, { ...existing, chunks: chunks.length > 100 ? chunks.slice(-100) : chunks });
+        } else {
+          streams.set(payload.sessionKey, { sessionKey: payload.sessionKey, chunks: [payload.chunk], startedAt: Date.now(), active: true });
+        }
+        return { ...s, cliStreams: streams };
+      });
+    });
+
     client.onCliComplete((result: CliRunResult) => {
       setState((s) => {
         const item: CliHistoryItem = {
@@ -335,9 +360,17 @@ export function useOlympus(options: UseOlympusOptions = {}) {
           durationMs: result.durationMs,
           timestamp: Date.now(),
         };
+        // Mark active stream as inactive (sessionKey ≠ result.sessionId)
+        const streams = new Map(s.cliStreams);
+        for (const [key, stream] of streams) {
+          if (stream.active) {
+            streams.set(key, { ...stream, active: false });
+          }
+        }
         return {
           ...s,
           cliHistory: [item, ...s.cliHistory].slice(0, 100),
+          cliStreams: streams,
           logs: [...s.logs.slice(-99), { level: 'info', message: `[cli:complete] $${result.cost.toFixed(4)} / ${result.usage.inputTokens + result.usage.outputTokens} tokens` }],
         };
       });
