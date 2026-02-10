@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ProjectRegistry } from '../agent/project-registry.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PACKAGES_DIR = resolve(__dirname, '..', '..', '..');
 
 describe('ProjectRegistry', () => {
   let registry: ProjectRegistry;
@@ -64,7 +69,7 @@ describe('ProjectRegistry', () => {
   it('should scan workspace and discover package.json projects', () => {
     // Scan the actual Olympus packages directory
     const reg = new ProjectRegistry({
-      workspacePath: '/Users/jobc/dev/olympus/packages',
+      workspacePath: PACKAGES_DIR,
     });
     const names = reg.getProjectNames();
     // Should find at least gateway and protocol packages
@@ -76,7 +81,7 @@ describe('ProjectRegistry', () => {
       registered: [
         { name: '@olympus-dev/gateway', path: '/custom/path', aliases: [] },
       ],
-      workspacePath: '/Users/jobc/dev/olympus/packages',
+      workspacePath: PACKAGES_DIR,
     });
     // The registered path should take precedence
     expect(reg.resolve('@olympus-dev/gateway')).toBe('/custom/path');

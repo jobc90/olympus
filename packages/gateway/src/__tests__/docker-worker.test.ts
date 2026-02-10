@@ -34,8 +34,10 @@ describe('DockerWorker', () => {
   it('should return failed if Docker is not available', async () => {
     const worker = new DockerWorker(makeTask(), config);
 
-    // In CI/test environments Docker likely isn't available,
-    // so this tests the fallback path
+    // Suppress unhandled 'error' events from EventEmitter (stderr output)
+    worker.on('error', () => {});
+
+    // In CI/test environments Docker may or may not be available
     const result = await worker.start();
 
     // Either docker works (completed) or not (failed with descriptive error)
@@ -43,7 +45,7 @@ describe('DockerWorker', () => {
     if (result.status === 'failed') {
       expect(result.error).toContain('Docker');
     }
-  });
+  }, 30_000);
 
   it('should generate unique container names', () => {
     const w1 = new DockerWorker(makeTask({ id: 'w1' }), config);
