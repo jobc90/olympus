@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CodexOrchestrator } from '../orchestrator.js';
 
-// Mock all child modules to avoid tmux/sqlite deps in unit tests
+// Mock all child modules to avoid sqlite deps in unit tests
 vi.mock('../session-manager.js', () => ({
   CodexSessionManager: vi.fn().mockImplementation(() => ({
     on: vi.fn(),
@@ -10,7 +10,7 @@ vi.mock('../session-manager.js', () => ({
         id: 'sess-1',
         name: 'olympus-test',
         projectPath: '/dev/test',
-        tmuxSession: 'olympus-test',
+
         status: 'ready',
         lastActivity: Date.now(),
         contextDbPath: '/tmp/mem.db',
@@ -22,7 +22,6 @@ vi.mock('../session-manager.js', () => ({
       id,
       name: 'olympus-test',
       projectPath: '/dev/test',
-      tmuxSession: 'olympus-test',
       status: 'ready',
       lastActivity: Date.now(),
       contextDbPath: '/tmp/mem.db',

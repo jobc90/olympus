@@ -33,8 +33,6 @@ export interface ManagedSession {
   id: string;
   name: string;
   projectPath: string;
-  tmuxSession: string;
-  tmuxWindow?: string;
   status: SessionStatus;
   lastActivity: number;
   currentTask?: string;
@@ -134,17 +132,22 @@ export interface CodexProcessResult {
 
 export interface SessionManagerConfig {
   maxSessions?: number;
-  outputLogDir?: string;
+}
+
+// ── Active Task Tracking ──
+
+export interface ActiveCliTask {
+  taskId: string;
+  sessionId: string;
+  projectPath: string;
+  prompt: string;
+  source: InputSource;
+  startedAt: number;
+  status: 'running' | 'completed' | 'failed';
 }
 
 // ── Session Constants ──
 
 export const SESSION_CONSTANTS = {
-  OUTPUT_BUFFER_SIZE: 20,
-  OUTPUT_MIN_INTERVAL: 2000,
-  OUTPUT_MIN_CHANGE: 5,
-  OUTPUT_DEBOUNCE_MS: 1000,
-  OUTPUT_POLL_INTERVAL: 500,
   SESSION_MAX_COMMAND_QUEUE: 10,
-  TMUX_TARGET_PATTERN: /^[a-zA-Z0-9_:-]+$/,
 } as const;

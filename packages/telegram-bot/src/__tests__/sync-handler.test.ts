@@ -489,3 +489,253 @@ describe('formatAge', () => {
     expect(formatAge(Date.now() - 3 * 24 * 60 * 60_000)).toBe('3일 전 시작');
   });
 });
+
+// ──────────────────────────────────────────────
+// 9. Codex 라우팅 경유 핸들러 (v0.5.0)
+// ──────────────────────────────────────────────
+
+/**
+ * 오케스트레이터 모드의 새로운 Codex 라우팅 로직.
+ *
+ * 흐름:
+ * 1. POST /api/codex/route → { decision, response? }
+ * 2. response 있으면 → SELF_ANSWER (Claude 비용 0)
+ * 3. decision.type === SESSION_FORWARD|MULTI_SESSION → Claude CLI 호출
+ * 4. Codex route 실패 → fallback 직접 Claude CLI 호출
+ */
+
+interface CodexRouteDecision {
+  type: string;
+  targetSessions: string[];
+  processedInput: string;
+  confidence: number;
+  reason: string;
+}
+
+interface CodexRouteResponse {
+  type: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  rawOutput?: string;
+  agentInsight?: string;
+}
+
+type CodexRoutingResult =
+  | { type: 'self_answer'; message: string }
+  | { type: 'forward'; prompt: string; sessionKey: string }
+  | { type: 'unknown'; message: string }
+  | { type: 'fallback'; originalText: string; sessionKey: string };
+
+/**
+ * Codex 라우팅 분기 로직 추출.
+ * 텔레그램 봇 index.ts의 orchestrator text handler 핵심 로직 재현.
+ */
+async function routeViaCodex(
+  text: string,
+  chatId: number,
+  gatewayUrl: string,
+  apiKey: string,
+  fetchFn: (url: string, init: RequestInit) => Promise<Response>,
+): Promise<CodexRoutingResult> {
+  const sessionKey = `telegram:${chatId}`;
+
+  try {
+    const routeRes = await fetchFn(`${gatewayUrl}/api/codex/route`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ text, source: 'telegram', chatId }),
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!routeRes.ok) throw new Error('Codex route failed');
+
+    const { decision, response: codexResponse } = await routeRes.json() as {
+      decision: CodexRouteDecision;
+      response?: CodexRouteResponse;
+    };
+
+    if (codexResponse) {
+      // SELF_ANSWER, CONTEXT_QUERY → Codex가 직접 답변
+      const insight = codexResponse.agentInsight ? `\n\n💡 ${codexResponse.agentInsight}` : '';
+      return { type: 'self_answer', message: `${codexResponse.content}${insight}` };
+    } else if (decision.type === 'SESSION_FORWARD' || decision.type === 'MULTI_SESSION') {
+      return { type: 'forward', prompt: decision.processedInput, sessionKey };
+    } else {
+      return { type: 'unknown', message: '🤔 요청을 처리할 수 없습니다.' };
+    }
+  } catch {
+    // Codex route 실패 → fallback
+    return { type: 'fallback', originalText: text, sessionKey };
+  }
+}
+
+describe('routeViaCodex (Codex 라우팅 경유 핸들러)', () => {
+  const GATEWAY = 'http://127.0.0.1:18790';
+  const API_KEY = 'test-key';
+  const CHAT_ID = 12345;
+
+  it('SELF_ANSWER: Codex가 직접 답변 (response 있음)', async () => {
+    const mockFetch = async () => new Response(JSON.stringify({
+      decision: {
+        type: 'SELF_ANSWER',
+        targetSessions: [],
+        processedInput: '',
+        confidence: 0.95,
+        reason: '프로젝트 상태 요약 가능',
+      },
+      response: {
+        type: 'summary',
+        content: '현재 3개 프로젝트가 활성 상태입니다.',
+        metadata: {},
+        agentInsight: 'Codex 내부 캐시 사용',
+      },
+    }), { status: 200 });
+
+    const result = await routeViaCodex('상태 확인', CHAT_ID, GATEWAY, API_KEY, mockFetch);
+
+    expect(result.type).toBe('self_answer');
+    expect((result as { message: string }).message).toContain('3개 프로젝트가 활성 상태');
+    expect((result as { message: string }).message).toContain('Codex 내부 캐시 사용');
+  });
+
+  it('SELF_ANSWER: agentInsight 없으면 insight 미포함', async () => {
+    const mockFetch = async () => new Response(JSON.stringify({
+      decision: {
+        type: 'CONTEXT_QUERY',
+        targetSessions: [],
+        processedInput: '',
+        confidence: 0.9,
+        reason: '컨텍스트 조회',
+      },
+      response: {
+        type: 'context',
+        content: '최근 빌드 결과: 성공',
+        metadata: {},
+      },
+    }), { status: 200 });
+
+    const result = await routeViaCodex('빌드 결과', CHAT_ID, GATEWAY, API_KEY, mockFetch);
+
+    expect(result.type).toBe('self_answer');
+    expect((result as { message: string }).message).toBe('최근 빌드 결과: 성공');
+    expect((result as { message: string }).message).not.toContain('💡');
+  });
+
+  it('SESSION_FORWARD: Claude CLI로 포워딩', async () => {
+    const mockFetch = async () => new Response(JSON.stringify({
+      decision: {
+        type: 'SESSION_FORWARD',
+        targetSessions: ['main'],
+        processedInput: '빌드 실행해줘',
+        confidence: 0.85,
+        reason: 'CLI 작업 필요',
+      },
+    }), { status: 200 });
+
+    const result = await routeViaCodex('빌드해줘', CHAT_ID, GATEWAY, API_KEY, mockFetch);
+
+    expect(result.type).toBe('forward');
+    expect((result as { prompt: string }).prompt).toBe('빌드 실행해줘');
+    expect((result as { sessionKey: string }).sessionKey).toBe('telegram:12345');
+  });
+
+  it('MULTI_SESSION: 여러 세션으로 포워딩', async () => {
+    const mockFetch = async () => new Response(JSON.stringify({
+      decision: {
+        type: 'MULTI_SESSION',
+        targetSessions: ['alpha', 'beta'],
+        processedInput: '전체 프로젝트 테스트',
+        confidence: 0.8,
+        reason: '다중 세션 작업',
+      },
+    }), { status: 200 });
+
+    const result = await routeViaCodex('전체 테스트', CHAT_ID, GATEWAY, API_KEY, mockFetch);
+
+    expect(result.type).toBe('forward');
+    expect((result as { prompt: string }).prompt).toBe('전체 프로젝트 테스트');
+  });
+
+  it('unknown decision type → 처리 불가 메시지', async () => {
+    const mockFetch = async () => new Response(JSON.stringify({
+      decision: {
+        type: 'UNKNOWN_TYPE',
+        targetSessions: [],
+        processedInput: '',
+        confidence: 0.3,
+        reason: '분류 불가',
+      },
+    }), { status: 200 });
+
+    const result = await routeViaCodex('???', CHAT_ID, GATEWAY, API_KEY, mockFetch);
+
+    expect(result.type).toBe('unknown');
+    expect((result as { message: string }).message).toContain('처리할 수 없습니다');
+  });
+
+  it('Codex route HTTP 에러 → fallback', async () => {
+    const mockFetch = async () => new Response(
+      JSON.stringify({ message: 'Service Unavailable' }),
+      { status: 503 },
+    );
+
+    const result = await routeViaCodex('질문', CHAT_ID, GATEWAY, API_KEY, mockFetch);
+
+    expect(result.type).toBe('fallback');
+    expect((result as { originalText: string }).originalText).toBe('질문');
+    expect((result as { sessionKey: string }).sessionKey).toBe('telegram:12345');
+  });
+
+  it('Codex route 네트워크 에러 → fallback', async () => {
+    const mockFetch = async () => {
+      throw new Error('connect ECONNREFUSED');
+    };
+
+    const result = await routeViaCodex('질문', CHAT_ID, GATEWAY, API_KEY, mockFetch);
+
+    expect(result.type).toBe('fallback');
+    expect((result as { originalText: string }).originalText).toBe('질문');
+  });
+
+  it('Codex route 타임아웃 → fallback', async () => {
+    const mockFetch = async () => {
+      throw new DOMException('The operation was aborted', 'TimeoutError');
+    };
+
+    const result = await routeViaCodex('질문', CHAT_ID, GATEWAY, API_KEY, mockFetch);
+
+    expect(result.type).toBe('fallback');
+  });
+
+  it('올바른 URL, 헤더, 바디로 Codex route fetch 호출', async () => {
+    let captured: FetchCallRecord | null = null;
+
+    const mockFetch = async (url: string, init: RequestInit) => {
+      captured = { url, init };
+      return new Response(JSON.stringify({
+        decision: {
+          type: 'SELF_ANSWER',
+          targetSessions: [],
+          processedInput: '',
+          confidence: 0.9,
+          reason: 'test',
+        },
+        response: { type: 'text', content: 'ok', metadata: {} },
+      }), { status: 200 });
+    };
+
+    await routeViaCodex('테스트', CHAT_ID, GATEWAY, API_KEY, mockFetch);
+
+    expect(captured).not.toBeNull();
+    expect(captured!.url).toBe('http://127.0.0.1:18790/api/codex/route');
+    expect(captured!.init.method).toBe('POST');
+
+    const body = JSON.parse(captured!.init.body as string);
+    expect(body.text).toBe('테스트');
+    expect(body.source).toBe('telegram');
+    expect(body.chatId).toBe(12345);
+  });
+});

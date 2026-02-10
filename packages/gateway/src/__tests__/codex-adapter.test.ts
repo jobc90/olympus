@@ -60,6 +60,9 @@ function createMockOrchestrator(): CodexOrchestratorLike {
       },
     ]),
     shutdown: vi.fn(async () => {}),
+    trackTask: vi.fn(),
+    completeTask: vi.fn(),
+    getActiveTasks: vi.fn(() => []),
   } as CodexOrchestratorLike & { emit: (...args: unknown[]) => void };
 }
 

@@ -43,6 +43,32 @@ export class CodexAdapter {
     this.codex.on('session:status', (...args: unknown[]) => {
       this.broadcast('codex:session-event', args[0] as CodexSessionEventPayload);
     });
+
+    // session:execute — CLI 실행 요청을 runCli로 위임
+    this.codex.on('session:execute', async (...args: unknown[]) => {
+      const event = args[0] as { sessionId: string; input: string; projectPath: string };
+      const { runCli } = await import('./cli-runner.js');
+      const taskId = randomUUID().slice(0, 8);
+
+      this.codex.trackTask(taskId, event.sessionId, event.projectPath, event.input, 'dashboard');
+
+      runCli({
+        prompt: event.input,
+        provider: 'claude',
+        workspaceDir: event.projectPath,
+        dangerouslySkipPermissions: true,
+        onStream: (chunk: string) => this.broadcast('cli:stream', {
+          sessionKey: `codex:${event.sessionId}`,
+          chunk,
+          timestamp: Date.now(),
+        }),
+      }).then((result) => {
+        this.codex.completeTask(taskId, result.success);
+        this.broadcast('codex:task-complete', { taskId, sessionId: event.sessionId, result });
+      }).catch(() => {
+        this.codex.completeTask(taskId, false);
+      });
+    });
   }
 
   /**
@@ -134,6 +160,10 @@ export class CodexAdapter {
         projectCount: projects.length,
       } satisfies CodexStatusPayload;
     });
+
+    rpcRouter.register('codex.activeTasks', async () => {
+      return this.codex.getActiveTasks();
+    });
   }
 }
 
@@ -186,4 +216,15 @@ export interface CodexOrchestratorLike {
     timestamp: number;
   }>>;
   shutdown(): Promise<void>;
+  trackTask(taskId: string, sessionId: string, projectPath: string, prompt: string, source: string): void;
+  completeTask(taskId: string, success: boolean): void;
+  getActiveTasks(): Array<{
+    taskId: string;
+    sessionId: string;
+    projectPath: string;
+    prompt: string;
+    source: string;
+    startedAt: number;
+    status: 'running' | 'completed' | 'failed';
+  }>;
 }

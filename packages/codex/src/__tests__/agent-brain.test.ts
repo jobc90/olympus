@@ -9,7 +9,6 @@ function createMockSessionManager(): CodexSessionManager {
       id: 'sess-1',
       name: 'olympus-console',
       projectPath: '/dev/console',
-      tmuxSession: 'olympus-console',
       status: 'ready' as const,
       lastActivity: Date.now(),
       contextDbPath: '/tmp/memory.db',

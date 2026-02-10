@@ -2,14 +2,14 @@
  * Codex E2E Tests
  *
  * Tests the full Orchestrator pipeline:
- *   UserInput → Router → SessionManager → OutputMonitor → ResponseProcessor → AgentBrain
+ *   UserInput → Router → SessionManager → ResponseProcessor → AgentBrain
  *
- * All external deps (tmux, sqlite) are mocked.
+ * All external deps (sqlite) are mocked.
  * Focus: pipeline correctness, event flow, error handling.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CodexOrchestrator } from '../orchestrator.js';
-import type { ManagedSession, ProcessedResponse } from '../types.js';
+import type { ManagedSession } from '../types.js';
 
 // ── Mock SessionManager ──
 
@@ -18,7 +18,7 @@ const mockSessions: ManagedSession[] = [
     id: 'sess-alpha',
     name: 'olympus-alpha',
     projectPath: '/dev/alpha',
-    tmuxSession: 'olympus-alpha',
+
     status: 'ready',
     lastActivity: Date.now(),
     contextDbPath: '/tmp/alpha.db',
@@ -29,7 +29,7 @@ const mockSessions: ManagedSession[] = [
     id: 'sess-beta',
     name: 'olympus-beta',
     projectPath: '/dev/beta',
-    tmuxSession: 'olympus-beta',
+
     status: 'ready',
     lastActivity: Date.now() - 5000,
     contextDbPath: '/tmp/beta.db',
@@ -49,7 +49,7 @@ vi.mock('../session-manager.js', () => ({
     },
     listSessions: vi.fn(() => [...mockSessions]),
     getSession: vi.fn((id: string) => mockSessions.find(s => s.id === id) ?? null),
-    findByName: vi.fn((name: string) => mockSessions.find(s => s.name === name || s.tmuxSession === name) ?? null),
+    findByName: vi.fn((name: string) => mockSessions.find(s => s.name === name || s.name.includes(name)) ?? null),
     sendToSession: sendToSessionSpy,
     closeSession: vi.fn((id: string) => {
       const idx = mockSessions.findIndex(s => s.id === id);
@@ -64,7 +64,7 @@ vi.mock('../session-manager.js', () => ({
         id: `sess-${Date.now()}`,
         name: name ?? `olympus-new`,
         projectPath,
-        tmuxSession: name ?? 'olympus-new',
+
         status: 'ready',
         lastActivity: Date.now(),
         contextDbPath: '/tmp/new.db',
@@ -122,14 +122,7 @@ vi.mock('../context-manager.js', () => ({
   })),
 }));
 
-// ── Helper: emit session output from mock SessionManager ──
-
-function emitSessionOutput(sessionId: string, content: string) {
-  const listeners = sessionListeners.get('session:screen') ?? [];
-  for (const fn of listeners) {
-    fn({ sessionId, content });
-  }
-}
+// ── Helper: emit events from mock SessionManager ──
 
 function emitSessionStatus(sessionId: string, status: string) {
   const listeners = sessionListeners.get('session:status') ?? [];
@@ -246,75 +239,6 @@ describe('Codex E2E: Full Pipeline', () => {
 
   // ── Event Pipeline ──
 
-  describe('Event Pipeline: session:screen → ResponseProcessor → broadcast', () => {
-    it('should process and emit session output', async () => {
-      const outputPromise = new Promise<unknown>((resolve) => {
-        orchestrator.on('session:screen', resolve);
-      });
-
-      emitSessionOutput('sess-alpha', 'Build successful! 0 errors, 0 warnings.');
-
-      const output = await outputPromise as {
-        sessionId: string;
-        projectName: string;
-        response: ProcessedResponse;
-      };
-
-      expect(output.sessionId).toBe('sess-alpha');
-      expect(output.projectName).toBe('olympus-alpha');
-      expect(output.response).toBeDefined();
-      expect(output.response.content).toBeTruthy();
-      expect(output.response.rawOutput).toContain('Build successful');
-    });
-
-    it('should detect build output type', async () => {
-      const outputPromise = new Promise<unknown>((resolve) => {
-        orchestrator.on('session:screen', resolve);
-      });
-
-      emitSessionOutput('sess-alpha', 'Build succeeded in 2.5s\n\n9 packages built');
-
-      const output = await outputPromise as { response: ProcessedResponse };
-      expect(output.response.type).toBe('build');
-    });
-
-    it('should detect error output type', async () => {
-      const outputPromise = new Promise<unknown>((resolve) => {
-        orchestrator.on('session:screen', resolve);
-      });
-
-      emitSessionOutput('sess-beta', '3 errors found\nTypeError: Cannot find module \'missing-dep\'');
-
-      const output = await outputPromise as { response: ProcessedResponse };
-      expect(output.response.type).toBe('error');
-    });
-
-    it('should detect test output type', async () => {
-      const outputPromise = new Promise<unknown>((resolve) => {
-        orchestrator.on('session:screen', resolve);
-      });
-
-      emitSessionOutput('sess-alpha', 'Tests: 51 passed (51)\nDuration: 188ms');
-
-      const output = await outputPromise as { response: ProcessedResponse };
-      expect(output.response.type).toBe('test');
-    });
-
-    it('should emit error for invalid session output', async () => {
-      const errorPromise = new Promise<unknown>((resolve) => {
-        orchestrator.on('error', resolve);
-      });
-
-      // Emit for non-existent session
-      emitSessionOutput('sess-nonexistent', 'some output');
-
-      // Should either emit error or silently ignore (getSession returns null)
-      // Since getSession returns null, the try block exits early
-      // Verify no crash occurs
-      expect(orchestrator.initialized).toBe(true);
-    });
-  });
-
   describe('Event Pipeline: session:status forwarding', () => {
     it('should forward session status changes', async () => {
       const statusPromise = new Promise<unknown>((resolve) => {
@@ -428,19 +352,4 @@ describe('Codex E2E: Full Pipeline', () => {
     });
   });
 
-  // ── ResponseProcessor Integration ──
-
-  describe('ResponseProcessor: formatForTelegram', () => {
-    it('should process output with file changes', async () => {
-      const outputPromise = new Promise<unknown>((resolve) => {
-        orchestrator.on('session:screen', resolve);
-      });
-
-      emitSessionOutput('sess-alpha', '⏺ Edit packages/core/src/index.ts\n⏺ Write packages/core/src/new.ts\nDone.');
-
-      const output = await outputPromise as { response: ProcessedResponse };
-      expect(output.response.metadata.filesChanged).toBeDefined();
-      expect(output.response.metadata.filesChanged!.length).toBeGreaterThan(0);
-    });
-  });
 });

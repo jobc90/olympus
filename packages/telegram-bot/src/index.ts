@@ -146,6 +146,7 @@ class OlympusBot {
         `/use direct <이름> - 직접 모드\n` +
         `/use main - 오케스트레이터 모드 복귀\n` +
         `/orchestration <요청> - Multi-AI Orchestration\n` +
+        `/tasks - 활성 작업 조회\n` +
         `/close [이름] - 세션 해제\n` +
         `/health - 상태 확인\n` +
         `/codex <질문> - Codex Orchestrator\n` +
@@ -515,6 +516,7 @@ class OlympusBot {
             sessionKey: `telegram:${ctx.chat.id}:orchestration`,
             provider: 'claude',
             timeoutMs: 1_800_000,
+            dangerouslySkipPermissions: true,
           }),
           signal: AbortSignal.timeout(30_000),
         });
@@ -667,6 +669,36 @@ class OlympusBot {
       }
     });
 
+    // /tasks - Show active tasks
+    this.bot.command('tasks', async (ctx) => {
+      try {
+        if (!this.isConnected) {
+          await ctx.reply('❌ Gateway에 연결되지 않았습니다.');
+          return;
+        }
+
+        const result = await this.rpc('codex.activeTasks', {}) as Array<{
+          sessionId: string;
+          task: string;
+          startedAt: number;
+        }>;
+
+        if (!Array.isArray(result) || result.length === 0) {
+          await ctx.reply('📭 현재 활성 작업이 없습니다.');
+          return;
+        }
+
+        let msg = `📋 *활성 작업* (${result.length}개)\n─────────────────\n`;
+        for (const task of result) {
+          const elapsed = Math.round((Date.now() - task.startedAt) / 1000);
+          msg += `🔵 \`${task.sessionId.slice(0, 8)}\`: ${task.task}\n    ⏱ ${elapsed}초 경과\n`;
+        }
+        await this.safeReply(ctx, msg, 'Markdown');
+      } catch {
+        await ctx.reply('💡 /tasks 기능은 Codex 작업 추적 시스템과 연동됩니다.\n현재 대시보드에서 실시간 스트리밍으로 작업 진행 상황을 확인할 수 있습니다.');
+      }
+    });
+
     // /last - Show last output from active session
     this.bot.command('last', async (ctx) => {
       const targetName = this.getActiveSessionName(ctx.chat.id);
@@ -709,46 +741,57 @@ class OlympusBot {
         return;
       }
 
-      // Orchestrator mode (default): POST /api/cli/run 동기 호출
+      // Orchestrator mode (default): Codex 라우팅 → 분기 처리
       await ctx.sendChatAction('typing');
 
       try {
-        const response = await fetch(`${this.config.gatewayUrl}/api/cli/run`, {
+        // Step 1: Codex에 라우팅 요청
+        const routeRes = await fetch(`${this.config.gatewayUrl}/api/codex/route`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${this.config.apiKey}`,
           },
-          body: JSON.stringify({
-            prompt: text,
-            sessionKey: `telegram:${ctx.chat.id}`,
-            provider: 'claude',
-          }),
-          signal: AbortSignal.timeout(600_000),
+          body: JSON.stringify({ text, source: 'telegram', chatId: ctx.chat.id }),
+          signal: AbortSignal.timeout(10_000),
         });
 
-        if (!response.ok) {
-          const error = await response.json() as { message: string };
-          throw new Error(error.message);
-        }
+        if (!routeRes.ok) throw new Error('Codex route failed');
 
-        const { result } = await response.json() as { result: CliRunResult };
+        const { decision, response: codexResponse } = await routeRes.json() as {
+          decision: { type: string; targetSessions: string[]; processedInput: string; confidence: number; reason: string };
+          response?: { type: string; content: string; metadata: Record<string, unknown>; rawOutput?: string; agentInsight?: string };
+        };
 
-        if (!result.success) {
-          await this.safeReply(ctx, `❌ ${result.error?.type}: ${result.error?.message}`, undefined);
-          return;
-        }
-
-        const footer = result.usage
-          ? `\n\n📊 ${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4)} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
-          : '';
-
-        await this.sendLongMessage(ctx.chat.id, `${result.text}${footer}`);
-      } catch (err) {
-        if ((err as Error).name === 'TimeoutError') {
-          await this.safeReply(ctx, '⏰ 응답 시간 초과 (10분)', undefined);
+        if (codexResponse) {
+          // SELF_ANSWER, CONTEXT_QUERY → Codex가 직접 답변 (Claude 비용 0)
+          const insight = codexResponse.agentInsight ? `\n\n💡 ${codexResponse.agentInsight}` : '';
+          await this.sendLongMessage(ctx.chat.id, `${codexResponse.content}${insight}`);
+        } else if (decision.type === 'MULTI_SESSION') {
+          // 병렬 실행: 각 세션별 비동기
+          const sessions = decision.targetSessions;
+          await this.safeReply(ctx, `🔄 ${sessions.length}개 작업을 병렬로 실행합니다...`, undefined);
+          const promises = sessions.map((sid: string, idx: number) =>
+            this.forwardToCliAsync(ctx, decision.processedInput, `parallel:${sid}`, `[작업 ${idx + 1}/${sessions.length}]`)
+              .catch((err: Error) => this.safeReply(ctx, `❌ 작업 ${idx + 1} 실패: ${err.message}`, undefined))
+          );
+          await Promise.allSettled(promises);
+        } else if (decision.type === 'SESSION_FORWARD') {
+          // 실제 작업 → Claude CLI 호출
+          await this.forwardToCli(ctx, decision.processedInput, `telegram:${ctx.chat.id}`);
         } else {
-          await this.safeReply(ctx, `❌ 오류: ${(err as Error).message}`, undefined);
+          await this.safeReply(ctx, '🤔 요청을 처리할 수 없습니다.', undefined);
+        }
+      } catch {
+        // Codex route 실패 시 fallback: 기존 방식으로 직접 Claude 호출
+        try {
+          await this.forwardToCli(ctx, text, `telegram:${ctx.chat.id}`);
+        } catch (err) {
+          if ((err as Error).name === 'TimeoutError') {
+            await this.safeReply(ctx, '⏰ 응답 시간 초과 (10분)', undefined);
+          } else {
+            await this.safeReply(ctx, `❌ 오류: ${(err as Error).message}`, undefined);
+          }
         }
       }
     });
@@ -952,44 +995,197 @@ class OlympusBot {
     await ctx.sendChatAction('typing');
 
     try {
-      const response = await fetch(`${this.config.gatewayUrl}/api/cli/run`, {
+      // Step 1: Codex에 라우팅 요청
+      const routeRes = await fetch(`${this.config.gatewayUrl}/api/codex/route`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.config.apiKey}`,
         },
-        body: JSON.stringify({
-          prompt: message,
-          sessionKey,
-          provider: 'claude',
-        }),
-        signal: AbortSignal.timeout(600_000),
+        body: JSON.stringify({ text: message, source: 'telegram', chatId: ctx.chat.id }),
+        signal: AbortSignal.timeout(10_000),
       });
 
-      if (!response.ok) {
-        const error = await response.json() as { message: string };
-        throw new Error(error.message);
-      }
+      if (!routeRes.ok) throw new Error('Codex route failed');
 
-      const { result } = await response.json() as { result: CliRunResult };
+      const { decision, response: codexResponse } = await routeRes.json() as {
+        decision: { type: string; targetSessions: string[]; processedInput: string; confidence: number; reason: string };
+        response?: { type: string; content: string; metadata: Record<string, unknown>; rawOutput?: string; agentInsight?: string };
+      };
 
-      if (!result.success) {
-        await ctx.reply(`❌ ${result.error?.type}: ${result.error?.message}`);
-        return;
-      }
-
-      const footer = result.usage
-        ? `\n\n📊 ${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4)} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
-        : '';
-
-      await this.sendLongMessage(ctx.chat.id, `📩 [${displayName}]\n\n${result.text}${footer}`);
-    } catch (err) {
-      if ((err as Error).name === 'TimeoutError') {
-        await ctx.reply('⏰ 응답 시간 초과 (10분)');
+      if (codexResponse) {
+        const insight = codexResponse.agentInsight ? `\n\n💡 ${codexResponse.agentInsight}` : '';
+        await this.sendLongMessage(ctx.chat.id, `📩 [${displayName}]\n\n${codexResponse.content}${insight}`);
+      } else if (decision.type === 'MULTI_SESSION') {
+        const sessions = decision.targetSessions;
+        await this.safeReply(ctx, `🔄 ${sessions.length}개 작업을 병렬로 실행합니다...`, undefined);
+        const promises = sessions.map((sid: string, idx: number) =>
+          this.forwardToCliAsync(ctx, decision.processedInput, `parallel:${sid}`, `[작업 ${idx + 1}/${sessions.length}]`)
+            .catch((err: Error) => this.safeReply(ctx, `❌ 작업 ${idx + 1} 실패: ${err.message}`, undefined))
+        );
+        await Promise.allSettled(promises);
+      } else if (decision.type === 'SESSION_FORWARD') {
+        await this.forwardToCli(ctx, decision.processedInput, sessionKey, `📩 [${displayName}]`);
       } else {
-        await ctx.reply(`❌ 오류: ${(err as Error).message}`);
+        await this.safeReply(ctx, '🤔 요청을 처리할 수 없습니다.', undefined);
+      }
+    } catch {
+      // Codex route 실패 시 fallback: 기존 방식으로 직접 Claude 호출
+      try {
+        await this.forwardToCli(ctx, message, sessionKey, `📩 [${displayName}]`);
+      } catch (err) {
+        if ((err as Error).name === 'TimeoutError') {
+          await ctx.reply('⏰ 응답 시간 초과 (10분)');
+        } else {
+          await ctx.reply(`❌ 오류: ${(err as Error).message}`);
+        }
       }
     }
+  }
+
+  /**
+   * Forward a prompt to Claude CLI via /api/cli/run and send the result.
+   * Shared by both orchestrator mode and direct mode handlers.
+   */
+  private async forwardToCli(
+    ctx: Context & { chat: { id: number } },
+    prompt: string,
+    sessionKey: string,
+    prefix?: string,
+  ): Promise<void> {
+    const response = await fetch(`${this.config.gatewayUrl}/api/cli/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.config.apiKey}`,
+      },
+      body: JSON.stringify({
+        prompt,
+        sessionKey,
+        provider: 'claude',
+        dangerouslySkipPermissions: true,
+      }),
+      signal: AbortSignal.timeout(600_000),
+    });
+
+    if (!response.ok) {
+      const error = await response.json() as { message: string };
+      throw new Error(error.message);
+    }
+
+    const { result } = await response.json() as { result: CliRunResult };
+
+    if (!result.success) {
+      await this.safeReply(ctx, `❌ ${result.error?.type}: ${result.error?.message}`, undefined);
+      return;
+    }
+
+    const footer = result.usage
+      ? `\n\n📊 ${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4)} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
+      : '';
+
+    const text = prefix ? `${prefix}\n\n${result.text}${footer}` : `${result.text}${footer}`;
+    await this.sendLongMessage(ctx.chat.id, text);
+  }
+
+  /**
+   * Forward a prompt to Claude CLI via async API (non-blocking).
+   * Used for parallel/long-running tasks.
+   */
+  private async forwardToCliAsync(
+    ctx: Context & { chat: { id: number } },
+    prompt: string,
+    sessionKey: string,
+    prefix?: string,
+  ): Promise<void> {
+    const startRes = await fetch(`${this.config.gatewayUrl}/api/cli/run/async`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.config.apiKey}`,
+      },
+      body: JSON.stringify({
+        prompt,
+        sessionKey,
+        provider: 'claude',
+        dangerouslySkipPermissions: true,
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!startRes.ok) {
+      const error = await startRes.json() as { message: string };
+      throw new Error(error.message);
+    }
+
+    const { taskId } = await startRes.json() as { taskId: string };
+    await this.safeReply(ctx, `${prefix ? prefix + ' ' : ''}⏳ 작업 시작 (${taskId.slice(0, 8)})`, undefined);
+
+    const result = await this.pollTaskStatus(taskId);
+
+    if (!result) {
+      await this.safeReply(ctx, `${prefix ? prefix + ' ' : ''}⏰ 작업 시간 초과 (30분)`, undefined);
+      return;
+    }
+
+    if (!result.success) {
+      await this.safeReply(ctx, `${prefix ? prefix + ' ' : ''}❌ ${result.error?.type}: ${result.error?.message}`, undefined);
+      return;
+    }
+
+    const footer = result.usage
+      ? `\n\n📊 ${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4)} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
+      : '';
+
+    const text = prefix ? `${prefix}\n\n${result.text}${footer}` : `${result.text}${footer}`;
+    await this.sendLongMessage(ctx.chat.id, text);
+  }
+
+  /**
+   * Poll async task status until completion.
+   */
+  private async pollTaskStatus(taskId: string): Promise<CliRunResult | null> {
+    const maxPolls = 180;
+    const pollInterval = 10_000;
+
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise(r => setTimeout(r, pollInterval));
+
+      try {
+        const res = await fetch(
+          `${this.config.gatewayUrl}/api/cli/run/${taskId}/status`,
+          {
+            headers: { Authorization: `Bearer ${this.config.apiKey}` },
+            signal: AbortSignal.timeout(10_000),
+          },
+        );
+
+        if (!res.ok) continue;
+
+        const data = await res.json() as { status: string; result?: CliRunResult; error?: string };
+
+        if (data.status === 'completed' && data.result) {
+          return data.result;
+        }
+        if (data.status === 'failed') {
+          return {
+            success: false,
+            text: '',
+            sessionId: '',
+            model: '',
+            usage: { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
+            cost: 0,
+            durationMs: 0,
+            numTurns: 0,
+            error: { type: 'unknown', message: data.error ?? 'Task failed' },
+          };
+        }
+      } catch {
+        // Network error -> continue polling
+      }
+    }
+
+    return null;
   }
 
   /**

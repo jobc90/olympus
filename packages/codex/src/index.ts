@@ -6,8 +6,6 @@ export { CodexSessionManager } from './session-manager.js';
 export { ResponseProcessor } from './response-processor.js';
 export { ContextManager } from './context-manager.js';
 export { AgentBrain } from './agent-brain.js';
-export { OutputMonitor } from './output-monitor.js';
-
 export type {
   // Input/Output
   InputSource,
@@ -32,6 +30,8 @@ export type {
   // Orchestrator
   CodexOrchestratorConfig,
   CodexProcessResult,
+  // Active CLI Task
+  ActiveCliTask,
 } from './types.js';
 
 export { SESSION_CONSTANTS } from './types.js';

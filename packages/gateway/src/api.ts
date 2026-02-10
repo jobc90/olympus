@@ -5,12 +5,14 @@ import type { RunManager, RunOptions } from './run-manager.js';
 import { SessionManager, type SessionEvent } from './session-manager.js';
 import { runParallel, GeminiExecutor, TaskStore, ContextStore, ContextService } from '@olympus-dev/core';
 import type { CreateTaskInput, UpdateTaskInput, CreateContextInput, UpdateContextInput, ContextScope, CreateMergeInput, ReportUpstreamInput } from '@olympus-dev/protocol';
+import type { CodexAdapter } from './codex-adapter.js';
 
 export interface ApiHandlerOptions {
   runManager: RunManager;
   sessionManager: SessionManager;
   cliSessionStore?: import('./cli-session-store.js').CliSessionStore;
   memoryStore?: import('./memory/store.js').MemoryStore;
+  codexAdapter?: CodexAdapter;
   onRunCreated?: () => void;  // Callback to broadcast runs:list
   onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
   onContextEvent?: (eventType: string, payload: unknown) => void;
@@ -164,6 +166,11 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     }
   }
 
+  // /api/codex/route
+  if (parts[0] === 'api' && parts[1] === 'codex' && parts[2] === 'route') {
+    return { path: '/api/codex/route', query };
+  }
+
   // /api/operations/:id
   if (parts[0] === 'api' && parts[1] === 'operations' && parts[2]) {
     return { path: '/api/operations/:id', id: parts[2], query };
@@ -176,7 +183,7 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
  * Create HTTP API request handler
  */
 export function createApiHandler(options: ApiHandlerOptions) {
-  const { runManager, sessionManager, cliSessionStore, memoryStore, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete, onCliStream } = options;
+  const { runManager, sessionManager, cliSessionStore, memoryStore, codexAdapter, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete, onCliStream } = options;
 
   // 비동기 CLI 실행 태스크 저장소 (in-memory, 1시간 TTL)
   const asyncTasks = new Map<string, { status: 'running' | 'completed' | 'failed'; result?: import('@olympus-dev/protocol').CliRunResult; error?: string; startedAt: number }>();
@@ -465,6 +472,35 @@ export function createApiHandler(options: ApiHandlerOptions) {
           sendJson(res, 200, { success: true });
         } else {
           sendJson(res, 404, { error: 'Not Found', message: 'Session not found' });
+        }
+        return;
+      }
+
+      // ── Codex Router endpoint ──
+
+      // POST /api/codex/route — Codex Orchestrator 라우팅
+      if (path === '/api/codex/route' && method === 'POST') {
+        if (!codexAdapter) {
+          sendJson(res, 503, { error: 'Service Unavailable', message: 'Codex adapter is not configured' });
+          return;
+        }
+
+        const body = await parseBody<{ text: string; source: 'telegram' | 'dashboard' | 'cli'; chatId?: number }>(req);
+
+        if (!body.text) {
+          sendJson(res, 400, { error: 'Bad Request', message: 'text is required' });
+          return;
+        }
+
+        try {
+          const result = await codexAdapter.handleInput({
+            text: body.text,
+            source: body.source || 'dashboard',
+            chatId: body.chatId,
+          });
+          sendJson(res, 200, result);
+        } catch (e) {
+          sendJson(res, 500, { error: 'Codex Route Failed', message: (e as Error).message });
         }
         return;
       }

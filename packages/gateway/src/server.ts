@@ -238,6 +238,7 @@ export class Gateway {
         sessionManager: this.sessionManager,
         cliSessionStore: this.cliSessionStore,
         memoryStore: this.memoryStore ?? undefined,
+        codexAdapter: this.codexAdapter ?? undefined,
         onRunCreated: () => this.broadcastRunsList(),
         onSessionEvent: (sessionId, event) => this.broadcastSessionEvent(sessionId, event),
         onContextEvent: (eventType, payload) => this.broadcastContextEvent(eventType, payload),

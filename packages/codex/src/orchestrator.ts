@@ -1,7 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { Router } from './router.js';
 import { CodexSessionManager } from './session-manager.js';
-import { ResponseProcessor } from './response-processor.js';
 import { ContextManager } from './context-manager.js';
 import { AgentBrain } from './agent-brain.js';
 import type {
@@ -11,6 +10,8 @@ import type {
   ManagedSession,
   ProjectMetadata,
   GlobalSearchResult,
+  ActiveCliTask,
+  InputSource,
 } from './types.js';
 
 /**
@@ -23,17 +24,16 @@ import type {
  * 4. orchestrator.shutdown()           ← 정리
  *
  * Events:
- * - 'session:screen'  — 가공된 세션 출력 (브로드캐스트용)
  * - 'session:status'  — 세션 상태 변경
  * - 'error'           — 에러
  */
 export class CodexOrchestrator extends EventEmitter {
   private router: Router;
   private sessionManager: CodexSessionManager;
-  private responseProcessor: ResponseProcessor;
   private contextManager: ContextManager;
   private agentBrain: AgentBrain;
   private _initialized = false;
+  private activeTasks = new Map<string, ActiveCliTask>();
 
   constructor(private config: CodexOrchestratorConfig = {}) {
     super();
@@ -43,36 +43,8 @@ export class CodexOrchestrator extends EventEmitter {
     this.sessionManager = new CodexSessionManager({
       maxSessions: config.maxSessions ?? 5,
     });
-    this.responseProcessor = new ResponseProcessor();
     this.router = new Router(this.sessionManager, this.contextManager);
     this.agentBrain = new AgentBrain(this.contextManager, this.sessionManager);
-
-    // Wire session output → ResponseProcessor → external broadcast
-    this.sessionManager.on('session:screen', async (event: {
-      sessionId: string;
-      content: string;
-    }) => {
-      try {
-        const session = this.sessionManager.getSession(event.sessionId);
-        if (!session) return;
-
-        const response = this.responseProcessor.process(event.content, {
-          sessionId: event.sessionId,
-          projectName: session.name,
-          startTime: session.lastActivity,
-        });
-
-        const enriched = await this.agentBrain.enrichResponse(response, session.projectPath);
-
-        this.emit('session:screen', {
-          sessionId: event.sessionId,
-          projectName: session.name,
-          response: enriched,
-        });
-      } catch (err) {
-        this.emit('error', { sessionId: event.sessionId, error: (err as Error).message });
-      }
-    });
 
     // Forward session status events
     this.sessionManager.on('session:status', (event) => {
@@ -85,7 +57,7 @@ export class CodexOrchestrator extends EventEmitter {
   }
 
   /**
-   * 초기화 — 프로젝트 등록 + 기존 tmux 세션 발견
+   * 초기화 — 프로젝트 등록
    */
   async initialize(): Promise<void> {
     if (this._initialized) return;
@@ -207,6 +179,25 @@ export class CodexOrchestrator extends EventEmitter {
    */
   async globalSearch(query: string): Promise<GlobalSearchResult[]> {
     return this.contextManager.globalSearch(query);
+  }
+
+  // ── Task Tracking ──
+
+  trackTask(taskId: string, sessionId: string, projectPath: string, prompt: string, source: InputSource): void {
+    this.activeTasks.set(taskId, { taskId, sessionId, projectPath, prompt, source, startedAt: Date.now(), status: 'running' });
+  }
+
+  completeTask(taskId: string, success: boolean): void {
+    const task = this.activeTasks.get(taskId);
+    if (task) task.status = success ? 'completed' : 'failed';
+  }
+
+  getActiveTasks(): ActiveCliTask[] {
+    return [...this.activeTasks.values()].filter(t => t.status === 'running');
+  }
+
+  getAllTasks(limit = 20): ActiveCliTask[] {
+    return [...this.activeTasks.values()].sort((a, b) => b.startedAt - a.startedAt).slice(0, limit);
   }
 
   /**

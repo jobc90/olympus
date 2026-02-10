@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { buildCliArgs, parseClaudeJson, classifyError, enqueueCliRun, runCli } from '../cli-runner.js';
+import { buildCliArgs, parseClaudeJson, classifyError, enqueueCliRun, runCli, setMaxConcurrentCli } from '../cli-runner.js';
 import { CliSessionStore } from '../cli-session-store.js';
 import type { CliRunParams, CliBackendConfig, CliRunResult, AgentEvent, CliSessionRecord } from '@olympus-dev/protocol';
 import * as os from 'node:os';
@@ -303,46 +303,53 @@ describe('Timeout Handling', () => {
 });
 
 // ──────────────────────────────────────────────
-// 4. Concurrent Request Serialization
+// 4. ConcurrencyLimiter Integration
 // ──────────────────────────────────────────────
 
-describe('Concurrent Request Serialization', () => {
-  it('should serialize same-key requests while allowing different-key parallelism', async () => {
-    const timeline: string[] = [];
-
-    // 고유 키 사용 (runCli 내부 'claude'/'codex' 큐와 충돌 방지)
-    const c1 = enqueueCliRun('integ-alpha', async () => {
-      await new Promise((r) => setTimeout(r, 80));
-      timeline.push('alpha-1');
-    });
-    const c2 = enqueueCliRun('integ-alpha', async () => {
-      timeline.push('alpha-2');
-    });
-
-    const x1 = enqueueCliRun('integ-beta', async () => {
-      await new Promise((r) => setTimeout(r, 30));
-      timeline.push('beta-1');
-    });
-
-    await Promise.all([c1, c2, x1]);
-
-    // beta-1은 alpha-1보다 먼저 끝나야 함 (30ms vs 80ms, 다른 키 → 병렬)
-    expect(timeline.indexOf('beta-1')).toBeLessThan(timeline.indexOf('alpha-1'));
-    // alpha-2는 alpha-1 이후 (같은 키 → 직렬)
-    expect(timeline.indexOf('alpha-1')).toBeLessThan(timeline.indexOf('alpha-2'));
+describe('ConcurrencyLimiter Integration', () => {
+  afterEach(() => {
+    setMaxConcurrentCli(5); // restore default
   });
 
-  it('should maintain queue isolation across providers', async () => {
+  it('should respect maxConcurrent limit across all requests', async () => {
+    setMaxConcurrentCli(2);
+
+    let running = 0;
+    let maxRunning = 0;
+    const timeline: string[] = [];
+
+    const task = (name: string, delayMs: number) => async () => {
+      running++;
+      maxRunning = Math.max(maxRunning, running);
+      await new Promise((r) => setTimeout(r, delayMs));
+      timeline.push(name);
+      running--;
+    };
+
+    await Promise.all([
+      enqueueCliRun('integ-alpha', task('alpha-1', 80)),
+      enqueueCliRun('integ-alpha', task('alpha-2', 10)),
+      enqueueCliRun('integ-beta', task('beta-1', 30)),
+    ]);
+
+    // 최대 동시 실행이 2 이하
+    expect(maxRunning).toBeLessThanOrEqual(2);
+    // 3개 모두 완료
+    expect(timeline).toHaveLength(3);
+  });
+
+  it('should serialize all requests when maxConcurrent=1', async () => {
+    setMaxConcurrentCli(1);
+
     const results: string[] = [];
 
-    // 3개 키에 각각 2개씩 enqueue
     const providers = ['integ-q1', 'integ-q2', 'integ-q3'];
     const promises: Promise<void>[] = [];
 
     for (const p of providers) {
       promises.push(
         enqueueCliRun(p, async () => {
-          await new Promise((r) => setTimeout(r, 20));
+          await new Promise((r) => setTimeout(r, 10));
           results.push(`${p}-1`);
         }),
       );
@@ -355,12 +362,12 @@ describe('Concurrent Request Serialization', () => {
 
     await Promise.all(promises);
 
-    // 각 프로바이더 내에서는 순서가 보장됨
-    for (const p of providers) {
-      const idx1 = results.indexOf(`${p}-1`);
-      const idx2 = results.indexOf(`${p}-2`);
-      expect(idx1).toBeLessThan(idx2);
-    }
+    // maxConcurrent=1이므로 enqueue 순서대로 실행됨
+    expect(results).toEqual([
+      'integ-q1-1', 'integ-q1-2',
+      'integ-q2-1', 'integ-q2-2',
+      'integ-q3-1', 'integ-q3-2',
+    ]);
   });
 
   it('should recover queue after failure in middle of chain', async () => {
@@ -504,6 +511,48 @@ describe('Async CLI API', () => {
     expect(task.status).toBe('failed');
     expect(task.error).toBe('Process timed out');
     expect(task.result).toBeUndefined();
+  });
+});
+
+// ──────────────────────────────────────────────
+// 5.1. Codex Route URL Parsing
+// ──────────────────────────────────────────────
+
+describe('Codex Route URL Parsing', () => {
+  // api.ts의 parseRoute에서 /api/codex/route 분기를 재현
+  function parseCodexRoute(url: string): { path: string; query: Record<string, string> } {
+    const urlObj = new URL(url, 'http://localhost');
+    const parts = urlObj.pathname.split('/').filter(Boolean);
+    const query: Record<string, string> = {};
+    urlObj.searchParams.forEach((value, key) => {
+      query[key] = value;
+    });
+
+    if (parts[0] === 'api' && parts[1] === 'codex' && parts[2] === 'route') {
+      return { path: '/api/codex/route', query };
+    }
+    return { path: urlObj.pathname, query };
+  }
+
+  it('should parse /api/codex/route correctly', () => {
+    const route = parseCodexRoute('/api/codex/route');
+    expect(route.path).toBe('/api/codex/route');
+  });
+
+  it('should parse /api/codex/route with query params', () => {
+    const route = parseCodexRoute('/api/codex/route?source=telegram');
+    expect(route.path).toBe('/api/codex/route');
+    expect(route.query.source).toBe('telegram');
+  });
+
+  it('should not match /api/codex without route suffix', () => {
+    const route = parseCodexRoute('/api/codex');
+    expect(route.path).toBe('/api/codex');
+  });
+
+  it('should not match /api/codex/sessions', () => {
+    const route = parseCodexRoute('/api/codex/sessions');
+    expect(route.path).toBe('/api/codex/sessions');
   });
 });
 

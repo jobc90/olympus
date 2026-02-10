@@ -7,7 +7,7 @@
  *
  * 주요 기능:
  * 1. 백엔드별 CLI 명령 구성 (claude, codex placeholder)
- * 2. 직렬화 큐 (같은 백엔드의 요청은 직렬, 다른 백엔드는 병렬)
+ * 2. 병렬 실행 제어 (ConcurrencyLimiter — 최대 동시 실행 수 제한)
  * 3. 타임아웃 처리 (SIGTERM → SIGKILL 에스컬레이션)
  * 4. 에러 분류
  */
@@ -247,24 +247,56 @@ export function classifyError(
 }
 
 // ──────────────────────────────────────────────
-// Serialization Queue (OpenClaw 패턴)
+// Concurrency Limiter (병렬 실행 제어)
 // ──────────────────────────────────────────────
 
-const CLI_RUN_QUEUE = new Map<string, Promise<unknown>>();
+class ConcurrencyLimiter {
+  private running = 0;
+  private waitQueue: Array<() => void> = [];
 
+  constructor(private maxConcurrent: number) {}
+
+  get activeCount(): number { return this.running; }
+  get pendingCount(): number { return this.waitQueue.length; }
+
+  async run<T>(task: () => Promise<T>): Promise<T> {
+    await this.acquire();
+    try {
+      return await task();
+    } finally {
+      this.release();
+    }
+  }
+
+  private acquire(): Promise<void> {
+    if (this.running < this.maxConcurrent) {
+      this.running++;
+      return Promise.resolve();
+    }
+    return new Promise<void>(resolve => {
+      this.waitQueue.push(() => { this.running++; resolve(); });
+    });
+  }
+
+  private release(): void {
+    this.running--;
+    const next = this.waitQueue.shift();
+    if (next) next();
+  }
+}
+
+let CLI_LIMITER = new ConcurrencyLimiter(5);
+
+export function setMaxConcurrentCli(max: number): void {
+  CLI_LIMITER = new ConcurrencyLimiter(max);
+}
+
+/** @deprecated Use CLI_LIMITER directly. Kept for backward compatibility. */
 export function enqueueCliRun<T>(
-  key: string,
+  _key: string,
   task: () => Promise<T>,
 ): Promise<T> {
-  const prior = CLI_RUN_QUEUE.get(key) ?? Promise.resolve();
-  const chained = prior.catch(() => undefined).then(task);
-  const tracked = chained.finally(() => {
-    if (CLI_RUN_QUEUE.get(key) === tracked) {
-      CLI_RUN_QUEUE.delete(key);
-    }
-  });
-  CLI_RUN_QUEUE.set(key, tracked);
-  return chained;
+  return CLI_LIMITER.run(task);
 }
 
 // ──────────────────────────────────────────────
@@ -382,7 +414,7 @@ export async function runCli(params: CliRunParams): Promise<CliRunResult> {
   const timeoutMs = params.timeoutMs ?? 300_000;
   const args = buildCliArgs(params, backend);
 
-  return enqueueCliRun(provider, async () => {
+  return CLI_LIMITER.run(async () => {
     const startTime = Date.now();
     const { exitCode, stdout, stderr, timedOut } = await spawnCli(
       backend.command,
