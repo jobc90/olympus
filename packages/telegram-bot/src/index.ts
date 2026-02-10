@@ -48,6 +48,17 @@ function loadConfig(): BotConfig {
 // Telegram message limit (with some margin for safety)
 const TELEGRAM_MSG_LIMIT = 4000;
 
+function splitLongMessage(text: string, maxLen = 4000): string[] {
+  if (text.length <= maxLen) return [text];
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > 0) {
+    chunks.push(remaining.slice(0, maxLen));
+    remaining = remaining.slice(maxLen);
+  }
+  return chunks;
+}
+
 class OlympusBot {
   private bot: Telegraf;
   private config: BotConfig;
@@ -471,7 +482,7 @@ class OlympusBot {
       }
     });
 
-    // /orchestration <prompt> - Multi-AI orchestration via POST /api/cli/run (30분 타임아웃)
+    // /orchestration <prompt> - Multi-AI orchestration via async API + polling
     this.bot.command('orchestration', async (ctx) => {
       const text = ctx.message.text;
       const prompt = text.replace(/^\/orchestration\s*/, '').trim();
@@ -492,7 +503,8 @@ class OlympusBot {
       await ctx.sendChatAction('typing');
 
       try {
-        const response = await fetch(`${this.config.gatewayUrl}/api/cli/run`, {
+        // 1. 비동기 실행 요청
+        const startRes = await fetch(`${this.config.gatewayUrl}/api/cli/run/async`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -502,53 +514,92 @@ class OlympusBot {
             prompt: `/orchestration "${prompt}"`,
             sessionKey: `telegram:${ctx.chat.id}:orchestration`,
             provider: 'claude',
-            timeoutMs: 1_800_000, // 30분
+            timeoutMs: 1_800_000,
           }),
-          signal: AbortSignal.timeout(1_800_000), // 30분
+          signal: AbortSignal.timeout(30_000),
         });
 
-        if (!response.ok) {
-          const error = await response.json() as { message: string };
+        if (!startRes.ok) {
+          const error = await startRes.json() as { message: string };
           throw new Error(error.message);
         }
 
-        const { result } = await response.json() as { result: CliRunResult };
+        const { taskId } = await startRes.json() as { taskId: string };
 
-        if (!result.success) {
-          await ctx.telegram.editMessageText(
-            ctx.chat.id,
-            statusMsg.message_id,
-            undefined,
-            `❌ Orchestration 실패: ${result.error?.type}: ${result.error?.message}`
-          );
-          return;
+        // 2. 폴링으로 결과 대기
+        const POLL_INTERVAL = 10_000;
+        const MAX_POLLS = 180; // 30분
+
+        for (let polls = 1; polls <= MAX_POLLS; polls++) {
+          await new Promise(r => setTimeout(r, POLL_INTERVAL));
+
+          try {
+            const statusRes = await fetch(
+              `${this.config.gatewayUrl}/api/cli/run/${taskId}/status`,
+              {
+                headers: { Authorization: `Bearer ${this.config.apiKey}` },
+                signal: AbortSignal.timeout(10_000),
+              }
+            );
+            const data = await statusRes.json() as {
+              status: string;
+              result?: CliRunResult;
+              error?: string;
+              elapsedMs?: number;
+            };
+
+            if (data.status === 'completed' && data.result) {
+              const result = data.result;
+              const footer = result.usage
+                ? `\n\n📊 ${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4)} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
+                : '';
+
+              const fullText = `✅ *Orchestration 완료*\n\n${result.text}${footer}`;
+              const chunks = splitLongMessage(fullText, 4000);
+              await ctx.telegram.editMessageText(
+                ctx.chat.id, statusMsg.message_id, undefined,
+                chunks[0], { parse_mode: 'Markdown' }
+              ).catch(() => {});
+              for (let i = 1; i < chunks.length; i++) {
+                await ctx.reply(chunks[i], { parse_mode: 'Markdown' }).catch(() => {});
+              }
+              return;
+            }
+
+            if (data.status === 'failed') {
+              await ctx.telegram.editMessageText(
+                ctx.chat.id, statusMsg.message_id, undefined,
+                `❌ Orchestration 실패: ${data.error}`
+              ).catch(() => {});
+              return;
+            }
+
+            // Progress update every 60초
+            if (polls % 6 === 0) {
+              const elapsed = Math.round((data.elapsedMs ?? polls * POLL_INTERVAL) / 1000);
+              await ctx.telegram.editMessageText(
+                ctx.chat.id, statusMsg.message_id, undefined,
+                `🔄 *Orchestration 진행 중...* (${elapsed}초 경과)`,
+                { parse_mode: 'Markdown' }
+              ).catch(() => {});
+            }
+          } catch {
+            // 네트워크 에러 시 다음 폴링까지 대기
+            continue;
+          }
         }
 
-        const footer = result.usage
-          ? `\n\n📊 ${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4)} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
-          : '';
-
+        // 타임아웃
         await ctx.telegram.editMessageText(
-          ctx.chat.id,
-          statusMsg.message_id,
-          undefined,
-          `✅ Orchestration 완료`
-        );
-        await this.sendLongMessage(ctx.chat.id, `${result.text}${footer}`);
-      } catch (err) {
-        const errMsg = (err as Error).name === 'TimeoutError'
-          ? '⏰ Orchestration 시간 초과 (30분)'
-          : `❌ 오류: ${(err as Error).message}`;
-        try {
-          await ctx.telegram.editMessageText(
-            ctx.chat.id,
-            statusMsg.message_id,
-            undefined,
-            errMsg
-          );
-        } catch {
-          await this.safeReply(ctx, errMsg, undefined);
-        }
+          ctx.chat.id, statusMsg.message_id, undefined,
+          '⏰ Orchestration 타임아웃 (30분)'
+        ).catch(() => {});
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        await ctx.telegram.editMessageText(
+          ctx.chat.id, statusMsg.message_id, undefined,
+          `❌ Orchestration 오류: ${msg}`
+        ).catch(() => {});
       }
     });
 

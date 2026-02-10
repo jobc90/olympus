@@ -145,6 +145,14 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
   // /api/cli routes
   if (parts[0] === 'api' && parts[1] === 'cli') {
     if (parts[2] === 'run') {
+      // /api/cli/run/async
+      if (parts[3] === 'async') {
+        return { path: '/api/cli/run/async', query };
+      }
+      // /api/cli/run/:id/status
+      if (parts[3] && parts[4] === 'status') {
+        return { path: '/api/cli/run/:id/status', id: parts[3], query };
+      }
       return { path: '/api/cli/run', query };
     }
     if (parts[2] === 'sessions') {
@@ -168,6 +176,9 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
  */
 export function createApiHandler(options: ApiHandlerOptions) {
   const { runManager, sessionManager, cliSessionStore, memoryStore, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete } = options;
+
+  // 비동기 CLI 실행 태스크 저장소 (in-memory, 1시간 TTL)
+  const asyncTasks = new Map<string, { status: 'running' | 'completed' | 'failed'; result?: import('@olympus-dev/protocol').CliRunResult; error?: string; startedAt: number }>();
 
   return async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Handle CORS
@@ -318,6 +329,104 @@ export function createApiHandler(options: ApiHandlerOptions) {
 
         onCliComplete?.(result);
         sendJson(res, 200, { result });
+        return;
+      }
+
+      // POST /api/cli/run/async — 비동기 CLI 실행 (즉시 taskId 반환)
+      if (path === '/api/cli/run/async' && method === 'POST') {
+        const body = await parseBody<Record<string, unknown>>(req);
+        if (!body.prompt) {
+          sendJson(res, 400, { error: 'Bad Request', message: 'prompt is required' });
+          return;
+        }
+
+        const { randomUUID } = await import('node:crypto');
+        const taskId = randomUUID();
+
+        const { runCli } = await import('./cli-runner.js');
+        type CliRunParams = import('@olympus-dev/protocol').CliRunParams;
+
+        const params: CliRunParams = {
+          prompt: body.prompt as string,
+          provider: (body.provider as 'claude' | 'codex') ?? 'claude',
+          model: body.model as string | undefined,
+          workspaceDir: body.workspaceDir as string | undefined,
+          timeoutMs: (body.timeoutMs as number) ?? 1_800_000,
+          systemPrompt: body.systemPrompt as string | undefined,
+          dangerouslySkipPermissions: body.dangerouslySkipPermissions as boolean | undefined,
+          allowedTools: body.allowedTools as string[] | undefined,
+        };
+
+        // 세션 복원
+        if (body.sessionKey && cliSessionStore) {
+          const existing = cliSessionStore.get(body.sessionKey as string);
+          if (existing) {
+            params.sessionId = existing.cliSessionId;
+            params.resumeSession = true;
+          }
+        }
+
+        asyncTasks.set(taskId, { status: 'running', startedAt: Date.now() });
+
+        // 백그라운드 실행
+        runCli(params).then(result => {
+          asyncTasks.set(taskId, { status: 'completed', result, startedAt: asyncTasks.get(taskId)!.startedAt });
+
+          if (result.sessionId && body.sessionKey && cliSessionStore) {
+            cliSessionStore.save({
+              key: body.sessionKey as string,
+              provider: params.provider ?? 'claude',
+              cliSessionId: result.sessionId,
+              model: result.model,
+              lastPrompt: (body.prompt as string).slice(0, 500),
+              lastResponse: result.text.slice(0, 500),
+              totalInputTokens: result.usage.inputTokens,
+              totalOutputTokens: result.usage.outputTokens,
+              totalCostUsd: result.cost,
+              turnCount: result.numTurns || 1,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            });
+          }
+
+          if (memoryStore && result.success) {
+            try {
+              memoryStore.saveTask({
+                id: randomUUID(), command: body.prompt as string,
+                analysis: '', plan: '',
+                result: result.text.slice(0, 2000), success: result.success,
+                duration: result.durationMs ?? 0, timestamp: Date.now(),
+                projectPath: (body.workspaceDir as string) ?? '', workerCount: 0,
+              });
+            } catch { /* ignore */ }
+          }
+
+          onCliComplete?.(result);
+        }).catch(err => {
+          asyncTasks.set(taskId, { status: 'failed', error: (err as Error).message, startedAt: asyncTasks.get(taskId)!.startedAt });
+        });
+
+        // 1시간 후 자동 정리
+        setTimeout(() => asyncTasks.delete(taskId), 3_600_000);
+
+        sendJson(res, 202, { taskId, status: 'running' });
+        return;
+      }
+
+      // GET /api/cli/run/:id/status — 비동기 작업 상태 조회
+      if (path === '/api/cli/run/:id/status' && method === 'GET' && id) {
+        const task = asyncTasks.get(id);
+        if (!task) {
+          sendJson(res, 404, { error: 'Not Found', message: 'Task not found' });
+          return;
+        }
+        if (task.status === 'completed') {
+          sendJson(res, 200, { status: 'completed', result: task.result });
+        } else if (task.status === 'failed') {
+          sendJson(res, 200, { status: 'failed', error: task.error });
+        } else {
+          sendJson(res, 200, { status: 'running', elapsedMs: Date.now() - task.startedAt });
+        }
         return;
       }
 
