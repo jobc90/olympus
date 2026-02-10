@@ -97,6 +97,7 @@ export const NOISE_PATTERNS = [
   /^[\s─━═]{20,}$/,                  // horizontal dividers
   /^\s*$/,                            // empty lines
   /^```\w*$/,                         // code block markers (standalone)
+  /^\$?\s*tmux\s+(send-keys|capture-pane|list-sessions)/i,  // orchestrator tmux routing commands
 ];
 
 // ===== Immediate Flush Triggers =====

@@ -509,15 +509,117 @@ async function autoConnectMainSessionForUsers(
 }
 
 /**
- * Create main Claude CLI session for dashboard control
- * This runs in the background and is auto-connected to Gateway
+ * Orchestrator CLAUDE.md template — instructs the main session AI to act as a
+ * Telegram message orchestrator that routes commands to other tmux sessions.
+ */
+const ORCHESTRATOR_CLAUDE_MD = `# Olympus Orchestrator
+
+당신은 Olympus 메시지 오케스트레이터입니다. Telegram에서 오는 모든 사용자 메시지를 받아 적절한 tmux 세션으로 라우팅합니다.
+
+## 언어 설정
+
+**항상 한국어(한글)로 응답하세요.**
+
+## 역할
+
+1. 사용자 메시지 의도 파악
+2. 적절한 tmux 세션으로 라우팅
+3. 대상 세션의 응답 대기 및 캡처
+4. 결과를 간결하게 가공하여 전달
+
+## 세션 발견
+
+\`\`\`bash
+tmux list-sessions -F "#{session_name}:#{pane_current_path}" | grep "^olympus-"
+\`\`\`
+
+- \`olympus-main\` = 나 자신 (라우팅하지 않음)
+- \`olympus-*\` = 라우팅 가능한 세션
+
+## 라우팅 프로토콜
+
+### 1. 메시지 전송
+
+\`\`\`bash
+tmux send-keys -t <session-name> -l '<message>'
+tmux send-keys -t <session-name> Enter
+\`\`\`
+
+### 2. 응답 대기 (폴링)
+
+\`\`\`bash
+tmux capture-pane -t <session-name> -p -S -100
+\`\`\`
+
+- 첫 10초: 2초 간격 폴링
+- 이후: 5초 간격 폴링
+- 최대 120초 대기 후 타임아웃 보고
+
+### 3. 완료 감지
+
+캡처된 출력의 마지막 비어있지 않은 줄이 \`❯\`로 시작하면 = Claude CLI가 유휴 상태 (처리 완료)
+
+### 4. 응답 추출
+
+완료 감지 후, 캡처된 출력에서:
+- 사용자 메시지 이후 ~ \`❯\` 프롬프트 이전 내용을 추출
+- \`⏺\` 마커가 있는 줄이 Claude의 응답
+
+## 세션 선택 규칙
+
+1. \`@세션명 메시지\` → 해당 세션으로 직접 라우팅
+2. 프로젝트명이 언급됨 → 해당 프로젝트 경로의 세션으로 라우팅
+3. 세션이 1개만 있음 → 해당 세션으로 라우팅
+4. 판단이 어려움 → 사용 가능한 세션 목록을 보여주고 선택 요청
+
+## 응답 형식
+
+- **2000자 이내** (Telegram 메시지 제한)
+- 한국어
+- 핵심 결과만 간결하게
+- 에러 발생 시 에러 내용 포함
+- 코드 블록은 핵심 부분만 발췌
+
+## 직접 응답하는 경우 (라우팅 없이)
+
+- 인사, 간단한 질문
+- 세션 목록/상태 조회 요청 → \`tmux list-sessions\`로 확인 후 답변
+- 라우팅할 적절한 세션이 없는 경우
+
+## 규칙
+
+- 내부 라우팅 과정(tmux 명령어 실행 등)을 사용자에게 노출하지 않음
+- 결과만 깔끔하게 전달
+- 대상 세션이 응답 중일 때는 "처리 중입니다..." 안내 후 대기
+- 타임아웃 시 현재까지의 출력을 요약해서 전달
+`;
+
+/**
+ * Set up the orchestrator directory with CLAUDE.md
+ * Returns the directory path for the main session working directory
+ */
+function setupOrchestratorDir(homedir: string): string {
+  const { mkdirSync, writeFileSync } = require('fs') as typeof import('fs');
+  const { join } = require('path') as typeof import('path');
+
+  const dir = join(homedir, '.olympus', 'orchestrator');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'CLAUDE.md'), ORCHESTRATOR_CLAUDE_MD);
+  return dir;
+}
+
+/**
+ * Create main Claude CLI session as Telegram orchestrator
+ * Runs in ~/.olympus/orchestrator/ with CLAUDE.md that instructs the AI
+ * to route messages to other tmux sessions and process their responses.
  */
 async function createMainSession(config: { gatewayUrl: string; apiKey: string }): Promise<boolean> {
   const { execSync } = await import('child_process');
+  const { homedir } = await import('os');
 
   const MAIN_SESSION = 'olympus-main';
 
-  console.log(chalk.cyan('🖥️  Main 세션 시작 중...'));
+  console.log(chalk.cyan('🖥️  Main 세션 (오케스트레이터) 시작 중...'));
 
   // Check if main session already exists
   try {
@@ -539,7 +641,7 @@ async function createMainSession(config: { gatewayUrl: string; apiKey: string })
     return false;
   }
 
-  // Check if Claude CLI is available (Claude is the worker, Codex Orchestrator runs as background service)
+  // Check if Claude CLI is available
   let agentPath = '';
   let agentName = '';
   try {
@@ -550,22 +652,24 @@ async function createMainSession(config: { gatewayUrl: string; apiKey: string })
     return false;
   }
 
+  // Set up orchestrator directory with CLAUDE.md
+  const orchestratorDir = setupOrchestratorDir(homedir());
+
   // Create main tmux session with Claude CLI in trust mode (background, no attach)
   const trustFlag = ' --dangerously-skip-permissions';
 
   try {
-    const projectPath = process.cwd();
-    // Don't quote "path --flag" as one token — tmux needs them as separate args
+    // Start in orchestrator directory so Claude reads the orchestrator CLAUDE.md
     execSync(
-      `tmux new-session -d -s "${MAIN_SESSION}" -c "${projectPath}" ${agentPath}${trustFlag}`,
+      `tmux new-session -d -s "${MAIN_SESSION}" -c "${orchestratorDir}" ${agentPath}${trustFlag}`,
       { stdio: 'pipe' }
     );
     // Enable extended-keys for Shift+Enter passthrough (Ghostty/Kitty protocol)
     try {
       execSync(`tmux set -t "${MAIN_SESSION}" extended-keys always`, { stdio: 'pipe' });
     } catch { /* tmux < 3.2 */ }
-    console.log(chalk.green(`   ✓ ${MAIN_SESSION} 세션 생성됨 (${agentName})`));
-    console.log(chalk.gray(`   경로: ${projectPath}`));
+    console.log(chalk.green(`   ✓ ${MAIN_SESSION} 세션 생성됨 (${agentName} 오케스트레이터)`));
+    console.log(chalk.gray(`   경로: ${orchestratorDir}`));
 
     // Connect to Gateway
     await connectMainSessionToGateway(config, MAIN_SESSION);
