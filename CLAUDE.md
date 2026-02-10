@@ -1,88 +1,70 @@
-# Olympus Orchestrator
+# Olympus — Claude CLI Enhanced Platform
 
-You are the Olympus message orchestrator. You receive all user messages from Telegram and route them to the appropriate tmux sessions.
+**Multi-AI Orchestration + Gateway + Dashboard**
 
 ## Language
 
 **항상 한국어(한글)로 응답하세요.** Always respond in Korean.
 
-## Role
+## Architecture
 
-1. Understand user message intent
-2. Route to appropriate tmux session
-3. Wait for and capture the target session's response
-4. Process results concisely and deliver back
+Olympus는 Claude CLI를 중심으로 한 Multi-AI 협업 개발 플랫폼이다.
 
-## Session Discovery
-
-```bash
-tmux list-sessions -F "#{session_name}:#{pane_current_path}"
+```
+protocol → core → gateway → cli
+    │        │       ↑        ↑
+    ├→ client → tui ─┤────────┤
+    │        └→ web  │        │
+    ├→ telegram-bot ─┘────────┘
+    └→ codex (Codex Orchestrator)
 ```
 
-- `main` = myself (do NOT route to self)
-- Other sessions = routable sessions
+### Core Pipeline (tmux-free)
+1. **Gateway** (`packages/gateway/`) — HTTP API + WebSocket 서버
+2. **CliRunner** (`gateway/src/cli-runner.ts`) — CLI 프로세스 spawn → JSON/JSONL → parse + stdout 실시간 스트리밍
+3. **Dashboard** (`packages/web/`) — 실시간 대시보드 (LiveOutputPanel, AgentHistoryPanel, SessionCostTracker)
+4. **Telegram Bot** (`packages/telegram-bot/`) — HTTP API 기반 동기/비동기 통신
 
-## Routing Protocol
+### CLI 실행 방식
+- **`olympus server start`** — Gateway + Dashboard + Telegram Bot 통합 실행
+- **`olympus start`** — Claude CLI를 현재 터미널에서 foreground 실행 (`spawn + stdio: 'inherit'`)
+- **`olympus start-trust`** — `--dangerously-skip-permissions` 모드
 
-### 1. Send Message
+### API Endpoints
+- `POST /api/cli/run` — 동기 CLI 실행
+- `POST /api/cli/run/async` — 비동기 CLI 실행
+- `GET /api/cli/run/:id/status` — 비동기 작업 상태 조회
+- `GET /api/cli/sessions` — 세션 목록
+- `DELETE /api/cli/sessions/:id` — 세션 삭제
+
+### Real-time Streaming
+- `cli:stream` WebSocket 이벤트 — stdout 실시간 청크 브로드캐스트
+- `cli:complete` WebSocket 이벤트 — CLI 실행 완료 결과
+
+## Development
 
 ```bash
-tmux send-keys -t <session-name> -l '<message>'
-tmux send-keys -t <session-name> Enter
+pnpm install && pnpm build    # 전체 빌드
+pnpm test                     # 전체 테스트
+pnpm lint                     # TypeScript 타입 체크
 ```
 
-### 2. Wait for Response (polling)
-
-```bash
-tmux capture-pane -t <session-name> -p -S -100
-```
-
-- First 10s: poll every 2s
-- After: poll every 5s
-- Max 120s wait, then report timeout
-
-### 3. Completion Detection
-
-The target session (Claude CLI) is idle when the last non-empty line starts with `❯`.
-
-### 4. Response Extraction
-
-After completion:
-- Extract content between the sent message and the `❯` prompt
-- Lines with `⏺` marker are Claude's response
-
-## Session Selection Rules
-
-1. `@session-name message` → route directly to that session
-2. Project name mentioned → route to session at that project path
-3. Only 1 session exists → route to it
-4. Unclear → show available sessions and ask user to choose
-
-## Response Format
-
-- **2000 chars max** (Telegram message limit)
-- Korean language
-- Concise, key results only
-- Include error content when errors occur
-- Code blocks: excerpt key parts only
-
-## Direct Response (no routing)
-
-- Greetings, simple questions
-- Session list/status queries → run `tmux list-sessions` and respond
-- No suitable session to route to
+### CLI 백엔드 설정
+- **Claude**: `-p --output-format json` → JSON 단일 객체
+- **Codex**: `exec --json` → JSONL (thread/turn/item 이벤트)
+- **skipPermissions**: Codex = `--dangerously-bypass-approvals-and-sandbox`
 
 ## Olympus Local Data
 
-Olympus stores data in `~/.olympus/`:
-- `memory.db` — SQLite FTS5, stores tasks/patterns/agent results. Use for cross-project search.
-- `sessions.json` — Active session metadata
-- `worker-logs/` — Worker output logs
-- `context.db` — Context OS workspace/project/task layer data
+`~/.olympus/` 디렉토리:
+- `sessions.json` — 세션 메타데이터
+- `worker-logs/` — 워커 출력 로그
+- `context.db` — Context OS workspace/project/task 데이터
 
-## Rules
+## Key Conventions
 
-- Do NOT expose internal routing process (tmux commands) to the user
-- Deliver clean results only
-- If target session is busy: notify "처리 중입니다..." and wait
-- On timeout: summarize output so far
+- `tmux` 의존성 없음 (v0.4.0에서 완전 제거)
+- Gateway `sessionTimeout <= 0` = 타임아웃 없음
+- `bot.launch()` — NEVER await (fire-and-forget + `.catch()`)
+- ESM 환경: `vi.spyOn(cp, 'spawn')` 불가, 순수 함수 테스트 집중
+- `parseRoute`의 query는 `Record<string, string>` (Map 아님)

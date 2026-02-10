@@ -54,7 +54,7 @@ Olympus는 Claude CLI의 생산성을 극대화하는 **Multi-AI 협업 플랫�
 | `/orchestration` v5.3 | Claude-Codex Co-Leadership, 10 Phase 합의 기반 워크플로우, Deep Engineering |
 | **Codex Orchestrator (V3)** | 멀티 프로젝트 AI 오케스트레이터 — 라우팅, 세션 관리, 컨텍스트 DB, 에이전트 브레인 |
 | **Codex Agent (V2)** | 자율 AI 에이전트 — 명령 분석 → 계획 → 실행 → 검토 → 보고 자동 파이프라인 |
-| **Worker Factory (V2)** | 4종 워커 (Claude CLI / Anthropic API SSE / tmux / Docker), FIFO 큐, 태스크별 자동 선택 |
+| **Worker Factory (V2)** | 4종 워커 (Claude CLI / Anthropic API SSE / Spawn / Docker), FIFO 큐, 태스크별 자동 선택 |
 | **Memory Store (V2)** | SQLite + FTS5 기반 작업 학습, PatternManager 분리, 유사 태스크 조회, Memory RPC |
 | **Security Guard (V2)** | 명령 차단/승인 정책, 타임아웃 자동 거부 |
 | **Context OS** | 3계층 컨텍스트 (Workspace/Project/Task), SQLite 저장, 자동 상향 보고 |
@@ -64,7 +64,7 @@ Olympus는 Claude CLI의 생산성을 극대화하는 **Multi-AI 협업 플랫�
 | Plugins | claude-dashboard (상태줄, 사용량 표시) |
 | **Telegram 봇** | 원격 Claude CLI 조작, Smart Digest 핵심 결과 전달, `/codex` RPC 질의 |
 | **웹 대시보드** | 자동 연결(설정 불필요), 실시간 세션 출력, Codex Q&A 패널, 프로젝트 브라우저 |
-| **tmux 세션 관리** | 안정적인 세션 유지 및 스크롤 지원 |
+| **실시간 스트리밍** | stdout 기반 CLI 출력 실시간 WebSocket 브로드캐스트 |
 | **통합 CLI** | `olympus` 명령어 + `--mode legacy|hybrid|codex` 선택 |
 
 ## Quick Start (60s)
@@ -155,7 +155,7 @@ claude                        # Claude CLI 시작
 
 - Node.js 18+
 - Claude CLI (`npm i -g @anthropic-ai/claude-code`)
-- tmux (선택, `olympus start` 사용 시): `brew install tmux`
+- pnpm (`npm i -g pnpm`)
 - Gemini CLI (선택, Multi-AI용): `npm i -g @google/gemini-cli`
 - Codex CLI (선택, Multi-AI용): `npm i -g @openai/codex`
 
@@ -165,14 +165,12 @@ claude                        # Claude CLI 시작
 |------|-------|-------|---------|
 | `/orchestration` 프로토콜 | ✅ | ✅ | ✅ |
 | Claude CLI 래퍼 (`olympus`) | ✅ | ✅ | ✅ |
+| CLI 세션 (`olympus start`) | ✅ | ✅ | ✅ |
 | 웹 대시보드 | ✅ | ✅ | ✅ |
 | MCP 서버 | ✅ | ✅ | ✅ |
-| **tmux 세션 (`olympus start`)** | ✅ | ✅ | ❌ |
-| **Telegram 봇 연동** | ✅ | ⚠️* | ❌ |
+| **Telegram 봇 연동** | ✅ | ✅ | ✅ |
 
-> ⚠️ **Linux**: tmux가 설치되어 있으면 Telegram 봇 연동 가능 (테스트되지 않음)
->
-> ❌ **Windows**: tmux를 지원하지 않아 `olympus start` 및 Telegram 봇 연동 기능을 사용할 수 없습니다. `/orchestration` 프로토콜 및 MCP 서버는 정상 작동합니다.
+> v0.4.0부터 tmux 의존성이 완전히 제거되어 **모든 플랫폼에서 전체 기능**을 사용할 수 있습니다.
 
 ### Telegram 봇 연동 가이드
 
@@ -213,7 +211,7 @@ export ALLOWED_USERS="123456789"  # 여러 명이면 쉼표로 구분: "123,456,
 #### Step 4: Olympus 서버 시작
 
 ```bash
-# 1. tmux에서 Claude CLI 시작
+# 1. Claude CLI 시작 (현재 터미널에서)
 olympus start
 
 # 2. 새 터미널에서 Telegram 봇 시작
@@ -238,9 +236,8 @@ olympus quickstart
 
 #### 요구사항
 
-- **macOS** 필수 (tmux 기반 세션 관리)
 - Node.js 18+
-- tmux 설치됨 (`brew install tmux`)
+- macOS / Linux / Windows (모든 플랫폼 지원)
 
 ## Usage
 
@@ -253,23 +250,20 @@ olympus
 
 인자 없이 `olympus`를 실행하면 Claude CLI가 시작됩니다. Claude CLI의 모든 기능을 그대로 사용할 수 있습니다.
 
-### Claude CLI 세션 시작 (tmux)
+### Claude CLI 세션 시작
 
 ```bash
-# 현재 디렉토리에서 Claude CLI를 tmux 세션으로 시작
+# 현재 디렉토리에서 Claude CLI 시작 (foreground)
 olympus start
 
 # 특정 프로젝트 경로 지정
 olympus start -p /path/to/project
 
-# 세션 이름 지정
-olympus start -s my-session
-
-# 백그라운드로 시작 (attach 안함)
-olympus start --no-attach
+# 자동 승인 모드 (trust)
+olympus start-trust
 ```
 
-`olympus start`는 Claude CLI를 tmux 세션에서 실행합니다. 세션 이름은 자동으로 `{폴더명}` 형식으로 생성됩니다.
+`olympus start`는 현재 터미널에서 Claude CLI를 직접 실행합니다. stdout 출력은 Gateway를 통해 실시간 WebSocket 스트리밍됩니다.
 
 ### 서버 관리 (Gateway + Dashboard + Telegram)
 
@@ -327,7 +321,7 @@ olympus tui
 | 명령어 | 설명 |
 |--------|------|
 | `olympus` | Claude CLI 실행 (인자 없음) |
-| `olympus start` | tmux 세션에서 Claude CLI 시작 |
+| `olympus start` | 현재 터미널에서 Claude CLI 시작 |
 | `olympus server start` | Gateway + Dashboard + Telegram 통합 시작 |
 | `olympus server stop` | 서버 종료 |
 | `olympus server status` | 서버 상태 확인 |
@@ -429,7 +423,7 @@ Olympus는 **Multi-AI Orchestration Protocol v5.3 (AIOS)**을 완벽하게 내�
 # Strict 모드 (모든 Phase 전환 시 사용자 승인)
 /orchestration --strict "결제 시스템 리팩토링"
 
-# Telegram 봇에서 실행 (macOS만 지원)
+# Telegram 봇에서 실행 (모든 플랫폼 지원)
 /orchestration 장바구니 기능 추가
 ```
 
@@ -617,7 +611,7 @@ Skills (자동 설치됨):
 │  └──────────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │ WorkerManager (Factory) — legacy/hybrid mode only │  │
-│  │ Claude CLI │ API │ tmux │ Docker │ FIFO Queue(20) │  │
+│  │ Claude CLI │ API │ Spawn │ Docker │ FIFO Queue(20) │  │
 │  └──────────────────────────────────────────────────┘  │
 │  ┌────────────┐  ┌───────────────┐  ┌──────────────┐  │
 │  │MemoryStore │  │SecurityGuard  │  │ProjectRegistry│  │
@@ -676,9 +670,9 @@ orchestration/    # Multi-AI Orchestration 리소스
         ↓
 [Router] @mention → 세션 포워드 / 글로벌 쿼리 → 자체 응답 / 키워드 → 프로젝트 매칭
         ↓
-[SessionManager] tmux 세션 생성/발견/전송, 6-state 생명주기
+[SessionManager] 세션 생명주기 관리, JSON 파일 저장소
         ↓
-[OutputMonitor] pipe-pane 기반 출력 감시, 패턴 매칭 (PROMPT/BUSY/COMPLETION)
+[OutputMonitor] stdout 기반 출력 감시, 패턴 매칭 (PROMPT/BUSY/COMPLETION)
         ↓
 [ResponseProcessor] 타입 감지(build/test/error/code/text), 파일 변경 파싱, Telegram 포맷
         ↓
@@ -738,7 +732,7 @@ pnpm install
 # Build all packages
 pnpm build
 
-# Run tests — 458 tests (gateway 280 + codex 103 + telegram 51 + core 24)
+# Run tests — 521 tests (gateway 346 + codex 103 + telegram 48 + core 24)
 pnpm test
 
 # Type check (6 packages)
@@ -811,53 +805,15 @@ cd packages/cli && pnpm build && node dist/index.js
 
 > Gateway 코드를 변경한 경우 **반드시 Gateway를 재시작**해야 필터가 적용됩니다.
 
-### tmux에서 마우스 휠 스크롤 문제
+### CLI 출력이 대시보드에 표시되지 않음
 
-**문제**: `olympus start`로 Claude CLI를 tmux 세션에서 실행 시, 마우스 휠을 조작하면 이전 대화 내용을 볼 수 없고 명령어 히스토리가 입력됨
-
-**원인**: tmux의 마우스 모드가 설정되지 않아 마우스 휠 이벤트가 터미널 애플리케이션에 그대로 전달됨
+**원인**: Gateway 서버가 실행되지 않았거나, WebSocket 연결이 끊어진 경우 발생합니다.
 
 **해결**:
 
-1. `~/.tmux.conf` 파일 생성 또는 수정:
-
-```bash
-# 마우스 지원 활성화
-set -g mouse on
-
-# 마우스 휠로 스크롤백 버퍼 탐색 (copy-mode 자동 진입)
-bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'select-pane -t=; copy-mode -e; send-keys -M'"
-bind -n WheelDownPane select-pane -t= \; send-keys -M
-
-# 스크롤 속도 설정
-bind -T copy-mode WheelUpPane send-keys -X scroll-up
-bind -T copy-mode WheelDownPane send-keys -X scroll-down
-bind -T copy-mode-vi WheelUpPane send-keys -X scroll-up
-bind -T copy-mode-vi WheelDownPane send-keys -X scroll-down
-
-# vi 스타일 복사 모드
-setw -g mode-keys vi
-
-# 히스토리 버퍼 크기 (50,000줄)
-set -g history-limit 50000
-```
-
-2. 설정 적용:
-
-```bash
-# 현재 실행 중인 tmux 세션에서
-tmux source-file ~/.tmux.conf
-
-# 또는 새 세션 시작
-tmux new-session
-```
-
-**사용법**:
-- 마우스 휠 위/아래로 스크롤
-- copy-mode 종료: `q` 키 또는 맨 아래로 스크롤
-- 텍스트 선택: 마우스 드래그 (copy-mode에서)
-
-> 💡 `./install.sh` 실행 시 tmux 설정을 자동으로 생성할 수 있습니다.
+1. Gateway 서버 실행 확인: `olympus server status`
+2. 서버 재시작: `olympus server start`
+3. 대시보드에서 LiveOutputPanel이 실시간 stdout 출력을 표시합니다
 
 ## Contributing
 

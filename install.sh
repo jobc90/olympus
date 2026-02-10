@@ -245,15 +245,8 @@ else
     success "pnpm 설치 완료"
 fi
 
-# tmux 확인 (선택)
-if command -v tmux &> /dev/null; then
-    TMUX_VERSION=$(tmux -V)
-    success "tmux 설치됨: $TMUX_VERSION"
-else
-    warn "tmux가 설치되어 있지 않습니다. 'olympus start' 명령어 사용 불가"
-    echo "    macOS: brew install tmux"
-    echo "    Ubuntu: sudo apt install tmux"
-fi
+# tmux는 더 이상 필요하지 않음 (v0.4.0에서 제거됨)
+info "tmux 의존성 없음 — cross-platform 지원 (macOS, Linux, Windows)"
 
 echo ""
 
@@ -856,68 +849,7 @@ echo ""
 
 fi  # ── 전역 모드 if 블록 끝 ──
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Phase 6.5: tmux 마우스 스크롤 설정 (선택)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-phase "Phase 6.5: tmux 마우스 스크롤 설정 (olympus start 사용 시 권장)"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-
-TMUX_CONF="$HOME/.tmux.conf"
-
-if [ -f "$TMUX_CONF" ]; then
-    # 이미 mouse on 설정이 있는지 확인
-    if grep -q "set.*mouse.*on" "$TMUX_CONF" 2>/dev/null; then
-        success "tmux 마우스 설정이 이미 존재합니다"
-    else
-        warn "~/.tmux.conf가 존재하지만 마우스 설정이 없습니다"
-        echo ""
-        echo "    tmux에서 마우스 휠 스크롤을 사용하려면 다음을 추가하세요:"
-        echo ""
-        echo -e "    ${YELLOW}set -g mouse on${NC}"
-        echo ""
-    fi
-else
-    echo ""
-    read -p "tmux 마우스 스크롤 설정을 추가하시겠습니까? [Y/n]: " tmux_choice
-    case $tmux_choice in
-        n|N|no|No)
-            info "tmux 설정을 건너뜁니다"
-            ;;
-        *)
-            cat > "$TMUX_CONF" << 'TMUXEOF'
-# Olympus tmux 설정 - Claude CLI 호환
-# 마우스 지원 활성화
-set -g mouse on
-
-# 마우스 휠로 스크롤백 버퍼 탐색 (copy-mode 자동 진입)
-bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'select-pane -t=; copy-mode -e; send-keys -M'"
-bind -n WheelDownPane select-pane -t= \; send-keys -M
-
-# 스크롤 속도 설정
-bind -T copy-mode WheelUpPane send-keys -X scroll-up
-bind -T copy-mode WheelDownPane send-keys -X scroll-down
-bind -T copy-mode-vi WheelUpPane send-keys -X scroll-up
-bind -T copy-mode-vi WheelDownPane send-keys -X scroll-down
-
-# vi 스타일 복사 모드
-setw -g mode-keys vi
-
-# 히스토리 버퍼 크기 (50,000줄)
-set -g history-limit 50000
-
-# 터미널 색상 지원
-set -g default-terminal "screen-256color"
-set -ga terminal-overrides ",xterm-256color:Tc"
-TMUXEOF
-            success "tmux 설정 파일 생성 완료 (~/.tmux.conf)"
-            echo ""
-            info "이미 tmux 세션이 실행 중이라면 다음 명령어로 적용하세요:"
-            echo "    tmux source-file ~/.tmux.conf"
-            ;;
-    esac
-fi
+# Phase 6.5: tmux 설정은 더 이상 필요하지 않음 (v0.4.0에서 tmux 의존성 완전 제거)
 
 echo ""
 
@@ -1093,7 +1025,7 @@ echo -e "${GREEN}🚀 사용 방법:${NC}"
 echo ""
 echo "   # Olympus CLI"
 echo "   olympus                    # Claude CLI 실행"
-echo "   olympus start              # tmux 세션에서 Claude CLI 시작"
+echo "   olympus start              # 현재 터미널에서 Claude CLI 시작"
 echo "   olympus server start       # Gateway + Dashboard + Telegram 시작"
 echo ""
 echo "   # Multi-AI Orchestration"

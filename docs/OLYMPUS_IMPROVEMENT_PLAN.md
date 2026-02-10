@@ -15,6 +15,7 @@
 | **Phase 4** | tmux 역할 재정의 | **완료** | filterOutput 제거, session:screen 전환 (-697줄) |
 | **Phase 5** | 대시보드 업데이트 | **완료** | AgentHistoryPanel + SessionCostTracker (+184줄) |
 | **Phase 6** | /orchestration 통합 | **완료** | 비동기 API + 텔레그램 폴링 (+160줄) |
+| **Phase 7** | tmux 의존성 완전 제거 | **완료** | stdout 스트리밍 + LiveOutputPanel (-1,149줄) |
 
 ---
 

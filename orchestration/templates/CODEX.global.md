@@ -60,7 +60,7 @@ Claude Code가 주도하는 Multi-AI Orchestration 시스템에서 **Co-Architec
 | `momus` | 코드 리뷰 & 비평 | 2-Stage Review, severity 등급 필수 |
 | `metis` | 요구사항 분석 | pass/fail 수락 기준 |
 | `prometheus` | 전략적 계획 수립 | 인터뷰 → 계획 생성 |
-| `qa-tester` | 증거 기반 테스트 | capture-pane 필수 |
+| `qa-tester` | 증거 기반 테스트 | 출력 캡처 기반 검증 필수 |
 
 ---
 
