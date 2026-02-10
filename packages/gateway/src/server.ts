@@ -548,6 +548,10 @@ export class Gateway {
         messageType = 'session:output';
         payload = { sessionId, content: event.content };
         break;
+      case 'screen':
+        messageType = 'session:screen';
+        payload = { sessionId, content: event.content };
+        break;
       case 'error':
         messageType = 'session:error';
         payload = { sessionId, error: event.error };

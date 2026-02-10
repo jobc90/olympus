@@ -73,6 +73,7 @@ export default function App() {
     currentRunId,
     currentSessionId,
     sessionOutputs,
+    sessionScreens,
     error,
     agentState,
     agentProgress,
@@ -196,7 +197,7 @@ export default function App() {
                 <AgentStream agentStreams={agentStreams} />
               </>
             ) : currentSessionId && currentSession ? (
-              <SessionOutputPanel session={currentSession} outputs={sessionOutputs.filter(o => o.sessionId === currentSessionId)} />
+              <SessionOutputPanel session={currentSession} outputs={sessionOutputs.filter(o => o.sessionId === currentSessionId)} screen={sessionScreens.get(currentSessionId!)} />
             ) : (
               <>
                 {/* V2 Agent Interface */}

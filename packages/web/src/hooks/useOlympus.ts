@@ -64,6 +64,8 @@ export interface OlympusState {
   currentRunId: string | null;
   currentSessionId: string | null;
   sessionOutputs: SessionOutput[];
+  /** Terminal mirror: full screen snapshot per session (replace, not append) */
+  sessionScreens: Map<string, string>;
   error: string | null;
   // V2 Agent/Worker state
   agentState: string;
@@ -94,6 +96,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     currentRunId: null,
     currentSessionId: null,
     sessionOutputs: [],
+    sessionScreens: new Map(),
     error: null,
     agentState: 'IDLE',
     agentProgress: null,
@@ -205,6 +208,15 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       }));
     });
 
+    client.onSessionScreen((p) => {
+      const payload = p as { sessionId: string; content: string };
+      setState((s) => {
+        const screens = new Map(s.sessionScreens);
+        screens.set(payload.sessionId, payload.content);
+        return { ...s, sessionScreens: screens };
+      });
+    });
+
     client.onSessionError((p) => {
       setState((s) => ({
         ...s,
@@ -213,12 +225,17 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     });
 
     client.onSessionClosed((p) => {
-      setState((s) => ({
-        ...s,
-        currentSessionId: s.currentSessionId === p.sessionId ? null : s.currentSessionId,
-        sessionOutputs: s.sessionOutputs.filter(o => o.sessionId !== p.sessionId),
-        logs: [...s.logs.slice(-99), { level: 'warn', message: `[session:closed] Session ${p.sessionId} ended` }],
-      }));
+      setState((s) => {
+        const screens = new Map(s.sessionScreens);
+        screens.delete(p.sessionId);
+        return {
+          ...s,
+          currentSessionId: s.currentSessionId === p.sessionId ? null : s.currentSessionId,
+          sessionOutputs: s.sessionOutputs.filter(o => o.sessionId !== p.sessionId),
+          sessionScreens: screens,
+          logs: [...s.logs.slice(-99), { level: 'warn', message: `[session:closed] Session ${p.sessionId} ended` }],
+        };
+      });
     });
 
     // Codex session events

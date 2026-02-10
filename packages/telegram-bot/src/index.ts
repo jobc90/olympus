@@ -1363,7 +1363,7 @@ class OlympusBot {
           const displayName = sessionName.replace(/^olympus-/, '') || sessionId.slice(0, 8);
           const prefix = `📩 [${displayName}]`;
 
-          // Store in output history
+          // Store in output history (always, for /last command)
           let history = this.outputHistory.get(sessionId);
           if (!history) {
             history = [];
@@ -1374,7 +1374,20 @@ class OlympusBot {
             history.shift();
           }
 
-          // Apply output mode
+          // Route A/B split:
+          // - Orchestrator mode (default): only forward olympus-main output to Telegram
+          //   Work session output goes to Dashboard only (Route B via Gateway broadcast)
+          // - Direct mode: forward active session output to Telegram (user explicitly chose)
+          const isDirectMode = this.directMode.get(chatId);
+          const isMainSession = sessionName === 'olympus-main';
+
+          if (!isDirectMode && !isMainSession) {
+            // Route B only — work session output in orchestrator mode
+            // Dashboard already receives via Gateway WebSocket broadcast
+            break;
+          }
+
+          // Route A — send to Telegram
           const mode = this.outputMode.get(chatId) ?? 'digest';
           if (mode === 'digest') {
             // Digest mode: buffer content and flush with smart extraction

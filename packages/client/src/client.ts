@@ -203,6 +203,11 @@ export class OlympusClient {
     return this.on('session:output', (m) => handler(m.payload as { sessionId: string; content: string }));
   }
 
+  /** Convenience: subscribe to session screen snapshot (terminal mirror for Dashboard) */
+  onSessionScreen(handler: (p: { sessionId: string; content: string }) => void): () => void {
+    return this.on('session:screen', (m) => handler(m.payload as { sessionId: string; content: string }));
+  }
+
   /** Convenience: subscribe to session error events */
   onSessionError(handler: (p: { sessionId: string; error: string }) => void): () => void {
     return this.on('session:error', (m) => handler(m.payload as { sessionId: string; error: string }));

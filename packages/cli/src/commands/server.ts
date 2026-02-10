@@ -16,6 +16,7 @@ serverCommand
   .option('--skip-update', 'Skip CLI update check (default: true)', true)
   .option('--update-tools', 'Force CLI tools update on start')
   .option('--mode <mode>', 'Server mode: legacy | hybrid | codex', 'codex')
+  .option('--root <path>', 'Project root for Codex orchestrator (default: cwd)')
   .action(async (opts) => {
     const { loadConfig, isTelegramConfigured } = await import('@olympus-dev/gateway');
     const config = loadConfig();
@@ -77,9 +78,10 @@ serverCommand
       });
     }
 
-    // Create main Claude CLI session first (before Telegram bot)
+    // Create main orchestrator session first (before Telegram bot)
     if (startGateway) {
-      await createMainSession(config);
+      const projectRoot = (opts.root as string) || process.cwd();
+      await createMainSession(config, projectRoot);
     }
 
     // Start Telegram Bot (will auto-connect to main session)
@@ -587,6 +589,14 @@ After completion:
 - Session list/status queries → run \`tmux list-sessions\` and respond
 - No suitable session to route to
 
+## Olympus Local Data
+
+Olympus stores data in \`~/.olympus/\`:
+- \`memory.db\` — SQLite FTS5, stores tasks/patterns/agent results. Use for cross-project search.
+- \`sessions.json\` — Active session metadata
+- \`worker-logs/\` — Worker output logs
+- \`context.db\` — Context OS workspace/project/task layer data
+
 ## Rules
 
 - Do NOT expose internal routing process (tmux commands) to the user
@@ -596,32 +606,42 @@ After completion:
 `;
 
 /**
- * Set up the orchestrator directory with AGENTS.md (for Codex CLI).
- * Also writes CLAUDE.md as fallback for Claude CLI compatibility.
- * Returns the directory path for the main session working directory.
+ * Write orchestrator instructions to the project root.
+ * Writes `.olympus-orchestrator.md` always (safe, gitignored).
+ * Only writes AGENTS.md/CLAUDE.md if they don't already exist.
  */
-async function setupOrchestratorDir(homedir: string): Promise<string> {
+async function writeOrchestratorInstructions(projectRoot: string): Promise<void> {
   const fs = await import('node:fs');
   const path = await import('node:path');
 
-  const dir = path.join(homedir, '.olympus', 'orchestrator');
-  fs.mkdirSync(dir, { recursive: true });
-  // Codex CLI reads AGENTS.md; Claude CLI reads CLAUDE.md — write both
-  fs.writeFileSync(path.join(dir, 'AGENTS.md'), ORCHESTRATOR_AGENTS_MD);
-  fs.writeFileSync(path.join(dir, 'CLAUDE.md'), ORCHESTRATOR_AGENTS_MD);
-  return dir;
+  fs.mkdirSync(projectRoot, { recursive: true });
+
+  // Always write the canonical orchestrator instructions
+  const orchestratorFile = path.join(projectRoot, '.olympus-orchestrator.md');
+  fs.writeFileSync(orchestratorFile, ORCHESTRATOR_AGENTS_MD);
+
+  // Only write AGENTS.md / CLAUDE.md if they don't already exist
+  const agentsMd = path.join(projectRoot, 'AGENTS.md');
+  if (!fs.existsSync(agentsMd)) {
+    fs.writeFileSync(agentsMd, ORCHESTRATOR_AGENTS_MD);
+  }
+  const claudeMd = path.join(projectRoot, 'CLAUDE.md');
+  if (!fs.existsSync(claudeMd)) {
+    fs.writeFileSync(claudeMd, ORCHESTRATOR_AGENTS_MD);
+  }
 }
 
 /**
  * Create main orchestrator session using Codex CLI (preferred) or Claude CLI (fallback).
- * Runs in ~/.olympus/orchestrator/ with AGENTS.md that instructs the AI
+ * Runs in the project root with AGENTS.md that instructs the AI
  * to route messages to other tmux sessions and process their responses.
  */
-async function createMainSession(config: { gatewayUrl: string; apiKey: string }): Promise<boolean> {
+async function createMainSession(config: { gatewayUrl: string; apiKey: string }, projectRoot: string): Promise<boolean> {
   const { execSync } = await import('child_process');
-  const { homedir } = await import('os');
+  const { resolve } = await import('path');
 
   const MAIN_SESSION = 'olympus-main';
+  const resolvedRoot = resolve(projectRoot);
 
   console.log(chalk.cyan('🖥️  Main 세션 (오케스트레이터) 시작 중...'));
 
@@ -664,13 +684,13 @@ async function createMainSession(config: { gatewayUrl: string; apiKey: string })
     }
   }
 
-  // Set up orchestrator directory with AGENTS.md + CLAUDE.md
-  const orchestratorDir = await setupOrchestratorDir(homedir());
+  // Write orchestrator instructions to project root
+  await writeOrchestratorInstructions(resolvedRoot);
 
   try {
-    // Start in orchestrator directory so Claude reads the orchestrator CLAUDE.md
+    // Start in project root so Codex/Claude reads AGENTS.md/CLAUDE.md
     execSync(
-      `tmux new-session -d -s "${MAIN_SESSION}" -c "${orchestratorDir}" ${agentPath}${trustFlag}`,
+      `tmux new-session -d -s "${MAIN_SESSION}" -c "${resolvedRoot}" ${agentPath}${trustFlag}`,
       { stdio: 'pipe' }
     );
     // Enable extended-keys for Shift+Enter passthrough (Ghostty/Kitty protocol)
@@ -678,7 +698,7 @@ async function createMainSession(config: { gatewayUrl: string; apiKey: string })
       execSync(`tmux set -t "${MAIN_SESSION}" extended-keys always`, { stdio: 'pipe' });
     } catch { /* tmux < 3.2 */ }
     console.log(chalk.green(`   ✓ ${MAIN_SESSION} 세션 생성됨 (${agentName} 오케스트레이터)`));
-    console.log(chalk.gray(`   경로: ${orchestratorDir}`));
+    console.log(chalk.gray(`   프로젝트 루트: ${resolvedRoot}`));
 
     // Connect to Gateway
     await connectMainSessionToGateway(config, MAIN_SESSION);

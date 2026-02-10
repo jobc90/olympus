@@ -39,6 +39,7 @@ export interface SessionManagerOptions {
 
 export type SessionEvent =
   | { type: 'output'; content: string }
+  | { type: 'screen'; content: string }   // Full terminal snapshot (ANSI-stripped, for Dashboard mirror)
   | { type: 'error'; error: string }
   | { type: 'closed' };
 
@@ -114,6 +115,8 @@ export class SessionManager {
   private sessionTimeout: number;
   private onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
   private outputPollers: Map<string, NodeJS.Timeout> = new Map();
+  private screenPollers: Map<string, NodeJS.Timeout> = new Map();  // Dashboard terminal mirror
+  private lastScreenContent: Map<string, string> = new Map();     // screen snapshot dedup
   private outputDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
   private lastSentTimestamps: Map<string, number> = new Map(); // Anti-spam: last sent time per session
   private workspaceRoot: string;
@@ -130,6 +133,10 @@ export class SessionManager {
   private static readonly OUTPUT_MIN_CHANGE = 5;
   // Debounce wait time after output stabilizes (ms)
   private static readonly OUTPUT_DEBOUNCE_MS = 1000;
+  // Screen mirror poll interval (ms) - Dashboard terminal sync
+  private static readonly SCREEN_POLL_INTERVAL = 1000;
+  // Screen capture lines for Dashboard (more than output's 50)
+  private static readonly SCREEN_CAPTURE_LINES = 100;
 
   constructor(options: SessionManagerOptions = {}) {
     const dataDir = options.dataDir ?? join(homedir(), '.olympus');
@@ -424,6 +431,14 @@ export class SessionManager {
       clearInterval(poller);
       this.outputPollers.delete(sessionId);
     }
+
+    // Stop screen mirror polling
+    const screenPoller = this.screenPollers.get(sessionId);
+    if (screenPoller) {
+      clearInterval(screenPoller);
+      this.screenPollers.delete(sessionId);
+    }
+    this.lastScreenContent.delete(sessionId);
 
     // Stop pipe-pane
     const target = this.getTmuxTarget(session);
@@ -815,6 +830,50 @@ export class SessionManager {
     }, 500);
 
     this.outputPollers.set(sessionId, poller);
+
+    // Start screen mirror polling (for Dashboard terminal sync)
+    this.startScreenPolling(sessionId);
+  }
+
+  /**
+   * Start screen mirror polling — sends full terminal snapshot for Dashboard.
+   * Unlike output polling which extracts diffs, this sends the complete screen
+   * so the Dashboard can render a live terminal mirror (replace, not append).
+   */
+  private startScreenPolling(sessionId: string): void {
+    const session = this.store.get(sessionId);
+    if (!session) return;
+
+    const target = this.getTmuxTarget(session);
+    this.lastScreenContent.set(sessionId, '');
+
+    const poller = setInterval(() => {
+      try {
+        const raw = execFileSync('tmux', [
+          'capture-pane', '-t', target, '-p',
+          '-S', `-${SessionManager.SCREEN_CAPTURE_LINES}`,
+        ], {
+          encoding: 'utf-8',
+          timeout: 3000,
+        });
+
+        // ANSI strip only — no content filtering
+        const screen = this.stripAnsi(raw)
+          // eslint-disable-next-line no-control-regex
+          .replace(/[\x00-\x08\x0e-\x1f]/g, '')
+          .replace(/\r/g, '');
+
+        const prev = this.lastScreenContent.get(sessionId) ?? '';
+        if (screen === prev) return; // No change
+
+        this.lastScreenContent.set(sessionId, screen);
+        this.onSessionEvent?.(sessionId, { type: 'screen', content: screen });
+      } catch {
+        // Ignore — session might be dead, output poller will handle cleanup
+      }
+    }, SessionManager.SCREEN_POLL_INTERVAL);
+
+    this.screenPollers.set(sessionId, poller);
   }
 
   /**
