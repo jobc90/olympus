@@ -509,94 +509,96 @@ async function autoConnectMainSessionForUsers(
 }
 
 /**
- * Orchestrator CLAUDE.md template — instructs the main session AI to act as a
+ * Orchestrator AGENTS.md template — instructs the main session Codex CLI to act as a
  * Telegram message orchestrator that routes commands to other tmux sessions.
+ * Codex CLI reads AGENTS.md from the project directory.
  */
-const ORCHESTRATOR_CLAUDE_MD = `# Olympus Orchestrator
+const ORCHESTRATOR_AGENTS_MD = `# Olympus Orchestrator
 
-당신은 Olympus 메시지 오케스트레이터입니다. Telegram에서 오는 모든 사용자 메시지를 받아 적절한 tmux 세션으로 라우팅합니다.
+You are the Olympus message orchestrator. You receive all user messages from Telegram and route them to the appropriate tmux sessions.
 
-## 언어 설정
+## Language
 
-**항상 한국어(한글)로 응답하세요.**
+**항상 한국어(한글)로 응답하세요.** Always respond in Korean.
 
-## 역할
+## Role
 
-1. 사용자 메시지 의도 파악
-2. 적절한 tmux 세션으로 라우팅
-3. 대상 세션의 응답 대기 및 캡처
-4. 결과를 간결하게 가공하여 전달
+1. Understand user message intent
+2. Route to appropriate tmux session
+3. Wait for and capture the target session's response
+4. Process results concisely and deliver back
 
-## 세션 발견
+## Session Discovery
 
 \`\`\`bash
 tmux list-sessions -F "#{session_name}:#{pane_current_path}" | grep "^olympus-"
 \`\`\`
 
-- \`olympus-main\` = 나 자신 (라우팅하지 않음)
-- \`olympus-*\` = 라우팅 가능한 세션
+- \`olympus-main\` = myself (do NOT route to self)
+- \`olympus-*\` = routable sessions
 
-## 라우팅 프로토콜
+## Routing Protocol
 
-### 1. 메시지 전송
+### 1. Send Message
 
 \`\`\`bash
 tmux send-keys -t <session-name> -l '<message>'
 tmux send-keys -t <session-name> Enter
 \`\`\`
 
-### 2. 응답 대기 (폴링)
+### 2. Wait for Response (polling)
 
 \`\`\`bash
 tmux capture-pane -t <session-name> -p -S -100
 \`\`\`
 
-- 첫 10초: 2초 간격 폴링
-- 이후: 5초 간격 폴링
-- 최대 120초 대기 후 타임아웃 보고
+- First 10s: poll every 2s
+- After: poll every 5s
+- Max 120s wait, then report timeout
 
-### 3. 완료 감지
+### 3. Completion Detection
 
-캡처된 출력의 마지막 비어있지 않은 줄이 \`❯\`로 시작하면 = Claude CLI가 유휴 상태 (처리 완료)
+The target session (Claude CLI) is idle when the last non-empty line starts with \`❯\`.
 
-### 4. 응답 추출
+### 4. Response Extraction
 
-완료 감지 후, 캡처된 출력에서:
-- 사용자 메시지 이후 ~ \`❯\` 프롬프트 이전 내용을 추출
-- \`⏺\` 마커가 있는 줄이 Claude의 응답
+After completion:
+- Extract content between the sent message and the \`❯\` prompt
+- Lines with \`⏺\` marker are Claude's response
 
-## 세션 선택 규칙
+## Session Selection Rules
 
-1. \`@세션명 메시지\` → 해당 세션으로 직접 라우팅
-2. 프로젝트명이 언급됨 → 해당 프로젝트 경로의 세션으로 라우팅
-3. 세션이 1개만 있음 → 해당 세션으로 라우팅
-4. 판단이 어려움 → 사용 가능한 세션 목록을 보여주고 선택 요청
+1. \`@session-name message\` → route directly to that session
+2. Project name mentioned → route to session at that project path
+3. Only 1 session exists → route to it
+4. Unclear → show available sessions and ask user to choose
 
-## 응답 형식
+## Response Format
 
-- **2000자 이내** (Telegram 메시지 제한)
-- 한국어
-- 핵심 결과만 간결하게
-- 에러 발생 시 에러 내용 포함
-- 코드 블록은 핵심 부분만 발췌
+- **2000 chars max** (Telegram message limit)
+- Korean language
+- Concise, key results only
+- Include error content when errors occur
+- Code blocks: excerpt key parts only
 
-## 직접 응답하는 경우 (라우팅 없이)
+## Direct Response (no routing)
 
-- 인사, 간단한 질문
-- 세션 목록/상태 조회 요청 → \`tmux list-sessions\`로 확인 후 답변
-- 라우팅할 적절한 세션이 없는 경우
+- Greetings, simple questions
+- Session list/status queries → run \`tmux list-sessions\` and respond
+- No suitable session to route to
 
-## 규칙
+## Rules
 
-- 내부 라우팅 과정(tmux 명령어 실행 등)을 사용자에게 노출하지 않음
-- 결과만 깔끔하게 전달
-- 대상 세션이 응답 중일 때는 "처리 중입니다..." 안내 후 대기
-- 타임아웃 시 현재까지의 출력을 요약해서 전달
+- Do NOT expose internal routing process (tmux commands) to the user
+- Deliver clean results only
+- If target session is busy: notify "처리 중입니다..." and wait
+- On timeout: summarize output so far
 `;
 
 /**
- * Set up the orchestrator directory with CLAUDE.md
- * Returns the directory path for the main session working directory
+ * Set up the orchestrator directory with AGENTS.md (for Codex CLI).
+ * Also writes CLAUDE.md as fallback for Claude CLI compatibility.
+ * Returns the directory path for the main session working directory.
  */
 async function setupOrchestratorDir(homedir: string): Promise<string> {
   const fs = await import('node:fs');
@@ -604,13 +606,15 @@ async function setupOrchestratorDir(homedir: string): Promise<string> {
 
   const dir = path.join(homedir, '.olympus', 'orchestrator');
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'CLAUDE.md'), ORCHESTRATOR_CLAUDE_MD);
+  // Codex CLI reads AGENTS.md; Claude CLI reads CLAUDE.md — write both
+  fs.writeFileSync(path.join(dir, 'AGENTS.md'), ORCHESTRATOR_AGENTS_MD);
+  fs.writeFileSync(path.join(dir, 'CLAUDE.md'), ORCHESTRATOR_AGENTS_MD);
   return dir;
 }
 
 /**
- * Create main Claude CLI session as Telegram orchestrator
- * Runs in ~/.olympus/orchestrator/ with CLAUDE.md that instructs the AI
+ * Create main orchestrator session using Codex CLI (preferred) or Claude CLI (fallback).
+ * Runs in ~/.olympus/orchestrator/ with AGENTS.md that instructs the AI
  * to route messages to other tmux sessions and process their responses.
  */
 async function createMainSession(config: { gatewayUrl: string; apiKey: string }): Promise<boolean> {
@@ -641,22 +645,27 @@ async function createMainSession(config: { gatewayUrl: string; apiKey: string })
     return false;
   }
 
-  // Check if Claude CLI is available
+  // Prefer Codex CLI, fallback to Claude CLI
   let agentPath = '';
   let agentName = '';
+  let trustFlag = '';
   try {
-    agentPath = execSync('which claude', { encoding: 'utf-8' }).trim();
-    agentName = 'Claude CLI';
+    agentPath = execSync('which codex', { encoding: 'utf-8' }).trim();
+    agentName = 'Codex CLI';
+    trustFlag = ' --full-auto';
   } catch {
-    console.log(chalk.yellow('   ⚠ Claude CLI가 설치되어 있지 않습니다. Main 세션 생략.'));
-    return false;
+    try {
+      agentPath = execSync('which claude', { encoding: 'utf-8' }).trim();
+      agentName = 'Claude CLI';
+      trustFlag = ' --dangerously-skip-permissions';
+    } catch {
+      console.log(chalk.yellow('   ⚠ Codex/Claude CLI가 설치되어 있지 않습니다. Main 세션 생략.'));
+      return false;
+    }
   }
 
-  // Set up orchestrator directory with CLAUDE.md
+  // Set up orchestrator directory with AGENTS.md + CLAUDE.md
   const orchestratorDir = await setupOrchestratorDir(homedir());
-
-  // Create main tmux session with Claude CLI in trust mode (background, no attach)
-  const trustFlag = ' --dangerously-skip-permissions';
 
   try {
     // Start in orchestrator directory so Claude reads the orchestrator CLAUDE.md

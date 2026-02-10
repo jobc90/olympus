@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { execSync, execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, statSync, openSync, readSync, closeSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { TaskStore, ContextStore, ContextService } from '@olympus-dev/core';
@@ -118,7 +118,8 @@ export class SessionManager {
   private lastSentTimestamps: Map<string, number> = new Map(); // Anti-spam: last sent time per session
   private workspaceRoot: string;
   private outputLogDir: string;
-  private logOffsets: Map<string, number> = new Map();
+  private logOffsets: Map<string, number> = new Map();  // kept for worker log file offsets
+  private lastCapturedContent: Map<string, string> = new Map();
   // Per-session output ring buffer for replay on subscribe (last N outputs)
   private outputBuffers: Map<string, Array<{ content: string; timestamp: number }>> = new Map();
   private static readonly OUTPUT_BUFFER_SIZE = 20;
@@ -442,8 +443,9 @@ export class SessionManager {
       // Ignore if file doesn't exist
     }
 
-    // Clean up offset
+    // Clean up offset and captured content
     this.logOffsets.delete(sessionId);
+    this.lastCapturedContent.delete(sessionId);
 
     // Clear debounce timer
     const debounceTimer = this.outputDebounceTimers.get(sessionId);
@@ -707,88 +709,74 @@ export class SessionManager {
   }
 
   /**
-   * Start polling for output changes using pipe-pane + file offset
+   * Start polling for output changes using capture-pane (rendered screen content).
+   * Unlike pipe-pane which captures raw PTY bytes (ANSI/cursor codes),
+   * capture-pane returns the rendered text as displayed on screen.
    */
   private startOutputPolling(sessionId: string, _tmuxSession?: string, _tmuxWindow?: string): void {
     const session = this.store.get(sessionId);
     if (!session) return;
 
     const target = this.getTmuxTarget(session);
-    const logPath = this.getLogPath(sessionId);
 
-    // Start pipe-pane to log output to file
-    try {
-      execFileSync('tmux', ['pipe-pane', '-t', target, '-o', `cat >> "${logPath}"`], { stdio: 'pipe' });
-    } catch (err) {
-      this.onSessionEvent?.(sessionId, { type: 'error', error: `Failed to start pipe-pane: ${(err as Error).message}` });
-      return;
-    }
+    // Store the last captured content to detect changes (diff-based)
+    this.lastCapturedContent.set(sessionId, '');
 
-    // Skip existing log content on startup — only send NEW output
-    // This prevents stale log replay when gateway restarts
-    if (!this.logOffsets.has(sessionId)) {
-      try {
-        const stats = statSync(logPath);
-        this.logOffsets.set(sessionId, stats.size);
-      } catch {
-        // File doesn't exist yet — offset 0 is correct
-      }
-    }
-
-    // Poll every 500ms for new output
+    // Poll every 500ms for new output via capture-pane
     const poller = setInterval(() => {
       try {
-        const stats = statSync(logPath);
-        const fileSize = stats.size;
-        let offset = this.logOffsets.get(sessionId) ?? 0;
+        // capture-pane -p: print to stdout (rendered screen, no ANSI codes)
+        // -S -50: last 50 lines of scrollback
+        const captured = execFileSync('tmux', ['capture-pane', '-t', target, '-p', '-S', '-50'], {
+          encoding: 'utf-8',
+          timeout: 3000,
+        });
 
-        // If file size < offset, reset offset (resync)
-        if (fileSize < offset) {
-          offset = 0;
-          this.logOffsets.set(sessionId, 0);
-        }
+        const previousCapture = this.lastCapturedContent.get(sessionId) ?? '';
 
-        // If no new content, skip
-        if (fileSize === offset) return;
-
-        // Read only new content from offset (efficient for large files)
-        const bytesToRead = fileSize - offset;
-        const buffer = Buffer.alloc(bytesToRead);
-        const fd = openSync(logPath, 'r');
-        try {
-          readSync(fd, buffer, 0, bytesToRead, offset);
-        } finally {
-          closeSync(fd);
-        }
-        const newContent = buffer.toString('utf-8');
-
-        // Filter noise (don't update offset yet — throttle may defer)
-        const filtered = this.filterOutput(newContent);
+        // Filter noise from the captured content
+        const filtered = this.filterOutput(captured);
         if (!filtered || !filtered.trim()) {
-          // Only noise — advance offset since we don't need this content
-          this.logOffsets.set(sessionId, fileSize);
+          this.lastCapturedContent.set(sessionId, captured);
           return;
         }
 
-        // Anti-spam: skip if change is too small (but still advance offset)
-        if (filtered.trim().length < SessionManager.OUTPUT_MIN_CHANGE) {
-          this.logOffsets.set(sessionId, fileSize);
+        // Compare with previous capture to detect new content
+        const previousFiltered = this.filterOutput(previousCapture);
+        if (filtered === previousFiltered) {
+          return; // No change
+        }
+
+        // Find new lines (lines in current but not in previous)
+        const prevLines = new Set((previousFiltered || '').split('\n').map(l => l.trim()).filter(Boolean));
+        const currentLines = filtered.split('\n').map(l => l.trim()).filter(Boolean);
+        const newLines = currentLines.filter(l => !prevLines.has(l));
+
+        if (newLines.length === 0) {
+          this.lastCapturedContent.set(sessionId, captured);
           return;
         }
 
-        // If debounce timer exists, accumulate content (don't send yet)
-        // Clear existing timer so we batch with new content
+        const newContent = newLines.join('\n');
+
+        // Anti-spam: skip if change is too small
+        if (newContent.trim().length < SessionManager.OUTPUT_MIN_CHANGE) {
+          this.lastCapturedContent.set(sessionId, captured);
+          return;
+        }
+
+        // Update stored capture
+        this.lastCapturedContent.set(sessionId, captured);
+
+        // Clear existing debounce timer
         const existingTimer = this.outputDebounceTimers.get(sessionId);
         if (existingTimer) {
           clearTimeout(existingTimer);
           this.outputDebounceTimers.delete(sessionId);
         }
 
-        // Advance offset now — content is buffered in debounce closure
-        this.logOffsets.set(sessionId, fileSize);
-
         // Set debounce timer — wait for output to stabilize before sending
-        const capturedFiltered = filtered;
+        const capturedNewContent = newContent;
         const timer = setTimeout(() => {
           // Anti-spam: throttle check at send time
           const now = Date.now();
@@ -796,12 +784,11 @@ export class SessionManager {
           const elapsed = now - lastSentTime;
 
           if (elapsed < SessionManager.OUTPUT_MIN_INTERVAL) {
-            // Re-schedule after remaining interval
             const retryTimer = setTimeout(() => {
               this.lastSentTimestamps.set(sessionId, Date.now());
-              this.bufferOutput(sessionId, capturedFiltered);
-              this.onSessionEvent?.(sessionId, { type: 'output', content: capturedFiltered });
-              this.updateSessionContext(sessionId, capturedFiltered);
+              this.bufferOutput(sessionId, capturedNewContent);
+              this.onSessionEvent?.(sessionId, { type: 'output', content: capturedNewContent });
+              this.updateSessionContext(sessionId, capturedNewContent);
               this.outputDebounceTimers.delete(sessionId);
             }, SessionManager.OUTPUT_MIN_INTERVAL - elapsed);
             this.outputDebounceTimers.set(sessionId, retryTimer);
@@ -809,19 +796,20 @@ export class SessionManager {
           }
 
           this.lastSentTimestamps.set(sessionId, Date.now());
-          this.bufferOutput(sessionId, capturedFiltered);
-          this.onSessionEvent?.(sessionId, { type: 'output', content: capturedFiltered });
-          this.updateSessionContext(sessionId, capturedFiltered);
+          this.bufferOutput(sessionId, capturedNewContent);
+          this.onSessionEvent?.(sessionId, { type: 'output', content: capturedNewContent });
+          this.updateSessionContext(sessionId, capturedNewContent);
           this.outputDebounceTimers.delete(sessionId);
         }, SessionManager.OUTPUT_DEBOUNCE_MS);
 
         this.outputDebounceTimers.set(sessionId, timer);
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-          // Log file doesn't exist yet, ignore
-          return;
+        // tmux session might have died
+        if ((err as Error).message?.includes('no current')) {
+          return; // Session not ready yet
         }
-        // Session might have died
+        const errCode = (err as NodeJS.ErrnoException).code;
+        if (errCode === 'ETIMEDOUT') return; // capture-pane timed out, retry next cycle
         this.closeSession(sessionId);
       }
     }, 500);
@@ -999,6 +987,9 @@ export class SessionManager {
 
       // Mostly non-ASCII control artifacts (very short lines with no alphanumeric)
       if (trimmed.length > 0 && trimmed.length <= 3 && !/[a-zA-Z0-9가-힣]/.test(trimmed)) continue;
+
+      // Standalone numbers (token counts, costs, line numbers leaking from status bar)
+      if (/^\s*[\d,.]+[kKmM]?\s*$/.test(trimmed)) continue;
 
       // Consecutive empty lines (keep max 1)
       if (!trimmed) {

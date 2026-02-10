@@ -98,6 +98,9 @@ export const NOISE_PATTERNS = [
   /^\s*$/,                            // empty lines
   /^```\w*$/,                         // code block markers (standalone)
   /^\$?\s*tmux\s+(send-keys|capture-pane|list-sessions)/i,  // orchestrator tmux routing commands
+  /^\s*[\d,.]+[kKmM]?\s*$/,             // standalone numbers (token counts, costs)
+  /^\s*\$[\d.]+\s*$/,                   // standalone dollar amounts ($1.23)
+  /^\s*❯/,                              // prompt lines
 ];
 
 // ===== Immediate Flush Triggers =====

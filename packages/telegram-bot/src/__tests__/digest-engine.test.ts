@@ -338,9 +338,9 @@ describe('formatDigest', () => {
     expect(formatted).toContain('⚠️');
   });
 
-  it('should handle empty result', () => {
+  it('should return empty string for empty result (suppress sending)', () => {
     const result = digestOutput('');
     const formatted = formatDigest(result, '📩 [dev]');
-    expect(formatted).toContain('출력 없음');
+    expect(formatted).toBe('');
   });
 });

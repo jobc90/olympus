@@ -252,17 +252,35 @@ export function digestOutput(content: string, maxLength: number = DEFAULT_DIGEST
   // Step 4: Build digest within budget
   let summary = buildDigest(blocks, maxLength);
 
-  // Step 5: Fallback — if no signal lines found, take first meaningful content
+  // Step 5: Fallback — if digest is empty but there's meaningful content,
+  // include it directly. This handles natural language responses (e.g., from orchestrator)
+  // where no BUILD/TEST/COMMIT patterns match.
   if (!summary && content.trim().length > 0) {
     const meaningful = lines
       .filter(l => l.trim().length > 0)
       .filter(l => !NOISE_PATTERNS.some(p => p.test(l.trim())));
 
     if (meaningful.length > 0) {
-      summary = meaningful.slice(0, 3).join('\n');
+      // Take up to 20 lines (not just 3) for natural language responses
+      summary = meaningful.slice(0, 20).join('\n');
       if (summary.length > maxLength) {
         summary = summary.slice(0, maxLength - 3) + '...';
       }
+    }
+  }
+
+  // Step 5b: If buildDigest produced only low-signal content that was too short,
+  // but there are many "other" category lines, supplement with them
+  if (summary && summary.length < 50 && signalLines.length > 3) {
+    const otherLines = scoredLines
+      .filter(l => l.category === 'other' && l.text.trim().length > 5)
+      .map(l => l.text.trim());
+    if (otherLines.length > 0) {
+      const supplement = otherLines.slice(0, 10).join('\n');
+      const combined = summary + '\n' + supplement;
+      summary = combined.length > maxLength
+        ? combined.slice(0, maxLength - 3) + '...'
+        : combined;
     }
   }
 
@@ -282,7 +300,8 @@ export function digestOutput(content: string, maxLength: number = DEFAULT_DIGEST
  */
 export function formatDigest(result: DigestResult, sessionPrefix: string): string {
   if (!result.summary) {
-    return `${sessionPrefix}\n\n(출력 없음)`;
+    // No useful content — return empty to suppress sending
+    return '';
   }
 
   const header = result.hasErrors ? `${sessionPrefix} ⚠️` : `${sessionPrefix}`;
