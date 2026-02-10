@@ -1,7 +1,7 @@
 # Olympus 개선 계획서: OpenClaw 벤치마킹 기반 아키텍처 혁신
 
 - 작성일: 2026-02-10
-- 버전: v1.2 (Phase 1 구현 완료 반영, 문서 리뷰 보완)
+- 버전: v2.0 (전체 Phase 1-6 구현 완료)
 - 기반 분석: OpenClaw `d85f056` (2026.2.9) vs Olympus `b203224` (v0.4.0)
 
 ### 구현 상태
@@ -10,11 +10,11 @@
 |-------|------|------|------|
 | **사전 검증** | `claude -p --output-format json` 동작 확인 | **완료** | 5개 테스트 전부 통과 |
 | **Phase 1** | CliRunner 모듈 + 세션 저장소 + API + 테스트 | **완료** | 8파일 (신규4+수정4), 27개 테스트, 1155줄 |
-| Phase 2 | 텔레그램 봇 단순화 | 미착수 | |
-| Phase 3 | 메모리 활성화 | 미착수 | |
-| Phase 4 | tmux 역할 재정의 | 미착수 | |
-| Phase 5 | 대시보드 업데이트 | 미착수 | |
-| Phase 6 | /orchestration 통합 | 미착수 | |
+| **Phase 2** | 텔레그램 봇 단순화 | **완료** | 동기 HTTP 전환, Digest 모듈 제거 (-1237줄) |
+| **Phase 3** | 메모리 활성화 | **완료** | MemoryStore 초기화 수정, saveTask 연동 |
+| **Phase 4** | tmux 역할 재정의 | **완료** | filterOutput 제거, session:screen 전환 (-697줄) |
+| **Phase 5** | 대시보드 업데이트 | **완료** | AgentHistoryPanel + SessionCostTracker (+184줄) |
+| **Phase 6** | /orchestration 통합 | **완료** | 비동기 API + 텔레그램 폴링 (+160줄) |
 
 ---
 
@@ -1485,7 +1485,7 @@ this.bot.command('orchestration', async (ctx) => {
 | `gateway/src/api.ts` | POST /api/cli/run, GET/DELETE /api/cli/sessions 추가 | +120줄 | **완료** |
 | `gateway/src/server.ts` | CliSessionStore 초기화, cli:complete broadcast | +15줄 | **완료** |
 | `gateway/src/index.ts` | runCli, CliSessionStore export 추가 | +2줄 | **완료** |
-| `telegram-bot/src/index.ts` | 메시지 핸들러 동기화, WS 이벤트 의존성 제거 | ~200줄 변경 | Phase 2 |
+| `telegram-bot/src/index.ts` | 메시지 핸들러 동기화, WS 이벤트 의존성 제거 | ~200줄 변경 | **완료** |
 | `cli/src/commands/server.ts` | createMainSession CliRunner 연동 | ~50줄 변경 | Phase 4 |
 
 ### 11.3 제거 가능한 코드
@@ -1566,7 +1566,7 @@ claude -p --output-format json "100줄짜리 함수를 작성해줘"
 
 ## 13. 검증 계획
 
-### 13.1 단위 테스트 — **27개 통과** (2026-02-10)
+### 13.1 단위 테스트 — **501개 통과** (2026-02-10)
 
 ```
 packages/gateway/src/__tests__/cli-runner.test.ts (단일 파일, 27개 테스트)
