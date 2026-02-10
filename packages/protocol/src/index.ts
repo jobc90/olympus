@@ -179,4 +179,5 @@ export type {
   CliErrorType,
   CliBackendConfig,
   CliSessionRecord,
+  AgentEvent,
 } from './cli-runner.js';

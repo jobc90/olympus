@@ -18,6 +18,8 @@ import { LogPanel } from './components/LogPanel';
 import { Card, CardHeader } from './components/Card';
 import { ContextExplorer } from './components/ContextExplorer';
 import { CodexPanel } from './components/CodexPanel';
+import { AgentHistoryPanel } from './components/AgentHistoryPanel';
+import { SessionCostTracker } from './components/SessionCostTracker';
 import { ProjectBrowser } from './components/ProjectBrowser';
 import { useContextTree } from './hooks/useContextTree';
 
@@ -93,6 +95,7 @@ export default function App() {
     codexProjects,
     codexSessions,
     codexSearch,
+    cliHistory,
   } = useOlympus(config);
 
   const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
@@ -214,6 +217,7 @@ export default function App() {
                 />
                 <WorkerGrid workers={workers} />
                 <TaskTimeline tasks={taskHistory} />
+                <AgentHistoryPanel history={cliHistory} />
 
                 <EmptyState config={config} hasRuns={runs.length > 0} hasSessions={sessions.filter(s => s.status === 'active').length > 0} />
               </>
@@ -223,6 +227,7 @@ export default function App() {
           {/* Right Sidebar: Codex + Context + Logs */}
           <aside className="lg:col-span-3 space-y-4">
             <CodexPanel connected={connected} onRoute={codexRoute} />
+            <SessionCostTracker history={cliHistory} />
             <ProjectBrowser
               connected={connected}
               getProjects={codexProjects}

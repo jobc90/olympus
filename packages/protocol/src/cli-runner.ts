@@ -128,3 +128,12 @@ export interface CliSessionRecord {
   createdAt: number;
   updatedAt: number;
 }
+
+// ──────────────────────────────────────────────
+// Agent Event (Dashboard WS 이벤트)
+// ──────────────────────────────────────────────
+
+export type AgentEvent =
+  | { type: 'agent:start'; sessionKey: string; prompt: string }
+  | { type: 'agent:complete'; sessionKey: string; result: CliRunResult }
+  | { type: 'agent:error'; sessionKey: string; error: string };

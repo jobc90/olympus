@@ -15,6 +15,7 @@ import {
   type TaskPayload,
   type LogPayload,
   type RunStatus,
+  type CliRunResult,
 } from '@olympus-dev/protocol';
 
 export interface OlympusClientOptions {
@@ -384,6 +385,11 @@ export class OlympusClient {
 
   onWorkerDone(handler: (p: { workerId: string; result: unknown }) => void): () => void {
     return this.on('worker:done', (m) => handler(m.payload as { workerId: string; result: unknown }));
+  }
+
+  /** Subscribe to CLI run completion events */
+  onCliComplete(handler: (p: CliRunResult) => void): () => void {
+    return this.on('cli:complete', (m) => handler(m.payload as CliRunResult));
   }
 
   private send(msg: WsMessage): void {

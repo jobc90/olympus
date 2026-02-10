@@ -10,6 +10,7 @@ import type {
   RunStatus,
   SessionInfo,
   AvailableSession,
+  CliRunResult,
 } from '@olympus-dev/protocol';
 
 export interface SessionOutput {
@@ -32,6 +33,16 @@ export interface WorkerInfo {
   projectPath: string;
   status: 'running' | 'completed' | 'failed';
   output: string;
+}
+
+export interface CliHistoryItem {
+  sessionKey: string;
+  prompt: string;
+  text: string;
+  usage: { inputTokens: number; outputTokens: number };
+  cost: number;
+  durationMs: number;
+  timestamp: number;
 }
 
 export interface TaskHistoryItem {
@@ -74,6 +85,7 @@ export interface OlympusState {
   workers: Map<string, WorkerInfo>;
   taskHistory: TaskHistoryItem[];
   pendingApproval: PendingApproval | null;
+  cliHistory: CliHistoryItem[];
 }
 
 export interface UseOlympusOptions {
@@ -104,6 +116,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     workers: new Map(),
     taskHistory: [],
     pendingApproval: null,
+    cliHistory: [],
   });
 
   const { port, host, apiKey } = options;
@@ -308,6 +321,25 @@ export function useOlympus(options: UseOlympusOptions = {}) {
           workers.set(p.workerId, { ...existing, output: (existing.output + p.content).slice(-5000) });
         }
         return { ...s, workers };
+      });
+    });
+
+    client.onCliComplete((result: CliRunResult) => {
+      setState((s) => {
+        const item: CliHistoryItem = {
+          sessionKey: result.sessionId,
+          prompt: '',
+          text: result.text.slice(0, 2000),
+          usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
+          cost: result.cost,
+          durationMs: result.durationMs,
+          timestamp: Date.now(),
+        };
+        return {
+          ...s,
+          cliHistory: [item, ...s.cliHistory].slice(0, 100),
+          logs: [...s.logs.slice(-99), { level: 'info', message: `[cli:complete] $${result.cost.toFixed(4)} / ${result.usage.inputTokens + result.usage.outputTokens} tokens` }],
+        };
       });
     });
 
