@@ -807,7 +807,8 @@ class OlympusBot {
 
           await this.safeReply(ctx, `@${worker.name} 에 작업을 지시합니다.\n\n${taskPrompt.trim().split('\n')[0]}`, undefined);
 
-          const taskRes = await fetch(`${this.config.gatewayUrl}/api/cli/run/async`, {
+          // 워커에 작업 할당 (WorkerRegistry 연동)
+          const taskRes = await fetch(`${this.config.gatewayUrl}/api/workers/${worker.id}/task`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -815,7 +816,6 @@ class OlympusBot {
             },
             body: JSON.stringify({
               prompt: taskPrompt.trim(),
-              workspaceDir: worker.projectPath,
               provider: 'claude',
               dangerouslySkipPermissions: true,
             }),
@@ -823,12 +823,13 @@ class OlympusBot {
           });
 
           if (!taskRes.ok) {
-            await this.safeReply(ctx, '작업 시작 실패', undefined);
+            const errData = await taskRes.json().catch(() => ({ error: 'Unknown' })) as { error: string };
+            await this.safeReply(ctx, `작업 시작 실패: ${errData.error}`, undefined);
             return;
           }
 
           const { taskId } = await taskRes.json() as { taskId: string };
-          this.pollAndNotify(ctx.chat.id, taskId, worker.name).catch(() => {});
+          this.pollWorkerTask(ctx.chat.id, taskId, worker.name).catch(() => {});
         } catch (err) {
           await this.safeReply(ctx, `워커 위임 실패: ${(err as Error).message}`, undefined);
         }
@@ -1270,6 +1271,88 @@ class OlympusBot {
   }
 
   /**
+   * 워커 결과를 요약합니다.
+   * - 짧은 응답 (≤1500자): 그대로 반환 (요약 불필요)
+   * - 긴 응답: Claude Haiku로 경량 요약 (/api/codex/summarize)
+   * - 실패 시 앞부분만 잘라서 반환
+   */
+  private async summarizeResult(workerName: string, rawText: string): Promise<string> {
+    // 짧은 응답은 요약 불필요
+    if (rawText.length <= 1500) {
+      return rawText;
+    }
+
+    try {
+      const res = await fetch(`${this.config.gatewayUrl}/api/codex/summarize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({ text: rawText, workerName }),
+        signal: AbortSignal.timeout(30_000),
+      });
+
+      if (res.ok) {
+        const data = await res.json() as { summary: string };
+        if (data.summary) return data.summary;
+      }
+    } catch (err) {
+      structuredLog('warn', 'telegram-bot', 'summarize_failed', { error: (err as Error).message });
+    }
+    // 폴백: 앞부분만 반환
+    return rawText.slice(0, 2000) + (rawText.length > 2000 ? '\n\n...(이하 생략)' : '');
+  }
+
+  /**
+   * Poll worker task status (via WorkerRegistry) and notify chat on completion.
+   */
+  private async pollWorkerTask(chatId: number, taskId: string, workerName: string): Promise<void> {
+    const maxPolls = 180; // 30 minutes
+    const pollInterval = 10_000; // 10 seconds
+
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+      try {
+        const res = await fetch(`${this.config.gatewayUrl}/api/workers/tasks/${taskId}`, {
+          headers: { Authorization: `Bearer ${this.config.apiKey}` },
+          signal: AbortSignal.timeout(10_000),
+        });
+
+        if (!res.ok) continue;
+
+        const data = await res.json() as {
+          status: 'running' | 'completed' | 'failed';
+          result?: CliRunResult;
+        };
+
+        if (data.status === 'completed' && data.result) {
+          const result = data.result;
+          if (result.success) {
+            const summary = await this.summarizeResult(workerName, result.text ?? '');
+            const durationSec = Math.round((result.durationMs ?? 0) / 1000);
+            const text = `[${workerName}] ✅ 완료 (${durationSec}초)\n\n${summary}`;
+            await this.sendLongMessage(chatId, text);
+          } else {
+            await this.sendLongMessage(chatId, `[${workerName}] 작업 실패: ${result.error?.message ?? '알 수 없는 오류'}`);
+          }
+          return;
+        }
+
+        if (data.status === 'failed') {
+          await this.sendLongMessage(chatId, `[${workerName}] 작업 실패`);
+          return;
+        }
+      } catch {
+        // ignore polling errors, continue
+      }
+    }
+
+    await this.sendLongMessage(chatId, `[${workerName}] 작업 시간 초과 (30분)`);
+  }
+
+  /**
    * Poll async task status and notify chat on completion.
    * Fire-and-forget — errors are logged but not thrown.
    */
@@ -1293,10 +1376,9 @@ class OlympusBot {
         if (data.status === 'completed' && data.result) {
           const result = data.result;
           if (result.success) {
-            const footer = result.usage
-              ? `\n\n${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4) ?? '0'} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
-              : '';
-            const text = `[${workerName}] 작업 완료!\n\n${result.text}${footer}`;
+            const summary = await this.summarizeResult(workerName, result.text ?? '');
+            const durationSec = Math.round((result.durationMs ?? 0) / 1000);
+            const text = `[${workerName}] ✅ 완료 (${durationSec}초)\n\n${summary}`;
             await this.sendLongMessage(chatId, text);
           } else {
             await this.sendLongMessage(chatId, `[${workerName}] 작업 실패: ${result.error?.message ?? '알 수 없는 오류'}`);

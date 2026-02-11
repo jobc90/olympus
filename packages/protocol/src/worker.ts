@@ -21,6 +21,7 @@ export interface RegisteredWorker {
   lastHeartbeat: number;
   currentTaskId?: string;
   currentTaskPrompt?: string;
+  mode?: 'pty' | 'spawn';
 }
 
 // ──────────────────────────────────────────────
@@ -31,6 +32,7 @@ export interface WorkerRegistration {
   name?: string;
   projectPath: string;
   pid: number;
+  mode?: 'pty' | 'spawn';
 }
 
 // ──────────────────────────────────────────────

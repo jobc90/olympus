@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <b>Claude CLI Enhanced Platform</b> - Multi-AI Orchestration + Gateway + Dashboard
+  <b>Claude CLI Enhanced Platform v0.5.1</b> - Multi-AI Orchestration + Gateway + Dashboard
 </p>
 
 <p align="center">
@@ -26,234 +26,112 @@
 ## Table of Contents
 
 - [What is Olympus?](#what-is-olympus)
-- [Quick Start (60s)](#quick-start-60s)
-- [Quick Install](#quick-install)
-- [Platform Requirements](#platform-requirements)
-- [Usage](#usage)
-- [Model Configuration](#model-configuration)
-- [Telegram Bot Commands](#telegram-bot-commands)
-- [Multi-AI Orchestration (AIOS v5.3)](#multi-ai-orchestration-aios-v53)
+- [Quick Start](#quick-start)
+- [핵심 기능](#핵심-기능)
+- [설치 가이드](#설치-가이드)
+- [사용법](#사용법)
+- [Worker 시스템](#worker-시스템)
+- [Telegram 봇 가이드](#telegram-봇-가이드)
+- [Multi-AI Orchestration](#multi-ai-orchestration)
 - [Architecture](#architecture)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
 
 ## What is Olympus?
 
-Olympus는 Claude CLI의 생산성을 극대화하는 **Multi-AI 협업 플랫폼**입니다:
+Olympus는 Claude CLI의 생산성을 극대화하는 **Multi-AI 협업 플랫폼**입니다.
 
-1. **Multi-AI Orchestration (AIOS v5.3)**: Claude + Gemini + Codex Co-Leadership 기반 협업으로 복잡한 작업 자동화
-2. **Context OS**: 계층적 컨텍스트 관리 (Workspace → Project → Task), 자동 상향 보고, 병합 워크플로우
-3. **Claude CLI 래퍼**: `olympus` 실행 시 Claude CLI가 실행됩니다 (브랜딩만 Olympus)
-4. **원격 접근**: Gateway를 통해 Telegram 봇으로 핸드폰에서 로컬 Claude CLI 사용
-5. **대시보드**: 웹 UI로 작업 현황 + 컨텍스트 탐색기 모니터링
+Claude CLI를 중심으로 Gateway, Dashboard, Telegram Bot을 통합하여 로컬/원격 개발 환경을 통합 관리하고, Multi-AI Orchestration (AIOS v5.3)을 통해 Claude + Gemini + Codex가 협업하여 복잡한 작업을 자동화합니다.
 
-### 핵심 기능
-
-| 기능 | 설명 |
-|------|------|
-| `/orchestration` v5.3 | Claude-Codex Co-Leadership, 10 Phase 합의 기반 워크플로우, Deep Engineering |
-| **Codex Orchestrator (V3)** | 멀티 프로젝트 AI 오케스트레이터 — 라우팅, 세션 관리, 컨텍스트 DB, 에이전트 브레인 |
-| **Codex Agent (V2)** | 자율 AI 에이전트 — 명령 분석 → 계획 → 실행 → 검토 → 보고 자동 파이프라인 |
-| **Worker Factory (V2)** | 4종 워커 (Claude CLI / Anthropic API SSE / Spawn / Docker), FIFO 큐, 태스크별 자동 선택 |
-| **Memory Store (V2)** | SQLite + FTS5 기반 작업 학습, PatternManager 분리, 유사 태스크 조회, Memory RPC |
-| **Security Guard (V2)** | 명령 차단/승인 정책, 타임아웃 자동 거부 |
-| **Context OS** | 3계층 컨텍스트 (Workspace/Project/Task), SQLite 저장, 자동 상향 보고 |
-| **Context Explorer** | 대시보드에서 트리뷰 + 편집 + 버전 이력 + 병합 요청 |
-| MCP 서버 | ai-agents (Multi-AI), openapi (Swagger 연동) |
-| Skills | frontend-ui-ux, git-master, agent-browser 등 |
-| Plugins | claude-dashboard (상태줄, 사용량 표시) |
-| **Telegram 봇** | 원격 Claude CLI 조작, Smart Digest 핵심 결과 전달, `/codex` RPC 질의 |
-| **웹 대시보드** | 자동 연결(설정 불필요), 실시간 세션 출력, Codex Q&A 패널, 프로젝트 브라우저 |
-| **실시간 스트리밍** | stdout 기반 CLI 출력 실시간 WebSocket 브로드캐스트 |
-| **통합 CLI** | `olympus` 명령어 + `--mode legacy|hybrid|codex` 선택 |
-
-## Quick Start (60s)
-
-```bash
-git clone https://github.com/jobc90/olympus.git
-cd olympus
-./install.sh --global
-olympus setup
-olympus server start
-olympus start
+```
+Claude CLI ──┬─→ PTY Worker (상주형 CLI)
+             ├─→ Gateway (HTTP API + WebSocket)
+             ├─→ Dashboard (실시간 모니터링)
+             └─→ Telegram Bot (원격 조작)
 ```
 
-바로 사용:
+## Quick Start
 
 ```bash
+# 저장소 클론 + 빌드
+git clone https://github.com/jobc90/olympus.git
+cd olympus
+pnpm install && pnpm build
+
+# 전역 설치 (권장)
+./install.sh --global
+
+# Claude CLI 실행
 olympus
+
 # Claude CLI 내부에서
 /orchestration "로그인 페이지 UI 개선"
 ```
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  로컬 컴퓨터                                                    │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  olympus (Claude CLI 래퍼)                               │   │
-│  │  • 기본 실행: Claude CLI 그대로                          │   │
-│  │  • Gateway: 원격 접근 허브                                │   │
-│  │  • Dashboard: 웹 UI                                      │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                           │                                     │
-│                    Gateway (WebSocket)                          │
-│                           │                                     │
-└───────────────────────────┼─────────────────────────────────────┘
-                            │
-                     ┌──────▼──────┐
-                     │  Telegram   │
-                     │    Bot      │
-                     └──────┬──────┘
-                            │
-                     ┌──────▼──────┐
-                     │  핸드폰     │
-                     │  (원격)     │
-                     └─────────────┘
-```
+## 핵심 기능
 
-## Quick Install
+| 기능 | 설명 |
+|------|------|
+| **PTY Worker** | node-pty 기반 상주형 Claude CLI + TUI 표시 + 명령 입력 + 완료 감지 |
+| **Worker Registry** | Gateway에 워커 등록/하트비트/작업 할당 시스템 (인메모리 레지스트리) |
+| **stdout 스트리밍** | CLI 출력 실시간 WebSocket 브로드캐스트 (`cli:stream` 이벤트) |
+| **병렬 CLI 실행** | ConcurrencyLimiter (최대 5개 동시 실행) |
+| **Telegram 워커 위임** | @멘션 방식으로 워커에 직접 작업 지시 + 인라인 쿼리 워커 목록 |
+| **Multi-AI Orchestration** | AIOS v5.3 — Claude + Codex Co-Leadership, 10 Phase 워크플로우 |
+| **Dashboard** | LiveOutputPanel (실시간 출력) + AgentHistoryPanel + SessionCostTracker |
 
-```bash
-git clone https://github.com/jobc90/olympus.git
-cd olympus
-./install.sh
-```
+## 설치 가이드
+
+### Prerequisites
+
+- **Node.js 18+** (CI: Node 20/22)
+- **pnpm** (`npm i -g pnpm`)
+- **Claude CLI** (`npm i -g @anthropic-ai/claude-code`)
+- **빌드 도구** (node-pty 네이티브 모듈 빌드 위해 필요):
+  - macOS: Xcode Command Line Tools (`xcode-select --install`)
+  - Linux: `build-essential`, `python3`
+  - Windows: Visual Studio Build Tools + Python 3
 
 ### 설치 모드 선택
 
-| 모드 | 설명 | 권장 대상 |
-|------|------|----------|
-| **전역 설치 (1번)** | `~/.claude/`에 모든 것 설치, 어디서든 `/orchestration` 사용 | 대부분의 사용자 |
-| **로컬 설치 (2번)** | 프로젝트 내 `.claude/`에 설치, 이 디렉토리에서만 사용 | 테스트/격리 원할 때 |
-| **선택 옵션** | `--with-claude-md` 사용 시에만 `~/.claude/CLAUDE.md`에 Olympus managed block 삽입/업데이트 | CLAUDE.md 지침도 함께 쓰고 싶은 사용자 |
-
 ```bash
-# 전역 설치 (권장)
+# 전역 설치 (권장) — ~/.claude/에 모든 것 설치, 어디서든 /orchestration 사용
 ./install.sh --global
 
-# 로컬 설치 (이 프로젝트에서만)
+# 로컬 설치 — 프로젝트 내 .claude/에 설치, 이 디렉토리에서만 사용
 ./install.sh --local
 
-# 선택: CLAUDE.md에 Olympus managed block 반영
+# CLAUDE.md에 Olympus managed block 반영 (선택)
 ./install.sh --global --with-claude-md
 ```
 
-> 기본 동작은 비침범입니다. `~/.claude/CLAUDE.md`는 수정하지 않습니다.
+> **기본 동작은 비침범**입니다. `~/.claude/CLAUDE.md`는 수정하지 않습니다.
 
-### 로컬 설치 후 사용법
+### 로컬 설치 주의사항
 
 ```bash
-# 반드시 olympus 디렉토리에서 실행
+# 반드시 olympus 프로젝트 디렉토리에서 실행
 cd /path/to/olympus
 claude                        # Claude CLI 시작
 /orchestration "작업 설명"    # 바로 사용 가능!
 ```
 
-> ⚠️ **로컬 설치 주의**: 반드시 olympus 프로젝트 디렉토리에서 `claude`를 실행해야 `/orchestration`이 인식됩니다.
+> ⚠️ **로컬 설치**: olympus 디렉토리에서만 `/orchestration`이 인식됩니다.
 
-### Prerequisites
+## 사용법
 
-- Node.js 18+
-- Claude CLI (`npm i -g @anthropic-ai/claude-code`)
-- pnpm (`npm i -g pnpm`)
-- Gemini CLI (선택, Multi-AI용): `npm i -g @google/gemini-cli`
-- Codex CLI (선택, Multi-AI용): `npm i -g @openai/codex`
-
-## Platform Requirements
-
-| 기능 | macOS | Linux | Windows |
-|------|-------|-------|---------|
-| `/orchestration` 프로토콜 | ✅ | ✅ | ✅ |
-| Claude CLI 래퍼 (`olympus`) | ✅ | ✅ | ✅ |
-| CLI 세션 (`olympus start`) | ✅ | ✅ | ✅ |
-| 웹 대시보드 | ✅ | ✅ | ✅ |
-| MCP 서버 | ✅ | ✅ | ✅ |
-| **Telegram 봇 연동** | ✅ | ✅ | ✅ |
-
-> v0.4.0부터 tmux 의존성이 완전히 제거되어 **모든 플랫폼에서 전체 기능**을 사용할 수 있습니다.
-
-### Telegram 봇 연동 가이드
-
-Telegram 봇으로 원격에서 Claude CLI를 조작할 수 있습니다.
-
-#### Step 1: Telegram 봇 생성 (핸드폰 또는 웹)
-
-**핸드폰에서:**
-1. Telegram 앱 설치 (iOS App Store / Google Play)
-2. `@BotFather` 검색 후 대화 시작
-3. `/newbot` 명령어 입력
-4. 봇 이름 입력 (예: `My Claude Bot`)
-5. 봇 사용자명 입력 (예: `my_claude_bot` - 반드시 `_bot`으로 끝나야 함)
-6. **봇 토큰 저장** (예: `7123456789:AAHxxxxxx...`)
-
-**웹에서 (권장 - 토큰 복사가 편함):**
-1. https://webogram.org 또는 https://web.telegram.org 접속
-2. 핸드폰 번호로 로그인
-3. `@BotFather` 검색 후 위와 동일하게 진행
-4. 토큰을 컴퓨터에서 바로 복사 가능
-
-#### Step 2: 사용자 ID 확인
-
-1. `@userinfobot` 검색 후 대화 시작
-2. `/start` 입력
-3. **User ID 저장** (숫자, 예: `123456789`)
-
-#### Step 3: 환경 변수 설정
+### 1. Claude CLI 실행 (기본)
 
 ```bash
-# ~/.zshrc 또는 ~/.bashrc에 추가
-export TELEGRAM_BOT_TOKEN="7123456789:AAHxxxxxx..."
-export ALLOWED_USERS="123456789"  # 여러 명이면 쉼표로 구분: "123,456,789"
-```
-
-설정 후 터미널 재시작 또는 `source ~/.zshrc`
-
-#### Step 4: Olympus 서버 시작
-
-```bash
-# 1. Claude CLI 시작 (현재 터미널에서)
-olympus start
-
-# 2. 새 터미널에서 Telegram 봇 시작
-olympus server start --telegram
-
-# 또는 한 번에 모두 시작
-olympus quickstart
-```
-
-#### Step 5: 핸드폰에서 사용
-
-1. Telegram 앱에서 생성한 봇 검색 (예: `@my_claude_bot`)
-2. `/start` - 도움말 보기
-3. `/sessions` - 연결 가능한 Claude 세션 목록
-4. `/use myproject` - 세션 연결
-5. 이제 메시지를 보내면 Claude가 응답!
-
-```
-💡 팁: /orchestration 장바구니 기능 추가
-      → 핸드폰에서 복잡한 작업도 실행 가능
-```
-
-#### 요구사항
-
-- Node.js 18+
-- macOS / Linux / Windows (모든 플랫폼 지원)
-
-## Usage
-
-### 기본 사용 (Claude CLI 모드)
-
-```bash
-# Claude CLI 실행 (Olympus 브랜딩)
 olympus
 ```
 
 인자 없이 `olympus`를 실행하면 Claude CLI가 시작됩니다. Claude CLI의 모든 기능을 그대로 사용할 수 있습니다.
 
-### Worker 세션 시작 (Gateway 등록형)
+### 2. Worker 세션 시작 (PTY 모드)
 
 ```bash
-# 현재 디렉토리를 워커로 등록 (foreground daemon)
+# 현재 디렉토리를 워커로 등록 (PTY 모드 — 기본)
 olympus start
 
 # 특정 프로젝트 경로 지정
@@ -266,9 +144,9 @@ olympus start -n backend-worker
 olympus start-trust
 ```
 
-`olympus start`는 워커를 Gateway에 등록하고 작업을 대기합니다. 먼저 `olympus server start`로 Gateway를 시작해야 하며, 작업 출력은 WebSocket으로 실시간 스트리밍됩니다.
+`olympus start`는 **PTY Worker**를 Gateway에 등록하고 작업을 대기합니다. Claude CLI TUI가 즉시 표시되며, 워커 출력은 WebSocket으로 실시간 스트리밍됩니다.
 
-### 서버 관리 (Gateway + Dashboard + Telegram)
+### 3. 서버 관리
 
 ```bash
 # 전체 서버 시작 (Gateway + Dashboard + Telegram)
@@ -286,177 +164,156 @@ olympus server stop
 olympus server status
 ```
 
-> **Dashboard 자동 연결**: `olympus server start`로 시작하면 Gateway 주소와 API Key가 Dashboard HTML에 자동 주입됩니다. 별도의 설정 없이 브라우저에서 바로 사용할 수 있습니다.
-
-### 설정
+### 4. 초기 설정
 
 ```bash
 # 초기 설정 마법사 (Gateway + Telegram + 모델 설정)
 olympus setup
 
-# 빠른 설정 + 시작 (Telegram 설정 후 서버 시작)
+# 빠른 설정 + 시작
 olympus quickstart
-
-# 설정 확인/수정
-olympus config
-olympus config get gateway.port
-olympus config set gateway.port 8200
 ```
 
-### 개별 서비스 실행
+## Worker 시스템
+
+### PTY Worker (v0.5.1)
+
+**PTY Worker**는 node-pty 기반으로 상주형 Claude CLI를 관리하는 핵심 모듈입니다.
+
+**핵심 기능**:
+- **TUI 표시**: Claude CLI의 Ink TUI를 그대로 표시
+- **명령 입력**: 프롬프트 제출 + Enter 키 자동 처리
+- **완료 감지**: 프롬프트 패턴 (3초 settle) → 20초 무활동 → 60초 강제 완료
+- **결과 추출**: ⏺ 마커 기반 추출 → ANSI 제거 → TUI 아티팩트 필터
+- **더블 Ctrl+C**: 1초 내 Ctrl+C 두 번으로 종료
+
+**TUI 아티팩트 필터**:
+- 스피너 (✢✳✶✻✽·), "(thinking)", "Flowing...", 상태바, 구분선 자동 제거
+- 실제 응답만 추출하여 8000자 제한
+
+**폴백 모드**:
+- PTY 모드 실패 시 spawn 모드로 자동 전환
+- spawn 모드: `stdio: 'inherit'`로 포그라운드 실행
+
+### Worker Registry
+
+Gateway에 인메모리로 워커를 등록하고 하트비트로 상태를 관리합니다.
+
+**Worker API**:
+- `POST /api/workers/register` — 워커 등록 (mode: 'pty' | 'spawn')
+- `DELETE /api/workers/:id` — 워커 삭제
+- `POST /api/workers/:id/heartbeat` — 하트비트 (15초 체크, 60초 타임아웃)
+- `POST /api/workers/:id/task` — 작업 할당
+- `POST /api/workers/:id/task/result` — 작업 결과 보고
+- `GET /api/workers/:id/task/status` — 작업 상태 폴링
+
+**워커 타입**:
+```typescript
+interface RegisteredWorker {
+  id: string;
+  name: string;
+  projectPath: string;
+  mode?: 'pty' | 'spawn';
+  status: 'idle' | 'busy';
+  lastHeartbeat: Date;
+  currentTask?: {
+    id: string;
+    prompt: string;
+    status: 'pending' | 'running' | 'completed' | 'failed';
+    result?: string;
+    error?: string;
+  };
+}
+```
+
+## Telegram 봇 가이드
+
+Telegram 봇으로 원격에서 Claude CLI를 조작할 수 있습니다.
+
+### 설정 방법
+
+#### Step 1: Telegram 봇 생성
+
+1. Telegram에서 `@BotFather` 검색 후 대화 시작
+2. `/newbot` 입력 후 봇 이름/사용자명 설정
+3. 봇 토큰 저장 (예: `7123456789:AAHxxxxxx...`)
+
+#### Step 2: 사용자 ID 확인
+
+1. `@userinfobot` 검색 후 대화 시작
+2. `/start` 입력
+3. User ID 저장 (예: `123456789`)
+
+#### Step 3: 환경 변수 설정
 
 ```bash
-# Gateway만 시작 (포트 지정 가능)
-olympus gateway -p 8200
-
-# Telegram 봇만 시작
-olympus telegram
-
-# 웹 대시보드 열기
-olympus dashboard
-
-# 터미널 UI
-olympus tui
+# ~/.zshrc 또는 ~/.bashrc에 추가
+export TELEGRAM_BOT_TOKEN="7123456789:AAHxxxxxx..."
+export ALLOWED_USERS="123456789"  # 여러 명이면 쉼표로 구분
 ```
 
-## CLI Commands Reference
+설정 후 터미널 재시작 또는 `source ~/.zshrc`
 
-| 명령어 | 설명 |
-|--------|------|
-| `olympus` | Claude CLI 실행 (인자 없음) |
-| `olympus start` | 워커 등록 후 작업 대기 (Gateway 필요) |
-| `olympus start-trust` | trust 모드 워커 등록 |
-| `olympus server start` | Gateway + Dashboard + Telegram 통합 시작 |
-| `olympus server stop` | 서버 종료 |
-| `olympus server status` | 서버 상태 확인 |
-| `olympus setup` | 초기 설정 마법사(Gateway/Telegram/모델) |
-| `olympus quickstart` | 빠른 설정 + 서버 시작 |
-| `olympus config` | 설정 관리 |
-| `olympus models` | 모델 설정/동기화(core + MCP) |
-| `olympus curl` | API Key 자동 주입 curl 래퍼 |
-| `olympus gateway` | Gateway 서버만 실행 |
-| `olympus telegram` | Telegram 봇만 실행 |
-| `olympus dashboard` | 웹 대시보드 열기 |
-| `olympus tui` | 터미널 UI 실행 |
+#### Step 4: 서버 시작
 
-## Model Configuration
-
-Olympus는 모델명을 하드코딩하지 않고, **환경변수 + 사용자 설정**으로 런타임에 결정할 수 있습니다.
-
-우선순위:
-1. 명령/요청에서 직접 전달한 `model`
-2. `~/.olympus/config.json`의 모델 설정
-3. 환경변수(`OLYMPUS_*_MODEL`)
-4. 내장 기본값
-
-주요 환경변수:
-- `OLYMPUS_GEMINI_MODEL`
-- `OLYMPUS_GEMINI_PRO_MODEL`
-- `OLYMPUS_GEMINI_FALLBACK_MODEL`
-- `OLYMPUS_GEMINI_FALLBACK_PRO_MODEL`
-- `OLYMPUS_CODEX_MODEL`
-- `OLYMPUS_OPENAI_MODEL`
-- `OLYMPUS_OPENAI_API_BASE_URL`
-
-예시:
 ```bash
-export OLYMPUS_GEMINI_MODEL=gemini-2.5-flash
-export OLYMPUS_GEMINI_PRO_MODEL=gemini-2.5-pro
-export OLYMPUS_CODEX_MODEL=gpt-4.1
+# Gateway + Telegram 봇 시작
+olympus server start
+
+# 또는 Telegram 봇만
+olympus server start --telegram
 ```
 
-동기화 명령:
-```bash
-# 현재 상태 확인
-olympus models show
+### 사용 방법
 
-# 모델 지정 + core/MCP 동시 반영
-olympus models set --gemini gemini-2.5-flash --gemini-pro gemini-2.5-pro --codex gpt-4.1
-
-# core를 기준으로 MCP에 동기화
-olympus models sync
-```
-
-## Telegram Bot Commands
-
-핸드폰 Telegram에서 사용 가능한 명령어:
+#### 기본 명령어
 
 | 명령어 | 설명 |
 |--------|------|
 | `/start` | 도움말 표시 |
-| `/sessions` | 연결 가능한 세션 목록 |
-| `/use <이름>` | 세션 연결/전환 |
-| `/close [이름]` | 세션 해제 |
 | `/health` | 상태 확인 |
-| `/mode raw\|digest` | 출력 모드 전환 (기본: digest) |
-| `/raw` | 원문 모드 단축키 |
-| `/last` | 마지막 출력 다시 보기 |
-| `/codex <질문>` | Codex Orchestrator에 RPC 질의 (라우팅 + 응답) |
-| `/orchestration <요청>` | Multi-AI 협업 (Auto 전자동) |
-| `/orchestration --plan <요청>` | Phase 3, 8에서 사용자 확인 |
-| `/orchestration --strict <요청>` | 모든 Phase 전환 시 승인 |
 | `/workers` | 워커 목록 표시 |
-| 일반 메시지 | 활성 세션의 Claude에게 전송 |
-| `@워커이름 작업` | 워커에 직접 작업 지시 (Codex 거치지 않음) |
+| 일반 메시지 | Claude CLI에 전송 |
 
-### 인라인 모드 (워커 선택)
+#### 워커 위임 (@멘션 방식)
+
+```
+@worker-name 작업 내용
+```
+
+예시:
+```
+@backend-worker API 엔드포인트 /api/users 추가
+```
+
+Telegram에서 `@워커이름 작업` 형식으로 입력하면:
+1. Gateway `POST /api/workers/:id/task`로 작업 할당
+2. 워커가 `GET /api/workers/:id/task/status`로 폴링
+3. 워커가 작업 완료 후 `POST /api/workers/:id/task/result`로 결과 보고
+4. 결과를 Telegram으로 전송
+
+#### 인라인 쿼리 (워커 목록)
 
 아무 채팅에서 `@봇이름`을 입력하면 사용 가능한 워커 목록이 표시됩니다. 워커를 선택하면 `@워커이름 ` 형태로 메시지가 입력되고, 이어서 작업 내용을 입력하면 됩니다.
 
-### Smart Digest 모드
+## Multi-AI Orchestration
 
-Telegram 봇은 기본적으로 **digest 모드**로 동작합니다. 수백 줄의 CLI 출력에서 핵심 결과만 추출하여 1500자 이내로 전달합니다.
-
-| 기능 | 설명 |
-|------|------|
-| **6-카테고리 분류** | build, test, commit, error, phase, change |
-| **노이즈 자동 제거** | Reading, Searching, Globbing, 스피너 등 |
-| **비밀 마스킹** | API 키, Bearer 토큰, GitHub PAT 자동 마스킹 |
-| **하이브리드 트리거** | 에러/완료 → 즉시 전달, 일반 → 5초 debounce |
-| **우선순위 기반 예산** | 에러(5점) > 빌드/테스트(4점) > 커밋(3점) 순서로 1500자 채움 |
-
-## Multi-AI Orchestration (AIOS v5.3)
-
-Olympus는 **Multi-AI Orchestration Protocol v5.3 (AIOS)**을 완벽하게 내장하고 있습니다. Claude + Codex Co-Leadership 기반으로 `/orchestration` 명령어를 사용하여 Gemini, Codex 등 여러 AI와 협업할 수 있습니다.
-
-> 💡 **모든 플랫폼에서 사용 가능**: `/orchestration` 프로토콜은 macOS, Linux, Windows 모두에서 작동합니다.
+Olympus는 **Multi-AI Orchestration Protocol v5.3 (AIOS)**을 완벽하게 내장하고 있습니다.
 
 ### 사용 방법
 
 ```bash
-# Claude CLI에서 실행 (기본: Auto 모드 — 전자동, 사용자 개입 불필요)
+# Claude CLI에서 실행 (Auto 모드 — 전자동)
 /orchestration "로그인 페이지 UI 개선"
 
 # Approval 모드 (Phase 3, 8에서 사용자 확인)
 /orchestration --plan "장바구니 기능 추가"
 
-# Strict 모드 (모든 Phase 전환 시 사용자 승인)
+# Strict 모드 (모든 Phase 전환 시 승인)
 /orchestration --strict "결제 시스템 리팩토링"
 
-# Telegram 봇에서 실행 (모든 플랫폼 지원)
+# Telegram 봇에서 실행
 /orchestration 장바구니 기능 추가
-```
-
-### AIOS 아키텍처
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           AI Operating System v5.3                               │
-│              (Claude + Codex Co-Leadership + Deep Engineering)                   │
-└─────────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                    ┌─────────────────┼─────────────────┐
-                    ▼                 ▼                 ▼
-        ┌───────────────────┐ ┌───────────────┐ ┌──────────────────┐
-        │   Phase -1~3      │ │   Phase 4~6   │ │   Phase 7~8      │
-        │   (Planning)      │ │   (Execution) │ │   (Validation)   │
-        └─────────┬─────────┘ └───────┬───────┘ └────────┬─────────┘
-                  │                   │                   │
-        ┌─────────▼─────────┐ ┌───────▼───────┐ ┌────────▼─────────┐
-        │ prometheus (Plan) │ │ Gemini (Code) │ │ momus (Review)   │
-        │ oracle (Arch)     │ │ Codex (Code)  │ │ qa-tester (Test) │
-        │ explore (Search)  │ │ sisyphus-jr   │ │ document-writer  │
-        └───────────────────┘ └───────────────┘ └──────────────────┘
 ```
 
 ### 10 Phase 워크플로우
@@ -474,16 +331,7 @@ Olympus는 **Multi-AI Orchestration Protocol v5.3 (AIOS)**을 완벽하게 내�
 | 7 | Final Test | Build/Lint/Type/Test + Core Scenarios |
 | 8 | Judgment | Quality Gates (Hard/Behavior/Soft) → ACCEPT or LOOP |
 
-### 복잡도 기반 모드 결정
-
-| 점수 | 모드 | 동작 |
-|------|------|------|
-| 0-4 | Silent | Phase 건너뛰고 즉시 실행, Core agents만 |
-| 5-8 | Fast | Phase 0 간소화, Phase 1 생략 |
-| 9-14 | Suggested | 사용자에게 Full Mode 권장, 선택 가능 |
-| 15-20 | Forced | Full Mode 필수, 전체 Phase 실행 |
-
-### AI 역할 분담
+### Co-Leadership (Claude + Codex)
 
 | AI | 역할 | 담당 |
 |----|------|------|
@@ -491,354 +339,152 @@ Olympus는 **Multi-AI Orchestration Protocol v5.3 (AIOS)**을 완벽하게 내�
 | **Gemini** | Architect/Frontend | Phase 0 설계, Phase 2 프론트 리뷰, Phase 4 UI 구현 |
 | **Codex** | Implementer/Backend | Phase 2 백엔드 리뷰, Phase 4 API/Infra 구현 |
 
-### Quality Gates (Phase 8)
-
-```
-🔴 HARD GATES (실패 시 LOOP):
-  □ Build: 100% 성공
-  □ Lint: 0 errors
-  □ Type Check: 100% 성공
-  □ Tests: 100% 통과
-
-🟡 BEHAVIOR GATES (실패 시 LOOP):
-  □ Core Scenario 1-3: Pass
-
-🟢 SOFT GATES (경고만):
-  □ Coverage ≥80%
-  □ Bundle Size
-  □ Complexity
-```
-
-### 주요 기능
-
-- **Smart Intake**: 복잡도 평가 후 자동 모드 결정
-- **Contract Document**: 모든 에이전트가 참조하는 Global Blackboard
-- **Feature Map (DAG)**: UI/Domain/Infra/Integration 4계층 구조
-- **2-Phase Development**: Coding Phase → TIME_TO_END → Debugging Phase
-- **Shared Surface Detection**: 병렬 실행 전 파일 충돌 자동 감지
-- **Learning Memory**: 실패 Root Cause → Prevention Rule 자동 기록 (`.sisyphus/learnings.json`)
-- **Checkpoint & Rollback**: Phase 3/4/5 완료 시 Git 스냅샷, 3회 실패 시 롤백 옵션
-- **Partial Success**: Feature Set별 성공/실패 분리, 성공분만 머지 가능
-
-### MCP 서버 설정
-
-**로컬 설치** (`--local`): 프로젝트 루트에 `.mcp.json`이 자동 생성됩니다 (Git 커밋 가능):
-
-```json
-{
-  "mcpServers": {
-    "ai-agents": {
-      "command": "node",
-      "args": ["${PWD}/orchestration/mcps/ai-agents/server.js"]
-    },
-    "openapi": {
-      "command": "node",
-      "args": ["${PWD}/orchestration/mcps/openapi/server.js"]
-    }
-  }
-}
-```
-
-> `${PWD}`는 Claude Code가 자동으로 현재 프로젝트 경로로 치환합니다. 절대경로 없이 포터블하게 동작합니다.
-
-**전역 설치** (`--global`): `~/.claude/settings.json`에 자동 추가됩니다.
-
 ### 인증 설정 (선택)
 
-Gemini/Codex를 사용하려면 각각 인증이 필요합니다:
-
 ```bash
-# Gemini 인증 (첫 실행 시 OAuth 인증)
+# Gemini 인증 (첫 실행 시 OAuth)
 gemini
 
 # Codex 인증
 codex login
 ```
 
-### 포함된 리소스
-
-```
-orchestration/
-├── commands/
-│   └── orchestration.md    # /orchestration 슬래시 명령어 (1800+ lines)
-├── mcps/
-│   ├── ai-agents/          # Multi-AI MCP 서버 (Gemini+Codex 연동)
-│   │   ├── server.js       # MCP 서버 구현
-│   │   └── wisdom.json     # 축적된 지혜 (패턴, 교훈)
-│   └── openapi/            # OpenAPI/Swagger MCP 서버
-│       └── server.js       # Swagger 스펙 로드/호출
-├── skills/
-│   ├── frontend-ui-ux/     # 프론트엔드 UI/UX 스킬
-│   ├── git-master/         # Git 관리 스킬 (atomic commits, rebasing)
-│   └── agent-browser/      # 브라우저 자동화 스킬
-└── plugins/
-    └── claude-dashboard/   # 상태줄 플러그인
-        ├── scripts/        # 위젯 시스템 (17개 위젯)
-        └── dist/index.js   # 빌드된 플러그인
-```
-
-### 설치 후 필수 체크리스트
-
-```
-CLI 도구:
-[ ] claude CLI 설치됨
-[ ] gemini CLI 설치됨 + OAuth 인증
-[ ] codex CLI 설치됨 + OAuth 인증
-
-Plugin (Claude Code 내에서 실행):
-[ ] /plugin marketplace add supabase/agent-skills
-[ ] /plugin install postgres-best-practices@supabase-agent-skills
-
-Skills (자동 설치됨):
-[✔] vercel-react-best-practices
-[✔] webapp-testing
-[✔] frontend-ui-ux
-[✔] git-master
-[✔] agent-browser
-[✔] find-skills
-```
-
 ## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│              Client Layer                                │
-│  Telegram Bot  │  Web Dashboard  │  TUI  │  CLI         │
-│  (/codex RPC)  │  (CodexPanel)   │       │  (--mode)    │
-└────────────────┴─────────────────┴───────┴──────────────┘
-                         ↕ WebSocket + REST
-┌─────────────────────────────────────────────────────────┐
-│                    Gateway (Core)                        │
-│  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐  │
-│  │RPC Router│  │ Channels │  │  Codex Agent (V2)    │  │
-│  │(JSON-RPC)│  │Dashboard │  │  IDLE→ANALYZING→...  │  │
-│  │ +codex.* │  │Telegram  │  │  (legacy/hybrid mode)│  │
-│  └──────────┘  └──────────┘  └──────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ CodexAdapter ──→ Codex Orchestrator (V3)          │  │
-│  │ RPC: codex.route | sessions | projects | search   │  │
-│  │ Events: session:output | session:status            │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │ WorkerManager (Factory) — legacy/hybrid mode only │  │
-│  │ Claude CLI │ API │ Spawn │ Docker │ FIFO Queue(20) │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌────────────┐  ┌───────────────┐  ┌──────────────┐  │
-│  │MemoryStore │  │SecurityGuard  │  │ProjectRegistry│  │
-│  │(SQLite+FTS5)│  │+CommandQueue  │  │(auto-scan)   │  │
-│  └────────────┘  └───────────────┘  └──────────────┘  │
-└─────────────────────────────────────────────────────────┘
-                         ↕
-┌─────────────────────────────────────────────────────────┐
-│              Codex Orchestrator (packages/codex/)        │
-│  Router │ SessionManager │ OutputMonitor │ AgentBrain   │
-│  ResponseProcessor │ ContextManager (FTS5 per-project)  │
-└─────────────────────────────────────────────────────────┘
-```
 
 ### 패키지 구조 (9개)
 
 ```
-packages/
-├── protocol/     # 메시지 타입, Agent 상태머신, Codex 타입, 상수
-├── core/         # 오케스트레이션, TaskStore (SQLite)
-├── gateway/      # HTTP+WS 서버, Agent, Worker, Memory, Channel, CodexAdapter
-├── cli/          # CLI 진입점 + Claude 래퍼 + --mode 선택
-├── client/       # WebSocket 클라이언트 (자동 재연결, Codex RPC)
-├── web/          # React 대시보드 (Vite, Tailwind, CodexPanel, ProjectBrowser)
-├── tui/          # 터미널 UI (Ink)
-├── telegram-bot/ # Telegram 봇 (Telegraf, Smart Digest, /codex RPC)
-└── codex/        # ⭐ Codex Orchestrator (멀티 프로젝트 AI 오케스트레이터)
-
-orchestration/    # Multi-AI Orchestration 리소스
-├── commands/     # 슬래시 명령어
-├── mcps/         # MCP 서버
-├── skills/       # 번들 스킬
-└── plugins/      # 플러그인
+protocol → core → gateway → cli
+    │        │       ↑        ↑
+    ├→ client → tui ─┤────────┤
+    │        └→ web  │        │
+    ├→ telegram-bot ─┘────────┘
+    └→ codex (Codex Orchestrator)
 ```
 
-### 패키지 역할
+**패키지 역할**:
 
 | 패키지 | 역할 |
 |--------|------|
-| `protocol` | WebSocket 메시지 타입, Agent 상태머신, Codex 타입, Worker/Task 인터페이스 |
+| `protocol` | 메시지 타입, Agent 상태머신, Worker/Task/CliRunner 인터페이스 |
 | `core` | 멀티-AI 오케스트레이션, TaskStore (SQLite) |
-| `gateway` | HTTP + WebSocket 서버, Codex Agent, Worker Factory, Memory Store, Channel Manager, RPC Router, CodexAdapter |
-| `client` | 클라이언트 라이브러리 (자동 재연결, 이벤트 구독, Codex RPC) |
-| `cli` | 메인 CLI, Claude CLI 래퍼, `--mode legacy\|hybrid\|codex` |
-| `web` | React 대시보드 (Vite, Tailwind, CodexPanel, ProjectBrowser) |
-| `telegram-bot` | Telegram 봇 (Telegraf, Smart Digest, `/codex` RPC 질의) |
+| `gateway` | HTTP + WebSocket 서버, CliRunner, Worker Registry, Session Store |
+| `client` | WebSocket 클라이언트 (자동 재연결, 이벤트 구독) |
+| `cli` | 메인 CLI, Claude CLI 래퍼, PTY Worker |
+| `web` | React 대시보드 (LiveOutputPanel, AgentHistoryPanel, SessionCostTracker) |
+| `telegram-bot` | Telegram 봇 (워커 위임, /workers 명령어) |
 | `tui` | 터미널 UI (React + Ink) |
-| `codex` | Codex Orchestrator — 멀티 프로젝트 라우팅, 세션 관리, 컨텍스트 DB, AgentBrain |
+| `codex` | Codex Orchestrator (라우팅, 세션 관리, 컨텍스트 DB) |
 
-### V3 Codex Orchestrator
+### 핵심 모듈
 
-복수의 Claude CLI 세션을 관리하는 멀티 프로젝트 AI 오케스트레이터입니다:
+#### CliRunner (Gateway)
 
-```
-사용자 입력 (Telegram/Dashboard/CLI)
-        ↓
-[Router] @mention → 세션 포워드 / 글로벌 쿼리 → 자체 응답 / 키워드 → 프로젝트 매칭
-        ↓
-[SessionManager] 세션 생명주기 관리, JSON 파일 저장소
-        ↓
-[OutputMonitor] stdout 기반 출력 감시, 패턴 매칭 (PROMPT/BUSY/COMPLETION)
-        ↓
-[ResponseProcessor] 타입 감지(build/test/error/code/text), 파일 변경 파싱, Telegram 포맷
-        ↓
-[AgentBrain] 의도 분석, 유사 작업 조회, 실패 패턴 감지, 컨텍스트 주입
-```
+CLI 프로세스 spawn → JSON/JSONL parse + stdout 실시간 스트리밍
 
-**7개 모듈**: Router, CodexSessionManager, OutputMonitor, ResponseProcessor, ContextManager (FTS5), AgentBrain, CodexOrchestrator
+- **구현**: `gateway/src/cli-runner.ts`
+- **타입**: `protocol/src/cli-runner.ts` (12개 타입 + AgentEvent + CliStreamChunk)
+- **병렬 실행**: `ConcurrencyLimiter(5)` — 최대 5개 동시 CLI spawn
+- **stdout 스트리밍**: `spawnCli`의 `onStdout` → `runCli`의 `params.onStream` → server `cli:stream` 브로드캐스트
 
-**Gateway 연동**: CodexAdapter (duck-typed) + RPC 5개 (`codex.route`, `codex.sessions`, `codex.projects`, `codex.search`, `codex.status`)
+#### PTY Worker (CLI)
 
-**CLI `--mode` 옵션**:
-| 모드 | 동작 |
-|------|------|
-| `legacy` | 기존 V2 Agent/Worker/Memory 전체 초기화 |
-| `hybrid` | V2 + Codex Orchestrator 동시 실행 |
-| `codex` (기본) | Codex Orchestrator만 실행, V2 Agent/Worker/Memory 비활성화 |
+node-pty 기반 상주형 Claude CLI 관리
 
-### V2 Agent 시스템
+- **구현**: `cli/src/pty-worker.ts`
+- **strip-ansi**: `cli/src/utils/strip-ansi.ts` (ANSI+OSC+제어문자 제거)
+- **완료 감지**: 프롬프트 패턴 (3초) → 20초 무활동 → 60초 강제 완료
+- **결과 추출**: ⏺ 마커 기반 → stripAnsi → isTuiArtifactLine 필터 → 8000자 제한
 
-Codex Agent가 자연어 명령을 받아 자율적으로 작업을 수행합니다:
+#### Worker Registry (Gateway)
 
-1. **분석** (Analyzer) — 명령 의도, 복잡도, 대상 프로젝트 파악
-2. **계획** (Planner) — 워커 할당, 실행 전략(single/parallel/sequential/pipeline), Memory 학습 활용
-3. **실행** (WorkerManager) — 4종 워커 중 자동 선택, FIFO 큐, 파이프라인 출력 체이닝
-4. **검토** (Reviewer) — 결과 성공/실패 판단, 자동 재시도
-5. **보고** (Reporter) — 채널(Dashboard/Telegram)에 결과 broadcast
+인메모리 워커 등록 + 하트비트 + 작업 할당
 
-> 상세 아키텍처: [`docs/V2_ARCHITECTURE.md`](docs/V2_ARCHITECTURE.md)
-> API 레퍼런스: [`docs/V2_API_REFERENCE.md`](docs/V2_API_REFERENCE.md)
+- **구현**: `gateway/src/worker-registry.ts`
+- **하트비트**: 15초 체크, 60초 타임아웃
+- **타입**: `protocol/src/worker.ts` (RegisteredWorker, WorkerRegistration, WorkerTaskRecord)
 
-## Environment Variables
+#### Session Store (Gateway)
 
-```bash
-# Telegram Bot
-TELEGRAM_BOT_TOKEN=your_token
-ALLOWED_USERS=123456789,987654321
+SQLite 기반 CLI 세션 저장소 (토큰/비용 누적)
 
-# Gateway
-OLYMPUS_API_KEY=your_secret_key
-GATEWAY_HOST=127.0.0.1
-GATEWAY_PORT=8200
-```
-
-## Default Ports
-
-| 서비스 | 포트 |
-|--------|------|
-| Gateway (HTTP + WebSocket) | 8200 |
-| Dashboard (Web UI) | 8201 |
+- **구현**: `gateway/src/cli-session-store.ts`
+- **API**: `GET /api/cli/sessions`, `DELETE /api/cli/sessions/:id`
 
 ## Development
 
+### 빌드 + 테스트
+
 ```bash
-# Install dependencies
-pnpm install
+# 전체 빌드
+pnpm install && pnpm build
 
-# Build all packages
-pnpm build
-
-# Run tests — 535 tests (gateway 372 + codex 82 + telegram 57 + core 24)
+# 테스트 (576 tests)
 pnpm test
+# - gateway: 372
+# - codex: 82
+# - telegram-bot: 57
+# - cli: 54
+# - core: 24
 
-# Type check (6 packages)
+# TypeScript 타입 체크 (6 packages)
 pnpm lint
 
-# Run in development mode
+# 개발 모드
 pnpm dev
+```
 
-# Run CLI locally
-cd packages/cli && pnpm build && node dist/index.js
+### 로컬 CLI 실행
 
-# Install Olympus globally for development
+```bash
+cd packages/cli
+pnpm build
+node dist/index.js
+```
+
+### 전역 설치 (개발용)
+
+```bash
 ./install.sh --local
 ```
 
-### 설치 스크립트 옵션
-
-```bash
-./install.sh              # 대화형 선택
-./install.sh --global     # 전역 설치 (commands/mcps/skills/plugins symlink)
-./install.sh --local      # 로컬 설치 (프로젝트 내에서만)
-./install.sh --global --with-claude-md  # CLAUDE.md managed block 포함
-./install.sh --help       # 도움말
-```
-
-## Tech Stack
-
-- **Runtime**: Node.js 18+ (CI: Node 20/22)
-- **Language**: TypeScript 5.8
-- **Build**: pnpm + Turbo + tsup
-- **Frontend**: React 18, Vite, Tailwind CSS
-- **Terminal UI**: Ink 5 + React
-- **WebSocket**: ws
-- **Database**: SQLite (better-sqlite3) + FTS5
-- **AI**: Anthropic API (SSE streaming), OpenAI API
-- **CLI**: Commander
-- **Telegram**: Telegraf
-- **CI**: GitHub Actions
-
 ## Troubleshooting
 
-### Dashboard에서 "Failed to fetch" 또는 "Cannot connect to Gateway" 오류
+### Dashboard에서 "Failed to fetch" 오류
 
-**원인**: Gateway의 CORS 설정에서 Dashboard 포트(8201)가 허용되지 않거나, API Key가 설정되지 않은 경우 발생합니다.
+**원인**: Gateway가 실행되지 않았거나 CORS 설정 문제
 
 **해결**:
-
-1. `olympus server start`로 서버를 시작하면 Dashboard에 Gateway 설정이 자동 주입됩니다 (수동 설정 불필요)
-2. Vite dev 서버(포트 5173)로 개발 중이라면, CORS는 기본 허용됩니다
-3. Gateway 설정 변경 후에는 반드시 **Gateway를 재시작**해야 합니다
-
-### Telegram 봇에서 알림이 너무 많이 옴
-
-**해결**: Telegram 봇은 기본 **digest 모드**로 동작합니다. 모든 출력은 Smart Digest 엔진을 거쳐 핵심 결과만 전달됩니다.
-
-**Smart Digest 동작 원리**:
-- **6-카테고리 분류**: build, test, commit, error, phase, change
-- **노이즈 자동 제거**: Reading, Searching, Globbing, 스피너, 빈 줄 등
-- **우선순위 기반 예산**: 에러(5점) > 빌드/테스트(4점) > 커밋/Phase(3점) 순서로 800자 채움
-- **하이브리드 트리거**: 에러/완료 시 즉시 전달, 일반 출력은 5초 debounce
-- **비밀 마스킹**: API 키, Bearer 토큰, GitHub PAT, 긴 hex 문자열 자동 마스킹
-
-**모드 전환**: Telegram에서 `/mode raw`로 원문 모드 전환, `/mode digest`로 복귀
-
-**추가 스팸 방지 (Gateway 레벨)**:
-- 출력 안정화 대기: 2초 debounce
-- 전송 간격 제한: 최소 3초 throttle
-- 최소 변경량: 10자 미만 변경 무시
-- 노이즈 필터: 프롬프트, 상태바, 스피너 자동 제거
-
-> Gateway 코드를 변경한 경우 **반드시 Gateway를 재시작**해야 필터가 적용됩니다.
+1. `olympus server start`로 서버 시작 (Dashboard에 Gateway 설정 자동 주입)
+2. Vite dev 서버(포트 5173)로 개발 중이라면 CORS는 기본 허용됨
+3. Gateway 설정 변경 후 **반드시 Gateway 재시작**
 
 ### CLI 출력이 대시보드에 표시되지 않음
 
-**원인**: Gateway 서버가 실행되지 않았거나, WebSocket 연결이 끊어진 경우 발생합니다.
+**원인**: Gateway 서버가 실행되지 않았거나 WebSocket 연결 끊김
 
 **해결**:
-
 1. Gateway 서버 실행 확인: `olympus server status`
 2. 서버 재시작: `olympus server start`
-3. 대시보드에서 LiveOutputPanel이 실시간 stdout 출력을 표시합니다
+3. LiveOutputPanel이 실시간 stdout 출력을 표시합니다
 
-## Contributing
+### node-pty 빌드 실패
 
-기여를 환영합니다! Pull Request를 보내기 전에:
+**원인**: 네이티브 모듈 빌드 도구 미설치
 
-1. Fork 후 새 브랜치에서 작업
-2. `pnpm install && pnpm build` 확인
-3. 변경 사항 테스트
-4. PR 제출
+**해결**:
+- **macOS**: `xcode-select --install`
+- **Linux**: `sudo apt install build-essential python3`
+- **Windows**: Visual Studio Build Tools + Python 3 설치
 
-## Related Projects
+### Telegram 봇 응답 없음
 
-- [Claude CLI](https://github.com/anthropics/claude-code) - Anthropic 공식 CLI
-- [Gemini CLI](https://github.com/google-gemini/gemini-cli) - Google Gemini CLI
-- [Codex CLI](https://github.com/openai/codex) - OpenAI Codex CLI
+**원인**: 환경 변수 미설정 또는 Gateway 미실행
+
+**해결**:
+1. `TELEGRAM_BOT_TOKEN`, `ALLOWED_USERS` 환경 변수 확인
+2. `olympus server start --telegram` 또는 `olympus server start`
+3. `/health` 명령어로 상태 확인
 
 ## License
 
@@ -847,5 +493,5 @@ MIT
 ---
 
 <p align="center">
-  <b>Olympus</b> - Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 도구
+  <b>Olympus v0.5.1</b> - Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 도구
 </p>

@@ -20,6 +20,7 @@ export interface ApiHandlerOptions {
   onSessionsChanged?: () => void;  // Callback to broadcast sessions:list
   onCliComplete?: (result: import('@olympus-dev/protocol').CliRunResult) => void;
   onCliStream?: (chunk: import('@olympus-dev/protocol').CliStreamChunk) => void;
+  onWorkerEvent?: (eventType: string, payload: unknown) => void;
 }
 
 /**
@@ -175,6 +176,9 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     if (parts[2] === 'chat') {
       return { path: '/api/codex/chat', query };
     }
+    if (parts[2] === 'summarize') {
+      return { path: '/api/codex/summarize', query };
+    }
   }
 
   // /api/workers routes
@@ -182,8 +186,16 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     if (parts[2] === 'register') {
       return { path: '/api/workers/register', query };
     }
+    // /api/workers/tasks/:taskId — 워커 작업 상태 조회
+    if (parts[2] === 'tasks' && parts[3]) {
+      return { path: '/api/workers/tasks/:id', id: parts[3], query };
+    }
     if (parts[2] && parts[3] === 'heartbeat') {
       return { path: '/api/workers/:id/heartbeat', id: parts[2], query };
+    }
+    // /api/workers/:id/task — 워커에 작업 할당
+    if (parts[2] && parts[3] === 'task') {
+      return { path: '/api/workers/:id/task', id: parts[2], query };
     }
     if (parts[2]) {
       return { path: '/api/workers/:id', id: parts[2], query };
@@ -203,7 +215,7 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
  * Create HTTP API request handler
  */
 export function createApiHandler(options: ApiHandlerOptions) {
-  const { runManager, sessionManager, cliSessionStore, memoryStore, codexAdapter, workerRegistry, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete, onCliStream } = options;
+  const { runManager, sessionManager, cliSessionStore, memoryStore, codexAdapter, workerRegistry, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete, onCliStream, onWorkerEvent } = options;
 
   // 비동기 CLI 실행 태스크 저장소 (in-memory, 1시간 TTL)
   const asyncTasks = new Map<string, { status: 'running' | 'completed' | 'failed'; result?: import('@olympus-dev/protocol').CliRunResult; error?: string; startedAt: number }>();
@@ -310,6 +322,115 @@ export function createApiHandler(options: ApiHandlerOptions) {
         }
         const ok = workerRegistry.heartbeat(id);
         sendJson(res, ok ? 200 : 404, { ok });
+        return;
+      }
+
+      // POST /api/workers/:id/task — 워커에 작업 할당 (Worker가 직접 CLI 실행)
+      if (path === '/api/workers/:id/task' && method === 'POST' && id) {
+        if (!workerRegistry) {
+          sendJson(res, 503, { error: 'Worker registry not available' });
+          return;
+        }
+        const body = await parseBody<{ prompt: string; provider?: string; dangerouslySkipPermissions?: boolean }>(req);
+        if (!body.prompt) {
+          sendJson(res, 400, { error: 'prompt is required' });
+          return;
+        }
+
+        const workers = workerRegistry.getAll();
+        const worker = workers.find(w => w.id === id);
+        if (!worker) {
+          sendJson(res, 404, { error: 'Worker not found' });
+          return;
+        }
+        if (worker.status === 'busy') {
+          sendJson(res, 409, { error: 'Worker is busy', currentTask: worker.currentTaskPrompt });
+          return;
+        }
+
+        // 1. WorkerRegistry에 태스크 생성 (worker → busy)
+        const task = workerRegistry.createTask(worker.id, body.prompt);
+
+        // 2. task:assigned 브로드캐스트 → Worker가 수신하여 직접 CLI 실행
+        onWorkerEvent?.('task:assigned', {
+          taskId: task.taskId,
+          workerId: worker.id,
+          workerName: worker.name,
+          prompt: body.prompt,
+          provider: body.provider ?? 'claude',
+          dangerouslySkipPermissions: body.dangerouslySkipPermissions ?? true,
+          projectPath: worker.projectPath,
+        });
+
+        sendJson(res, 202, { taskId: task.taskId, status: 'running', workerName: worker.name });
+        return;
+      }
+
+      // POST /api/workers/tasks/:taskId/result — Worker가 CLI 실행 결과 보고
+      if (path === '/api/workers/tasks/:id' && method === 'POST' && id) {
+        if (!workerRegistry) {
+          sendJson(res, 503, { error: 'Worker registry not available' });
+          return;
+        }
+        const body = await parseBody<{ success: boolean; text?: string; error?: string; durationMs?: number; usage?: Record<string, number>; cost?: number }>(req);
+        const task = workerRegistry.getTask(id);
+        if (!task) {
+          sendJson(res, 404, { error: 'Task not found' });
+          return;
+        }
+
+        const result = {
+          success: body.success,
+          text: body.text ?? '',
+          sessionId: '',
+          model: '',
+          usage: {
+            inputTokens: body.usage?.inputTokens ?? 0,
+            outputTokens: body.usage?.outputTokens ?? 0,
+            cacheCreationTokens: body.usage?.cacheCreationTokens ?? 0,
+            cacheReadTokens: body.usage?.cacheReadTokens ?? 0,
+          },
+          cost: body.cost ?? 0,
+          durationMs: body.durationMs ?? 0,
+          numTurns: 0,
+          error: body.error ? { type: 'unknown' as const, message: body.error } : undefined,
+        };
+
+        workerRegistry.completeTask(id, result);
+        onWorkerEvent?.('task:completed', {
+          taskId: id,
+          workerId: task.workerId,
+          workerName: task.workerName,
+          success: body.success,
+          durationMs: body.durationMs,
+          text: body.text?.slice(0, 2000),
+        });
+        onCliComplete?.(result);
+
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+
+      // GET /api/workers/tasks/:taskId — 워커 작업 상태 조회
+      if (path === '/api/workers/tasks/:id' && method === 'GET' && id) {
+        if (!workerRegistry) {
+          sendJson(res, 503, { error: 'Worker registry not available' });
+          return;
+        }
+        const task = workerRegistry.getTask(id);
+        if (!task) {
+          sendJson(res, 404, { error: 'Task not found' });
+          return;
+        }
+        sendJson(res, 200, {
+          taskId: task.taskId,
+          workerId: task.workerId,
+          workerName: task.workerName,
+          status: task.status,
+          startedAt: task.startedAt,
+          completedAt: task.completedAt,
+          result: task.result,
+        });
         return;
       }
 
@@ -454,6 +575,33 @@ ${workers.length > 0 ? '- 워커 목록:\n' + workerListStr : ''}`;
           sendJson(res, 200, { type: 'chat', response: result.text });
         } catch (err) {
           sendJson(res, 500, { error: 'Chat failed', message: (err as Error).message });
+        }
+        return;
+      }
+
+      // POST /api/codex/summarize — 경량 요약 (Claude Haiku, 빠른 응답)
+      if (path === '/api/codex/summarize' && method === 'POST') {
+        const body = await parseBody<{ text: string; workerName?: string }>(req);
+        if (!body.text) {
+          sendJson(res, 400, { error: 'text is required' });
+          return;
+        }
+
+        try {
+          const { runCli } = await import('./cli-runner.js');
+          const prompt = `다음은 "${body.workerName ?? 'Worker'}"의 작업 결과입니다. 핵심만 간결하게 요약해주세요. 불필요한 인사말이나 부가 설명 없이 결과만 전달하세요.\n\n---\n${body.text.slice(0, 4000)}`;
+          const result = await runCli({
+            prompt,
+            provider: 'claude',
+            model: 'claude-haiku-4-5-20251001',
+            dangerouslySkipPermissions: true,
+            timeoutMs: 30_000,
+          });
+
+          sendJson(res, 200, { summary: result.success ? result.text : body.text });
+        } catch (err) {
+          // 실패 시 원본 반환
+          sendJson(res, 200, { summary: body.text });
         }
         return;
       }

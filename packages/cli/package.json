@@ -7,7 +7,9 @@
     "olympus": "./dist/index.js"
   },
   "main": "dist/index.js",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/jobc90/olympus.git",
@@ -26,16 +28,17 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@olympus-dev/core": "workspace:*",
-    "@olympus-dev/gateway": "workspace:*",
-    "@olympus-dev/tui": "workspace:*",
-    "@olympus-dev/protocol": "workspace:*",
     "@olympus-dev/client": "workspace:*",
     "@olympus-dev/codex": "workspace:*",
+    "@olympus-dev/core": "workspace:*",
+    "@olympus-dev/gateway": "workspace:*",
+    "@olympus-dev/protocol": "workspace:*",
     "@olympus-dev/telegram-bot": "workspace:*",
+    "@olympus-dev/tui": "workspace:*",
     "chalk": "^5.4.0",
     "commander": "^13.1.0",
     "ink": "^5.1.0",
+    "node-pty": "^1.1.0",
     "ora": "^8.2.0",
     "react": "^18.3.1",
     "ws": "^8.18.0"
@@ -49,5 +52,12 @@
   "engines": {
     "node": ">=18"
   },
-  "keywords": ["ai", "cli", "developer-tools", "gemini", "codex", "orchestration"]
+  "keywords": [
+    "ai",
+    "cli",
+    "developer-tools",
+    "gemini",
+    "codex",
+    "orchestration"
+  ]
 }

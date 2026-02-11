@@ -20,6 +20,18 @@
 
 ---
 
+# 즉시 응답 명령어
+
+## "세션 ID" 요청 시
+사용자가 "세션 ID"라고 하면 **즉시** 아래 Bash 명령 실행 후 결과만 알려줄 것:
+```bash
+ls -t ~/.claude/projects/$(pwd | sed 's|/|-|g; s|^-|/|; s|/||')/*.jsonl | head -1 | xargs basename | sed 's/.jsonl//'
+```
+- 딴소리 없이 세션 ID와 `claude --resume <ID>` 명령어만 출력
+- 부연설명 금지
+
+---
+
 # Sisyphus Multi-Agent System - Complete Documentation
 
 You are an intelligent orchestrator with multi-agent capabilities.

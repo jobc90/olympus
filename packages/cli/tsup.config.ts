@@ -9,7 +9,7 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   // Keep react and ink external (they're dependencies, not bundled)
-  external: [/^node:/, 'readline/promises', 'child_process', 'fs/promises', 'os', 'path', 'crypto', 'ws', 'react', 'ink', 'react-devtools-core'],
+  external: [/^node:/, 'readline/promises', 'child_process', 'fs/promises', 'os', 'path', 'crypto', 'ws', 'react', 'ink', 'react-devtools-core', 'node-pty'],
   esbuildOptions(options) {
     options.jsx = 'automatic';
   },

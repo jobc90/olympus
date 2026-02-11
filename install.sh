@@ -61,7 +61,7 @@ echo -e "${MAGENTA}║  ██║   ██║██║    ╚██╔╝  █�
 echo -e "${MAGENTA}║  ╚██████╔╝███████╗██║   ██║ ╚═╝ ██║██║     ╚██████╔╝███████║      ║${NC}"
 echo -e "${MAGENTA}║   ╚═════╝ ╚══════╝╚═╝   ╚═╝     ╚═╝╚═╝      ╚═════╝ ╚══════╝      ║${NC}"
 echo -e "${MAGENTA}║                                                                    ║${NC}"
-echo -e "${MAGENTA}║          Claude CLI Enhanced Platform + AIOS v5.3                 ║${NC}"
+echo -e "${MAGENTA}║        Claude CLI Enhanced Platform v0.5.1 + AIOS v5.3            ║${NC}"
 echo -e "${MAGENTA}║       \"Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 도구\"            ║${NC}"
 echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
@@ -247,6 +247,25 @@ fi
 
 # tmux는 더 이상 필요하지 않음 (v0.4.0에서 제거됨)
 info "tmux 의존성 없음 — cross-platform 지원 (macOS, Linux, Windows)"
+
+# node-pty 네이티브 빌드 도구 확인 (PTY Worker용)
+echo ""
+echo -e "${CYAN}🔧 네이티브 빌드 도구 (node-pty):${NC}"
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    if xcode-select -p &> /dev/null; then
+        success "Xcode Command Line Tools 설치됨"
+    else
+        warn "Xcode Command Line Tools 미설치 — node-pty 빌드에 필요합니다"
+        echo "    설치: xcode-select --install"
+    fi
+elif [[ "$OSTYPE" == "linux"* ]]; then
+    if command -v gcc &> /dev/null && command -v make &> /dev/null; then
+        success "빌드 도구 (gcc, make) 설치됨"
+    else
+        warn "빌드 도구 미설치 — node-pty 빌드에 필요합니다"
+        echo "    설치: sudo apt install build-essential python3"
+    fi
+fi
 
 echo ""
 
@@ -917,30 +936,24 @@ echo -e "${MAGENTA}║                                                          
 echo -e "${MAGENTA}╚════════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-echo -e "${CYAN}🆕 v5.3 핵심 기능:${NC}"
+echo -e "${CYAN}🆕 v0.5.1 핵심 기능:${NC}"
 echo ""
-echo "   🤖 V3 Codex Orchestrator (NEW)"
-echo "      • 멀티 프로젝트 AI 오케스트레이터 (packages/codex/)"
-echo "      • 7개 모듈: Router, SessionManager, OutputMonitor, ResponseProcessor,"
-echo "        ContextManager, AgentBrain, CodexOrchestrator"
-echo "      • CLI: olympus server start --mode codex|hybrid|legacy"
-echo "      • Telegram: /codex <질문> 명령어"
-echo "      • Dashboard: CodexPanel, ProjectBrowser"
+echo "   ⚡ PTY Worker (v0.5.1)"
+echo "      • node-pty 기반 상주형 Claude CLI + TUI 표시"
+echo "      • 명령 입력 + 완료 감지 + 결과 추출 (TUI 아티팩트 필터)"
+echo "      • 더블 Ctrl+C 종료, spawn 모드 자동 폴백"
 echo ""
-echo "   🧠 Deep Engineering Protocol (v5.3)"
+echo "   🔗 Worker Registry"
+echo "      • Gateway 인메모리 워커 등록/하트비트/작업 할당"
+echo "      • Telegram @멘션으로 워커에 직접 작업 위임"
+echo ""
+echo "   📡 실시간 스트리밍"
+echo "      • stdout 기반 WebSocket 브로드캐스트 (cli:stream)"
+echo "      • 병렬 CLI 실행 — ConcurrencyLimiter (최대 5개)"
+echo ""
+echo "   🤝 Claude-Codex Co-Leadership (AIOS v5.3)"
+echo "      • 10 Phase 워크플로우, Deep Engineering Protocol"
 echo "      • 3x 확장 산출물, 4-Section Deep Review"
-echo "      • Trade-off 기반 의사결정 (2-3 옵션 + effort/risk/impact)"
-echo "      • DRY-first, 적정 엔지니어링, 증거 기반"
-echo ""
-echo "   🤝 Claude-Codex Co-Leadership"
-echo "      • Codex가 Claude와 동급 의사결정 파트너"
-echo "      • 계획/문서에 Claude-Codex 합의 필수"
-echo ""
-echo "   📊 정량화된 Quality Gate (Phase 8)"
-echo "      • Hard/Behavior/Soft 3단계 Gate"
-echo ""
-echo "   🧠 Learning Memory"
-echo "      • 실패 Root Cause → Prevention Rule 자동 기록"
 echo ""
 
 echo -e "${RED}⚠️ 필수 체크리스트:${NC}"
@@ -1034,13 +1047,14 @@ echo "   /orchestration \"작업 설명\"    # 10 Phase 프로토콜 시작"
 echo ""
 echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo -e "${MAGENTA}v5.3 핵심 원칙:${NC}"
+echo -e "${MAGENTA}v0.5.1 핵심:${NC}"
 echo ""
-echo -e "   🤖 ${CYAN}Codex Orchestrator (V3)${NC}: 멀티 프로젝트 AI 오케스트레이터"
-echo -e "   👑 ${CYAN}Claude + Codex = Co-Leaders${NC}: 합의 기반 의사결정"
-echo -e "   🎨 ${CYAN}Gemini = Frontend Specialist${NC}: UI/UX, 컴포넌트 구현"
-echo -e "   ⚙️ ${CYAN}Codex = Co-Architect${NC}: 아키텍처 공동 결정, 백엔드"
+echo -e "   ⚡ ${CYAN}PTY Worker${NC}: node-pty 기반 상주형 Claude CLI (TUI + 자동 완료 감지)"
+echo -e "   🔗 ${CYAN}Worker Registry${NC}: Gateway 워커 등록/하트비트/작업 할당"
+echo -e "   📡 ${CYAN}실시간 스트리밍${NC}: stdout WebSocket 브로드캐스트 (cli:stream)"
+echo -e "   🤝 ${CYAN}AIOS v5.3${NC}: Claude + Codex + Gemini Co-Leadership"
 echo -e "   📊 ${CYAN}9 Packages${NC}: protocol, core, gateway, cli, client, web, tui, telegram-bot, codex"
+echo -e "   🧪 ${CYAN}576 Tests${NC}: gateway(372) + codex(82) + telegram(57) + cli(54) + core(24)"
 echo ""
 echo -e "   ${YELLOW}🎯 목표: Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 도구${NC}"
 echo ""

@@ -254,6 +254,7 @@ export class Gateway {
         onSessionsChanged: () => this.broadcastSessionsList(),
         onCliComplete: (result) => this.broadcastToAll('cli:complete', result),
         onCliStream: (chunk) => this.broadcastToAll('cli:stream', chunk),
+        onWorkerEvent: (eventType, payload) => this.broadcastToAll(eventType, payload),
       });
 
       this.httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
