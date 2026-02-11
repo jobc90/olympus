@@ -780,63 +780,7 @@ class OlympusBot {
         return;
       }
 
-      // @워커이름 멘션 → Codex 거치지 않고 바로 워커에 위임
-      const mentionMatch = text.match(/^@(\S+)\s+([\s\S]+)/);
-      if (mentionMatch) {
-        const [, workerName, taskPrompt] = mentionMatch;
-        await ctx.sendChatAction('typing');
-        try {
-          // 워커 조회
-          const workersRes = await fetch(`${this.config.gatewayUrl}/api/workers`, {
-            headers: { Authorization: `Bearer ${this.config.apiKey}` },
-          });
-          const { workers } = await workersRes.json() as { workers: Array<{ id: string; name: string; projectPath: string; status: string }> };
-          const worker = workers.find(w => w.name === workerName);
-
-          if (!worker) {
-            const available = workers.length > 0
-              ? workers.map(w => `@${w.name}`).join(', ')
-              : '없음';
-            await this.safeReply(ctx, `"${workerName}" 워커를 찾을 수 없습니다.\n사용 가능: ${available}`, undefined);
-            return;
-          }
-          if (worker.status === 'busy') {
-            await this.safeReply(ctx, `@${worker.name} 워커가 현재 작업 중입니다. 완료 후 다시 시도하세요.`, undefined);
-            return;
-          }
-
-          await this.safeReply(ctx, `@${worker.name} 에 작업을 지시합니다.\n\n${taskPrompt.trim().split('\n')[0]}`, undefined);
-
-          // 워커에 작업 할당 (WorkerRegistry 연동)
-          const taskRes = await fetch(`${this.config.gatewayUrl}/api/workers/${worker.id}/task`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${this.config.apiKey}`,
-            },
-            body: JSON.stringify({
-              prompt: taskPrompt.trim(),
-              provider: 'claude',
-              dangerouslySkipPermissions: true,
-            }),
-            signal: AbortSignal.timeout(30_000),
-          });
-
-          if (!taskRes.ok) {
-            const errData = await taskRes.json().catch(() => ({ error: 'Unknown' })) as { error: string };
-            await this.safeReply(ctx, `작업 시작 실패: ${errData.error}`, undefined);
-            return;
-          }
-
-          const { taskId } = await taskRes.json() as { taskId: string };
-          this.pollWorkerTask(ctx.chat.id, taskId, worker.name).catch(() => {});
-        } catch (err) {
-          await this.safeReply(ctx, `워커 위임 실패: ${(err as Error).message}`, undefined);
-        }
-        return;
-      }
-
-      // Codex chat mode (default)
+      // 모든 메시지 → Codex chat
       await ctx.sendChatAction('typing');
 
       try {
@@ -847,17 +791,16 @@ class OlympusBot {
             Authorization: `Bearer ${this.config.apiKey}`,
           },
           body: JSON.stringify({ message: text, chatId: ctx.chat.id }),
-          signal: AbortSignal.timeout(1_800_000),  // 30분
+          signal: AbortSignal.timeout(1_800_000),
         });
 
         if (!chatRes.ok) {
           throw new Error(`Codex chat failed: ${chatRes.status}`);
         }
 
-        const data = await chatRes.json() as { type: 'chat'; response: string };
+        const data = await chatRes.json() as { type: string; response: string; taskId?: string };
         await this.sendLongMessage(ctx.chat.id, data.response);
       } catch (err) {
-        // Fallback: if codex/chat fails, try direct CLI
         structuredLog('warn', 'telegram-bot', 'codex_chat_fallback', { error: (err as Error).message });
         try {
           await this.forwardToCli(ctx, text, `telegram:${ctx.chat.id}`);
@@ -1271,135 +1214,6 @@ class OlympusBot {
   }
 
   /**
-   * 워커 결과를 요약합니다.
-   * - 짧은 응답 (≤1500자): 그대로 반환 (요약 불필요)
-   * - 긴 응답: Claude Haiku로 경량 요약 (/api/codex/summarize)
-   * - 실패 시 앞부분만 잘라서 반환
-   */
-  private async summarizeResult(workerName: string, rawText: string): Promise<string> {
-    // 짧은 응답은 요약 불필요
-    if (rawText.length <= 1500) {
-      return rawText;
-    }
-
-    try {
-      const res = await fetch(`${this.config.gatewayUrl}/api/codex/summarize`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.config.apiKey}`,
-        },
-        body: JSON.stringify({ text: rawText, workerName }),
-        signal: AbortSignal.timeout(30_000),
-      });
-
-      if (res.ok) {
-        const data = await res.json() as { summary: string };
-        if (data.summary) return data.summary;
-      }
-    } catch (err) {
-      structuredLog('warn', 'telegram-bot', 'summarize_failed', { error: (err as Error).message });
-    }
-    // 폴백: 앞부분만 반환
-    return rawText.slice(0, 2000) + (rawText.length > 2000 ? '\n\n...(이하 생략)' : '');
-  }
-
-  /**
-   * Poll worker task status (via WorkerRegistry) and notify chat on completion.
-   */
-  private async pollWorkerTask(chatId: number, taskId: string, workerName: string): Promise<void> {
-    const maxPolls = 180; // 30 minutes
-    const pollInterval = 10_000; // 10 seconds
-
-    for (let i = 0; i < maxPolls; i++) {
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
-
-      try {
-        const res = await fetch(`${this.config.gatewayUrl}/api/workers/tasks/${taskId}`, {
-          headers: { Authorization: `Bearer ${this.config.apiKey}` },
-          signal: AbortSignal.timeout(10_000),
-        });
-
-        if (!res.ok) continue;
-
-        const data = await res.json() as {
-          status: 'running' | 'completed' | 'failed';
-          result?: CliRunResult;
-        };
-
-        if (data.status === 'completed' && data.result) {
-          const result = data.result;
-          if (result.success) {
-            const summary = await this.summarizeResult(workerName, result.text ?? '');
-            const durationSec = Math.round((result.durationMs ?? 0) / 1000);
-            const text = `[${workerName}] ✅ 완료 (${durationSec}초)\n\n${summary}`;
-            await this.sendLongMessage(chatId, text);
-          } else {
-            await this.sendLongMessage(chatId, `[${workerName}] 작업 실패: ${result.error?.message ?? '알 수 없는 오류'}`);
-          }
-          return;
-        }
-
-        if (data.status === 'failed') {
-          await this.sendLongMessage(chatId, `[${workerName}] 작업 실패`);
-          return;
-        }
-      } catch {
-        // ignore polling errors, continue
-      }
-    }
-
-    await this.sendLongMessage(chatId, `[${workerName}] 작업 시간 초과 (30분)`);
-  }
-
-  /**
-   * Poll async task status and notify chat on completion.
-   * Fire-and-forget — errors are logged but not thrown.
-   */
-  private async pollAndNotify(chatId: number, taskId: string, workerName: string): Promise<void> {
-    const maxPolls = 180; // 30 minutes
-    const pollInterval = 10_000; // 10 seconds
-
-    for (let i = 0; i < maxPolls; i++) {
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
-
-      try {
-        const res = await fetch(`${this.config.gatewayUrl}/api/cli/run/${taskId}/status`, {
-          headers: { Authorization: `Bearer ${this.config.apiKey}` },
-          signal: AbortSignal.timeout(10_000),
-        });
-
-        if (!res.ok) continue;
-
-        const data = await res.json() as { status: string; result?: CliRunResult };
-
-        if (data.status === 'completed' && data.result) {
-          const result = data.result;
-          if (result.success) {
-            const summary = await this.summarizeResult(workerName, result.text ?? '');
-            const durationSec = Math.round((result.durationMs ?? 0) / 1000);
-            const text = `[${workerName}] ✅ 완료 (${durationSec}초)\n\n${summary}`;
-            await this.sendLongMessage(chatId, text);
-          } else {
-            await this.sendLongMessage(chatId, `[${workerName}] 작업 실패: ${result.error?.message ?? '알 수 없는 오류'}`);
-          }
-          return;
-        }
-
-        if (data.status === 'failed') {
-          await this.sendLongMessage(chatId, `[${workerName}] 작업 실패`);
-          return;
-        }
-      } catch {
-        // ignore polling errors, continue
-      }
-    }
-
-    // Timeout after 30 minutes
-    await this.sendLongMessage(chatId, `[${workerName}] 작업 시간 초과 (30분)`);
-  }
-
-  /**
    * Generate Olympus banner for session connection
    */
   private getOlympusBanner(sessionName: string, projectPath: string): string {
@@ -1634,6 +1448,29 @@ class OlympusBot {
         for (const chatId of this.chatSessions.keys()) {
           this.bot.telegram.sendMessage(chatId, text).catch(() => {});
         }
+      }
+      return;
+    }
+
+    // Handle worker task:completed — Codex가 요약한 결과를 텔레그램에 전달
+    if (msg.type === 'task:completed') {
+      const taskPayload = msg.payload as {
+        taskId: string;
+        workerName: string;
+        chatId?: number;
+        summary?: string;
+        success: boolean;
+        durationMs?: number;
+      };
+
+      if (taskPayload.chatId) {
+        const durationSec = Math.round((taskPayload.durationMs ?? 0) / 1000);
+        const icon = taskPayload.success ? '✅' : '❌';
+        const summaryText = taskPayload.summary ?? (taskPayload.success ? '작업 완료' : '작업 실패');
+        const text = `[${taskPayload.workerName}] ${icon} 완료 (${durationSec}초)\n\n${summaryText}`;
+        this.sendLongMessage(taskPayload.chatId, text).catch((err) => {
+          structuredLog('error', 'telegram-bot', 'task_completed_send_failed', { error: (err as Error).message });
+        });
       }
       return;
     }

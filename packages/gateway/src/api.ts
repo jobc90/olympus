@@ -397,13 +397,36 @@ export function createApiHandler(options: ApiHandlerOptions) {
         };
 
         workerRegistry.completeTask(id, result);
+
+        // Codex로 결과 요약
+        let summary = result.text ?? '';
+        if (result.success && summary) {
+          try {
+            const { runCli } = await import('./cli-runner.js');
+            const summarizeResult = await runCli({
+              prompt: `다음은 "${task.workerName}" 워커의 작업 결과입니다. 핵심만 간결하게 요약해주세요. 불필요한 인사말이나 부가 설명 없이 결과만 전달하세요.\n\n---\n${summary.slice(0, 8000)}`,
+              provider: 'codex',
+              model: 'gpt-5.3-codex',
+              dangerouslySkipPermissions: true,
+              timeoutMs: 60_000,
+            });
+            if (summarizeResult.success && summarizeResult.text) {
+              summary = summarizeResult.text;
+            }
+          } catch {
+            // 요약 실패 시 원본 사용 (앞부분만)
+            summary = summary.slice(0, 2000);
+          }
+        }
+
         onWorkerEvent?.('task:completed', {
           taskId: id,
           workerId: task.workerId,
           workerName: task.workerName,
           success: body.success,
           durationMs: body.durationMs,
-          text: body.text?.slice(0, 2000),
+          chatId: task.chatId,    // chatId 포함
+          summary,                // 요약본 포함
         });
         onCliComplete?.(result);
 
@@ -509,12 +532,12 @@ Codex는 요청을 먼저 2가지로 분류합니다.
 
 ## 워커 안내
 
-Codex는 워커에 직접 작업을 위임하지 않습니다.
-사용자가 워커에 작업을 시키려면 \`@워커이름 명령\` 형식으로 직접 멘션해야 합니다.
+사용자가 \`@워커이름 명령\` 형식으로 멘션하면 해당 워커에 작업을 위임합니다.
+워커 작업이 완료되면 결과를 요약하여 사용자에게 전달합니다.
 
 코딩/개발 작업 요청이 오면:
-- 워커가 있으면: "@워커이름 명령" 형식으로 보내라고 안내
-- 워커가 없으면: \`olympus start\`로 워커를 시작하라고 안내
+- 워커가 있으면: 해당 워커에 자동으로 작업을 위임합니다
+- 워커가 없으면: \`olympus start\`로 워커를 시작하라고 안내합니다
 
 ${workers.length > 0 ? '현재 워커: ' + workers.map(w => `@${w.name}`).join(', ') : ''}
 
@@ -555,6 +578,63 @@ ${workers.length > 0 ? '현재 워커: ' + workers.map(w => `@${w.name}`).join('
 - 워커 세션: ${workers.length > 0 ? workers.length + '개 활성' : '없음 (olympus start 필요)'}
 ${workers.length > 0 ? '- 워커 목록:\n' + workerListStr : ''}`;
 
+        // @mention 감지 → 워커 위임
+        const mentionMatch = body.message.match(/^@(\S+)\s+([\s\S]+)/);
+        if (mentionMatch && workerRegistry) {
+          const [, workerName, taskPrompt] = mentionMatch;
+          const worker = workers.find(w => w.name === workerName);
+
+          if (worker && worker.status !== 'busy') {
+            // 워커에 작업 할당
+            const task = workerRegistry.createTask(worker.id, taskPrompt.trim(), body.chatId);
+            onWorkerEvent?.('task:assigned', {
+              taskId: task.taskId,
+              workerId: worker.id,
+              workerName: worker.name,
+              prompt: taskPrompt.trim(),
+              provider: 'claude',
+              dangerouslySkipPermissions: true,
+              projectPath: worker.projectPath,
+              chatId: body.chatId,
+            });
+
+            // Codex에게 위임 사실 알려서 응답 생성
+            try {
+              const { runCli } = await import('./cli-runner.js');
+              const delegationPrompt = `### SYSTEM\n${systemPrompt}\n\n### USER\n사용자가 @${worker.name} 워커에 다음 작업을 요청했고, 작업이 할당되었습니다: "${taskPrompt.trim()}"\n워커 프로젝트: ${worker.projectPath}\n사용자에게 작업이 시작되었음을 간결하게 알려주세요.`;
+              const result = await runCli({
+                prompt: delegationPrompt,
+                provider: 'codex',
+                model: 'gpt-5.3-codex',
+                dangerouslySkipPermissions: true,
+                timeoutMs: 30_000,
+              });
+              sendJson(res, 200, { type: 'delegation', taskId: task.taskId, response: result.success ? result.text : `@${worker.name}에 작업을 할당했습니다.` });
+            } catch {
+              sendJson(res, 200, { type: 'delegation', taskId: task.taskId, response: `@${worker.name}에 작업을 할당했습니다.` });
+            }
+            return;
+          } else if (worker && worker.status === 'busy') {
+            // 워커 busy — Codex에게 상황 전달
+            try {
+              const { runCli } = await import('./cli-runner.js');
+              const busyPrompt = `### SYSTEM\n${systemPrompt}\n\n### USER\n사용자가 @${worker.name} 워커에 작업을 요청했지만, 워커가 현재 다른 작업 중입니다.\n현재 작업: ${worker.currentTaskPrompt ?? '알 수 없음'}\n사용자에게 상황을 알려주세요.`;
+              const result = await runCli({
+                prompt: busyPrompt,
+                provider: 'codex',
+                model: 'gpt-5.3-codex',
+                dangerouslySkipPermissions: true,
+                timeoutMs: 30_000,
+              });
+              sendJson(res, 200, { type: 'chat', response: result.success ? result.text : `@${worker.name} 워커가 현재 작업 중입니다.` });
+            } catch {
+              sendJson(res, 200, { type: 'chat', response: `@${worker.name} 워커가 현재 작업 중입니다.` });
+            }
+            return;
+          }
+          // worker not found — fall through to normal Codex chat
+        }
+
         try {
           const { runCli } = await import('./cli-runner.js');
           const combinedPrompt = `### SYSTEM\n${systemPrompt}\n\n### USER\n${body.message}`;
@@ -592,8 +672,8 @@ ${workers.length > 0 ? '- 워커 목록:\n' + workerListStr : ''}`;
           const prompt = `다음은 "${body.workerName ?? 'Worker'}"의 작업 결과입니다. 핵심만 간결하게 요약해주세요. 불필요한 인사말이나 부가 설명 없이 결과만 전달하세요.\n\n---\n${body.text.slice(0, 4000)}`;
           const result = await runCli({
             prompt,
-            provider: 'claude',
-            model: 'claude-haiku-4-5-20251001',
+            provider: 'codex',
+            model: 'gpt-5.3-codex',
             dangerouslySkipPermissions: true,
             timeoutMs: 30_000,
           });

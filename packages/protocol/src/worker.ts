@@ -48,4 +48,5 @@ export interface WorkerTaskRecord {
   startedAt: number;
   completedAt?: number;
   result?: CliRunResult;
+  chatId?: number;       // 텔레그램 응답 대상 chat ID
 }

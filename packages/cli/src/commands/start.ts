@@ -29,7 +29,7 @@ function createLogger(isPtyMode: boolean) {
 
 async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): Promise<void> {
   const projectPath = resolve(opts.project as string);
-  const workerName = (opts.name as string) || basename(projectPath);
+  let workerName = (opts.name as string) || basename(projectPath);
 
   // 1. Load config
   const { loadConfig } = await import('@olympus-dev/gateway');
@@ -90,8 +90,9 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
       body: JSON.stringify({ name: workerName, projectPath, pid: process.pid }),
     });
     if (!regRes.ok) throw new Error(`HTTP ${regRes.status}`);
-    const data = await regRes.json() as { worker: { id: string } };
+    const data = await regRes.json() as { worker: { id: string; name: string } };
     workerId = data.worker.id;
+    workerName = data.worker.name;
     log(chalk.green(`  ✓ Worker "${workerName}" 등록됨 (${workerId.slice(0, 8)})`));
   } catch (err) {
     log(chalk.red(`  ✗ 워커 등록 실패: ${(err as Error).message}`));

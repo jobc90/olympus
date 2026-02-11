@@ -47,6 +47,29 @@ describe('WorkerRegistry', () => {
       const worker = registry.register({ name: 'custom', projectPath: '/foo/bar', pid: 1 });
       expect(worker.name).toBe('custom');
     });
+
+    it('deduplicates names for same project path', () => {
+      const w1 = registry.register({ projectPath: '/home/user/olympus', pid: 1 });
+      const w2 = registry.register({ projectPath: '/home/user/olympus', pid: 2 });
+      const w3 = registry.register({ projectPath: '/home/user/olympus', pid: 3 });
+      expect(w1.name).toBe('olympus');
+      expect(w2.name).toBe('olympus-2');
+      expect(w3.name).toBe('olympus-3');
+    });
+
+    it('deduplicates explicit names too', () => {
+      const w1 = registry.register({ name: 'my-worker', projectPath: '/a', pid: 1 });
+      const w2 = registry.register({ name: 'my-worker', projectPath: '/b', pid: 2 });
+      expect(w1.name).toBe('my-worker');
+      expect(w2.name).toBe('my-worker-2');
+    });
+
+    it('reuses name after worker unregistered', () => {
+      const w1 = registry.register({ projectPath: '/home/user/olympus', pid: 1 });
+      registry.unregister(w1.id);
+      const w2 = registry.register({ projectPath: '/home/user/olympus', pid: 2 });
+      expect(w2.name).toBe('olympus');
+    });
   });
 
   // ── unregister ──
@@ -118,6 +141,14 @@ describe('WorkerRegistry', () => {
     it('returns null for no match', () => {
       registry.register({ projectPath: '/foo', pid: 1 });
       expect(registry.findByProject('bar')).toBeNull();
+    });
+
+    it('finds deduplicated worker by suffixed name', () => {
+      registry.register({ projectPath: '/home/user/olympus', pid: 1 });
+      const w2 = registry.register({ projectPath: '/home/user/olympus', pid: 2 });
+      const found = registry.findByProject('olympus-2');
+      expect(found).not.toBeNull();
+      expect(found!.id).toBe(w2.id);
     });
   });
 
