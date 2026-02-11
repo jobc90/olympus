@@ -52,19 +52,41 @@ Claude CLI ──┬─→ PTY Worker (상주형 CLI)
 
 ## Quick Start
 
+### macOS / Linux
+
 ```bash
-# 저장소 클론 + 빌드
+git clone https://github.com/jobc90/olympus.git
+cd olympus
+./install.sh --global
+olympus
+```
+
+### Windows
+
+```bash
+git clone https://github.com/jobc90/olympus.git
+cd olympus
+
+# Git Bash / MINGW (권장)
+./install-win.sh --global
+
+# PowerShell
+.\install.ps1 -Mode global
+```
+
+### 수동 설치 (모든 OS 공통)
+
+```bash
 git clone https://github.com/jobc90/olympus.git
 cd olympus
 pnpm install && pnpm build
+cd packages/cli && npm link    # olympus 글로벌 CLI 등록
+```
 
-# 전역 설치 (권장)
-./install.sh --global
+> **Windows 참고**: `install.sh`는 macOS/Linux 전용 (symlink 사용)입니다. Windows에서는 `install-win.sh` (Git Bash) 또는 `install.ps1` (PowerShell)을 사용하세요. 핵심 차이는 **`npm link`**로 CLI를 등록하는 것이며, 이것이 `.cmd` 래퍼를 생성하여 PowerShell/CMD/Git Bash 모두에서 `olympus` 명령이 작동합니다.
 
-# Claude CLI 실행
-olympus
-
-# Claude CLI 내부에서
+설치 후 Claude CLI 내부에서:
+```bash
 /orchestration "로그인 페이지 UI 개선"
 ```
 
@@ -94,6 +116,8 @@ olympus
 
 ### 설치 모드 선택
 
+**macOS / Linux:**
+
 ```bash
 # 전역 설치 (권장) — ~/.claude/에 모든 것 설치, 어디서든 /orchestration 사용
 ./install.sh --global
@@ -103,6 +127,21 @@ olympus
 
 # CLAUDE.md에 Olympus managed block 반영 (선택)
 ./install.sh --global --with-claude-md
+```
+
+**Windows (Git Bash / PowerShell):**
+
+```bash
+# Git Bash (권장)
+./install-win.sh --global
+./install-win.sh --local
+```
+
+```powershell
+# PowerShell
+.\install.ps1 -Mode global
+.\install.ps1 -Mode local
+.\install.ps1 -Mode global -WithClaudeMd
 ```
 
 > **기본 동작은 비침범**입니다. `~/.claude/CLAUDE.md`는 수정하지 않습니다.
@@ -442,10 +481,16 @@ pnpm build
 node dist/index.js
 ```
 
-### 전역 설치 (개발용)
+### 전역 CLI 등록 (개발용)
 
 ```bash
+# macOS / Linux
 ./install.sh --local
+
+# Windows (PowerShell) — 아래 중 택 1
+.\install.ps1 -Mode local
+# 또는 수동:
+cd packages\cli && npm link
 ```
 
 ## Troubleshooting
@@ -467,6 +512,28 @@ node dist/index.js
 1. Gateway 서버 실행 확인: `olympus server status`
 2. 서버 재시작: `olympus server start`
 3. LiveOutputPanel이 실시간 stdout 출력을 표시합니다
+
+### Windows에서 `olympus` 명령이 인식되지 않음
+
+**원인**: `install.sh`는 macOS/Linux용 symlink를 생성하므로 Windows에서 작동하지 않음. Windows는 `npm link`로 `.cmd` 래퍼가 필요.
+
+**해결**:
+```bash
+# 방법 1: Windows 전용 bash 설치 스크립트 (Git Bash / MINGW)
+./install-win.sh --global
+
+# 방법 2: PowerShell 설치 스크립트
+.\install.ps1 -Mode global
+
+# 방법 3: 수동 npm link (모든 쉘에서 작동)
+cd packages/cli
+npm link
+
+# 확인
+olympus --version
+```
+
+> `npm link`는 npm 글로벌 bin 디렉토리에 `.cmd` 래퍼를 생성하여 PowerShell, CMD, Git Bash 모두에서 작동합니다.
 
 ### node-pty 빌드 실패
 

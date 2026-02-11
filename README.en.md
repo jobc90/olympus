@@ -49,36 +49,52 @@ Olympus extends Claude CLI into a practical development operations platform:
 
 ## Quick Start (60s)
 
+**macOS / Linux:**
+
 ```bash
 git clone https://github.com/jobc90/olympus.git
 cd olympus
 ./install.sh --global
 olympus setup
 olympus server start
-olympus start
 ```
 
-Then:
+**Windows:**
 
 ```bash
-olympus
-# inside Claude CLI
+# Git Bash / MINGW (recommended)
+git clone https://github.com/jobc90/olympus.git
+cd olympus
+./install-win.sh --global
+```
+
+```powershell
+# PowerShell
+git clone https://github.com/jobc90/olympus.git
+cd olympus
+.\install.ps1 -Mode global
+```
+
+**Manual install (all platforms):**
+
+```bash
+git clone https://github.com/jobc90/olympus.git
+cd olympus
+pnpm install && pnpm build
+cd packages/cli && npm link    # Register olympus CLI globally
+```
+
+> **Windows note**: `install.sh` is for macOS/Linux only (uses symlinks). On Windows, use `install-win.sh` (Git Bash) or `install.ps1` (PowerShell). The key difference is using `npm link` instead of symlinks — this creates `.cmd` wrappers that work across PowerShell, CMD, and Git Bash.
+
+Then inside Claude CLI:
+
+```bash
 /orchestration "Improve login page UI"
 ```
 
 ## Quick Install
 
-```bash
-git clone https://github.com/jobc90/olympus.git
-cd olympus
-./install.sh
-```
-
-Install modes:
-
-- `--global`: install to `~/.claude/` and use `/orchestration` from any project
-- `--local`: install under current project only
-- `--with-claude-md`: optionally insert/update an Olympus managed block in `~/.claude/CLAUDE.md`
+**macOS / Linux:**
 
 ```bash
 ./install.sh --global
@@ -86,7 +102,28 @@ Install modes:
 ./install.sh --global --with-claude-md
 ```
 
-Default behavior is non-invasive: `~/.claude/CLAUDE.md` is not modified unless `--with-claude-md` is provided.
+**Windows (Git Bash / PowerShell):**
+
+```bash
+# Git Bash
+./install-win.sh --global
+./install-win.sh --local
+```
+
+```powershell
+# PowerShell
+.\install.ps1 -Mode global
+.\install.ps1 -Mode local
+.\install.ps1 -Mode global -WithClaudeMd
+```
+
+Install modes:
+
+- `global`: install to `~/.claude/` and use `/orchestration` from any project
+- `local`: install under current project only
+- `-WithClaudeMd` / `--with-claude-md`: optionally insert/update an Olympus managed block in `~/.claude/CLAUDE.md`
+
+Default behavior is non-invasive: `~/.claude/CLAUDE.md` is not modified unless explicitly requested.
 
 ## Prerequisites
 
@@ -356,6 +393,29 @@ If spam persists, **restart Gateway** to apply the latest filters.
 olympus server start
 olympus start -n my-worker
 ```
+
+### Windows: `olympus` command not recognized
+
+**Cause**: `install.sh` creates bash symlinks that don't work in PowerShell/CMD. Windows needs `.cmd` wrappers via `npm link`.
+
+**Fix**:
+```bash
+# Option 1: Use the Windows bash installer (Git Bash / MINGW)
+./install-win.sh --global
+
+# Option 2: Use the PowerShell installer
+# (run in PowerShell, not Git Bash)
+.\install.ps1 -Mode global
+
+# Option 3: Manual npm link (works in any shell)
+cd packages/cli
+npm link
+
+# Verify
+olympus --version
+```
+
+> `npm link` creates a `.cmd` wrapper in npm's global bin directory, which works in PowerShell, CMD, and Git Bash.
 
 ## License
 
