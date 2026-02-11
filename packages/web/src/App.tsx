@@ -48,7 +48,7 @@ function getConfig() {
 
   const config = {
     host: injected?.host ?? params.get('host') ?? (storedConfig.host as string) ?? '127.0.0.1',
-    port: injected?.port ?? parseInt(params.get('port') ?? String(storedConfig.port ?? '18790')),
+    port: injected?.port ?? parseInt(params.get('port') ?? String(storedConfig.port ?? '8200')),
     apiKey: injected?.apiKey ?? params.get('apiKey') ?? (storedConfig.apiKey as string) ?? '',
   };
 

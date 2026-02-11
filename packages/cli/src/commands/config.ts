@@ -40,6 +40,15 @@ configCommand
   });
 
 configCommand
+  .command('api-key')
+  .description('Print the current API key (for shell substitution)')
+  .action(async () => {
+    const { loadConfig: loadGatewayConfig } = await import('@olympus-dev/gateway');
+    const gwConfig = loadGatewayConfig();
+    process.stdout.write(gwConfig.apiKey);
+  });
+
+configCommand
   .command('path')
   .description('Show config directory path')
   .action(async () => {

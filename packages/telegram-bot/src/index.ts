@@ -22,7 +22,7 @@ interface BotConfig {
 // Load config from environment (set by CLI's start command or manually)
 function loadConfig(): BotConfig {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const gatewayUrl = process.env.OLYMPUS_GATEWAY_URL ?? 'http://127.0.0.1:18790';
+  const gatewayUrl = process.env.OLYMPUS_GATEWAY_URL ?? 'http://127.0.0.1:8200';
   const apiKey = process.env.OLYMPUS_API_KEY ?? '';
   const allowedUsers = process.env.ALLOWED_USERS?.split(',').map(Number).filter(n => !isNaN(n)) ?? [];
 
@@ -86,7 +86,7 @@ class OlympusBot {
 
   constructor(config: BotConfig) {
     this.config = config;
-    this.bot = new Telegraf(config.telegramToken);
+    this.bot = new Telegraf(config.telegramToken, { handlerTimeout: 1_800_000 });  // 30분
     this.setupCommands();
   }
 
@@ -100,7 +100,12 @@ class OlympusBot {
   private setupCommands() {
     // Auth middleware
     this.bot.use(async (ctx, next) => {
+      const userId = ctx.from?.id;
+      const updateType = ctx.updateType;
+      structuredLog('info', 'telegram-bot', 'update_received', { userId, updateType });
+
       if (!this.isAllowed(ctx)) {
+        structuredLog('warn', 'telegram-bot', 'unauthorized_access', { userId });
         await ctx.reply('⛔ 접근 권한이 없습니다. ALLOWED_USERS에 등록되지 않았습니다.');
         return;
       }
@@ -136,24 +141,18 @@ class OlympusBot {
     // /start - Welcome message
     this.bot.command('start', async (ctx) => {
       await ctx.reply(
-        `⚡ *Olympus Bot*\n\n` +
-        `메시지를 입력하면 Claude CLI가 동기적으로 처리하고 결과를 반환합니다.\n\n` +
-        `*사용법:*\n` +
-        `• 메시지 입력 → Claude CLI 실행 → 결과 수신\n` +
-        `• \`@세션 메시지\` → 특정 세션으로 전송 (직접 모드)\n\n` +
+        `⚡ *Olympus — 개인 AI 비서*\n\n` +
+        `Codex가 대화하고, Claude 워커가 컴퓨터를 조작합니다.\n\n` +
+        `*할 수 있는 것:*\n` +
+        `• 대화, 질문, 브레인스토밍\n` +
+        `• 앱 실행, 파일 관리, 터미널 명령\n` +
+        `• 웹 검색, 정보 수집, 요약\n` +
+        `• 코딩, 테스트, 빌드\n\n` +
+        `*워커 필요:* 컴퓨터 조작은 Claude 워커가 수행합니다.\n` +
+        `터미널에서 \`olympus start\`로 워커를 시작하세요.\n\n` +
         `*명령어:*\n` +
-        `/sessions - 세션 목록\n` +
-        `/use direct <이름> - 직접 모드\n` +
-        `/use main - 오케스트레이터 모드 복귀\n` +
-        `/orchestration <요청> - Multi-AI Orchestration\n` +
-        `/tasks - 활성 작업 조회\n` +
-        `/close [이름] - 세션 해제\n` +
-        `/health - 상태 확인\n` +
-        `/codex <질문> - Codex Orchestrator\n` +
-        `/last - 마지막 출력 확인\n\n` +
-        `*모드:*\n` +
-        `• 🤖 오케스트레이터 (기본): 동기 CLI 호출\n` +
-        `• 🔗 직접: 특정 세션에 바로 전송`,
+        `/workers — 워커 목록\n` +
+        `/health — 상태 확인`,
         { parse_mode: 'Markdown' }
       );
     });
@@ -725,72 +724,135 @@ class OlympusBot {
       await this.sendLongMessage(ctx.chat.id, `📋 [${displayName}] 마지막 출력\n\n${lastOutput}`);
     });
 
-    // Handle text messages — orchestrator mode (default) or direct mode
+    // /workers - List registered workers
+    this.bot.command('workers', async (ctx) => {
+      try {
+        const res = await fetch(`${this.config.gatewayUrl}/api/workers`, {
+          headers: { Authorization: `Bearer ${this.config.apiKey}` },
+        });
+        const { workers } = await res.json() as { workers: Array<{ id: string; name: string; projectPath: string; status: string; registeredAt: number; currentTaskPrompt?: string }> };
+
+        if (workers.length === 0) {
+          await ctx.reply(
+            '등록된 워커가 없습니다.\n\n' +
+            '터미널에서 `olympus start`로 워커를 시작하세요.\n' +
+            '   예: `olympus start --name hub --project ~/dev/console`',
+          );
+          return;
+        }
+
+        let msg = `*워커 세션* (${workers.length}개)\n${'─'.repeat(30)}\n\n`;
+
+        for (const w of workers) {
+          const icon = w.status === 'idle' ? '🟢' : '🔵';
+          const statusText = w.status === 'idle' ? '대기 중' : '작업 중';
+          const shortPath = w.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
+          const age = this.formatAge(w.registeredAt);
+          msg += `${icon} *${w.name}* — ${statusText}\n`;
+          msg += `   \`${shortPath}\`\n`;
+          msg += `   ${age}\n`;
+          if (w.currentTaskPrompt) {
+            msg += `   ${w.currentTaskPrompt.slice(0, 60)}${w.currentTaskPrompt.length > 60 ? '...' : ''}\n`;
+          }
+          msg += '\n';
+        }
+
+        msg += `${'─'.repeat(30)}\n🟢 대기 중 | 🔵 작업 중`;
+
+        await ctx.reply(msg, { parse_mode: 'Markdown' });
+      } catch (err) {
+        await ctx.reply(`워커 목록 조회 실패: ${(err as Error).message}`);
+      }
+    });
+
+    // Handle text messages — Codex chat or work delegation
     this.bot.on('text', async (ctx) => {
       const text = ctx.message.text;
 
-      // If it starts with /, it's an unknown command
+      // Unknown commands
       if (text.startsWith('/')) {
         await ctx.reply('알 수 없는 명령어입니다. /start 로 도움말을 확인하세요.');
         return;
       }
 
-      // Direct mode: POST /api/cli/run with session routing
+      // Direct mode: bypass Codex, send directly to session
       if (this.directMode.get(ctx.chat.id)) {
         await this.handleDirectMessage(ctx, text);
         return;
       }
 
-      // Orchestrator mode (default): Codex 라우팅 → 분기 처리
+      // Codex chat mode (default)
       await ctx.sendChatAction('typing');
 
       try {
-        // Step 1: Codex에 라우팅 요청
-        const routeRes = await fetch(`${this.config.gatewayUrl}/api/codex/route`, {
+        const chatRes = await fetch(`${this.config.gatewayUrl}/api/codex/chat`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${this.config.apiKey}`,
           },
-          body: JSON.stringify({ text, source: 'telegram', chatId: ctx.chat.id }),
-          signal: AbortSignal.timeout(10_000),
+          body: JSON.stringify({ message: text, chatId: ctx.chat.id }),
+          signal: AbortSignal.timeout(1_800_000),  // 30분
         });
 
-        if (!routeRes.ok) throw new Error('Codex route failed');
+        if (!chatRes.ok) {
+          throw new Error(`Codex chat failed: ${chatRes.status}`);
+        }
 
-        const { decision, response: codexResponse } = await routeRes.json() as {
-          decision: { type: string; targetSessions: string[]; processedInput: string; confidence: number; reason: string };
-          response?: { type: string; content: string; metadata: Record<string, unknown>; rawOutput?: string; agentInsight?: string };
+        const data = await chatRes.json() as {
+          type: 'chat' | 'delegate' | 'no_workers';
+          response: string;
+          worker?: { id: string; name: string; projectPath: string };
+          taskPrompt?: string;
         };
 
-        if (codexResponse) {
-          // SELF_ANSWER, CONTEXT_QUERY → Codex가 직접 답변 (Claude 비용 0)
-          const insight = codexResponse.agentInsight ? `\n\n💡 ${codexResponse.agentInsight}` : '';
-          await this.sendLongMessage(ctx.chat.id, `${codexResponse.content}${insight}`);
-        } else if (decision.type === 'MULTI_SESSION') {
-          // 병렬 실행: 각 세션별 비동기
-          const sessions = decision.targetSessions;
-          await this.safeReply(ctx, `🔄 ${sessions.length}개 작업을 병렬로 실행합니다...`, undefined);
-          const promises = sessions.map((sid: string, idx: number) =>
-            this.forwardToCliAsync(ctx, decision.processedInput, `parallel:${sid}`, `[작업 ${idx + 1}/${sessions.length}]`)
-              .catch((err: Error) => this.safeReply(ctx, `❌ 작업 ${idx + 1} 실패: ${err.message}`, undefined))
-          );
-          await Promise.allSettled(promises);
-        } else if (decision.type === 'SESSION_FORWARD') {
-          // 실제 작업 → Claude CLI 호출
-          await this.forwardToCli(ctx, decision.processedInput, `telegram:${ctx.chat.id}`);
-        } else {
-          await this.safeReply(ctx, '🤔 요청을 처리할 수 없습니다.', undefined);
+        if (data.type === 'chat') {
+          // Normal conversation — display Codex response
+          await this.sendLongMessage(ctx.chat.id, data.response);
+
+        } else if (data.type === 'delegate' && data.worker && data.taskPrompt) {
+          // Work delegation — notify user, start async task, poll for completion
+          await this.safeReply(ctx, data.response, undefined);
+
+          // Start async CLI task in worker's project directory
+          const taskRes = await fetch(`${this.config.gatewayUrl}/api/cli/run/async`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${this.config.apiKey}`,
+            },
+            body: JSON.stringify({
+              prompt: data.taskPrompt,
+              workspaceDir: data.worker.projectPath,
+              provider: 'claude',
+              dangerouslySkipPermissions: true,
+            }),
+            signal: AbortSignal.timeout(30_000),
+          });
+
+          if (!taskRes.ok) {
+            await this.safeReply(ctx, '작업 시작 실패', undefined);
+            return;
+          }
+
+          const { taskId } = await taskRes.json() as { taskId: string };
+
+          // Fire-and-forget background polling
+          this.pollAndNotify(ctx.chat.id, taskId, data.worker.name).catch(() => {});
+
+        } else if (data.type === 'no_workers') {
+          await this.safeReply(ctx, data.response, undefined);
         }
-      } catch {
-        // Codex route 실패 시 fallback: 기존 방식으로 직접 Claude 호출
+      } catch (err) {
+        // Fallback: if codex/chat fails, try direct CLI
+        structuredLog('warn', 'telegram-bot', 'codex_chat_fallback', { error: (err as Error).message });
         try {
           await this.forwardToCli(ctx, text, `telegram:${ctx.chat.id}`);
-        } catch (err) {
-          if ((err as Error).name === 'TimeoutError') {
-            await this.safeReply(ctx, '⏰ 응답 시간 초과 (10분)', undefined);
+        } catch (fallbackErr) {
+          if ((fallbackErr as Error).name === 'TimeoutError') {
+            await this.safeReply(ctx, '응답 시간 초과', undefined);
           } else {
-            await this.safeReply(ctx, `❌ 오류: ${(err as Error).message}`, undefined);
+            await this.safeReply(ctx, `오류: ${(fallbackErr as Error).message}`, undefined);
           }
         }
       }
@@ -1013,9 +1075,12 @@ class OlympusBot {
         response?: { type: string; content: string; metadata: Record<string, unknown>; rawOutput?: string; agentInsight?: string };
       };
 
-      if (codexResponse) {
+      if (codexResponse && decision.confidence > 0.5) {
         const insight = codexResponse.agentInsight ? `\n\n💡 ${codexResponse.agentInsight}` : '';
         await this.sendLongMessage(ctx.chat.id, `📩 [${displayName}]\n\n${codexResponse.content}${insight}`);
+      } else if (codexResponse) {
+        // 낮은 confidence SELF_ANSWER → Claude CLI fallback
+        await this.forwardToCli(ctx, message, sessionKey, `📩 [${displayName}]`);
       } else if (decision.type === 'MULTI_SESSION') {
         const sessions = decision.targetSessions;
         await this.safeReply(ctx, `🔄 ${sessions.length}개 작업을 병렬로 실행합니다...`, undefined);
@@ -1186,6 +1251,54 @@ class OlympusBot {
     }
 
     return null;
+  }
+
+  /**
+   * Poll async task status and notify chat on completion.
+   * Fire-and-forget — errors are logged but not thrown.
+   */
+  private async pollAndNotify(chatId: number, taskId: string, workerName: string): Promise<void> {
+    const maxPolls = 180; // 30 minutes
+    const pollInterval = 10_000; // 10 seconds
+
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+      try {
+        const res = await fetch(`${this.config.gatewayUrl}/api/cli/run/${taskId}/status`, {
+          headers: { Authorization: `Bearer ${this.config.apiKey}` },
+          signal: AbortSignal.timeout(10_000),
+        });
+
+        if (!res.ok) continue;
+
+        const data = await res.json() as { status: string; result?: CliRunResult };
+
+        if (data.status === 'completed' && data.result) {
+          const result = data.result;
+          if (result.success) {
+            const footer = result.usage
+              ? `\n\n${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4) ?? '0'} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
+              : '';
+            const text = `[${workerName}] 작업 완료!\n\n${result.text}${footer}`;
+            await this.sendLongMessage(chatId, text);
+          } else {
+            await this.sendLongMessage(chatId, `[${workerName}] 작업 실패: ${result.error?.message ?? '알 수 없는 오류'}`);
+          }
+          return;
+        }
+
+        if (data.status === 'failed') {
+          await this.sendLongMessage(chatId, `[${workerName}] 작업 실패`);
+          return;
+        }
+      } catch {
+        // ignore polling errors, continue
+      }
+    }
+
+    // Timeout after 30 minutes
+    await this.sendLongMessage(chatId, `[${workerName}] 작업 시간 초과 (30분)`);
   }
 
   /**
@@ -1581,11 +1694,14 @@ class OlympusBot {
       // bot.launch() returns a Promise that resolves only when the bot stops.
       // We fire-and-forget it and detect readiness via a short delay after launch starts.
       let launchErrorMsg: string | null = null;
-      this.bot.launch().catch((err: Error) => {
+      this.bot.launch({ dropPendingUpdates: true }).then(() => {
+        // bot stopped
+      }).catch((err: Error) => {
         launchErrorMsg = err.message;
         structuredLog('error', 'telegram-bot', 'bot_launch_failed', {
           category: classifyError(err).category,
           message: err.message,
+          stack: err.stack,
         });
       });
 

@@ -13,6 +13,7 @@ export interface ApiHandlerOptions {
   cliSessionStore?: import('./cli-session-store.js').CliSessionStore;
   memoryStore?: import('./memory/store.js').MemoryStore;
   codexAdapter?: CodexAdapter;
+  workerRegistry?: import('./worker-registry.js').WorkerRegistry;
   onRunCreated?: () => void;  // Callback to broadcast runs:list
   onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
   onContextEvent?: (eventType: string, payload: unknown) => void;
@@ -166,9 +167,28 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     }
   }
 
-  // /api/codex/route
-  if (parts[0] === 'api' && parts[1] === 'codex' && parts[2] === 'route') {
-    return { path: '/api/codex/route', query };
+  // /api/codex routes
+  if (parts[0] === 'api' && parts[1] === 'codex') {
+    if (parts[2] === 'route') {
+      return { path: '/api/codex/route', query };
+    }
+    if (parts[2] === 'chat') {
+      return { path: '/api/codex/chat', query };
+    }
+  }
+
+  // /api/workers routes
+  if (parts[0] === 'api' && parts[1] === 'workers') {
+    if (parts[2] === 'register') {
+      return { path: '/api/workers/register', query };
+    }
+    if (parts[2] && parts[3] === 'heartbeat') {
+      return { path: '/api/workers/:id/heartbeat', id: parts[2], query };
+    }
+    if (parts[2]) {
+      return { path: '/api/workers/:id', id: parts[2], query };
+    }
+    return { path: '/api/workers', query };
   }
 
   // /api/operations/:id
@@ -183,7 +203,7 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
  * Create HTTP API request handler
  */
 export function createApiHandler(options: ApiHandlerOptions) {
-  const { runManager, sessionManager, cliSessionStore, memoryStore, codexAdapter, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete, onCliStream } = options;
+  const { runManager, sessionManager, cliSessionStore, memoryStore, codexAdapter, workerRegistry, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete, onCliStream } = options;
 
   // 비동기 CLI 실행 태스크 저장소 (in-memory, 1시간 TTL)
   const asyncTasks = new Map<string, { status: 'running' | 'completed' | 'failed'; result?: import('@olympus-dev/protocol').CliRunResult; error?: string; startedAt: number }>();
@@ -242,6 +262,257 @@ export function createApiHandler(options: ApiHandlerOptions) {
           }
         } catch {
           sendJson(res, 200, { reply: '죄송합니다. 응답을 생성할 수 없습니다.' });
+        }
+        return;
+      }
+
+      // ── Worker Registry endpoints ──
+
+      // POST /api/workers/register
+      if (path === '/api/workers/register' && method === 'POST') {
+        if (!workerRegistry) {
+          sendJson(res, 503, { error: 'Worker registry not available' });
+          return;
+        }
+        const body = await parseBody<{ name?: string; projectPath: string; pid: number }>(req);
+        if (!body.projectPath || !body.pid) {
+          sendJson(res, 400, { error: 'projectPath and pid required' });
+          return;
+        }
+        const worker = workerRegistry.register(body);
+        sendJson(res, 201, { worker });
+        return;
+      }
+
+      // DELETE /api/workers/:id
+      if (path === '/api/workers/:id' && method === 'DELETE' && id) {
+        if (!workerRegistry) {
+          sendJson(res, 503, { error: 'Worker registry not available' });
+          return;
+        }
+        const removed = workerRegistry.unregister(id);
+        sendJson(res, removed ? 200 : 404, { removed });
+        return;
+      }
+
+      // GET /api/workers
+      if (path === '/api/workers' && method === 'GET') {
+        const workers = workerRegistry?.getAll() ?? [];
+        sendJson(res, 200, { workers });
+        return;
+      }
+
+      // POST /api/workers/:id/heartbeat
+      if (path === '/api/workers/:id/heartbeat' && method === 'POST' && id) {
+        if (!workerRegistry) {
+          sendJson(res, 400, { error: 'Invalid request' });
+          return;
+        }
+        const ok = workerRegistry.heartbeat(id);
+        sendJson(res, ok ? 200 : 404, { ok });
+        return;
+      }
+
+      // ── Codex Chat endpoint ──
+
+      // POST /api/codex/chat — Codex 대화 + 워커 위임
+      if (path === '/api/codex/chat' && method === 'POST') {
+        const body = await parseBody<{ message: string; chatId?: number }>(req);
+        if (!body.message) {
+          sendJson(res, 400, { error: 'message is required' });
+          return;
+        }
+
+        const workers = workerRegistry?.getAll() ?? [];
+        const workerListStr = workers.length > 0
+          ? workers.map(w => `- "${w.name}" (${w.status}) @ ${w.projectPath}`).join('\n')
+          : '없음';
+
+        const systemPrompt = `당신은 Olympus Codex — 사용자의 개인 AI 비서입니다.
+사용자의 로컬 컴퓨터 환경에서 작업을 실행하며,
+업무와 일상 생산성을 돕는 것이 역할입니다.
+
+사용자 환경은 macOS / Windows / Linux 모두 가능합니다.
+항상 상황에 맞게 자연스럽게 행동하세요.
+
+---
+
+## 역할 분리
+
+- Codex는 대부분의 작업을 직접 수행합니다.
+- Claude 워커는 오직 **코딩/개발 작업**만 담당합니다.
+  (코드 작성, 빌드, 테스트, 리팩토링 등)
+
+---
+
+## 응답 모드 규칙 (가장 중요)
+
+Codex는 요청을 먼저 2가지로 분류합니다.
+
+### 1) Casual Mode (기본값)
+
+다음 요청은 Casual Mode입니다:
+- 단순 질문
+- 가벼운 대화
+- 개념 설명
+- 짧은 정보 요청
+
+이 경우:
+
+- 짧고 자연스럽게 답변하세요.
+- 불필요한 단계 요약/보고서 말투를 쓰지 마세요.
+- "요청 요약 / 작업 판단 / 다음 액션" 같은 형식을 절대 붙이지 마세요.
+
+예시 톤:
+"그건 'gpt-5.3-codex'가 기본이에요."
+"응, 그거 이렇게 하면 돼요."
+
+---
+
+### 2) Execution Mode (실행 작업일 때만)
+
+다음이 포함되면 Execution Mode입니다:
+- 파일/폴더 조작
+- 시스템 설정 변경
+- 앱 실행
+- 자동화 실행
+- 개발/코딩 작업
+
+이 경우에만 실행 프로세스를 따릅니다:
+
+1) 실행 또는 위임
+2) 완료 후 핵심만 짧게 보고
+3) 필요할 때만 다음 액션 제안
+
+---
+
+## Claude 워커 위임 규칙 (Coding Only)
+
+코딩/개발 작업일 때만 워커를 사용합니다.
+
+첫 줄에 반드시 아래 형식:
+
+\`[DELEGATE:claude-worker]\`
+
+템플릿:
+
+[DELEGATE:claude-worker]
+목표: 무엇을 구현/수정할까
+경로: 프로젝트 위치
+단계:
+1.
+2.
+출력: 결과 요약
+
+---
+
+## Codex가 직접 하는 작업 (코딩 제외 전부)
+
+- 브라우저 열기 / 검색 / 정보 수집
+- 로컬 앱 실행
+- 문서/파일 정리
+- 이메일/일정 확인
+- 시스템 상태 점검
+- OS 환경에 맞는 자동화 실행
+
+---
+
+## OS 적응 규칙
+
+환경에 따라 자연스럽게 맞춥니다:
+
+- macOS → zsh, brew
+- Windows → PowerShell
+- Linux → bash, apt
+
+불확실하면 먼저 확인합니다.
+
+---
+
+## 워커가 없을 때
+
+코딩 작업인데 워커가 없으면:
+
+"코딩 작업을 실행하려면 워커가 필요합니다.
+\`olympus start\`로 워커를 시작해주세요."
+
+---
+
+## 안전 규칙
+
+- 삭제, 배포, 결제 등 위험 작업은 반드시 사용자 확인 후 실행
+- 비밀번호/OTP 요청 금지
+- 불확실하면 먼저 확인 후 진행
+
+---
+
+## Execution Mode 결과 보고 (필요할 때만)
+
+실행 작업이 끝났을 때만 간단히:
+
+✅ 완료: …
+📌 참고: …
+➡️ 다음: (정말 필요할 때만)
+
+---
+
+## 톤
+
+- 한국어로 친근하고 간결하게
+- 과한 보고서 말투 금지
+- 필요한 경우에만 구조적으로 정리
+
+## 현재 상태
+- 워커 세션: ${workers.length > 0 ? workers.length + '개 활성' : '없음 (olympus start 필요)'}
+${workers.length > 0 ? '- 워커 목록:\n' + workerListStr : ''}`;
+
+        try {
+          const { runCli } = await import('./cli-runner.js');
+          const combinedPrompt = `### SYSTEM\n${systemPrompt}\n\n### USER\n${body.message}`;
+          const result = await runCli({
+            prompt: combinedPrompt,
+            provider: 'codex',
+            model: 'gpt-5.3-codex',
+            dangerouslySkipPermissions: true,
+            timeoutMs: 1_800_000,  // 30분 — 대량 문서 요약 등 장시간 작업 대응
+          });
+
+          if (!result.success) {
+            console.error('[codex/chat] runCli failed:', JSON.stringify(result.error), 'text:', result.text?.slice(0, 200));
+            sendJson(res, 200, { type: 'chat', response: '죄송합니다. 잠시 후 다시 시도해주세요.' });
+            return;
+          }
+
+          // Parse [DELEGATE:name] pattern
+          const delegateMatch = result.text.match(/^\[DELEGATE:([^\]]+)\]\s*([\s\S]*)/m);
+          if (delegateMatch) {
+            const [, workerName, taskPrompt] = delegateMatch;
+            const worker = workerRegistry?.findByProject(workerName.trim());
+            if (worker && worker.status === 'idle') {
+              const userResponse = `"${worker.name}" 워커(${worker.projectPath})에 작업을 지시합니다.\n\n작업: ${taskPrompt.trim().split('\n')[0]}`;
+              sendJson(res, 200, {
+                type: 'delegate',
+                response: userResponse,
+                worker,
+                taskPrompt: taskPrompt.trim(),
+              });
+            } else if (worker && worker.status === 'busy') {
+              sendJson(res, 200, {
+                type: 'chat',
+                response: `"${worker.name}" 워커가 현재 다른 작업 중입니다. 완료 후 다시 시도해주세요.`,
+              });
+            } else {
+              sendJson(res, 200, {
+                type: 'no_workers',
+                response: `"${workerName.trim()}" 워커를 찾을 수 없습니다.\n\n현재 등록된 워커:\n${workers.length > 0 ? workers.map(w => `- ${w.name} (${w.status})`).join('\n') : '없음'}\n\n터미널에서 \`olympus start --name ${workerName.trim()}\`로 워커를 시작하세요.`,
+              });
+            }
+          } else {
+            // Regular chat response
+            sendJson(res, 200, { type: 'chat', response: result.text });
+          }
+        } catch (err) {
+          sendJson(res, 500, { error: 'Chat failed', message: (err as Error).message });
         }
         return;
       }

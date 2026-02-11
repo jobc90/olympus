@@ -243,7 +243,7 @@ export interface ProjectConfig {
 export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   enabled: false,
   provider: 'mock',
-  model: 'gpt-4o',
+  model: 'gpt-5.3-codex',
   apiKey: '',
   maxConcurrentWorkers: 3,
   defaultTimeout: 300_000,

@@ -51,7 +51,7 @@ const CODEX_BACKEND: InternalBackendConfig = {
   resumeFlag: '',  // unused — sessionId is positional in resumeBaseArgs
   sessionIdFlag: '--session',
   modelFlag: '--model',
-  systemPromptFlag: '--instructions',
+  systemPromptFlag: '',  // Codex CLI는 시스템 프롬프트 플래그 미지원
   skipPermissionsFlag: '--dangerously-bypass-approvals-and-sandbox',
   parseOutput: parseCodexJsonl,
 };
@@ -341,7 +341,7 @@ function spawnCli(
     let proc: ChildProcess;
     try {
       proc = spawn(command, args, {
-        stdio: ['pipe', 'pipe', 'pipe'],
+        stdio: ['ignore', 'pipe', 'pipe'],
         cwd: options.cwd || process.cwd(),
         env: buildSafeEnv(),
       });

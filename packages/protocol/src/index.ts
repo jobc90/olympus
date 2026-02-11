@@ -182,3 +182,10 @@ export type {
   AgentEvent,
   CliStreamChunk,
 } from './cli-runner.js';
+
+// Worker Registry types
+export type {
+  RegisteredWorker,
+  WorkerRegistration,
+  WorkerTaskRecord,
+} from './worker.js';

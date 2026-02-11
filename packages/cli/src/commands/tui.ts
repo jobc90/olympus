@@ -2,7 +2,7 @@ import { Command } from 'commander';
 
 export const tuiCommand = new Command('tui')
   .description('Start the Olympus TUI (Terminal UI)')
-  .option('-p, --port <port>', 'Gateway port to connect', '18790')
+  .option('-p, --port <port>', 'Gateway port to connect', '8200')
   .option('-h, --host <host>', 'Gateway host', '127.0.0.1')
   .option('--api-key <key>', 'API key for gateway authentication')
   .option('--with-gateway', 'Also start gateway server')

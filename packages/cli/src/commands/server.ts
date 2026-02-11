@@ -11,8 +11,8 @@ serverCommand
   .option('--gateway', 'Start only the gateway')
   .option('--dashboard', 'Start only the dashboard')
   .option('--telegram', 'Start only the telegram bot')
-  .option('-p, --port <port>', 'Gateway port', '18790')
-  .option('--web-port <port>', 'Dashboard port', '18791')
+  .option('-p, --port <port>', 'Gateway port', '8200')
+  .option('--web-port <port>', 'Dashboard port', '8201')
   .option('--skip-update', 'Skip CLI update check (default: true)', true)
   .option('--update-tools', 'Force CLI tools update on start')
   .option('--mode <mode>', 'Server mode: legacy | hybrid | codex', 'codex')
@@ -196,7 +196,7 @@ serverCommand
       }
     };
 
-    // Stop Gateway (port 18790) - this also stops telegram if running in same process
+    // Stop Gateway (port 8200) - this also stops telegram if running in same process
     if (stopGateway) {
       try {
         const pids = execSync(`lsof -ti :${config.gatewayPort} 2>/dev/null`, { encoding: 'utf-8' }).trim();
@@ -212,10 +212,10 @@ serverCommand
       }
     }
 
-    // Stop Dashboard (port 18791)
+    // Stop Dashboard (port 8201)
     if (stopDashboard) {
       try {
-        const pids = execSync('lsof -ti :18791 2>/dev/null', { encoding: 'utf-8' }).trim();
+        const pids = execSync('lsof -ti :8201 2>/dev/null', { encoding: 'utf-8' }).trim();
         if (pids) {
           gracefulKill(pids, 'Dashboard');
           console.log(chalk.green('  ✓ Dashboard 종료됨'));

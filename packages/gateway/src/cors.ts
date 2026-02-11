@@ -5,8 +5,8 @@ const ALLOWED_ORIGINS = [
   'http://127.0.0.1:5173',
   'http://localhost:3000',     // Alternative dev port
   'http://127.0.0.1:3000',
-  'http://localhost:18791',    // Production dashboard
-  'http://127.0.0.1:18791',
+  'http://localhost:8201',     // Production dashboard
+  'http://127.0.0.1:8201',
 ];
 
 /**

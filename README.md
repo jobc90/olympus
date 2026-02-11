@@ -74,8 +74,8 @@ git clone https://github.com/jobc90/olympus.git
 cd olympus
 ./install.sh --global
 olympus setup
-olympus start
 olympus server start
+olympus start
 ```
 
 바로 사용:
@@ -250,20 +250,23 @@ olympus
 
 인자 없이 `olympus`를 실행하면 Claude CLI가 시작됩니다. Claude CLI의 모든 기능을 그대로 사용할 수 있습니다.
 
-### Claude CLI 세션 시작
+### Worker 세션 시작 (Gateway 등록형)
 
 ```bash
-# 현재 디렉토리에서 Claude CLI 시작 (foreground)
+# 현재 디렉토리를 워커로 등록 (foreground daemon)
 olympus start
 
 # 특정 프로젝트 경로 지정
 olympus start -p /path/to/project
 
+# 워커 이름 지정 (기본: 디렉토리명)
+olympus start -n backend-worker
+
 # 자동 승인 모드 (trust)
 olympus start-trust
 ```
 
-`olympus start`는 현재 터미널에서 Claude CLI를 직접 실행합니다. stdout 출력은 Gateway를 통해 실시간 WebSocket 스트리밍됩니다.
+`olympus start`는 워커를 Gateway에 등록하고 작업을 대기합니다. 먼저 `olympus server start`로 Gateway를 시작해야 하며, 작업 출력은 WebSocket으로 실시간 스트리밍됩니다.
 
 ### 서버 관리 (Gateway + Dashboard + Telegram)
 
@@ -297,14 +300,14 @@ olympus quickstart
 # 설정 확인/수정
 olympus config
 olympus config get gateway.port
-olympus config set gateway.port 18790
+olympus config set gateway.port 8200
 ```
 
 ### 개별 서비스 실행
 
 ```bash
 # Gateway만 시작 (포트 지정 가능)
-olympus gateway -p 18790
+olympus gateway -p 8200
 
 # Telegram 봇만 시작
 olympus telegram
@@ -321,7 +324,8 @@ olympus tui
 | 명령어 | 설명 |
 |--------|------|
 | `olympus` | Claude CLI 실행 (인자 없음) |
-| `olympus start` | 현재 터미널에서 Claude CLI 시작 |
+| `olympus start` | 워커 등록 후 작업 대기 (Gateway 필요) |
+| `olympus start-trust` | trust 모드 워커 등록 |
 | `olympus server start` | Gateway + Dashboard + Telegram 통합 시작 |
 | `olympus server stop` | 서버 종료 |
 | `olympus server status` | 서버 상태 확인 |
@@ -329,6 +333,7 @@ olympus tui
 | `olympus quickstart` | 빠른 설정 + 서버 시작 |
 | `olympus config` | 설정 관리 |
 | `olympus models` | 모델 설정/동기화(core + MCP) |
+| `olympus curl` | API Key 자동 주입 curl 래퍼 |
 | `olympus gateway` | Gateway 서버만 실행 |
 | `olympus telegram` | Telegram 봇만 실행 |
 | `olympus dashboard` | 웹 대시보드 열기 |
@@ -713,15 +718,15 @@ ALLOWED_USERS=123456789,987654321
 # Gateway
 OLYMPUS_API_KEY=your_secret_key
 GATEWAY_HOST=127.0.0.1
-GATEWAY_PORT=18790
+GATEWAY_PORT=8200
 ```
 
 ## Default Ports
 
 | 서비스 | 포트 |
 |--------|------|
-| Gateway (HTTP + WebSocket) | 18790 |
-| Dashboard (Web UI) | 18791 |
+| Gateway (HTTP + WebSocket) | 8200 |
+| Dashboard (Web UI) | 8201 |
 
 ## Development
 
@@ -776,7 +781,7 @@ cd packages/cli && pnpm build && node dist/index.js
 
 ### Dashboard에서 "Failed to fetch" 또는 "Cannot connect to Gateway" 오류
 
-**원인**: Gateway의 CORS 설정에서 Dashboard 포트(18791)가 허용되지 않거나, API Key가 설정되지 않은 경우 발생합니다.
+**원인**: Gateway의 CORS 설정에서 Dashboard 포트(8201)가 허용되지 않거나, API Key가 설정되지 않은 경우 발생합니다.
 
 **해결**:
 

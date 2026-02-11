@@ -13,6 +13,7 @@ import { quickstartCommand } from './commands/quickstart.js';
 import { interactiveCommand } from './commands/interactive.js';
 import { serverCommand } from './commands/server.js';
 import { modelsCommand } from './commands/models.js';
+import { curlCommand } from './commands/curl.js';
 import { launchClaude } from './claude-wrapper.js';
 
 // Check if running with no arguments (Claude CLI mode)
@@ -57,6 +58,9 @@ if (!hasArgs && !isHelpOrVersion) {
   program.addCommand(configCommand);
   program.addCommand(authCommand);
   program.addCommand(modelsCommand);
+
+  // Utilities
+  program.addCommand(curlCommand);
 
   // Other
   program.addCommand(patchCommand);

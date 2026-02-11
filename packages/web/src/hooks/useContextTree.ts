@@ -50,7 +50,7 @@ function friendlyError(e: unknown): string {
 }
 
 export function useContextTree(options: UseContextTreeOptions = {}): UseContextTreeReturn {
-  const { baseUrl = 'http://localhost:18790', apiKey } = options;
+  const { baseUrl = 'http://localhost:8200', apiKey } = options;
   const [tree, setTree] = useState<ContextTreeNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

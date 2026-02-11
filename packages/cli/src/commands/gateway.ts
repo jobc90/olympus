@@ -2,7 +2,7 @@ import { Command } from 'commander';
 
 export const gatewayCommand = new Command('gateway')
   .description('Start the Olympus gateway server')
-  .option('-p, --port <port>', 'Gateway port', '18790')
+  .option('-p, --port <port>', 'Gateway port', '8200')
   .option('-h, --host <host>', 'Gateway host', '127.0.0.1')
   .option('--demo', 'Run demo event sequence for testing')
   .action(async (opts) => {

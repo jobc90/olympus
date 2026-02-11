@@ -4,12 +4,12 @@ import chalk from 'chalk';
 export const dashboardCommand = new Command('dashboard')
   .alias('ui')
   .description('Launch the Olympus web dashboard')
-  .option('-p, --port <port>', 'Dashboard port', '18791')
-  .option('--gateway-port <port>', 'Gateway port', '18790')
+  .option('-p, --port <port>', 'Dashboard port', '8201')
+  .option('--gateway-port <port>', 'Gateway port', '8200')
   .option('--no-open', 'Do not open browser automatically')
   .action(async (opts) => {
-    const port = parseInt(opts.port) || 18791;
-    const gatewayPort = parseInt(opts.gatewayPort) || 18790;
+    const port = parseInt(opts.port) || 8201;
+    const gatewayPort = parseInt(opts.gatewayPort) || 8200;
 
     console.log(chalk.cyan.bold('\n🌐 Olympus Dashboard\n'));
 

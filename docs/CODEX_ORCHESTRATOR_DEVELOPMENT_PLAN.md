@@ -79,7 +79,7 @@ TO-BE: Telegram → Gateway(경량WS) → Codex Orchestrator → tmux 세션(Cla
 │                          ▼                                              │
 │   ┌──────────────────────────────────────────────────────────────────┐  │
 │   │                   Gateway (경량 WS 프록시)                        │  │
-│   │  - WebSocket 서버 (포트 18790)                                   │  │
+│   │  - WebSocket 서버 (포트 8200)                                   │  │
 │   │  - 클라이언트 인증 (API Key)                                      │  │
 │   │  - 메시지 라우팅 (→ Codex Orchestrator)                          │  │
 │   │  - 구독/브로드캐스트 관리                                         │  │
@@ -2669,7 +2669,7 @@ async function startServer(options: ServerStartOptions) {
   const mode = options.mode ?? 'legacy';
 
   // 1. Gateway 시작 (모든 모드에서)
-  const gateway = new Gateway({ port: 18790, host: '127.0.0.1' });
+  const gateway = new Gateway({ port: 8200, host: '127.0.0.1' });
   await gateway.start();
 
   if (mode === 'hybrid' || mode === 'codex') {
@@ -2692,8 +2692,8 @@ async function startServer(options: ServerStartOptions) {
     // ... 기존 코드 유지
   }
 
-  // 5. Dashboard 시작 (포트 18791)
-  await startDashboardServer(18791, { port: 18790, host: '127.0.0.1', apiKey: config.apiKey });
+  // 5. Dashboard 시작 (포트 8201)
+  await startDashboardServer(8201, { port: 8200, host: '127.0.0.1', apiKey: config.apiKey });
 
   // 6. Telegram Bot 시작 (설정 있으면)
   if (isTelegramConfigured()) {
@@ -2732,7 +2732,7 @@ async function startServer(options: ServerStartOptions) {
 
 | 상수 | 값 | 출처 |
 |------|---|------|
-| `DEFAULT_GATEWAY_PORT` | `18790` | protocol/src/messages.ts |
+| `DEFAULT_GATEWAY_PORT` | `8200` | protocol/src/messages.ts |
 | `DEFAULT_GATEWAY_HOST` | `'127.0.0.1'` | protocol/src/messages.ts |
 | `GATEWAY_PATH` | `'/ws'` | protocol/src/messages.ts |
 | `HEARTBEAT_INTERVAL_MS` | `30000` (30초) | protocol/src/messages.ts |
@@ -2761,8 +2761,8 @@ async function startServer(options: ServerStartOptions) {
 | `DIGEST_DEBOUNCE_MS` | `5000` | telegram-bot/src/digest/types.ts |
 | `DIGEST_MAX_BUFFER` | `8000` | telegram-bot/src/digest/types.ts |
 | `DIGEST_BUFFER_TTL` | `30000` | telegram-bot/src/digest/types.ts |
-| `DASHBOARD_PORT` | `18791` | cli/src/commands/server.ts |
-| `CORS_ORIGINS` | `localhost:5173, :3000, :18791` | gateway/src/cors.ts |
+| `DASHBOARD_PORT` | `8201` | cli/src/commands/server.ts |
+| `CORS_ORIGINS` | `localhost:5173, :3000, :8201` | gateway/src/cors.ts |
 
 ### D. Agent 상태 전이 맵 (기존, 참조용)
 

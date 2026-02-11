@@ -34,6 +34,7 @@ import { ChannelManager, DashboardChannel, TelegramChannel } from './channels/in
 import { MemoryStore } from './memory/store.js';
 import { CliSessionStore } from './cli-session-store.js';
 import type { CodexAdapter } from './codex-adapter.js';
+import { WorkerRegistry } from './worker-registry.js';
 
 export interface GatewayOptions {
   port?: number;
@@ -67,6 +68,7 @@ export class Gateway {
   private memoryStore: MemoryStore | null = null;
   private cliSessionStore: CliSessionStore;
   private codexAdapter: CodexAdapter | null = null;
+  private workerRegistry: WorkerRegistry;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private sessionCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private startTime = Date.now();
@@ -92,6 +94,12 @@ export class Gateway {
 
     // Initialize CLI Session Store (모드 불문 — CLI Runner는 항상 사용 가능)
     this.cliSessionStore = new CliSessionStore();
+
+    // Initialize Worker Registry
+    this.workerRegistry = new WorkerRegistry();
+    this.workerRegistry.on('task:completed', (task: unknown) => {
+      this.broadcastToAll('worker:task:completed', task);
+    });
 
     // Initialize Channel Manager (always needed for broadcast)
     this.channelManager = new ChannelManager();
@@ -239,6 +247,7 @@ export class Gateway {
         cliSessionStore: this.cliSessionStore,
         memoryStore: this.memoryStore ?? undefined,
         codexAdapter: this.codexAdapter ?? undefined,
+        workerRegistry: this.workerRegistry,
         onRunCreated: () => this.broadcastRunsList(),
         onSessionEvent: (sessionId, event) => this.broadcastSessionEvent(sessionId, event),
         onContextEvent: (eventType, payload) => this.broadcastContextEvent(eventType, payload),
@@ -308,6 +317,7 @@ export class Gateway {
     // Close stores last (may have pending writes)
     if (this.memoryStore) this.memoryStore.close();
     this.cliSessionStore.close();
+    this.workerRegistry.dispose();
 
     return new Promise((resolve) => {
       if (this.wss)
@@ -349,6 +359,10 @@ export class Gateway {
 
   getMemoryStore(): MemoryStore | null {
     return this.memoryStore;
+  }
+
+  getWorkerRegistry(): WorkerRegistry {
+    return this.workerRegistry;
   }
 
   getMode(): string {

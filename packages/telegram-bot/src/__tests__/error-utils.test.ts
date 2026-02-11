@@ -55,7 +55,7 @@ describe('classifyError', () => {
   });
 
   it('should classify network errors', () => {
-    const result = classifyError(new Error('connect ECONNREFUSED 127.0.0.1:18790'));
+    const result = classifyError(new Error('connect ECONNREFUSED 127.0.0.1:8200'));
     expect(result.category).toBe('network');
     expect(result.retryable).toBe(true);
   });

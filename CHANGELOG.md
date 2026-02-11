@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-02-11
+
 ### Added
 
 - **Dashboard auto-config**: Server injects `window.__OLYMPUS_CONFIG__` (host, port, apiKey) into Dashboard HTML at serve time — no manual Settings input needed
@@ -17,16 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Telegram session display**: `/sessions` command with icons, relative age, short paths (`~/`), and visual hierarchy
 - **Session Output Panel**: New web dashboard component showing real-time Claude CLI session output (`SessionOutputPanel.tsx`)
 - **Session subscription**: `OlympusClient.subscribeSession()`/`unsubscribeSession()` + `onSessionOutput()`/`onSessionError()`/`onSessionClosed()` event handlers
+- **Worker registry API**: Added `/api/workers/register`, `/api/workers`, `/api/workers/:id/heartbeat`, `/api/workers/:id` for worker lifecycle management
+- **Worker daemon mode**: `olympus start` now registers a worker and waits for task assignment (with heartbeat + graceful unregister)
+- **Codex chat endpoint**: Added `/api/codex/chat` with worker-aware system prompt and task delegation flow
+- **CLI curl utility**: Added `olympus curl` wrapper that injects Gateway API key automatically
 
 ### Fixed
 
-- **Dashboard CORS**: Added port 18791 (production Dashboard) to Gateway CORS whitelist — fixes "Failed to fetch" errors
+- **Dashboard CORS**: Added port 8201 (production Dashboard) to Gateway CORS whitelist — fixes "Failed to fetch" errors
 - **Dashboard Context Explorer**: Added apiKey guard, AbortController for request cancellation, user-friendly error messages
 - **Telegram output spam**: `filterOutput()` now strips user prompt lines (`❯ ...`), status bar lines (token/cost updates), spinner/progress indicators, and Claude Code UI chrome; `findNewContent()` filters both old and new output before diffing to eliminate false positives
 - **Telegram message truncation**: Replaced 3500-char hard truncation with multi-part message delivery
 - **Dashboard session clicks**: `TmuxSessionItem` now has click handler and active selection highlight
 - **Dashboard logs empty**: `session:output`/`session:error`/`session:closed` events now populate the Logs panel
 - **Context DB unused**: Session output now auto-updates task context via `ContextService` with `on-threshold` auto-report policy
+- **Default port consistency**: Standardized Gateway/Dashboard defaults to `8200/8201` across CLI, docs, and remote access guidance
 
 ## [0.3.0] - 2026-02-06
 
@@ -66,5 +73,6 @@ Initial public release of Olympus — Claude CLI Enhanced Platform.
 - Gateway session idle timeout disabled by default to prevent long-running session kills (`b7b5d24`)
 - CLI tsconfig: added `"jsx": "react-jsx"` for Ink/React TSX compilation
 
-[Unreleased]: https://github.com/jobc90/olympus/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/jobc90/olympus/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/jobc90/olympus/releases/tag/v0.5.0
 [0.3.0]: https://github.com/jobc90/olympus/releases/tag/v0.3.0

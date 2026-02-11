@@ -12,8 +12,8 @@
 
 | 서비스 | 바인딩 | 포트 | 프로토콜 | 인증 |
 |--------|--------|------|----------|------|
-| Gateway | `127.0.0.1` | 18790 | HTTP + WebSocket (`/ws`) | API Key (`oly_*`) |
-| Dashboard | `127.0.0.1` | 18791 | HTTP (Static SPA) | 없음 (Gateway API Key 주입) |
+| Gateway | `127.0.0.1` | 8200 | HTTP + WebSocket (`/ws`) | API Key (`oly_*`) |
+| Dashboard | `127.0.0.1` | 8201 | HTTP (Static SPA) | 없음 (Gateway API Key 주입) |
 | Telegram Bot | outbound only | - | HTTPS (Telegram API) | Bot Token + User ID |
 
 ### 1.2 핵심 코드 포인트
@@ -21,7 +21,7 @@
 ```
 packages/client/src/client.ts:108    → ws://${host}:${port}/ws  (하드코딩 ws://)
 packages/web/src/App.tsx:75          → http://${host}:${port}   (하드코딩 http://)
-packages/web/src/hooks/useContextTree.ts:53 → http://localhost:18790
+packages/web/src/hooks/useContextTree.ts:53 → http://localhost:8200
 packages/cli/src/commands/server.ts:367     → window.__OLYMPUS_CONFIG__ (API Key HTML 주입)
 packages/gateway/src/cors.ts:3-10          → ALLOWED_ORIGINS 명시적 목록
 packages/gateway/src/server.ts:106         → server.listen(port, host) (127.0.0.1)
@@ -70,7 +70,7 @@ cloudflared tunnel create olympus
 cloudflared tunnel route dns olympus olympus.yourdomain.com
 
 # 실행 (Gateway + Dashboard 모두)
-cloudflared tunnel run --url http://localhost:18790 olympus
+cloudflared tunnel run --url http://localhost:8200 olympus
 ```
 
 **장점**: 무료, HTTPS 자동, DDoS 보호, 전 세계 300+ PoP, Access(SSO/OTP) 연동 가능
@@ -79,7 +79,7 @@ cloudflared tunnel run --url http://localhost:18790 olympus
 #### B. ngrok
 
 ```bash
-ngrok http 18790 --basic-auth="user:pass"
+ngrok http 8200 --basic-auth="user:pass"
 ```
 
 **장점**: 한 줄 설정, 즉시 시작
@@ -93,7 +93,7 @@ brew install tailscale
 tailscale up
 
 # 핸드폰에 Tailscale 앱 설치 → 같은 계정 로그인
-# 핸드폰에서 http://<mac의-tailscale-IP>:18791 접속
+# 핸드폰에서 http://<mac의-tailscale-IP>:8201 접속
 ```
 
 **장점**: 코드 변경 0, http/ws 그대로 사용, E2E 암호화, P2P 최고 속도
@@ -103,10 +103,10 @@ tailscale up
 
 ```bash
 # Gateway를 Tailnet 내에서 HTTPS로 서빙
-tailscale serve --bg https+insecure://localhost:18790
+tailscale serve --bg https+insecure://localhost:8200
 
 # Dashboard도 서빙
-tailscale serve --bg --set-path /dashboard https+insecure://localhost:18791
+tailscale serve --bg --set-path /dashboard https+insecure://localhost:8201
 ```
 
 **장점**: HTTPS 자동, Tailnet ACL 보안, 코드 변경 최소
@@ -115,7 +115,7 @@ tailscale serve --bg --set-path /dashboard https+insecure://localhost:18791
 #### E. VPS + Nginx + WireGuard
 
 ```
-핸드폰 → HTTPS → VPS(Nginx) → WireGuard → 로컬 Mac → localhost:18790
+핸드폰 → HTTPS → VPS(Nginx) → WireGuard → 로컬 Mac → localhost:8200
 ```
 
 **장점**: 완전 제어, 최고 보안(직접 관리), 커스텀 도메인
@@ -125,7 +125,7 @@ tailscale serve --bg --set-path /dashboard https+insecure://localhost:18791
 
 ```bash
 # bore 예시
-bore local 18790 --to bore.pub
+bore local 8200 --to bore.pub
 # 자체 서버: bore server --secret mysecret
 ```
 
@@ -225,13 +225,13 @@ sudo tailscale up
 olympus server start --host 0.0.0.0
 
 # 옵션 B: tailscale serve (바인딩 변경 불필요, 권장)
-tailscale serve --bg 18790              # Gateway
-tailscale serve --bg --set-path /web 18791  # Dashboard
+tailscale serve --bg 8200              # Gateway
+tailscale serve --bg --set-path /web 8201  # Dashboard
 
 # 3. 핸드폰에서 Tailscale 앱 설치 (iOS/Android)
 # 4. 같은 Tailscale 계정으로 로그인
 # 5. 핸드폰 브라우저에서 접속:
-#    http://<mac-tailscale-hostname>:18791  (옵션 A)
+#    http://<mac-tailscale-hostname>:8201  (옵션 A)
 #    https://<mac-tailscale-hostname>/web   (옵션 B - HTTPS 자동)
 ```
 
@@ -281,7 +281,7 @@ tailscale serve --bg --set-path /web 18791  # Dashboard
 #### 🥉 3순위: Pinggy (임시 테스트/데모)
 
 ```bash
-ssh -p 443 -R0:localhost:18790 -o StrictHostKeyChecking=no a.pinggy.io
+ssh -p 443 -R0:localhost:8200 -o StrictHostKeyChecking=no a.pinggy.io
 ```
 
 **추천 조건**: 일시적으로 빠르게 테스트할 때 (60분 무료, QR 코드 지원)
@@ -329,8 +329,8 @@ ssh -p 443 -R0:localhost:18790 -o StrictHostKeyChecking=no a.pinggy.io
 ```bash
 # 사용자가 직접 실행
 brew install tailscale && sudo tailscale up
-tailscale serve --bg 18790
-tailscale serve --bg --set-path /web 18791
+tailscale serve --bg 8200
+tailscale serve --bg --set-path /web 8201
 # 핸드폰 Tailscale 앱 설치 → 접속
 ```
 

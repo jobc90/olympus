@@ -471,13 +471,30 @@ export function useOlympus(options: UseOlympusOptions = {}) {
 
   const sendAgentCommand = useCallback(async (command: string) => {
     try {
-      const result = await clientRef.current?.sendCommand(command);
+      const gatewayUrl = `http://${host}:${port}`;
+      const res = await fetch(`${gatewayUrl}/api/cli/run`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          prompt: command,
+          provider: 'claude',
+          dangerouslySkipPermissions: true,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json() as { message?: string };
+        throw new Error(err.message ?? `HTTP ${res.status}`);
+      }
+      const { result } = await res.json() as { result: { text: string; success: boolean } };
       return result;
     } catch (e) {
       setState(s => ({ ...s, error: `Agent error: ${(e as Error).message}` }));
       return null;
     }
-  }, []);
+  }, [host, port, apiKey]);
 
   const cancelAgentTask = useCallback(async () => {
     try {

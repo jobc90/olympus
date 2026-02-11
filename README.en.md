@@ -40,11 +40,11 @@ Olympus extends Claude CLI into a practical development operations platform:
 1. **Multi-AI Orchestration (AIOS v5.3)**: Claude + Gemini + Codex with Co-Leadership workflow
 2. **Codex Orchestrator (V3)**: Multi-project AI orchestrator — routing, session management, context DB, agent brain
 3. **Codex Agent (V2)**: Autonomous AI agent — command analysis → planning → execution → review → reporting pipeline
-4. **Worker Factory (V2)**: 4 worker types (Claude CLI / Anthropic API SSE / tmux / Docker), FIFO queue, pipeline output chaining, auto-selected per task
+4. **Worker Factory (V2)**: 4 worker types (Claude CLI / Anthropic API SSE / Spawn / Docker), FIFO queue, pipeline output chaining, auto-selected per task
 5. **Memory Store (V2)**: SQLite + FTS5 task learning, PatternManager (SQL-level filtering), similar task retrieval, Memory RPC methods
 6. **Context OS**: hierarchical context management (Workspace → Project → Task)
 7. **Remote Access**: run and control local sessions through Gateway + Telegram (with Smart Digest, `/codex` RPC queries, secret masking)
-8. **Stable Sessions**: tmux-backed long-running Claude sessions
+8. **Stable Sessions**: spawn-based long-running worker sessions (tmux-free)
 9. **Visibility**: Web dashboard with auto-config, CodexPanel, ProjectBrowser, real-time session output
 
 ## Quick Start (60s)
@@ -54,8 +54,8 @@ git clone https://github.com/jobc90/olympus.git
 cd olympus
 ./install.sh --global
 olympus setup
-olympus start
 olympus server start
+olympus start
 ```
 
 Then:
@@ -92,7 +92,6 @@ Default behavior is non-invasive: `~/.claude/CLAUDE.md` is not modified unless `
 
 - Node.js 18+
 - Claude CLI: `npm i -g @anthropic-ai/claude-code`
-- tmux (optional, required for `olympus start`)
 - Gemini CLI (optional for Multi-AI)
 - Codex CLI (optional for Multi-AI)
 
@@ -102,9 +101,9 @@ Default behavior is non-invasive: `~/.claude/CLAUDE.md` is not modified unless `
 |---|---|---|---|
 | `/orchestration` protocol | ✅ | ✅ | ✅ |
 | `olympus` CLI wrapper | ✅ | ✅ | ✅ |
+| Worker session (`olympus start`) | ✅ | ✅ | ✅ |
 | Dashboard | ✅ | ✅ | ✅ |
-| tmux session mode (`olympus start`) | ✅ | ✅ | ❌ |
-| Telegram remote control | ✅ | ⚠️ | ❌ |
+| Telegram remote control | ✅ | ✅ | ✅ |
 
 ## Usage
 
@@ -112,7 +111,7 @@ Default behavior is non-invasive: `~/.claude/CLAUDE.md` is not modified unless `
 
 ```bash
 olympus                 # Launch Claude CLI (wrapper)
-olympus start           # Start Claude in tmux
+olympus start           # Register worker and wait for tasks (Gateway required)
 olympus server start    # Start Gateway + Dashboard + Telegram (Dashboard auto-connects)
 olympus setup           # Setup wizard (gateway/telegram/models)
 olympus models show     # Show runtime model preferences
@@ -132,7 +131,8 @@ olympus tui
 | Command | Description |
 |---|---|
 | `olympus` | Launch Claude CLI |
-| `olympus start` | Start Claude in tmux |
+| `olympus start` | Register worker and wait for tasks |
+| `olympus start-trust` | Register worker in trust mode |
 | `olympus server start` | Start integrated services |
 | `olympus server stop` | Stop services |
 | `olympus server status` | Check service status |
@@ -140,6 +140,7 @@ olympus tui
 | `olympus quickstart` | Quick setup + run |
 | `olympus config` | Config management |
 | `olympus models` | Model config sync (core + MCP) |
+| `olympus curl` | curl wrapper with auto API key injection |
 | `olympus gateway` | Run gateway only |
 | `olympus telegram` | Run telegram bot only |
 | `olympus dashboard` | Open web dashboard |
@@ -341,20 +342,13 @@ The bot uses **Smart Digest mode** by default. All output passes through the dig
 
 If spam persists, **restart Gateway** to apply the latest filters.
 
-### tmux scroll in `olympus start`
+### `olympus start` fails to connect to Gateway
 
-If mouse wheel does not scroll past output in tmux, enable mouse mode in `~/.tmux.conf`:
-
-```bash
-set -g mouse on
-setw -g mode-keys vi
-set -g history-limit 50000
-```
-
-Then reload:
+`olympus start` registers a worker through Gateway APIs. Start Gateway first:
 
 ```bash
-tmux source-file ~/.tmux.conf
+olympus server start
+olympus start -n my-worker
 ```
 
 ## License

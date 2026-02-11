@@ -184,7 +184,7 @@ interface ContextMerge {
 
 ```typescript
 // constants.ts — Gateway 연결 상수
-DEFAULT_GATEWAY_PORT = 18790;
+DEFAULT_GATEWAY_PORT = 8200;
 DEFAULT_GATEWAY_HOST = '127.0.0.1';
 WS_PATH = '/ws';
 HEARTBEAT_INTERVAL = 30_000;     // 30초
@@ -295,7 +295,7 @@ generateApiKey(): string → `oly_${randomBytes(24).toString('hex')}`
 // 설정 파일: ~/.olympus/config.json
 interface OlympusClientConfig {
   apiKey: string;
-  gatewayUrl: string;        // 'http://127.0.0.1:18790'
+  gatewayUrl: string;        // 'http://127.0.0.1:8200'
   gatewayHost: string;
   gatewayPort: number;
   telegram?: { token: string; allowedUsers: number[] };
@@ -310,7 +310,7 @@ interface OlympusClientConfig {
 ALLOWED_ORIGINS = [
   'http://localhost:5173',    // Vite dev
   'http://localhost:3000',    // 대체 dev
-  'http://localhost:18791',   // 프로덕션 대시보드
+  'http://localhost:8201',   // 프로덕션 대시보드
   // + 각각의 127.0.0.1 버전
 ];
 ```
@@ -1972,7 +1972,7 @@ Level 2 (최대): Docker 컨테이너 (Phase 5+)
 interface OlympusConfig {
   // 기존 호환
   apiKey: string;                          // oly_xxx (자동 생성)
-  gatewayUrl: string;                      // http://127.0.0.1:18790
+  gatewayUrl: string;                      // http://127.0.0.1:8200
   gatewayHost: string;
   gatewayPort: number;
 
@@ -2032,7 +2032,7 @@ interface OlympusConfig {
 ### 15.2 환경변수 오버라이드
 
 ```bash
-OLYMPUS_GATEWAY_PORT=18790
+OLYMPUS_GATEWAY_PORT=8200
 OLYMPUS_GATEWAY_HOST=127.0.0.1
 OLYMPUS_API_KEY=oly_xxx
 OLYMPUS_AGENT_PROVIDER=openai

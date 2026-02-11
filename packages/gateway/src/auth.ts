@@ -72,9 +72,9 @@ export function generateApiKey(): string {
 function getDefaultConfig(): OlympusClientConfig {
   return {
     apiKey: generateApiKey(),
-    gatewayUrl: 'http://127.0.0.1:18790',
+    gatewayUrl: 'http://127.0.0.1:8200',
     gatewayHost: '127.0.0.1',
-    gatewayPort: 18790,
+    gatewayPort: 8200,
   };
 }
 

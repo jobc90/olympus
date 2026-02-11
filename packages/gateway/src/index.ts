@@ -32,3 +32,4 @@ export { CodexAdapter } from './codex-adapter.js';
 export type { CodexOrchestratorLike } from './codex-adapter.js';
 export { runCli, buildCliArgs, parseClaudeJson, classifyError } from './cli-runner.js';
 export { CliSessionStore } from './cli-session-store.js';
+export { WorkerRegistry } from './worker-registry.js';

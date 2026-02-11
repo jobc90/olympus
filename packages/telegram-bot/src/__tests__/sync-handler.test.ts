@@ -102,7 +102,7 @@ async function handleOrchestratorText(
 }
 
 describe('handleOrchestratorText (오케스트레이터 모드)', () => {
-  const GATEWAY = 'http://127.0.0.1:18790';
+  const GATEWAY = 'http://127.0.0.1:8200';
   const API_KEY = 'test-key';
   const CHAT_ID = 12345;
 
@@ -128,7 +128,7 @@ describe('handleOrchestratorText (오케스트레이터 모드)', () => {
     await handleOrchestratorText('안녕하세요', CHAT_ID, GATEWAY, API_KEY, mockFetch);
 
     expect(captured).not.toBeNull();
-    expect(captured!.url).toBe('http://127.0.0.1:18790/api/cli/run');
+    expect(captured!.url).toBe('http://127.0.0.1:8200/api/cli/run');
     expect(captured!.init.method).toBe('POST');
     expect((captured!.init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
     expect((captured!.init.headers as Record<string, string>)['Authorization']).toBe('Bearer test-key');
@@ -210,7 +210,7 @@ describe('handleOrchestratorText (오케스트레이터 모드)', () => {
 
   it('네트워크 에러 → 오류 메시지', async () => {
     const mockFetch = async () => {
-      throw new Error('connect ECONNREFUSED 127.0.0.1:18790');
+      throw new Error('connect ECONNREFUSED 127.0.0.1:8200');
     };
 
     const result = await handleOrchestratorText('질문', CHAT_ID, GATEWAY, API_KEY, mockFetch);
@@ -573,7 +573,7 @@ async function routeViaCodex(
 }
 
 describe('routeViaCodex (Codex 라우팅 경유 핸들러)', () => {
-  const GATEWAY = 'http://127.0.0.1:18790';
+  const GATEWAY = 'http://127.0.0.1:8200';
   const API_KEY = 'test-key';
   const CHAT_ID = 12345;
 
@@ -730,7 +730,7 @@ describe('routeViaCodex (Codex 라우팅 경유 핸들러)', () => {
     await routeViaCodex('테스트', CHAT_ID, GATEWAY, API_KEY, mockFetch);
 
     expect(captured).not.toBeNull();
-    expect(captured!.url).toBe('http://127.0.0.1:18790/api/codex/route');
+    expect(captured!.url).toBe('http://127.0.0.1:8200/api/codex/route');
     expect(captured!.init.method).toBe('POST');
 
     const body = JSON.parse(captured!.init.body as string);

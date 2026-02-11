@@ -15,11 +15,11 @@ export const DEFAULT_CONFIG: OlympusConfig = {
     fallbackProModel: process.env.OLYMPUS_GEMINI_FALLBACK_PRO_MODEL ?? 'gemini-2.5-pro',
   },
   codex: {
-    defaultModel: process.env.OLYMPUS_CODEX_MODEL ?? process.env.OLYMPUS_OPENAI_MODEL ?? 'gpt-4o',
+    defaultModel: process.env.OLYMPUS_CODEX_MODEL ?? process.env.OLYMPUS_OPENAI_MODEL ?? 'gpt-5.3-codex',
     apiBaseUrl: process.env.OLYMPUS_OPENAI_API_BASE_URL ?? 'https://api.openai.com/v1',
   },
   gpt: {
-    defaultModel: process.env.OLYMPUS_CODEX_MODEL ?? process.env.OLYMPUS_OPENAI_MODEL ?? 'gpt-4o',
+    defaultModel: process.env.OLYMPUS_CODEX_MODEL ?? process.env.OLYMPUS_OPENAI_MODEL ?? 'gpt-5.3-codex',
     apiBaseUrl: process.env.OLYMPUS_OPENAI_API_BASE_URL ?? 'https://api.openai.com/v1',
   },
   webPort: 4200,

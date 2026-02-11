@@ -1,6 +1,6 @@
 {
   "name": "@olympus-dev/codex",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "description": "Codex Orchestrator — AI Agent coordinator for Olympus",
   "main": "dist/index.js",

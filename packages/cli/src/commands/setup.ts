@@ -47,8 +47,8 @@ export const setupCommand = new Command('setup')
         console.log(chalk.yellow('Resetting configuration...'));
         updateConfig({
           gatewayHost: '127.0.0.1',
-          gatewayPort: 18790,
-          gatewayUrl: 'http://127.0.0.1:18790',
+          gatewayPort: 8200,
+          gatewayUrl: 'http://127.0.0.1:8200',
           telegram: undefined,
         });
         console.log(chalk.green('✓ Configuration reset to defaults'));

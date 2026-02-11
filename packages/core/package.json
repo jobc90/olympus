@@ -1,6 +1,6 @@
 {
   "name": "@olympus-dev/core",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "description": "Core library for Olympus AI development platform",
   "main": "dist/index.js",
