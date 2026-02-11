@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-02-11
+
+### Changed
+
+- **Telegram @mention delegation**: Users now directly mention workers with `@worker-name task` instead of Codex auto-delegating. This gives users explicit control over which worker receives the task.
+- **Inline query**: Telegram inline query now shows available workers (with status) instead of session list. Type `@botname` in any chat to pick a worker.
+- **Codex chat simplification**: `/api/codex/chat` returns only `chat` type responses. Removed `delegate` and `no_workers` response types — worker delegation is now handled by the Telegram bot's @mention parser.
+- **System prompt**: Codex system prompt simplified to advise users about `@worker mention` syntax instead of generating `[DELEGATE:name]` patterns.
+
 ## [0.5.0] - 2026-02-11
 
 ### Added
@@ -73,6 +82,7 @@ Initial public release of Olympus — Claude CLI Enhanced Platform.
 - Gateway session idle timeout disabled by default to prevent long-running session kills (`b7b5d24`)
 - CLI tsconfig: added `"jsx": "react-jsx"` for Ink/React TSX compilation
 
-[Unreleased]: https://github.com/jobc90/olympus/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/jobc90/olympus/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/jobc90/olympus/releases/tag/v0.5.1
 [0.5.0]: https://github.com/jobc90/olympus/releases/tag/v0.5.0
 [0.3.0]: https://github.com/jobc90/olympus/releases/tag/v0.3.0

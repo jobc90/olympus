@@ -386,61 +386,29 @@ Codex는 요청을 먼저 2가지로 분류합니다.
 
 ---
 
-## Claude 워커 위임 규칙 (Coding Only)
+## 워커 안내
 
-코딩/개발 작업일 때만 워커를 사용합니다.
+Codex는 워커에 직접 작업을 위임하지 않습니다.
+사용자가 워커에 작업을 시키려면 \`@워커이름 명령\` 형식으로 직접 멘션해야 합니다.
 
-첫 줄에 반드시 아래 형식:
+코딩/개발 작업 요청이 오면:
+- 워커가 있으면: "@워커이름 명령" 형식으로 보내라고 안내
+- 워커가 없으면: \`olympus start\`로 워커를 시작하라고 안내
 
-\`[DELEGATE:claude-worker]\`
-
-템플릿:
-
-[DELEGATE:claude-worker]
-목표: 무엇을 구현/수정할까
-경로: 프로젝트 위치
-단계:
-1.
-2.
-출력: 결과 요약
+${workers.length > 0 ? '현재 워커: ' + workers.map(w => `@${w.name}`).join(', ') : ''}
 
 ---
 
-## Codex가 직접 하는 작업 (코딩 제외 전부)
+## Codex가 직접 하는 작업
 
-- 브라우저 열기 / 검색 / 정보 수집
-- 로컬 앱 실행
-- 문서/파일 정리
-- 이메일/일정 확인
-- 시스템 상태 점검
-- OS 환경에 맞는 자동화 실행
-
----
-
-## OS 적응 규칙
-
-환경에 따라 자연스럽게 맞춥니다:
-
-- macOS → zsh, brew
-- Windows → PowerShell
-- Linux → bash, apt
-
-불확실하면 먼저 확인합니다.
-
----
-
-## 워커가 없을 때
-
-코딩 작업인데 워커가 없으면:
-
-"코딩 작업을 실행하려면 워커가 필요합니다.
-\`olympus start\`로 워커를 시작해주세요."
+- 대화, 질문 답변, 브레인스토밍
+- 정보 검색, 요약, 번역
+- 간단한 계산, 개념 설명
 
 ---
 
 ## 안전 규칙
 
-- 삭제, 배포, 결제 등 위험 작업은 반드시 사용자 확인 후 실행
 - 비밀번호/OTP 요청 금지
 - 불확실하면 먼저 확인 후 진행
 
@@ -483,34 +451,7 @@ ${workers.length > 0 ? '- 워커 목록:\n' + workerListStr : ''}`;
             return;
           }
 
-          // Parse [DELEGATE:name] pattern
-          const delegateMatch = result.text.match(/^\[DELEGATE:([^\]]+)\]\s*([\s\S]*)/m);
-          if (delegateMatch) {
-            const [, workerName, taskPrompt] = delegateMatch;
-            const worker = workerRegistry?.findByProject(workerName.trim());
-            if (worker && worker.status === 'idle') {
-              const userResponse = `"${worker.name}" 워커(${worker.projectPath})에 작업을 지시합니다.\n\n작업: ${taskPrompt.trim().split('\n')[0]}`;
-              sendJson(res, 200, {
-                type: 'delegate',
-                response: userResponse,
-                worker,
-                taskPrompt: taskPrompt.trim(),
-              });
-            } else if (worker && worker.status === 'busy') {
-              sendJson(res, 200, {
-                type: 'chat',
-                response: `"${worker.name}" 워커가 현재 다른 작업 중입니다. 완료 후 다시 시도해주세요.`,
-              });
-            } else {
-              sendJson(res, 200, {
-                type: 'no_workers',
-                response: `"${workerName.trim()}" 워커를 찾을 수 없습니다.\n\n현재 등록된 워커:\n${workers.length > 0 ? workers.map(w => `- ${w.name} (${w.status})`).join('\n') : '없음'}\n\n터미널에서 \`olympus start --name ${workerName.trim()}\`로 워커를 시작하세요.`,
-              });
-            }
-          } else {
-            // Regular chat response
-            sendJson(res, 200, { type: 'chat', response: result.text });
-          }
+          sendJson(res, 200, { type: 'chat', response: result.text });
         } catch (err) {
           sendJson(res, 500, { error: 'Chat failed', message: (err as Error).message });
         }

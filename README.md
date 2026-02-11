@@ -395,8 +395,13 @@ olympus models sync
 | `/orchestration <요청>` | Multi-AI 협업 (Auto 전자동) |
 | `/orchestration --plan <요청>` | Phase 3, 8에서 사용자 확인 |
 | `/orchestration --strict <요청>` | 모든 Phase 전환 시 승인 |
+| `/workers` | 워커 목록 표시 |
 | 일반 메시지 | 활성 세션의 Claude에게 전송 |
-| `@이름 메시지` | 특정 세션에 메시지 전송 |
+| `@워커이름 작업` | 워커에 직접 작업 지시 (Codex 거치지 않음) |
+
+### 인라인 모드 (워커 선택)
+
+아무 채팅에서 `@봇이름`을 입력하면 사용 가능한 워커 목록이 표시됩니다. 워커를 선택하면 `@워커이름 ` 형태로 메시지가 입력되고, 이어서 작업 내용을 입력하면 됩니다.
 
 ### Smart Digest 모드
 
@@ -737,7 +742,7 @@ pnpm install
 # Build all packages
 pnpm build
 
-# Run tests — 521 tests (gateway 346 + codex 103 + telegram 48 + core 24)
+# Run tests — 535 tests (gateway 372 + codex 82 + telegram 57 + core 24)
 pnpm test
 
 # Type check (6 packages)

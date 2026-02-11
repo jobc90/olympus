@@ -1,6 +1,6 @@
 {
   "name": "@olympus-dev/gateway",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "type": "module",
   "description": "WebSocket gateway server for Olympus",
   "main": "dist/index.js",

@@ -213,6 +213,12 @@ Telegram commands:
 | `/last` | Show last output |
 | `/codex <question>` | Query Codex Orchestrator via RPC (routing + response) |
 | `/orchestration <request>` | Run Multi-AI orchestration |
+| `/workers` | List available workers |
+| `@worker-name task` | Direct task to a specific worker (bypasses Codex) |
+
+### Inline Mode (Worker Selection)
+
+Type `@botname` in any chat to see available workers. Select a worker to pre-fill `@worker-name ` and then type your task.
 
 ### Smart Digest Mode
 
@@ -311,7 +317,7 @@ orchestration/
 ```bash
 pnpm install
 pnpm build
-pnpm test       # 458 tests (gateway 280 + codex 103 + telegram 51 + core 24)
+pnpm test       # 535 tests (gateway 372 + codex 82 + telegram 57 + core 24)
 pnpm lint       # tsc --noEmit (6 packages)
 ```
 

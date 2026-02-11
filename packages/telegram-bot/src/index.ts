@@ -142,17 +142,16 @@ class OlympusBot {
     this.bot.command('start', async (ctx) => {
       await ctx.reply(
         `⚡ *Olympus — 개인 AI 비서*\n\n` +
-        `Codex가 대화하고, Claude 워커가 컴퓨터를 조작합니다.\n\n` +
-        `*할 수 있는 것:*\n` +
-        `• 대화, 질문, 브레인스토밍\n` +
-        `• 앱 실행, 파일 관리, 터미널 명령\n` +
-        `• 웹 검색, 정보 수집, 요약\n` +
-        `• 코딩, 테스트, 빌드\n\n` +
-        `*워커 필요:* 컴퓨터 조작은 Claude 워커가 수행합니다.\n` +
-        `터미널에서 \`olympus start\`로 워커를 시작하세요.\n\n` +
+        `Codex가 대화하고, Claude 워커가 작업을 수행합니다.\n\n` +
+        `*워커에 작업 지시:*\n` +
+        `\`@워커이름 할 일\` 형식으로 직접 멘션\n` +
+        `예: \`@olympus 커밋하고 푸시해\`\n\n` +
+        `*일반 대화:*\n` +
+        `그냥 메시지 → Codex가 응답\n\n` +
         `*명령어:*\n` +
         `/workers — 워커 목록\n` +
-        `/health — 상태 확인`,
+        `/health — 상태 확인\n\n` +
+        `*인라인 모드:* 아무 채팅에서 \`@봇이름\` 입력 → 워커 선택`,
         { parse_mode: 'Markdown' }
       );
     });
@@ -781,6 +780,61 @@ class OlympusBot {
         return;
       }
 
+      // @워커이름 멘션 → Codex 거치지 않고 바로 워커에 위임
+      const mentionMatch = text.match(/^@(\S+)\s+([\s\S]+)/);
+      if (mentionMatch) {
+        const [, workerName, taskPrompt] = mentionMatch;
+        await ctx.sendChatAction('typing');
+        try {
+          // 워커 조회
+          const workersRes = await fetch(`${this.config.gatewayUrl}/api/workers`, {
+            headers: { Authorization: `Bearer ${this.config.apiKey}` },
+          });
+          const { workers } = await workersRes.json() as { workers: Array<{ id: string; name: string; projectPath: string; status: string }> };
+          const worker = workers.find(w => w.name === workerName);
+
+          if (!worker) {
+            const available = workers.length > 0
+              ? workers.map(w => `@${w.name}`).join(', ')
+              : '없음';
+            await this.safeReply(ctx, `"${workerName}" 워커를 찾을 수 없습니다.\n사용 가능: ${available}`, undefined);
+            return;
+          }
+          if (worker.status === 'busy') {
+            await this.safeReply(ctx, `@${worker.name} 워커가 현재 작업 중입니다. 완료 후 다시 시도하세요.`, undefined);
+            return;
+          }
+
+          await this.safeReply(ctx, `@${worker.name} 에 작업을 지시합니다.\n\n${taskPrompt.trim().split('\n')[0]}`, undefined);
+
+          const taskRes = await fetch(`${this.config.gatewayUrl}/api/cli/run/async`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${this.config.apiKey}`,
+            },
+            body: JSON.stringify({
+              prompt: taskPrompt.trim(),
+              workspaceDir: worker.projectPath,
+              provider: 'claude',
+              dangerouslySkipPermissions: true,
+            }),
+            signal: AbortSignal.timeout(30_000),
+          });
+
+          if (!taskRes.ok) {
+            await this.safeReply(ctx, '작업 시작 실패', undefined);
+            return;
+          }
+
+          const { taskId } = await taskRes.json() as { taskId: string };
+          this.pollAndNotify(ctx.chat.id, taskId, worker.name).catch(() => {});
+        } catch (err) {
+          await this.safeReply(ctx, `워커 위임 실패: ${(err as Error).message}`, undefined);
+        }
+        return;
+      }
+
       // Codex chat mode (default)
       await ctx.sendChatAction('typing');
 
@@ -799,50 +853,8 @@ class OlympusBot {
           throw new Error(`Codex chat failed: ${chatRes.status}`);
         }
 
-        const data = await chatRes.json() as {
-          type: 'chat' | 'delegate' | 'no_workers';
-          response: string;
-          worker?: { id: string; name: string; projectPath: string };
-          taskPrompt?: string;
-        };
-
-        if (data.type === 'chat') {
-          // Normal conversation — display Codex response
-          await this.sendLongMessage(ctx.chat.id, data.response);
-
-        } else if (data.type === 'delegate' && data.worker && data.taskPrompt) {
-          // Work delegation — notify user, start async task, poll for completion
-          await this.safeReply(ctx, data.response, undefined);
-
-          // Start async CLI task in worker's project directory
-          const taskRes = await fetch(`${this.config.gatewayUrl}/api/cli/run/async`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${this.config.apiKey}`,
-            },
-            body: JSON.stringify({
-              prompt: data.taskPrompt,
-              workspaceDir: data.worker.projectPath,
-              provider: 'claude',
-              dangerouslySkipPermissions: true,
-            }),
-            signal: AbortSignal.timeout(30_000),
-          });
-
-          if (!taskRes.ok) {
-            await this.safeReply(ctx, '작업 시작 실패', undefined);
-            return;
-          }
-
-          const { taskId } = await taskRes.json() as { taskId: string };
-
-          // Fire-and-forget background polling
-          this.pollAndNotify(ctx.chat.id, taskId, data.worker.name).catch(() => {});
-
-        } else if (data.type === 'no_workers') {
-          await this.safeReply(ctx, data.response, undefined);
-        }
+        const data = await chatRes.json() as { type: 'chat'; response: string };
+        await this.sendLongMessage(ctx.chat.id, data.response);
       } catch (err) {
         // Fallback: if codex/chat fails, try direct CLI
         structuredLog('warn', 'telegram-bot', 'codex_chat_fallback', { error: (err as Error).message });
@@ -858,48 +870,52 @@ class OlympusBot {
       }
     });
 
-    // Inline query handler - show available sessions
+    // Inline query handler - show available workers for @mention
     this.bot.on('inline_query', async (ctx) => {
       const query = ctx.inlineQuery.query;
-      const chatId = ctx.from.id;
-
-      // Get sessions for this user
-      const sessions = this.chatSessions.get(chatId);
       const results: InlineQueryResult[] = [];
 
-      if (sessions && sessions.size > 0) {
-        for (const [name, sessionId] of sessions) {
-          // Filter by query if provided
-          if (query && !name.toLowerCase().includes(query.toLowerCase())) {
+      // Fetch workers from gateway
+      try {
+        const res = await fetch(`${this.config.gatewayUrl}/api/workers`, {
+          headers: { Authorization: `Bearer ${this.config.apiKey}` },
+          signal: AbortSignal.timeout(5_000),
+        });
+        const { workers } = await res.json() as { workers: Array<{ id: string; name: string; projectPath: string; status: string }> };
+
+        for (const w of workers) {
+          if (query && !w.name.toLowerCase().includes(query.toLowerCase())) {
             continue;
           }
-
-          const isActive = this.activeSession.get(chatId) === name;
+          const statusIcon = w.status === 'idle' ? '🟢' : '🔵';
           results.push({
             type: 'article',
-            id: sessionId,
-            title: `${isActive ? '✨ ' : ''}${name}`,
-            description: isActive ? '현재 활성 세션' : '클릭하여 메시지 전송',
+            id: w.id,
+            title: `${statusIcon} @${w.name}`,
+            description: `${w.status === 'idle' ? '대기 중' : '작업 중'} — ${w.projectPath}`,
             input_message_content: {
-              message_text: `@${name} `,
+              message_text: `@${w.name} `,
             },
           });
         }
+      } catch {
+        // Gateway unavailable — skip workers
       }
 
-      // Always add option to create new session
-      results.push({
-        type: 'article',
-        id: 'new-session',
-        title: '➕ 새 세션 생성',
-        description: query ? `'${query}' 이름으로 새 세션 생성` : '새 세션 생성',
-        input_message_content: {
-          message_text: `/new ${query || 'main'}`,
-        },
-      });
+      if (results.length === 0) {
+        results.push({
+          type: 'article',
+          id: 'no-workers',
+          title: '워커 없음',
+          description: 'olympus start로 워커를 시작하세요',
+          input_message_content: {
+            message_text: '/workers',
+          },
+        });
+      }
 
       await ctx.answerInlineQuery(results, {
-        cache_time: 5, // Short cache for real-time updates
+        cache_time: 5,
         is_personal: true,
       });
     });

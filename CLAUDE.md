@@ -36,10 +36,18 @@ protocol → core → gateway → cli
 - `GET /api/cli/run/:id/status` — 비동기 작업 상태 조회
 - `GET /api/cli/sessions` — 세션 목록
 - `DELETE /api/cli/sessions/:id` — 세션 삭제
+- `POST /api/codex/chat` — Codex 대화 (chat 응답만, 워커 위임 기능 제거됨)
+- `GET /api/workers` — 워커 목록
 
 ### Real-time Streaming
 - `cli:stream` WebSocket 이벤트 — stdout 실시간 청크 브로드캐스트
 - `cli:complete` WebSocket 이벤트 — CLI 실행 완료 결과
+
+### Telegram Bot 워커 위임
+- **직접 멘션 방식**: `@워커이름 작업` 형식으로 사용자가 워커에 직접 작업 지시
+- **인라인 쿼리**: `@봇이름` 입력 시 워커 목록 표시 (세션 목록 대신)
+- **Codex chat**: 워커 위임 기능 제거, chat 응답만 반환 (`delegate`, `no_workers` 타입 삭제)
+- **`/workers` 명령어**: 워커 목록 조회
 
 ## Development
 
