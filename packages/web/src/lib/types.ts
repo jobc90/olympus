@@ -27,7 +27,7 @@ export type WorkerBehavior =
   | 'analyzing'
   | 'meeting';
 
-/** Simplified office states (mapped from WorkerBehavior) */
+/** Simplified Olympus Mountain states (mapped from WorkerBehavior) */
 export type WorkerState =
   | 'idle'
   | 'working'
@@ -39,17 +39,18 @@ export type WorkerState =
   | 'waiting'
   | 'arriving';
 
-/** Office zone identifiers */
+/** Olympus Mountain zone identifiers */
 export type ZoneId =
-  | 'desk_0' | 'desk_1' | 'desk_2' | 'desk_3' | 'desk_4' | 'desk_5'
-  | 'boss_office'
-  | 'break_room'
-  | 'meeting_room'
-  | 'whiteboard'
-  | 'library'
-  | 'lounge'
-  | 'server_room'
-  | 'entrance';
+  | 'sanctuary_0' | 'sanctuary_1' | 'sanctuary_2' | 'sanctuary_3' | 'sanctuary_4' | 'sanctuary_5'
+  | 'zeus_temple'
+  | 'ambrosia_hall'
+  | 'agora'
+  | 'oracle_stone'
+  | 'athenas_library'
+  | 'olympus_garden'
+  | 'oracle_chamber'
+  | 'propylaea'
+  | 'gods_plaza';
 
 /** Pixel coordinate in screen space */
 export interface ScreenPos {
@@ -118,7 +119,9 @@ export type FurnitureType =
   | 'arcade_machine'
   | 'vending_machine'
   | 'trophy_shelf'
-  | 'aquarium';
+  | 'aquarium'
+  | 'marble_round_table'
+  | 'cloud_seat';
 
 /** A furniture item placed on the map */
 export interface FurnitureItem {
@@ -161,7 +164,7 @@ export interface Particle {
 export type TileType = 'floor' | 'wall' | 'furniture' | 'door';
 
 // ---------------------------------------------------------------------------
-// Worker Runtime (Office Engine)
+// Worker Runtime (Olympus Mountain Engine)
 // ---------------------------------------------------------------------------
 
 export interface WorkerRuntime {
@@ -180,9 +183,21 @@ export interface CodexRuntime {
   anim: CharacterAnim;
 }
 
-export interface OfficeState {
+/** NPC runtime (유니콘, 큐피트) */
+export interface NpcRuntime {
+  id: string;
+  type: 'unicorn' | 'cupid';
+  pos: GridPos;
+  screenPos: ScreenPos;
+  direction: Direction;
+  path: GridPos[];
+  homeZone: ZoneId;
+}
+
+export interface OlympusMountainState {
   workers: WorkerRuntime[];
   codex: CodexRuntime;
+  npcs: NpcRuntime[];
   bubbles: Bubble[];
   particles: Particle[];
   tick: number;
@@ -274,7 +289,7 @@ export interface ActivityEvent {
 /** Full worker dashboard state */
 export interface WorkerDashboardState {
   behavior: WorkerBehavior;
-  officeState: WorkerState;
+  olympusMountainState: WorkerState;
   currentTask: WorkerTask | null;
   taskHistory: WorkerTask[];
   tokenUsage: TokenUsage[];

@@ -1,12 +1,12 @@
 // ============================================================================
-// OfficeControls — Bottom control bar for the office view
+// OlympusMountainControls — Bottom control bar for the Olympus Mountain view
 // ============================================================================
 
 import { useState } from 'react';
 import type { WorkerConfig, WorkerDashboardState, WorkerBehavior } from '../../lib/types';
 import { BEHAVIOR_INFO } from '../../lib/state-mapper';
 
-interface OfficeControlsProps {
+interface OlympusMountainControlsProps {
   workers: WorkerConfig[];
   workerStates: Record<string, WorkerDashboardState>;
   demoMode?: boolean;
@@ -19,12 +19,12 @@ const QUICK_BEHAVIORS: WorkerBehavior[] = [
   'error', 'offline', 'starting',
 ];
 
-export function OfficeControls({
+export function OlympusMountainControls({
   workers,
   workerStates,
   demoMode = false,
   onSetBehavior,
-}: OfficeControlsProps) {
+}: OlympusMountainControlsProps) {
   const [selectedWorker, setSelectedWorker] = useState<string>(workers[0]?.id ?? '');
   const [expanded, setExpanded] = useState(false);
 

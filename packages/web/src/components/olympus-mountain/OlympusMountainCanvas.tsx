@@ -1,12 +1,12 @@
 // ============================================================================
-// OfficeCanvas — Main canvas rendering the full office scene
+// OlympusMountainCanvas — Main canvas rendering the full Olympus Mountain scene
 // ============================================================================
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import type { WorkerConfig, CodexConfig, WorkerAvatar, CodexAvatar } from '../../lib/types';
 import {
   renderFrame,
-  type OfficeState,
+  type OlympusMountainState,
   type WorkerConfig as CanvasWorkerConfig,
   type CodexConfig as CanvasCodexConfig,
   type LayoutProvider,
@@ -18,10 +18,10 @@ import {
   createWalkGrid,
   buildFurnitureLayout,
   buildZones,
-} from '../../office/layout';
+} from '../../olympus-mountain/layout';
 
 // ---------------------------------------------------------------------------
-// The layout provider bridges Olympus office/layout to the engine
+// The layout provider bridges Olympus Mountain layout to the engine
 // ---------------------------------------------------------------------------
 
 const layoutProvider: LayoutProvider = {
@@ -41,18 +41,26 @@ const layoutProvider: LayoutProvider = {
 };
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const BASE_WIDTH = 1100;
+const BASE_HEIGHT = 620;
+const ASPECT_RATIO = BASE_WIDTH / BASE_HEIGHT;
+
+// ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
-interface OfficeCanvasProps {
-  officeState: OfficeState;
+interface OlympusMountainCanvasProps {
+  olympusMountainState: OlympusMountainState;
   workers: WorkerConfig[];
   codexConfig: CodexConfig;
   onTick: () => void;
+  /** Internal render resolution width (default: 1100) */
   width?: number;
+  /** Internal render resolution height (default: 620) */
   height?: number;
-  displayWidth?: number;
-  displayHeight?: number;
   className?: string;
   scale?: number;
   demoMode?: boolean;
@@ -63,38 +71,67 @@ interface OfficeCanvasProps {
 // Component
 // ---------------------------------------------------------------------------
 
-export function OfficeCanvas({
-  officeState,
+export function OlympusMountainCanvas({
+  olympusMountainState,
   workers,
   codexConfig,
   onTick,
-  width = 1100,
-  height = 620,
-  displayWidth,
-  displayHeight,
+  width = BASE_WIDTH,
+  height = BASE_HEIGHT,
   className = '',
   scale = 1,
   demoMode = true,
   connected = false,
-}: OfficeCanvasProps) {
+}: OlympusMountainCanvasProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
 
+  // Container-based responsive sizing
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  const handleResize = useCallback(() => {
+    if (containerRef.current) {
+      setContainerWidth(containerRef.current.clientWidth);
+    }
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    // Initial measure
+    setContainerWidth(el.clientWidth);
+
+    const observer = new ResizeObserver(() => handleResize());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [handleResize]);
+
+  // Calculate display dimensions from container width, maintaining aspect ratio
+  const displayWidth = containerWidth > 0 ? containerWidth : width;
+  const displayHeight = Math.round(displayWidth / ASPECT_RATIO);
+
+  // DPR-aware rendering for sharp output
+  const dpr = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+  const canvasPixelWidth = Math.round(width * scale * dpr);
+  const canvasPixelHeight = Math.round(height * scale * dpr);
+
   // Store latest props in refs to avoid stale closures in the render loop
   const propsRef = useRef({
-    officeState, workers, codexConfig, connected, demoMode, onTick, width, height, scale,
+    olympusMountainState, workers, codexConfig, connected, demoMode, onTick, width, height, scale, dpr,
   });
   useEffect(() => {
     propsRef.current = {
-      officeState, workers, codexConfig, connected, demoMode, onTick, width, height, scale,
+      olympusMountainState, workers, codexConfig, connected, demoMode, onTick, width, height, scale, dpr,
     };
   });
 
   useEffect(() => {
     const render = (timestamp: number) => {
       const {
-        officeState: os,
+        olympusMountainState: os,
         workers: ws,
         codexConfig: cc,
         connected: cn,
@@ -103,6 +140,7 @@ export function OfficeCanvas({
         width: w,
         height: h,
         scale: sc,
+        dpr: deviceDpr,
       } = propsRef.current;
 
       // 30 fps cap
@@ -122,8 +160,9 @@ export function OfficeCanvas({
         }
 
         ctx.save();
-        if (sc !== 1) {
-          ctx.scale(sc, sc);
+        const totalScale = sc * deviceDpr;
+        if (totalScale !== 1) {
+          ctx.scale(totalScale, totalScale);
         }
 
         // Map WorkerConfig[] to CanvasWorkerConfig[]
@@ -163,22 +202,20 @@ export function OfficeCanvas({
     };
   }, []);
 
-  const cssWidth = displayWidth ?? width;
-  const cssHeight = displayHeight ?? height;
-
   return (
-    <canvas
-      ref={canvasRef}
-      width={Math.round(width * scale)}
-      height={Math.round(height * scale)}
-      className={`rounded-xl ${className}`}
-      style={{
-        width: cssWidth,
-        height: cssHeight,
-        maxWidth: '100%',
-        imageRendering: 'pixelated',
-        backgroundColor: '#0a0a0f',
-      }}
-    />
+    <div ref={containerRef} className={`w-full ${className}`}>
+      <canvas
+        ref={canvasRef}
+        width={canvasPixelWidth}
+        height={canvasPixelHeight}
+        className="rounded-xl"
+        style={{
+          width: '100%',
+          height: displayHeight,
+          imageRendering: 'pixelated',
+          backgroundColor: '#0a0a0f',
+        }}
+      />
+    </div>
   );
 }

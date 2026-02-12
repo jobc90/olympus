@@ -7,15 +7,15 @@ import ConnectionStatus from '../shared/ConnectionStatus';
 interface NavbarProps {
   connected: boolean;
   demoMode?: boolean;
-  activeTab: 'dashboard' | 'office';
-  onTabChange: (tab: 'dashboard' | 'office') => void;
+  activeTab: 'console' | 'monitor';
+  onTabChange: (tab: 'console' | 'monitor') => void;
   onSettingsClick: () => void;
 }
 
 export default function Navbar({ connected, demoMode = false, activeTab, onTabChange, onSettingsClick }: NavbarProps) {
   const tabs = [
-    { key: 'dashboard' as const, label: 'Dashboard', icon: '\u{1F4CA}' },
-    { key: 'office' as const, label: 'Office', icon: '\u{1F3E2}' },
+    { key: 'console' as const, label: 'Console', icon: '\u{1F4CA}' },
+    { key: 'monitor' as const, label: 'Monitor', icon: '\u26F0\uFE0F' },
   ];
 
   return (

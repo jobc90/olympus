@@ -1,11 +1,12 @@
 // ============================================================================
-// useOffice — Office animation state machine hook
+// useOlympusMountain — Olympus Mountain animation state machine hook
 // ============================================================================
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type {
-  OfficeState,
+  OlympusMountainState,
   WorkerRuntime,
+  NpcRuntime,
   WorkerBehavior,
   WorkerConfig,
   CodexConfig,
@@ -16,37 +17,38 @@ import type {
 import type { Particle } from '../engine/canvas';
 import { findPath, type WalkGrid } from '../engine/pathfinding';
 import { gridToScreen } from '../engine/isometric';
-import { createWalkGrid } from '../office/layout';
-import { BEHAVIOR_MAP, resolveZone, getAnimForTick, getBubbleText, getParticleType } from '../office/behaviors';
-import { getZone, getRandomPointInZone } from '../office/zones';
+import { createWalkGrid } from '../olympus-mountain/layout';
+import { BEHAVIOR_MAP, resolveZone, getAnimForTick, getBubbleText, getParticleType } from '../olympus-mountain/behaviors';
+import { getZone, getRandomPointInZone } from '../olympus-mountain/zones';
 import { createParticle, tickParticles } from '../sprites/effects';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export interface UseOfficeParams {
+export interface UseOlympusMountainParams {
   workers: WorkerConfig[];
   workerStates: Record<string, { behavior: string }>;
   codexConfig: CodexConfig;
   codexBehavior: string;
 }
 
-export interface UseOfficeReturn {
-  officeState: OfficeState;
+export interface UseOlympusMountainReturn {
+  olympusMountainState: OlympusMountainState;
   tick: () => void;
 }
 
 // ---------------------------------------------------------------------------
-// Desk assignments
+// Sanctuary assignments
 // ---------------------------------------------------------------------------
 
-const DESK_ZONES: ZoneId[] = ['desk_0', 'desk_1', 'desk_2', 'desk_3', 'desk_4', 'desk_5'];
+const SANCTUARY_ZONES: ZoneId[] = ['sanctuary_0', 'sanctuary_1', 'sanctuary_2', 'sanctuary_3', 'sanctuary_4', 'sanctuary_5'];
 
 function createInitialWorkerRuntime(id: string, index: number, workerCount: number): WorkerRuntime {
-  const deskZone = DESK_ZONES[index % DESK_ZONES.length];
-  const zone = getZone(deskZone, workerCount);
-  const pos = zone ? { ...zone.center } : { col: 4, row: 3 + index * 3 };
+  const sanctuaryZone = SANCTUARY_ZONES[index % SANCTUARY_ZONES.length];
+  // Initial position at gods_plaza (no fixed placement!)
+  const plaza = getZone('gods_plaza', workerCount);
+  const pos = plaza ? getRandomPointInZone(plaza) : { col: 3 + index * 2, row: 5 + (index % 3) * 3 };
   return {
     id,
     currentState: 'idle',
@@ -56,7 +58,7 @@ function createInitialWorkerRuntime(id: string, index: number, workerCount: numb
     anim: 'stand',
     path: [],
     transitioning: false,
-    deskZone,
+    deskZone: sanctuaryZone,
   };
 }
 
@@ -64,22 +66,51 @@ function createInitialWorkerRuntime(id: string, index: number, workerCount: numb
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useOffice({ workers, workerStates, codexBehavior }: UseOfficeParams): UseOfficeReturn {
-  const [officeState, setOfficeState] = useState<OfficeState>(() => ({
-    workers: workers.map((w, i) => createInitialWorkerRuntime(w.id, i, workers.length)),
-    codex: { anim: 'sit_typing' as CharacterAnim },
-    bubbles: [],
-    particles: [],
-    tick: 0,
-    autoMode: true,
-    autoTimer: 0,
-    dayNightPhase: 0,
-  }));
+export function useOlympusMountain({ workers, workerStates, codexBehavior }: UseOlympusMountainParams): UseOlympusMountainReturn {
+  const [olympusMountainState, setOlympusMountainState] = useState<OlympusMountainState>(() => {
+    const gardenZone = getZone('olympus_garden', workers.length);
+    const ambrosiaZone = getZone('ambrosia_hall', workers.length);
+    const gardenCenter = gardenZone ? { ...gardenZone.center } : { col: 4, row: 4 };
+    const ambrosiaCenter = ambrosiaZone ? { ...ambrosiaZone.center } : { col: 4, row: 15 };
+
+    return {
+      workers: workers.map((w, i) => createInitialWorkerRuntime(w.id, i, workers.length)),
+      codex: { anim: 'sit_typing' as CharacterAnim },
+      npcs: [
+        {
+          id: 'unicorn',
+          type: 'unicorn' as const,
+          pos: gardenCenter,
+          screenPos: gridToScreen(gardenCenter),
+          direction: 's' as const,
+          path: [],
+          homeZone: 'olympus_garden' as ZoneId,
+        },
+        {
+          id: 'cupid',
+          type: 'cupid' as const,
+          pos: ambrosiaCenter,
+          screenPos: gridToScreen(ambrosiaCenter),
+          direction: 's' as const,
+          path: [],
+          homeZone: 'ambrosia_hall' as ZoneId,
+        },
+      ],
+      bubbles: [],
+      particles: [],
+      tick: 0,
+      autoMode: true,
+      autoTimer: 0,
+      dayNightPhase: 0,
+    };
+  });
 
   const walkGridRef = useRef<WalkGrid>(createWalkGrid(workers.length));
   const particleTimerRef = useRef<Record<string, number>>({});
   // Track how long each worker has been in the same behavior (for idle variation)
+  // Initialize with random offsets so workers don't all move in sync
   const behaviorTicksRef = useRef<Record<string, number>>({});
+  const behaviorTicksInitRef = useRef(false);
   // Track previous behavior per worker (for transition smoothing)
   const prevBehaviorRef = useRef<Record<string, string>>({});
   // Track workers in transition (playing brief 'stand' before switching)
@@ -92,12 +123,12 @@ export function useOffice({ workers, workerStates, codexBehavior }: UseOfficePar
 
   // Sync worker runtimes when workers config changes
   useEffect(() => {
-    setOfficeState(prev => {
+    setOlympusMountainState(prev => {
       const newRuntimes = workers.map((w, i) => {
         const existing = prev.workers.find(r => r.id === w.id);
         if (existing) return existing;
-        // New worker starts at entrance, transitions to desk
-        const entranceZone = getZone('entrance', workers.length);
+        // New worker starts at propylaea, transitions to plaza
+        const entranceZone = getZone('propylaea', workers.length);
         const startPos = entranceZone ? { ...entranceZone.center } : { col: 2, row: 18 };
         const runtime = createInitialWorkerRuntime(w.id, i, workers.length);
         runtime.pos = startPos;
@@ -110,13 +141,24 @@ export function useOffice({ workers, workerStates, codexBehavior }: UseOfficePar
   }, [workers]);
 
   const tickFn = useCallback(() => {
-    setOfficeState(prev => {
+    setOlympusMountainState(prev => {
       const newTick = prev.tick + 1;
       const newWorkers: WorkerRuntime[] = [];
       const newBubbles: Bubble[] = prev.bubbles
         .map(b => ({ ...b, ttl: b.ttl - 1 }))
         .filter(b => b.ttl > 0);
       let newParticles: Particle[] = tickParticles(prev.particles);
+
+      // Initialize behaviorTicks with random offsets (once) so workers don't sync
+      if (!behaviorTicksInitRef.current) {
+        behaviorTicksInitRef.current = true;
+        for (let i = 0; i < prev.workers.length; i++) {
+          const wid = prev.workers[i].id;
+          if (behaviorTicksRef.current[wid] === undefined) {
+            behaviorTicksRef.current[wid] = Math.floor(Math.random() * 50);
+          }
+        }
+      }
 
       // Collect worker zone positions for interaction detection
       const workerZones: Record<string, string[]> = {};
@@ -165,15 +207,42 @@ export function useOffice({ workers, workerStates, codexBehavior }: UseOfficePar
 
           // Track zone for interaction detection
           const zoneKey = targetZone;
-          if (inZone && !zoneKey.startsWith('desk_')) {
+          if (inZone && !zoneKey.startsWith('sanctuary_')) {
             if (!workerZones[zoneKey]) workerZones[zoneKey] = [];
             workerZones[zoneKey].push(runtime.id);
           }
         }
 
+        // Idle worker free roaming: periodic wander within gods_plaza
+        if (behavior === 'idle' || behavior === 'thinking' || behavior === 'completed') {
+          const targetZoneId = resolveZone(behavior, runtime.deskZone);
+          if (targetZoneId === 'gods_plaza' && updated.path.length === 0) {
+            const wanderInterval = 50 + (idx * 17) % 40; // 50~90 tick interval (~1.7-3s at 30fps)
+            const behTicks = behaviorTicksRef.current[runtime.id] ?? 0;
+            if (behTicks > 0 && behTicks % wanderInterval === 0) {
+              const plazaZone = getZone('gods_plaza', workers.length);
+              if (plazaZone) {
+                // Pick a target with minimum distance to ensure visible movement
+                let newTarget = getRandomPointInZone(plazaZone);
+                const minDist = 3;
+                for (let attempt = 0; attempt < 5; attempt++) {
+                  const dist = Math.abs(newTarget.col - updated.pos.col) + Math.abs(newTarget.row - updated.pos.row);
+                  if (dist >= minDist) break;
+                  newTarget = getRandomPointInZone(plazaZone);
+                }
+                const path = findPath(walkGridRef.current, updated.pos, newTarget);
+                if (path.length > 0) {
+                  updated.path = path;
+                  updated.transitioning = true;
+                }
+              }
+            }
+          }
+        }
+
         // Move along path
         if (updated.path.length > 0) {
-          if (newTick % 4 === 0) {
+          if (newTick % 2 === 0) {
             const next = updated.path[0];
 
             // Update direction
@@ -187,7 +256,7 @@ export function useOffice({ workers, workerStates, codexBehavior }: UseOfficePar
             updated.path = updated.path.slice(1);
 
             // Walking animation alternation
-            updated.anim = newTick % 16 < 8 ? 'walk_frame1' : 'walk_frame2';
+            updated.anim = newTick % 8 < 4 ? 'walk_frame1' : 'walk_frame2';
           }
         } else {
           // At destination — play behavior animation
@@ -247,7 +316,7 @@ export function useOffice({ workers, workerStates, codexBehavior }: UseOfficePar
         newWorkers.push(updated);
       }
 
-      // Worker interaction: face each other when in the same non-desk zone
+      // Worker interaction: face each other when in the same non-sanctuary zone
       for (const [_zoneKey, workerIds] of Object.entries(workerZones)) {
         if (workerIds.length >= 2) {
           for (let i = 0; i < workerIds.length; i++) {
@@ -264,6 +333,43 @@ export function useOffice({ workers, workerStates, codexBehavior }: UseOfficePar
         }
       }
 
+      // NPC wander logic
+      const newNpcs: NpcRuntime[] = [];
+      for (const npc of prev.npcs) {
+        const updated: NpcRuntime = { ...npc };
+        const homeZone = getZone(npc.homeZone, workers.length);
+
+        // Check if NPC needs to wander
+        if (homeZone && updated.path.length === 0) {
+          const wanderInterval = 50 + (npc.id === 'unicorn' ? 20 : 30); // 70 or 80 ticks
+          if (newTick > 0 && newTick % wanderInterval === 0) {
+            const newTarget = getRandomPointInZone(homeZone);
+            const path = findPath(walkGridRef.current, updated.pos, newTarget);
+            if (path.length > 0) {
+              updated.path = path;
+            }
+          }
+        }
+
+        // Move along path
+        if (updated.path.length > 0) {
+          if (newTick % 2 === 0) {
+            const next = updated.path[0];
+            // Update direction
+            if (next.col > updated.pos.col) updated.direction = 'e';
+            else if (next.col < updated.pos.col) updated.direction = 'w';
+            else if (next.row > updated.pos.row) updated.direction = 's';
+            else if (next.row < updated.pos.row) updated.direction = 'n';
+
+            updated.pos = { ...next };
+            updated.screenPos = gridToScreen(updated.pos);
+            updated.path = updated.path.slice(1);
+          }
+        }
+
+        newNpcs.push(updated);
+      }
+
       // Day-night cycle (very slow sine)
       const dayNightPhase = (Math.sin(newTick * 0.0005) + 1) / 2;
 
@@ -277,6 +383,7 @@ export function useOffice({ workers, workerStates, codexBehavior }: UseOfficePar
       return {
         workers: newWorkers,
         codex: { anim: codexAnim },
+        npcs: newNpcs,
         bubbles: newBubbles,
         particles: newParticles,
         tick: newTick,
@@ -287,5 +394,5 @@ export function useOffice({ workers, workerStates, codexBehavior }: UseOfficePar
     });
   }, [workerStates, workers.length, codexBehavior]);
 
-  return { officeState, tick: tickFn };
+  return { olympusMountainState, tick: tickFn };
 }

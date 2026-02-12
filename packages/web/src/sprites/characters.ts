@@ -117,9 +117,9 @@ function drawCharacter(
   emoji: string,
   feature: GodFeature,
 ): void {
-  const scale = 2;
-  const ox = x - 12;
-  const oy = y - 36;
+  const scale = 3;
+  const ox = x - 18;
+  const oy = y - 54;
 
   ctx.save();
 
@@ -131,7 +131,7 @@ function drawCharacter(
 
   const frame = Math.floor(tick / 8) % 2;
 
-  ctx.font = '12px monospace';
+  ctx.font = '16px monospace';
   ctx.textAlign = 'center';
   ctx.fillStyle = '#FFFFFF';
   ctx.save();
@@ -742,8 +742,12 @@ export function drawNameTag(
   _color: string,
 ): void {
   ctx.save();
-  ctx.font = 'bold 10px monospace';
+  ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'center';
+  // 이름 태그 배경
+  const textWidth = ctx.measureText(name).width;
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(x - textWidth / 2 - 3, y - 4, textWidth + 6, 16);
   // Dark outline for readability on any background
   ctx.fillStyle = '#000000';
   for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]]) {
@@ -795,4 +799,143 @@ export function drawStatusAura(
 
   ctx.globalAlpha = 1;
   ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// NPC Sprites
+// ---------------------------------------------------------------------------
+
+export function drawUnicorn(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number,
+  direction: Direction,
+  tick: number,
+): void {
+  const scale = 3;
+  const ox = x - 18;
+  const oy = y - 30;
+
+  ctx.save();
+  if (direction === 'w') {
+    ctx.translate(x, 0);
+    ctx.scale(-1, 1);
+    ctx.translate(-x, 0);
+  }
+
+  function npx(px: number, py: number, color: string): void {
+    ctx.fillStyle = color;
+    ctx.fillRect(ox + px * scale, oy + py * scale, scale, scale);
+  }
+
+  // Body (white)
+  for (let i = 2; i <= 6; i++) npx(i, 5, '#FFFFFF');
+  for (let i = 2; i <= 6; i++) npx(i, 6, '#FAFAFA');
+
+  // Head
+  npx(7, 4, '#FFFFFF');
+  npx(7, 5, '#FFFFFF');
+
+  // Horn (golden)
+  npx(8, 2, '#FFD700');
+  npx(8, 3, '#FFC107');
+
+  // Mane (rainbow)
+  npx(3, 3, '#FF5252');
+  npx(4, 3, '#FFD740');
+  npx(5, 3, '#69F0AE');
+  npx(6, 3, '#40C4FF');
+
+  // Tail (rainbow curve)
+  npx(1, 6, '#40C4FF');
+  npx(1, 7, '#69F0AE');
+
+  // Legs (animated)
+  const legFrame = Math.floor(tick / 8) % 2;
+  if (legFrame === 0) {
+    npx(3, 7, '#E0E0E0');
+    npx(6, 7, '#E0E0E0');
+  } else {
+    npx(4, 7, '#E0E0E0');
+    npx(5, 7, '#E0E0E0');
+  }
+
+  // Eye
+  npx(7, 4, '#333333');
+
+  ctx.restore();
+
+  // Sparkle particles
+  if (tick % 30 < 20) {
+    ctx.fillStyle = '#FFD70080';
+    ctx.fillRect(x - 10 + (tick % 10), y - 20 - (tick % 8), 2, 2);
+    ctx.fillRect(x + 5 - (tick % 7), y - 18 - (tick % 6), 2, 2);
+  }
+}
+
+export function drawCupid(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number,
+  direction: Direction,
+  tick: number,
+): void {
+  const scale = 2; // Smaller than workers
+  const ox = x - 12;
+  const oy = y - 24;
+
+  ctx.save();
+  if (direction === 'w') {
+    ctx.translate(x, 0);
+    ctx.scale(-1, 1);
+    ctx.translate(-x, 0);
+  }
+
+  function npx(px: number, py: number, color: string): void {
+    ctx.fillStyle = color;
+    ctx.fillRect(ox + px * scale, oy + py * scale, scale, scale);
+  }
+
+  // Body (pink)
+  for (let i = 3; i <= 6; i++) npx(i, 6, '#F8BBD0');
+  for (let i = 3; i <= 6; i++) npx(i, 7, '#F48FB1');
+
+  // Head (peach skin)
+  for (let i = 3; i <= 6; i++) npx(i, 4, '#FFE0B2');
+  for (let i = 3; i <= 6; i++) npx(i, 5, '#FFCC80');
+
+  // Eyes
+  npx(4, 5, '#333333');
+  npx(6, 5, '#333333');
+
+  // Hair (golden curls)
+  npx(3, 3, '#FFD740');
+  npx(4, 3, '#FFD740');
+  npx(5, 3, '#FFD740');
+  npx(6, 3, '#FFD740');
+
+  // Wings (animated flutter)
+  const wingFlutter = Math.floor(tick / 12) % 2 === 0;
+  const wingY = wingFlutter ? 5 : 6;
+  // Left wing
+  npx(1, wingY, '#FFFFFF');
+  npx(2, wingY + 1, '#F5F5F5');
+  // Right wing
+  npx(7, wingY, '#FFFFFF');
+  npx(8, wingY + 1, '#F5F5F5');
+
+  // Bow (golden)
+  npx(8, 6, '#FFD700');
+  npx(9, 6, '#FFC107');
+
+  ctx.restore();
+
+  // Heart particles
+  if (tick % 40 < 30) {
+    ctx.fillStyle = '#E91E6380';
+    ctx.beginPath();
+    const hx = x + 8 + Math.sin(tick * 0.1) * 3;
+    const hy = y - 15 - (tick % 20);
+    ctx.arc(hx - 1, hy, 2, 0, Math.PI * 2);
+    ctx.arc(hx + 1, hy, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }

@@ -97,6 +97,9 @@ export class Gateway {
 
     // Initialize Worker Registry
     this.workerRegistry = new WorkerRegistry();
+    this.workerRegistry.on('task:assigned', (task: unknown) => {
+      this.broadcastToAll('worker:task:assigned', task);
+    });
     this.workerRegistry.on('task:completed', (task: unknown) => {
       this.broadcastToAll('worker:task:completed', task);
     });

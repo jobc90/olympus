@@ -66,6 +66,11 @@ interface ProcessingState {
   maxTimer: ReturnType<typeof setTimeout>;
   settleTimer: ReturnType<typeof setTimeout> | null;
   submitted: boolean;
+  submittedAt: number;
+  /** 백그라운드 에이전트가 활성 상태인지 (완료 감지 억제) */
+  hasBackgroundAgents: boolean;
+  /** 마지막으로 백그라운드 에이전트 출력이 감지된 시각 */
+  lastAgentActivityAt: number;
 }
 
 // ──────────────────────────────────────────────
@@ -73,13 +78,19 @@ interface ProcessingState {
 // ──────────────────────────────────────────────
 
 /** 비활동 타임아웃: 의미있는 출력이 없으면 완료로 간주 */
-const INACTIVITY_TIMEOUT_MS = 20_000;
+const INACTIVITY_TIMEOUT_MS = 30_000;
 
 /** 비활동 2차 타임아웃: 패턴 미매칭 시 강제 완료 */
-const INACTIVITY_FORCE_MS = 30_000;
+const INACTIVITY_FORCE_MS = 60_000;
 
 /** 프롬프트 감지 후 추가 대기 */
-const SETTLE_MS = 3_000;
+const SETTLE_MS = 5_000;
+
+/** 최소 실행 시간: 이 시간 이전에는 완료 감지하지 않음 */
+const MIN_EXECUTION_MS = 10_000;
+
+/** 백그라운드 에이전트 활동 후 완료 감지 유예 시간 */
+const AGENT_COOLDOWN_MS = 30_000;
 
 /** 절대 최대 타임아웃 */
 const MAX_TASK_TIMEOUT_MS = 30 * 60 * 1000; // 30분
@@ -104,15 +115,11 @@ const DOUBLE_CTRLC_MS = 1000;
 export const IDLE_PROMPT_PATTERNS = [
   /ctrl\+g to edit/i,           // Claude CLI v2.x 유휴 상태 표시
   /shift\+tab to cycle/i,      // 권한 모드 표시 (유휴 시 보임)
-  /> \s*$/,                     // ">" 프롬프트 (뒤 공백/개행 허용)
-  /❯ \s*$/,                     // "❯" 프롬프트 (뒤 공백/개행 허용)
-  /\$ \s*$/,                    // "$" 프롬프트 (뒤 공백/개행 허용)
   /^>\s*$/m,                    // 줄 시작에 ">"만 있는 경우
   /^❯\s*$/m,                    // 줄 시작에 "❯"만 있는 경우
   /Enter your message/i,
   /Type a message/i,
   /What would you like to do/i,
-  /bypass\s*permissions?\s*(?:on|off)/i,  // 유휴 시에만 보이는 권한 상태
 ];
 
 /** Claude가 작업 완료 후 출력하는 텍스트 패턴 */
@@ -160,11 +167,29 @@ const TUI_ARTIFACT_PATTERNS = [
   /\]0;/,                                 // 터미널 타이틀 잔여
 ];
 
+/** 백그라운드 에이전트 활동 감지 패턴 */
+const BACKGROUND_AGENT_PATTERNS = [
+  /⏺\s*Task\s+".*"\s*completed\s*in\s*background/i,
+  /⏺\s*Agent\s+".*"\s*completed/i,
+  /Task\s+".*"\s*completed\s*in\s*background/i,
+  /Agent\s+".*"\s*completed/i,
+  /completed\s*in\s*background/i,
+  /✻\s*Conversation\s+compacted/i,
+  /✻\s*Cooked\s+for/i,
+];
+
+/** 데이터 내 백그라운드 에이전트 활동이 있는지 감지 */
+export function hasBackgroundAgentActivity(data: string): boolean {
+  const clean = stripAnsi(data).trim();
+  if (!clean) return false;
+  return BACKGROUND_AGENT_PATTERNS.some(p => p.test(clean));
+}
+
 /** 상태바 업데이트 감지 (비활동 타이머를 리셋하지 않을 데이터) */
 function isStatusBarUpdate(data: string): boolean {
   const clean = stripAnsi(data).trim();
   if (!clean) return true;
-  return TUI_CHROME_PATTERNS.some(p => p.test(clean));
+  return TUI_CHROME_PATTERNS.some(p => p.test(clean)) || TUI_ARTIFACT_PATTERNS.some(p => p.test(clean));
 }
 
 // ──────────────────────────────────────────────
@@ -198,8 +223,8 @@ export function isTuiArtifactLine(line: string): boolean {
   if (TUI_CHROME_PATTERNS.some(p => p.test(trimmed))) return true;
   // 스피너/thinking/Flowing 등
   if (TUI_ARTIFACT_PATTERNS.some(p => p.test(trimmed))) return true;
-  // 아주 짧은 영문 프래그먼트 (3자 이하, 한국어 아님)
-  if (trimmed.length <= 3 && !/[가-힣]/.test(trimmed) && !/^\d+$/.test(trimmed)) return true;
+  // 아주 짧은 프래그먼트 (1자 이하)
+  if (trimmed.length <= 1) return true;
   return false;
 }
 
@@ -241,9 +266,34 @@ export function extractResultFromBuffer(buffer: string, prompt: string): string 
 
   let result = lines.join('\n').trim();
 
+  // 결과가 너무 짧으면 TUI 필터 없이 fallback
+  if (result.length < 10) {
+    const fallbackClean = stripAnsi(buffer);
+    const mi = fallbackClean.lastIndexOf('⏺');
+    if (mi >= 0) {
+      const fallbackText = fallbackClean.slice(mi + 1).trim()
+        .replace(/ {4,}/g, ' ').replace(/\n{3,}/g, '\n\n');
+      if (fallbackText.length > result.length) {
+        result = fallbackText;
+      }
+    }
+  }
+
   // 커서 이동에 의한 과다 공백 정리
   result = result.replace(/ {4,}/g, ' ');
   result = result.replace(/\n{3,}/g, '\n\n');
+
+  // 깨진 텍스트 감지 (짧은 단어 비율이 너무 높으면, 한국어 제외)
+  const hasKorean = /[가-힣]/.test(result);
+  if (!hasKorean) {
+    const words = result.split(/\s+/).filter(w => w.length > 0);
+    if (words.length >= 5) {
+      const avgLen = words.reduce((s, w) => s + w.length, 0) / words.length;
+      if (avgLen < 3) {
+        result = '(결과 추출 실패 — 원본 출력 확인 필요)';
+      }
+    }
+  }
 
   // 길이 제한 (8000자)
   if (result.length > 8000) {
@@ -300,6 +350,18 @@ export class PtyWorker {
 
       if (this.state.phase === 'processing' && this.state.submitted) {
         this.state.buffer += data;
+
+        // 백그라운드 에이전트 활동 감지
+        if (hasBackgroundAgentActivity(data)) {
+          this.state.hasBackgroundAgents = true;
+          this.state.lastAgentActivityAt = Date.now();
+          // settle 타이머가 있으면 취소 (아직 작업 중)
+          if (this.state.settleTimer) {
+            clearTimeout(this.state.settleTimer);
+            this.state.settleTimer = null;
+          }
+        }
+
         this.checkCompletion();
         if (!isStatusBarUpdate(data)) {
           this.resetInactivityTimer();
@@ -426,6 +488,9 @@ export class PtyWorker {
         maxTimer,
         settleTimer: null,
         submitted: false,
+        submittedAt: 0,
+        hasBackgroundAgents: false,
+        lastAgentActivityAt: 0,
       };
 
       // 1단계: 프롬프트 텍스트 입력
@@ -436,6 +501,7 @@ export class PtyWorker {
         if (this.pty && this.state.phase === 'processing') {
           this.pty.write('\r');
           (this.state as ProcessingState).submitted = true;
+          (this.state as ProcessingState).submittedAt = Date.now();
           this.resetInactivityTimer();
         }
       }, SUBMIT_DELAY_MS);
@@ -481,6 +547,21 @@ export class PtyWorker {
   private checkCompletion(): void {
     if (this.state.phase !== 'processing') return;
 
+    const now = Date.now();
+
+    // 최소 실행 시간 이전에는 완료 감지 하지 않음
+    if (now - this.state.submittedAt < MIN_EXECUTION_MS) return;
+
+    // 백그라운드 에이전트 쿨다운: 에이전트 활동이 최근에 감지되었으면 완료 감지 억제
+    if (this.state.hasBackgroundAgents && now - this.state.lastAgentActivityAt < AGENT_COOLDOWN_MS) {
+      // settle 타이머가 있으면 취소
+      if (this.state.settleTimer) {
+        clearTimeout(this.state.settleTimer);
+        this.state.settleTimer = null;
+      }
+      return;
+    }
+
     const clean = stripAnsi(this.state.buffer);
 
     if (this.detectIdlePrompt(clean)) {
@@ -509,6 +590,16 @@ export class PtyWorker {
 
   private onInactivityTimeout(): void {
     if (this.state.phase !== 'processing') return;
+
+    // 백그라운드 에이전트가 최근에 활동했으면 타임아웃 연장
+    const now = Date.now();
+    if (this.state.hasBackgroundAgents && now - this.state.lastAgentActivityAt < AGENT_COOLDOWN_MS) {
+      // 에이전트 쿨다운이 끝날 때까지 다시 대기
+      this.state.inactivityTimer = setTimeout(() => {
+        this.onInactivityTimeout();
+      }, AGENT_COOLDOWN_MS);
+      return;
+    }
 
     const clean = stripAnsi(this.state.buffer);
 
@@ -539,6 +630,19 @@ export class PtyWorker {
 
     const result = this.extractResult();
     const durationMs = Date.now() - this.state.startTime;
+
+    // 결과 품질 검증: 백그라운드 에이전트가 있었는데 결과가 너무 짧으면 재대기
+    if (this.state.hasBackgroundAgents && result.length < 50 && durationMs < MAX_TASK_TIMEOUT_MS * 0.9) {
+      // 결과가 빈약하면 settle 타이머 초기화하고 추가 대기
+      if (this.state.settleTimer) {
+        clearTimeout(this.state.settleTimer);
+        this.state.settleTimer = null;
+      }
+      // 비활동 타이머 재설정하여 추가 출력을 기다림
+      this.resetInactivityTimer();
+      return;
+    }
+
     const resolveRef = this.state.resolve;
 
     this.clearTimers();

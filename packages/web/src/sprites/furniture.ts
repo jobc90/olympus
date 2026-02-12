@@ -703,6 +703,62 @@ function drawAquarium(ctx: CanvasRenderingContext2D, col: number, row: number, t
   px(ctx, x - 10, y - 8, 20, 2, '#B0BEC5');
 }
 
+// marble_round_table → Marble Round Table
+function drawMarbleRoundTable(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Marble round table top (ellipse)
+  ctx.fillStyle = '#F5F5F5';
+  ctx.beginPath();
+  ctx.ellipse(x, y - 14, 12, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Gold border
+  ctx.strokeStyle = '#FFD700';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  // Shadow edge
+  ctx.fillStyle = '#E0E0E0';
+  ctx.beginPath();
+  ctx.ellipse(x, y - 13, 11, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Central marble pillar leg
+  px(ctx, x - 2, y - 10, 4, 10, '#ECEFF1');
+  px(ctx, x - 3, y - 10, 6, 1, '#CFD8DC'); // top cap
+  px(ctx, x - 3, y, 6, 2, '#B0BEC5'); // base
+}
+
+// cloud_seat → Cloud Seat
+function drawCloudSeat(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Cloud floating animation
+  const floatOffset = Math.sin(tick * 0.03) * 1;
+  const cloudY = y - 8 + floatOffset;
+  // Draw cloud shape (multiple overlapping circles)
+  ctx.globalAlpha = 0.8;
+  ctx.fillStyle = '#FFFFFF';
+  // Main body
+  ctx.beginPath();
+  ctx.ellipse(x, cloudY, 8, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Left puff
+  ctx.beginPath();
+  ctx.ellipse(x - 5, cloudY - 1, 4, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Right puff
+  ctx.beginPath();
+  ctx.ellipse(x + 5, cloudY - 1, 4, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Top puff
+  ctx.beginPath();
+  ctx.ellipse(x, cloudY - 3, 5, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  // Shadow underneath
+  ctx.fillStyle = '#E0E0E040';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 2, 6, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 // ---------------------------------------------------------------------------
 // Main dispatcher
 // ---------------------------------------------------------------------------
@@ -745,6 +801,8 @@ export function drawFurniture(
     case 'vending_machine': return drawVendingMachine(ctx, col, row, tick);
     case 'trophy_shelf': return drawTrophyShelf(ctx, col, row);
     case 'aquarium': return drawAquarium(ctx, col, row, tick);
+    case 'marble_round_table': return drawMarbleRoundTable(ctx, col, row);
+    case 'cloud_seat': return drawCloudSeat(ctx, col, row, tick);
   }
 }
 

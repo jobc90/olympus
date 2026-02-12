@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useOlympus } from './hooks/useOlympus';
-import { useOffice } from './hooks/useOffice';
+import { useOlympusMountain } from './hooks/useOlympusMountain';
 
 // --- Existing components (preserved) ---
 import { SessionList } from './components/SessionList';
@@ -30,9 +30,10 @@ import Navbar from './components/dashboard/Navbar';
 import SystemStats from './components/dashboard/SystemStats';
 import { WorkerGrid } from './components/dashboard/WorkerGrid';
 import ActivityFeed from './components/dashboard/ActivityFeed';
-import { MiniOffice } from './components/office/MiniOffice';
-import { OfficeCanvas } from './components/office/OfficeCanvas';
-import { OfficeControls } from './components/office/OfficeControls';
+import { CodexAgentPanel } from './components/dashboard/CodexAgentPanel';
+import { MiniOlympusMountain } from './components/olympus-mountain/MiniOlympusMountain';
+import { OlympusMountainCanvas } from './components/olympus-mountain/OlympusMountainCanvas';
+import { OlympusMountainControls } from './components/olympus-mountain/OlympusMountainControls';
 import ChatWindow from './components/chat/ChatWindow';
 import SettingsPanel from './components/settings/SettingsPanel';
 
@@ -102,7 +103,7 @@ function useDemoData(connected: boolean) {
 export default function App() {
   const [config, setConfig] = useState(getConfig);
   const [showSettings, setShowSettings] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'office'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'console' | 'monitor'>('console');
   const [chatTarget, setChatTarget] = useState<{ id: string; name: string; emoji?: string; color?: string } | null>(null);
   const [chatMessages, setChatMessages] = useState<Record<string, Array<{ id: string; role: 'user' | 'agent'; content: string; timestamp: number }>>>({});
 
@@ -179,7 +180,7 @@ export default function App() {
           w.id,
           {
             behavior: (polledWorkerBehaviors[w.id] ?? 'idle') as WorkerBehavior,
-            officeState: 'idle',
+            olympusMountainState: 'idle',
             currentTask: null,
             taskHistory: [],
             tokenUsage: [],
@@ -195,8 +196,8 @@ export default function App() {
 
   const codexConfig: CodexConfig = { name: 'Zeus', emoji: '\u26A1', avatar: 'zeus' };
 
-  // useOffice hook
-  const { officeState, tick } = useOffice({
+  // useOlympusMountain hook
+  const { olympusMountainState, tick } = useOlympusMountain({
     workers: workerConfigs,
     workerStates: Object.fromEntries(
       Object.entries(workerStates).map(([k, v]) => [k, { behavior: v.behavior }])
@@ -292,33 +293,38 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 pt-16 px-4 pb-8 max-w-7xl mx-auto w-full">
-        {/* ===================== DASHBOARD TAB ===================== */}
-        {activeTab === 'dashboard' && (
+        {/* ===================== CONSOLE TAB ===================== */}
+        {activeTab === 'console' && (
           <>
-            {/* System Stats — primary content for dashboard */}
+            {/* System Stats — full width top */}
             <div className="mb-6">
               <SystemStats stats={systemStats} />
             </div>
 
-            {/* 3-column layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Left Sidebar: Sessions */}
-              <aside className="lg:col-span-3 xl:col-span-2">
-                <SessionList
-                  runs={runs}
-                  sessions={sessions}
-                  availableSessions={availableSessions}
-                  currentRunId={currentRunId}
-                  currentSessionId={currentSessionId}
-                  onSelect={subscribe}
-                  onSelectSession={subscribeSession}
-                  onCancel={(runId) => cancel(runId)}
-                  onConnectAvailable={connectAvailableSession}
-                />
-              </aside>
+            {/* Main 4-column layout */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              {/* Left: Workers + Codex + Operational panels (3/4) */}
+              <div className="lg:col-span-3 space-y-6">
+                {/* Workers Section */}
+                <div>
+                  <h2 className="font-pixel text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
+                    🤖 Active Workers
+                  </h2>
+                  <WorkerGrid
+                    workers={workerConfigs}
+                    workerStates={workerStates}
+                    onChatClick={handleChatClick}
+                  />
+                </div>
 
-              {/* Center: Main Content */}
-              <section className="lg:col-span-6 xl:col-span-7 space-y-4">
+                {/* Codex Agent (Zeus) Section */}
+                <CodexAgentPanel
+                  codexConfig={codexConfig}
+                  codexBehavior={connected ? polledCodexBehavior : 'supervising'}
+                  connected={connected}
+                />
+
+                {/* Operational panels */}
                 {currentRunId && currentRun ? (
                   <>
                     {/* Run Header */}
@@ -375,33 +381,24 @@ export default function App() {
                       agentState={agentState}
                       disabled={!connected}
                     />
-
-                    {/* New Worker Grid (dashboard cards) */}
-                    <WorkerGrid
-                      workers={workerConfigs}
-                      workerStates={workerStates}
-                      onChatClick={handleChatClick}
-                    />
-
-                    {/* Legacy Worker Grid (running worker info) */}
                     <LegacyWorkerGrid workers={legacyWorkers} />
                     <TaskTimeline tasks={taskHistory} />
                     <AgentHistoryPanel history={cliHistory} />
-
+                    <LogPanel logs={logs} />
                     <EmptyState config={config} hasRuns={runs.length > 0} hasSessions={sessions.filter(s => s.status === 'active').length > 0} />
                   </>
                 )}
-              </section>
+              </div>
 
-              {/* Right Sidebar: Mini Office + Activity + Logs */}
-              <aside className="lg:col-span-3 space-y-4">
-                {/* Compact office preview — click to go to Office tab */}
-                <div className="cursor-pointer" onClick={() => setActiveTab('office')}>
-                  <MiniOffice
+              {/* Right Sidebar: MiniOlympus + Activity + Context + Sessions (1/4) */}
+              <aside className="lg:col-span-1 space-y-4">
+                {/* Compact Olympus Mountain preview — click to go to Monitor tab */}
+                <div className="cursor-pointer" onClick={() => setActiveTab('monitor')}>
+                  <MiniOlympusMountain
                     workers={workerConfigs}
                     workerStates={workerStates}
                     codexConfig={codexConfig}
-                    officeState={officeState}
+                    olympusMountainState={olympusMountainState}
                     onTick={tick}
                   />
                 </div>
@@ -409,39 +406,38 @@ export default function App() {
                   id: e.id, type: e.type, agentName: e.agentName, message: e.message, timestamp: e.timestamp, color: e.color,
                 })) : demo.events} />
                 <CodexPanel connected={connected} onRoute={codexRoute} />
-                <SessionCostTracker history={cliHistory} />
-                <ProjectBrowser
-                  connected={connected}
-                  getProjects={codexProjects}
-                  getSessions={codexSessions}
-                  search={codexSearch}
-                />
                 <ContextExplorer ctx={contextTree} onSettingsClick={() => setShowSettings(true)} />
-                <LogPanel logs={logs} />
+                {/* SessionList moved to bottom */}
+                <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                  <SessionList
+                    runs={runs}
+                    sessions={sessions}
+                    availableSessions={availableSessions}
+                    currentRunId={currentRunId}
+                    currentSessionId={currentSessionId}
+                    onSelect={subscribe}
+                    onSelectSession={subscribeSession}
+                    onCancel={(runId) => cancel(runId)}
+                    onConnectAvailable={connectAvailableSession}
+                  />
+                </div>
               </aside>
             </div>
           </>
         )}
 
-        {/* ===================== OFFICE TAB ===================== */}
-        {activeTab === 'office' && (
+        {/* ===================== MONITOR TAB ===================== */}
+        {activeTab === 'monitor' && (
           <div className="space-y-4">
-            <div className="w-full flex justify-center">
-              <OfficeCanvas
-                officeState={officeState}
-                workers={workerConfigs}
-                codexConfig={codexConfig}
-                onTick={tick}
-                width={1100}
-                height={620}
-                displayWidth={1100}
-                displayHeight={620}
-                demoMode={demoMode}
-                connected={connected}
-                className="w-full"
-              />
-            </div>
-            <OfficeControls
+            <OlympusMountainCanvas
+              olympusMountainState={olympusMountainState}
+              workers={workerConfigs}
+              codexConfig={codexConfig}
+              onTick={tick}
+              demoMode={demoMode}
+              connected={connected}
+            />
+            <OlympusMountainControls
               workers={workerConfigs}
               workerStates={workerStates}
               demoMode={demoMode}

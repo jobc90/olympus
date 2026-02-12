@@ -121,6 +121,8 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify(result),
+    }).catch((err: Error) => {
+      process.stderr.write(`[worker] 결과 보고 실패: ${err.message}\n`);
     });
   }
 
@@ -138,11 +140,12 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
         durationMs: result.durationMs,
       });
     } catch (err) {
+      process.stderr.write(`[worker] 작업 실행 실패: ${(err as Error).message}\n`);
       await reportResult(task.taskId, {
         success: false,
         error: (err as Error).message,
         durationMs: 0,
-      }).catch(() => {});
+      });
     }
   }
 

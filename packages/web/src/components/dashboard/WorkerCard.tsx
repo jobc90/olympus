@@ -99,6 +99,9 @@ export function WorkerCard({ worker, state, onChatClick, onDetailClick }: Worker
             </span>
             {worker.emoji && <span>{worker.emoji}</span>}
           </div>
+          <div className="text-[10px] font-mono truncate" style={{ color: 'var(--text-secondary)' }}>
+            {worker.id}
+          </div>
           <div className="mt-1">
             <StatusBadge behavior={behavior} size="sm" />
           </div>
@@ -108,7 +111,7 @@ export function WorkerCard({ worker, state, onChatClick, onDetailClick }: Worker
       {/* Model info */}
       {state?.sessionLog?.[0] && (
         <div className="mb-1.5">
-          <span className="text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>
+          <span className="text-[10px] font-mono truncate block" style={{ color: 'var(--text-secondary)' }}>
             {state.sessionLog[0]}
           </span>
         </div>
@@ -117,7 +120,7 @@ export function WorkerCard({ worker, state, onChatClick, onDetailClick }: Worker
       {/* Current task */}
       {state?.currentTask && (
         <div className="mb-2">
-          <span className="text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>
+          <span className="text-[10px] font-mono truncate block" style={{ color: 'var(--text-secondary)' }}>
             {state.currentTask.title}
           </span>
         </div>

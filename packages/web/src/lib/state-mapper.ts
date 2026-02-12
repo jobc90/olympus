@@ -53,8 +53,8 @@ export function isActiveBehavior(behavior: WorkerBehavior): boolean {
   return BEHAVIOR_INFO[behavior].category === 'active';
 }
 
-/** Map behavior -> simplified office state */
-export function behaviorToOfficeState(behavior: WorkerBehavior): WorkerState {
+/** Map behavior -> simplified Olympus Mountain state */
+export function behaviorToOlympusMountainState(behavior: WorkerBehavior): WorkerState {
   switch (behavior) {
     case 'working':
     case 'analyzing':
@@ -163,14 +163,15 @@ function randomBehavior(): WorkerBehavior {
 }
 
 /** Generate demo dashboard state for a single worker */
-export function generateDemoWorkerState(workerId: string): WorkerDashboardState {
-  const behavior = randomBehavior();
+export function generateDemoWorkerState(workerId: string, behavior?: WorkerBehavior): WorkerDashboardState {
+  const finalBehavior = behavior ?? randomBehavior();
   const now = Date.now();
 
   const tokenUsage: TokenUsage[] = [];
+  const baseOffset = workerId === 'codex-1' ? 5000 : workerId === 'worker-atlas' ? 2000 : workerId === 'worker-nova' ? 3000 : 1500;
   for (let i = 23; i >= 0; i--) {
-    const input = Math.floor(Math.random() * 5000) + 500;
-    const output = Math.floor(Math.random() * 3000) + 200;
+    const input = i * 500 + baseOffset;
+    const output = i * 300 + baseOffset / 2;
     tokenUsage.push({
       timestamp: now - i * 3600000,
       input,
@@ -180,37 +181,55 @@ export function generateDemoWorkerState(workerId: string): WorkerDashboardState 
   }
 
   const totalTokens = tokenUsage.reduce((sum, t) => sum + t.total, 0);
-  const totalTasks = Math.floor(Math.random() * 20) + 5;
+  const totalTasks = workerId === 'codex-1' ? 15 : workerId === 'worker-atlas' ? 12 : workerId === 'worker-nova' ? 8 : 6;
 
-  const currentTask: WorkerTask | null = isActiveBehavior(behavior)
+  const currentTask: WorkerTask | null = isActiveBehavior(finalBehavior)
     ? {
-        id: `task-${workerId}-${Date.now()}`,
-        title: DEMO_TASKS[Math.floor(Math.random() * DEMO_TASKS.length)],
+        id: `task-${workerId}-current`,
+        title: DEMO_TASKS[0],
         status: 'active',
-        startedAt: now - Math.floor(Math.random() * 300000),
+        startedAt: now - 120000,
       }
     : null;
 
-  const taskHistory: WorkerTask[] = Array.from({ length: Math.min(totalTasks, 10) }, (_, i) => ({
-    id: `task-${workerId}-hist-${i}`,
-    title: DEMO_TASKS[i % DEMO_TASKS.length],
-    status: (Math.random() > 0.1 ? 'completed' : 'failed') as WorkerTask['status'],
-    startedAt: now - (i + 1) * 1800000,
-    completedAt: now - (i + 1) * 1800000 + Math.floor(Math.random() * 600000),
-    tokenUsage: Math.floor(Math.random() * 10000) + 1000,
-  }));
+  const taskHistory: WorkerTask[] = [
+    {
+      id: `task-${workerId}-hist-1`,
+      title: 'Implement user authentication',
+      status: 'completed',
+      startedAt: now - 3600000,
+      completedAt: now - 1800000,
+      tokenUsage: 5200,
+    },
+    {
+      id: `task-${workerId}-hist-2`,
+      title: 'Fix database connection pooling',
+      status: 'completed',
+      startedAt: now - 7200000,
+      completedAt: now - 5400000,
+      tokenUsage: 3100,
+    },
+    {
+      id: `task-${workerId}-hist-3`,
+      title: 'Write API documentation',
+      status: 'failed',
+      startedAt: now - 10800000,
+      completedAt: now - 9000000,
+      tokenUsage: 1800,
+    },
+  ];
 
   return {
-    behavior,
-    officeState: behaviorToOfficeState(behavior),
+    behavior: finalBehavior,
+    olympusMountainState: behaviorToOlympusMountainState(finalBehavior),
     currentTask,
     taskHistory,
     tokenUsage,
     totalTokens,
     totalTasks,
-    lastActivity: now - Math.floor(Math.random() * 60000),
+    lastActivity: now - 15000,
     sessionLog: generateDemoLogs(workerId),
-    uptime: Math.floor(Math.random() * 86400000),
+    uptime: 14400,
   };
 }
 
@@ -279,15 +298,14 @@ export function generateDemoEvent(workers: WorkerConfig[]): ActivityEvent {
 
 /** Generate demo system stats */
 export function generateDemoStats(workers: WorkerConfig[]): SystemStats {
-  const activeCount = Math.max(1, Math.floor(Math.random() * workers.length) + 1);
   return {
     totalWorkers: workers.length,
-    activeWorkers: Math.min(activeCount, workers.length),
-    totalTokens: Math.floor(Math.random() * 500000) + 100000,
-    totalTasks: Math.floor(Math.random() * 100) + 20,
-    completedTasks: Math.floor(Math.random() * 80) + 15,
-    failedTasks: Math.floor(Math.random() * 10),
-    uptime: Math.floor(Math.random() * 86400),
+    activeWorkers: 2,
+    totalTokens: 285000,
+    totalTasks: 47,
+    completedTasks: 42,
+    failedTasks: 3,
+    uptime: 14400,
     connected: false,
   };
 }
@@ -307,15 +325,12 @@ export function generateDemoData(): {
     { id: 'worker-spark', name: 'Apollo', emoji: '\u2600\uFE0F', color: '#66BB6A', avatar: 'apollo' },
   ];
 
-  const states: Record<string, WorkerDashboardState> = {};
-  for (const w of workers) {
-    states[w.id] = generateDemoWorkerState(w.id);
-  }
-
-  // Override Codex to have a Codex-specific behavior
-  const codexBehaviors: WorkerBehavior[] = ['supervising', 'directing', 'analyzing', 'meeting'];
-  states['codex-1'].behavior = codexBehaviors[Math.floor(Math.random() * codexBehaviors.length)];
-  states['codex-1'].officeState = behaviorToOfficeState(states['codex-1'].behavior);
+  const states: Record<string, WorkerDashboardState> = {
+    'codex-1': generateDemoWorkerState('codex-1', 'supervising'),
+    'worker-atlas': generateDemoWorkerState('worker-atlas', 'working'),
+    'worker-nova': generateDemoWorkerState('worker-nova', 'thinking'),
+    'worker-spark': generateDemoWorkerState('worker-spark', 'idle'),
+  };
 
   return { workers, states };
 }

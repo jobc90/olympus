@@ -7,6 +7,7 @@ import {
   extractResultFromBuffer,
   isTuiChromeLine,
   isTuiArtifactLine,
+  hasBackgroundAgentActivity,
 } from '../pty-worker.js';
 
 // ──────────────────────────────────────────────
@@ -48,8 +49,8 @@ describe('detectIdlePrompt', () => {
     expect(detectIdlePrompt('some output\n❯ ')).toBe(true);
   });
 
-  it('"$" 프롬프트 감지', () => {
-    expect(detectIdlePrompt('some output\n$ ')).toBe(true);
+  it('"$" 프롬프트는 감지하지 않음 (오탐 방지)', () => {
+    expect(detectIdlePrompt('some output\n$ ')).toBe(false);
   });
 
   it('"Enter your message" 감지', () => {
@@ -69,27 +70,26 @@ describe('detectIdlePrompt', () => {
     expect(detectIdlePrompt('Building project...')).toBe(false);
   });
 
-  it('"bypass permissions on" 감지', () => {
-    expect(detectIdlePrompt('⏵⏵ bypass permissions on')).toBe(true);
-  });
-
-  it('"bypass permissions off" 감지', () => {
-    expect(detectIdlePrompt('bypass permissions off')).toBe(true);
+  it('"bypass permissions"는 IDLE이 아닌 TUI 크롬으로 분류', () => {
+    expect(detectIdlePrompt('⏵⏵ bypass permissions on')).toBe(false);
+    expect(detectIdlePrompt('bypass permissions off')).toBe(false);
   });
 
   it('마지막 2000자만 검사', () => {
-    const longText = 'x'.repeat(2500) + '> ';
+    // multiline ^>\s*$/m은 줄 시작의 ">"만 감지 (단일 라인 중간의 ">" 무시)
+    const longText = 'x'.repeat(2500) + '\n>\n';
     expect(detectIdlePrompt(longText)).toBe(true);
 
     // 프롬프트가 2000자 밖에 있으면 감지 못함
-    const farPrompt = '> ' + 'x'.repeat(2500);
+    const farPrompt = '>\n' + 'x'.repeat(2500);
     expect(detectIdlePrompt(farPrompt)).toBe(false);
   });
 
-  it('프롬프트 뒤에 개행이 있어도 감지 (\\s*$ 수정)', () => {
+  it('프롬프트 뒤에 개행이 있어도 감지 (multiline)', () => {
     expect(detectIdlePrompt('some output\n> \n')).toBe(true);
     expect(detectIdlePrompt('some output\n❯ \n')).toBe(true);
-    expect(detectIdlePrompt('some output\n$ \n')).toBe(true);
+    // "$" 프롬프트는 더 이상 감지하지 않음 (오탐 방지)
+    expect(detectIdlePrompt('some output\n$ \n')).toBe(false);
   });
 
   it('줄 시작에 ">"만 있는 경우 감지 (multiline)', () => {
@@ -370,9 +370,12 @@ describe('isTuiArtifactLine', () => {
   });
 
   // 짧은 영문 프래그먼트
-  it('짧은 영문 프래그먼트 (<=3자) → true', () => {
-    expect(isTuiArtifactLine('ab')).toBe(true);
+  it('1자 이하 프래그먼트 → true, 2자 이상은 보존', () => {
     expect(isTuiArtifactLine('x')).toBe(true);
+    // 2자 이상은 유효한 응답일 수 있으므로 보존
+    expect(isTuiArtifactLine('ab')).toBe(false);
+    expect(isTuiArtifactLine('no')).toBe(false);
+    expect(isTuiArtifactLine('ok')).toBe(false);
   });
 
   it('짧은 한국어는 보존 → false', () => {
@@ -539,5 +542,48 @@ describe('extractResultFromBuffer', () => {
     ].join('\n');
     const result = extractResultFromBuffer(buffer, 'prompt');
     expect(result).toBe('첫 번째 줄\n두 번째 줄');
+  });
+});
+
+// ──────────────────────────────────────────────
+// hasBackgroundAgentActivity
+// ──────────────────────────────────────────────
+
+describe('hasBackgroundAgentActivity', () => {
+  it('⏺ Task "..." completed in background 감지', () => {
+    expect(hasBackgroundAgentActivity('⏺ Task "review code" completed in background')).toBe(true);
+  });
+
+  it('⏺ Agent "..." completed 감지', () => {
+    expect(hasBackgroundAgentActivity('⏺ Agent "reviewer" completed')).toBe(true);
+  });
+
+  it('completed in background 감지 (다양한 형식)', () => {
+    expect(hasBackgroundAgentActivity('Task "test runner" completed in background')).toBe(true);
+    expect(hasBackgroundAgentActivity('Agent "builder" completed')).toBe(true);
+    expect(hasBackgroundAgentActivity('something completed in background')).toBe(true);
+  });
+
+  it('✻ Conversation compacted 감지', () => {
+    expect(hasBackgroundAgentActivity('✻ Conversation compacted')).toBe(true);
+  });
+
+  it('✻ Cooked for 감지', () => {
+    expect(hasBackgroundAgentActivity('✻ Cooked for 5m 30s')).toBe(true);
+  });
+
+  it('일반 텍스트 → false', () => {
+    expect(hasBackgroundAgentActivity('파일을 수정했습니다.')).toBe(false);
+    expect(hasBackgroundAgentActivity("I've completed the task")).toBe(false);
+    expect(hasBackgroundAgentActivity('Here is the review result')).toBe(false);
+  });
+
+  it('빈 문자열 → false', () => {
+    expect(hasBackgroundAgentActivity('')).toBe(false);
+    expect(hasBackgroundAgentActivity('   ')).toBe(false);
+  });
+
+  it('ANSI가 포함된 백그라운드 에이전트 출력 감지', () => {
+    expect(hasBackgroundAgentActivity('\u001b[32m⏺ Task "test" completed in background\u001b[0m')).toBe(true);
   });
 });

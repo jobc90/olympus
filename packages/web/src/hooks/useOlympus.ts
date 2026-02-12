@@ -120,7 +120,7 @@ export interface OlympusState {
   pendingApproval: PendingApproval | null;
   cliHistory: CliHistoryItem[];
   cliStreams: Map<string, CliStreamState>;
-  // Office dashboard extensions
+  // Olympus Mountain dashboard extensions
   workerConfigs: WorkerConfigEntry[];
   workerBehaviors: Record<string, string>;
   codexBehavior: string;
@@ -180,7 +180,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     pendingApproval: null,
     cliHistory: [],
     cliStreams: new Map(),
-    // Office extensions
+    // Olympus Mountain extensions
     workerConfigs: [],
     workerBehaviors: {},
     codexBehavior: 'supervising',
@@ -381,6 +381,31 @@ export function useOlympus(options: UseOlympusOptions = {}) {
         pendingApproval: { ...request, taskId },
         logs: [...s.logs.slice(-99), { level: 'warn', message: `[agent:approval] 승인 대기: ${request.command}` }],
       }));
+    });
+
+    // Worker task events (즉시 행동 반영)
+    client.on('worker:task:assigned', (m) => {
+      const payload = m.payload as { workerId: string; taskId: string };
+      if (payload.workerId) {
+        setState((s) => ({
+          ...s,
+          workerBehaviors: { ...s.workerBehaviors, [payload.workerId]: 'working' },
+        }));
+      }
+    });
+
+    client.on('worker:task:completed', (m) => {
+      const payload = m.payload as { workerId?: string; taskId: string; status?: string };
+      const wId = payload.workerId;
+      if (wId) {
+        setState((s) => ({
+          ...s,
+          workerBehaviors: {
+            ...s.workerBehaviors,
+            [wId]: payload.status === 'completed' ? 'completed' : 'error',
+          },
+        }));
+      }
     });
 
     // V2 Worker events
@@ -643,9 +668,11 @@ export function useOlympus(options: UseOlympusOptions = {}) {
         },
       }));
 
-      // Periodically change behaviors (every 5s) and add events (every 3s)
-      const DEMO_BEHAVIORS = ['working', 'thinking', 'idle', 'completed', 'reviewing', 'deploying', 'collaborating', 'chatting', 'resting'];
-      const CODEX_BEHAVIORS = ['supervising', 'directing', 'analyzing', 'meeting'];
+      // Periodically change behaviors (순환 패턴) and add events
+      const WORKER_BEHAVIOR_CYCLE = ['working', 'thinking', 'idle', 'working']; // 순환 패턴
+      const CODEX_BEHAVIOR_CYCLE = ['supervising', 'directing', 'analyzing', 'meeting']; // 순환 패턴
+      let behaviorIndex = 0;
+      let codexIndex = 0;
       let eventCounter = 0;
 
       demoTimerRef.current = setInterval(() => {
@@ -657,13 +684,13 @@ export function useOlympus(options: UseOlympusOptions = {}) {
           const newBehaviors = { ...s.workerBehaviors };
           const newEvents = [...s.activityEvents];
 
-          // Every 5s: change a random worker behavior
+          // Every 5s: 순환 패턴으로 behavior 변경
           if (eventCounter % 5 === 0) {
-            const workerIds = Object.keys(newBehaviors);
+            const workerIds = Object.keys(newBehaviors).filter(id => id !== 'codex-1');
             if (workerIds.length > 0) {
-              const randomId = workerIds[Math.floor(Math.random() * workerIds.length)];
-              const newBeh = DEMO_BEHAVIORS[Math.floor(Math.random() * DEMO_BEHAVIORS.length)];
-              newBehaviors[randomId] = newBeh;
+              const targetId = workerIds[behaviorIndex % workerIds.length];
+              newBehaviors[targetId] = WORKER_BEHAVIOR_CYCLE[behaviorIndex % WORKER_BEHAVIOR_CYCLE.length];
+              behaviorIndex++;
             }
           }
 
@@ -688,10 +715,12 @@ export function useOlympus(options: UseOlympusOptions = {}) {
             }
           }
 
-          // Occasionally change codex behavior
-          const codexBeh = eventCounter % 8 === 0
-            ? CODEX_BEHAVIORS[Math.floor(Math.random() * CODEX_BEHAVIORS.length)]
-            : s.codexBehavior;
+          // Every 8s: 순환 패턴으로 codex behavior 변경
+          let codexBeh = s.codexBehavior;
+          if (eventCounter % 8 === 0) {
+            codexBeh = CODEX_BEHAVIOR_CYCLE[codexIndex % CODEX_BEHAVIOR_CYCLE.length];
+            codexIndex++;
+          }
 
           return {
             ...s,

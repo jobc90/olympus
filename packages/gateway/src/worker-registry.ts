@@ -8,6 +8,9 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 import type {
   RegisteredWorker,
   WorkerRegistration,
@@ -96,6 +99,14 @@ export class WorkerRegistry extends EventEmitter {
   }
 
   createTask(workerId: string, prompt: string, chatId?: number): WorkerTaskRecord {
+    // 같은 워커의 기존 running 작업 정리
+    for (const [, t] of this.tasks) {
+      if (t.workerId === workerId && t.status === 'running') {
+        t.status = 'failed';
+        t.completedAt = Date.now();
+      }
+    }
+
     const worker = this.workers.get(workerId);
     const taskId = randomUUID();
     const task: WorkerTaskRecord = {
@@ -109,17 +120,23 @@ export class WorkerRegistry extends EventEmitter {
     };
     this.tasks.set(taskId, task);
     this.markBusy(workerId, taskId, prompt);
+    this.emit('task:assigned', task);
+    this.saveTasksToFile();
     return task;
   }
 
   completeTask(taskId: string, result: CliRunResult): void {
     const task = this.tasks.get(taskId);
-    if (!task) return;
+    if (!task) {
+      console.warn('[WorkerRegistry] Unknown task completion:', taskId);
+      return;
+    }
     task.status = result.success ? 'completed' : 'failed';
     task.completedAt = Date.now();
     task.result = result;
     this.markIdle(task.workerId);
     this.emit('task:completed', task);
+    this.saveTasksToFile();
   }
 
   getTask(taskId: string): WorkerTaskRecord | null {
@@ -128,6 +145,33 @@ export class WorkerRegistry extends EventEmitter {
 
   getActiveTasks(): WorkerTaskRecord[] {
     return Array.from(this.tasks.values()).filter(t => t.status === 'running');
+  }
+
+  private get tasksFilePath(): string {
+    const dir = join(homedir(), '.olympus');
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    return join(dir, 'active-tasks.json');
+  }
+
+  private saveTasksToFile(): void {
+    try {
+      const running = Array.from(this.tasks.values()).filter(t => t.status === 'running');
+      writeFileSync(this.tasksFilePath, JSON.stringify(running, null, 2));
+    } catch { /* ignore write errors */ }
+  }
+
+  loadTasksFromFile(): void {
+    try {
+      if (!existsSync(this.tasksFilePath)) return;
+      const data = JSON.parse(readFileSync(this.tasksFilePath, 'utf-8'));
+      const now = Date.now();
+      const ONE_HOUR = 60 * 60 * 1000;
+      for (const t of data) {
+        if (t.status === 'running' && now - t.startedAt < ONE_HOUR) {
+          this.tasks.set(t.taskId, t);
+        }
+      }
+    } catch { /* ignore read errors */ }
   }
 
   dispose(): void {

@@ -1,16 +1,16 @@
 // ============================================================================
-// Canvas Rendering Engine - Multi-worker office scene
+// Canvas Rendering Engine - Multi-worker Olympus Mountain scene
 // ============================================================================
 
 import type { GridPos } from './isometric';
 import { drawIsometricTile, gridToScreen } from './isometric';
-import { drawWalls, drawDividerWall, drawZoneLabel, drawBackground, drawNightOverlay, drawFloorScuffs } from '../sprites/decorations';
+import { drawWalls, drawDividerWall, drawZoneLabel, drawBackground, drawNightOverlay, drawMarbleVeins } from '../sprites/decorations';
 import { drawFurniture, drawMonitorScreen, drawRoomba } from '../sprites/furniture';
-import { drawWorker, drawCodex, drawNameTag, drawStatusAura } from '../sprites/characters';
+import { drawWorker, drawCodex, drawNameTag, drawStatusAura, drawUnicorn, drawCupid } from '../sprites/characters';
 import { drawBubble, drawParticle } from '../sprites/effects';
 
 // ---------------------------------------------------------------------------
-// Types used by the renderer (mirrored from office layout / behavior)
+// Types used by the renderer (mirrored from Olympus Mountain layout / behavior)
 // ---------------------------------------------------------------------------
 
 export type Direction = 'n' | 's' | 'e' | 'w';
@@ -64,9 +64,19 @@ export interface CodexRuntime {
   anim: CharacterAnim;
 }
 
-export interface OfficeState {
+export interface NpcRuntime {
+  id: string;
+  type: 'unicorn' | 'cupid';
+  pos: GridPos;
+  direction: Direction;
+  path: GridPos[];
+  homeZone: string;
+}
+
+export interface OlympusMountainState {
   workers: WorkerRuntime[];
   codex: CodexRuntime;
+  npcs: NpcRuntime[];
   bubbles: Bubble[];
   particles: Particle[];
   tick: number;
@@ -103,7 +113,7 @@ export interface Zone {
 }
 
 // ---------------------------------------------------------------------------
-// Layout hooks — these must be provided by the office/layout module
+// Layout hooks — these must be provided by the olympus-mountain/layout module
 // ---------------------------------------------------------------------------
 
 export interface LayoutProvider {
@@ -135,7 +145,7 @@ export function renderFrame(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  state: OfficeState,
+  state: OlympusMountainState,
   config: RenderConfig,
 ): void {
   ctx.clearRect(0, 0, width, height);
@@ -159,7 +169,7 @@ export function renderFrame(
       }
       const color = layout.getFloorColor(col, row);
       drawIsometricTile(ctx, { col, row }, color, '#B0956E40');
-      drawFloorScuffs(ctx, col, row);
+      drawMarbleVeins(ctx, col, row);
     }
   }
 
@@ -177,10 +187,10 @@ export function renderFrame(
     });
   }
 
-  // Desk positions for monitor screen state overlay
+  // Sanctuary positions for monitor screen state overlay
   const deskPositions = [
-    { col: 3, row: 3 }, { col: 3, row: 6 }, { col: 3, row: 9 },
-    { col: 7, row: 3 }, { col: 7, row: 6 }, { col: 7, row: 9 },
+    { col: 14, row: 12 }, { col: 14, row: 15 }, { col: 14, row: 18 },
+    { col: 20, row: 12 }, { col: 20, row: 15 }, { col: 20, row: 18 },
   ];
 
   for (let i = 0; i < config.workers.length && i < deskPositions.length; i++) {
@@ -231,6 +241,21 @@ export function renderFrame(
     });
   }
 
+  // NPCs (Unicorn, Cupid)
+  for (const npc of state.npcs) {
+    drawables.push({
+      depth: npc.pos.row + npc.pos.col,
+      draw: () => {
+        const sp = gridToScreen(npc.pos);
+        if (npc.type === 'unicorn') {
+          drawUnicorn(ctx, sp.x, sp.y, npc.direction, state.tick);
+        } else if (npc.type === 'cupid') {
+          drawCupid(ctx, sp.x, sp.y, npc.direction, state.tick);
+        }
+      },
+    });
+  }
+
   // Roomba pet — moves on a deterministic path based on tick
   const roombaPath = [
     { col: 5, row: 12 }, { col: 6, row: 12 }, { col: 7, row: 12 },
@@ -248,7 +273,7 @@ export function renderFrame(
     },
   });
 
-  const codexPos = { col: 14, row: 3 };
+  const codexPos = { col: 17, row: 3 };
   drawables.push({
     depth: codexPos.row + codexPos.col,
     draw: () => {
@@ -269,11 +294,11 @@ export function renderFrame(
 
   const zones = layout.buildZones(workerCount);
   for (const zone of Object.values(zones)) {
-    if (zone.id.startsWith('desk_')) {
-      const idx = parseInt(zone.id.replace('desk_', ''), 10);
+    if (zone.id.startsWith('sanctuary_')) {
+      const idx = parseInt(zone.id.replace('sanctuary_', ''), 10);
       const workerCfg = config.workers[idx];
       if (workerCfg) {
-        drawZoneLabel(ctx, `${workerCfg.name}'s Desk`, workerCfg.emoji, zone.center.col, zone.center.row, 0.5);
+        drawZoneLabel(ctx, `${workerCfg.name}'s Sanctuary`, workerCfg.emoji, zone.center.col, zone.center.row, 0.5);
         continue;
       }
     }

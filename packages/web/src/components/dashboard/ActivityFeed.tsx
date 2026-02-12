@@ -88,10 +88,10 @@ export default function ActivityFeed({ events, maxHeight = 400 }: ActivityFeedPr
               <span className="text-xs flex-shrink-0 mt-0.5">{style.icon}</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-mono font-bold" style={{ color: event.color ?? style.color }}>
+                  <span className="text-xs font-mono font-bold truncate max-w-[80px]" style={{ color: event.color ?? style.color }}>
                     {event.agentName}
                   </span>
-                  <span className="text-[9px] font-mono" style={{ color: 'var(--text-secondary)' }}>
+                  <span className="text-[9px] font-mono flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
                     {formatRelativeTime(event.timestamp)}
                   </span>
                 </div>

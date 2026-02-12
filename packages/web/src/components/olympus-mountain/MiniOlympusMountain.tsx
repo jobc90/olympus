@@ -1,22 +1,22 @@
 // ============================================================================
-// MiniOffice — Small office preview for the dashboard
+// MiniOlympusMountain — Small Olympus Mountain preview for the dashboard
 // ============================================================================
 
 import type { WorkerConfig, WorkerDashboardState, CodexConfig, ThemeName } from '../../lib/types';
-import type { OfficeState } from '../../engine/canvas';
-import { OfficeCanvas } from './OfficeCanvas';
+import type { OlympusMountainState } from '../../engine/canvas';
+import { OlympusMountainCanvas } from './OlympusMountainCanvas';
 
-interface MiniOfficeProps {
+interface MiniOlympusMountainProps {
   workers: WorkerConfig[];
   workerStates: Record<string, WorkerDashboardState>;
   codexConfig: CodexConfig;
   theme?: ThemeName;
-  officeState?: OfficeState;
+  olympusMountainState?: OlympusMountainState;
   onTick?: () => void;
 }
 
-// Placeholder office state when no hook is connected yet
-function createPlaceholderState(workers: WorkerConfig[]): OfficeState {
+// Placeholder state when no hook is connected yet
+function createPlaceholderState(workers: WorkerConfig[]): OlympusMountainState {
   return {
     workers: workers.map((w, i) => ({
       id: w.id,
@@ -25,6 +25,7 @@ function createPlaceholderState(workers: WorkerConfig[]): OfficeState {
       anim: 'sit_typing' as const,
     })),
     codex: { anim: 'stand' as const },
+    npcs: [],
     bubbles: [],
     particles: [],
     tick: 0,
@@ -32,21 +33,21 @@ function createPlaceholderState(workers: WorkerConfig[]): OfficeState {
   };
 }
 
-export function MiniOffice({
+export function MiniOlympusMountain({
   workers,
   workerStates,
   codexConfig,
-  officeState,
+  olympusMountainState,
   onTick,
-}: MiniOfficeProps) {
-  const state = officeState ?? createPlaceholderState(workers);
+}: MiniOlympusMountainProps) {
+  const state = olympusMountainState ?? createPlaceholderState(workers);
   const tickFn = onTick ?? (() => {});
 
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-pixel text-sm flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-          <span>Office</span>
+          <span>Olympus</span>
         </h2>
         <button
           className="text-xs font-mono px-2 py-1 rounded-md hover:bg-white/10 transition-colors"
@@ -55,10 +56,10 @@ export function MiniOffice({
           Full View
         </button>
       </div>
-      <div className="group flex justify-center">
+      <div className="group">
         <div
           className="relative rounded-xl overflow-hidden transition-all duration-300 group-hover:ring-2"
-          style={{ border: '1px solid var(--border)', maxWidth: 800 }}
+          style={{ border: '1px solid var(--border)' }}
         >
           {/* LIVE PREVIEW label */}
           <div
@@ -68,16 +69,12 @@ export function MiniOffice({
             <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: '#66BB6A' }} />
             Live Preview
           </div>
-          {/* Render at full resolution (1100x620) but display scaled down */}
-          <OfficeCanvas
-            officeState={state}
+          {/* Render at full resolution, display auto-sized to container */}
+          <OlympusMountainCanvas
+            olympusMountainState={state}
             workers={workers}
             codexConfig={codexConfig}
             onTick={tickFn}
-            width={1100}
-            height={620}
-            displayWidth={800}
-            displayHeight={450}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-4">
             <span

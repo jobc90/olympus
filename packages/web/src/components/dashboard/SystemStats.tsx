@@ -60,17 +60,17 @@ export default function SystemStats({ stats }: SystemStatsProps) {
       {items.map(item => (
         <div
           key={item.label}
-          className="flex flex-col items-center gap-1 rounded-xl px-3 py-3 transition-all hover:scale-105"
+          className="flex flex-col items-center gap-1 rounded-xl px-3 py-3 transition-all hover:scale-105 overflow-hidden"
           style={{
             backgroundColor: 'var(--bg-card)',
             border: '1px solid var(--border)',
           }}
         >
           <span className="text-base">{item.icon}</span>
-          <span className="text-lg" style={{ color: item.color }}>
+          <span className="text-lg truncate" style={{ color: item.color }}>
             <AnimatedNumber value={item.value} format={item.format} />
           </span>
-          <span className="text-[10px] font-mono uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+          <span className="text-[10px] font-mono uppercase tracking-wider truncate" style={{ color: 'var(--text-secondary)' }}>
             {item.label}
           </span>
         </div>
