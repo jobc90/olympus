@@ -37,7 +37,7 @@ import ChatWindow from './components/chat/ChatWindow';
 import SettingsPanel from './components/settings/SettingsPanel';
 
 import type { WorkerConfig, WorkerDashboardState, CodexConfig, WorkerAvatar, WorkerBehavior } from './lib/types';
-import { generateDemoData, generateDemoEvent } from './lib/state-mapper';
+import { generateDemoData, generateDemoEvent, BEHAVIOR_INFO, formatTokens, formatRelativeTime } from './lib/state-mapper';
 
 // Config priority: server-injected > URL params > localStorage > defaults
 declare global {
@@ -165,6 +165,7 @@ export default function App() {
         avatar: (w.avatar || WORKER_AVATARS[i % WORKER_AVATARS.length]) as WorkerAvatar,
         behavior: polledWorkerBehaviors[w.id],
         skinToneIndex: i,
+        projectPath: w.projectPath,
       } satisfies WorkerConfig))
     : demo.workers.map((w, i) => ({ ...w, skinToneIndex: i }));
 
@@ -286,7 +287,7 @@ export default function App() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 pt-16 px-4 pb-8 max-w-7xl mx-auto w-full">
+      <main className="flex-1 pt-16 px-4 pb-16 max-w-7xl mx-auto w-full">
         {/* ===================== CONSOLE TAB ===================== */}
         {activeTab === 'console' && (
           <>
@@ -316,6 +317,7 @@ export default function App() {
                   codexConfig={codexConfig}
                   codexBehavior={connected ? polledCodexBehavior : 'supervising'}
                   connected={connected}
+                  onChatClick={() => setChatTarget({ id: 'codex-1', name: 'Zeus', emoji: '\u26A1', color: '#FFD700' })}
                 />
 
                 {/* Operational panels */}
@@ -433,7 +435,7 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="py-3 px-6 border-t text-center" style={{ borderColor: 'var(--border)' }}>
+      <footer className="fixed bottom-0 left-0 right-0 z-40 py-2 px-6 border-t text-center" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-primary, #0A0F1C)' }}>
         <span className="text-xs" style={{ color: 'var(--text-secondary, #666)' }}>
           Gateway: {config.host}:{config.port}
           {config.apiKey && (
@@ -443,17 +445,37 @@ export default function App() {
       </footer>
 
       {/* ChatWindow */}
-      {chatTarget && (
-        <ChatWindow
-          agentId={chatTarget.id}
-          agentName={chatTarget.name}
-          agentEmoji={chatTarget.emoji}
-          agentColor={chatTarget.color}
-          messages={chatMessages[chatTarget.id] || []}
-          onSend={handleChatSend}
-          onClose={() => setChatTarget(null)}
-        />
-      )}
+      {chatTarget && (() => {
+        const isCodex = chatTarget.id === 'codex-1';
+        const ws = workerStates[chatTarget.id];
+        const behavior = isCodex ? (connected ? polledCodexBehavior : 'supervising') : (ws?.behavior ?? 'idle');
+        const bInfo = BEHAVIOR_INFO[behavior as keyof typeof BEHAVIOR_INFO];
+        const wConfig = workerConfigs.find(w => w.id === chatTarget.id);
+        const projectPath = wConfig?.projectPath;
+        const details: Array<{ label: string; value: string; color?: string }> = [
+          { label: 'Status', value: bInfo?.label ?? behavior, color: bInfo?.neonColor },
+          { label: 'ID', value: chatTarget.id },
+          { label: 'Project', value: projectPath || (connected ? `${config.host}:${config.port}` : 'Disconnected'), color: projectPath ? undefined : (connected ? undefined : 'var(--accent-danger)') },
+        ];
+        if (!isCodex && ws) {
+          details.push({ label: 'Tokens', value: formatTokens(ws.totalTokens ?? 0) });
+          details.push({ label: 'Tasks', value: String(ws.totalTasks ?? 0) });
+          details.push({ label: 'Last', value: formatRelativeTime(ws.lastActivity) });
+          if (ws.currentTask) details.push({ label: 'Task', value: ws.currentTask.title });
+        }
+        return (
+          <ChatWindow
+            agentId={chatTarget.id}
+            agentName={chatTarget.name}
+            agentEmoji={chatTarget.emoji}
+            agentColor={chatTarget.color}
+            details={details}
+            messages={chatMessages[chatTarget.id] || []}
+            onSend={handleChatSend}
+            onClose={() => setChatTarget(null)}
+          />
+        );
+      })()}
 
       {/* Settings Panel (replaces old SettingsModal) */}
       {showSettings && (

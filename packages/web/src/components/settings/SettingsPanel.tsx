@@ -174,7 +174,7 @@ export default function SettingsPanel({ config, onUpdate, onClose }: SettingsPan
             onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           >
-            \u2715
+            {'\u2715'}
           </button>
         </div>
 

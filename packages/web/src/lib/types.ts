@@ -228,6 +228,7 @@ export interface WorkerConfig {
   avatar: WorkerAvatar;
   behavior?: string;
   skinToneIndex?: number;
+  projectPath?: string;
 }
 
 /** Codex (orchestrator) configuration */

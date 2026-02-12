@@ -10,6 +10,7 @@ interface CodexAgentPanelProps {
   codexConfig: CodexConfig;
   codexBehavior: string;
   connected: boolean;
+  onChatClick?: () => void;
 }
 
 function PixelCodexAvatar({ size = 64 }: { size?: number }) {
@@ -19,7 +20,7 @@ function PixelCodexAvatar({ size = 64 }: { size?: number }) {
     if (!ctx) return;
     ctx.clearRect(0, 0, size, size);
     ctx.imageSmoothingEnabled = false;
-    drawCodex(ctx, size / 2, size / 2 + 8, 'stand', 0, 'zeus', '⚡');
+    drawCodex(ctx, size / 2, size - 6, 'stand', 0, 'zeus', '');
   };
 
   return (
@@ -27,7 +28,7 @@ function PixelCodexAvatar({ size = 64 }: { size?: number }) {
       ref={canvasRef}
       width={size}
       height={size}
-      className="rounded-lg"
+      className="rounded-lg flex-shrink-0"
       style={{
         imageRendering: 'pixelated',
         backgroundColor: '#FFD70015',
@@ -37,7 +38,7 @@ function PixelCodexAvatar({ size = 64 }: { size?: number }) {
   );
 }
 
-export function CodexAgentPanel({ codexConfig, codexBehavior, connected }: CodexAgentPanelProps) {
+export function CodexAgentPanel({ codexConfig, codexBehavior, connected, onChatClick }: CodexAgentPanelProps) {
   const behaviorInfo: Record<string, string> = {
     supervising: '감독 중',
     directing: '작업 할당 중',
@@ -50,12 +51,13 @@ export function CodexAgentPanel({ codexConfig, codexBehavior, connected }: Codex
 
   return (
     <div
-      className="rounded-xl p-4 transition-all duration-300"
+      className="rounded-xl p-4 transition-all duration-300 hover:scale-[1.01] cursor-pointer"
       style={{
         backgroundColor: 'var(--bg-card)',
         border: '1px solid #FFD70030',
         boxShadow: '0 0 20px #FFD70008',
       }}
+      onClick={onChatClick}
     >
       {/* Header */}
       <div className="flex items-center gap-2 mb-3">

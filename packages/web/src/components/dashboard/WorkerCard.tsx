@@ -15,14 +15,15 @@ interface WorkerCardProps {
   onDetailClick?: (workerId: string) => void;
 }
 
-function PixelAvatar({ worker, size = 48 }: { worker: WorkerConfig; size?: number }) {
+function PixelAvatar({ worker, size = 64 }: { worker: WorkerConfig; size?: number }) {
   const canvasRef = (canvas: HTMLCanvasElement | null) => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, size, size);
     ctx.imageSmoothingEnabled = false;
-    drawWorker(ctx, size / 2, size / 2 + 8, 'stand', 's', 0, worker.avatar as WorkerAvatar, worker.color, '');
+    // Character is ~54px tall (scale 3 * 18 rows), y = feet position
+    drawWorker(ctx, size / 2, size - 6, 'stand', 's', 0, worker.avatar as WorkerAvatar, worker.color, '');
   };
 
   return (
@@ -30,7 +31,7 @@ function PixelAvatar({ worker, size = 48 }: { worker: WorkerConfig; size?: numbe
       ref={canvasRef}
       width={size}
       height={size}
-      className="rounded-lg"
+      className="rounded-lg flex-shrink-0"
       style={{
         imageRendering: 'pixelated',
         backgroundColor: `${worker.color}15`,
@@ -80,6 +81,7 @@ export function WorkerCard({ worker, state, onChatClick, onDetailClick }: Worker
         border: `1px solid ${info.neonColor}30`,
         boxShadow: `0 0 20px ${info.neonColor}08`,
       }}
+      onClick={() => onChatClick?.(worker.id)}
     >
       {/* Glow on hover */}
       <div
@@ -95,12 +97,12 @@ export function WorkerCard({ worker, state, onChatClick, onDetailClick }: Worker
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="font-pixel text-sm truncate" style={{ color: 'var(--text-primary)' }}>
-              {worker.name}
+              {worker.avatar.charAt(0).toUpperCase() + worker.avatar.slice(1)}
             </span>
             {worker.emoji && <span>{worker.emoji}</span>}
           </div>
           <div className="text-[10px] font-mono truncate" style={{ color: 'var(--text-secondary)' }}>
-            {worker.id}
+            {worker.name}
           </div>
           <div className="mt-1">
             <StatusBadge behavior={behavior} size="sm" />
@@ -131,31 +133,14 @@ export function WorkerCard({ worker, state, onChatClick, onDetailClick }: Worker
         <TokenBar used={state?.totalTokens ?? 0} max={state?.contextTokens || 128000} />
       </div>
 
-      {/* Footer: Last activity + Actions */}
+      {/* Footer: Last activity */}
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>
           Last: {relativeTime}
         </span>
-        <div className="flex items-center gap-1">
-          {onChatClick && (
-            <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onChatClick(worker.id); }}
-              className="p-1 rounded hover:bg-white/10 transition-colors text-sm"
-              title="Chat with worker"
-            >
-              Chat
-            </button>
-          )}
-          {onDetailClick && (
-            <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDetailClick(worker.id); }}
-              className="p-1 rounded hover:bg-white/10 transition-colors text-sm"
-              title="View details"
-            >
-              Detail
-            </button>
-          )}
-        </div>
+        <span className="text-[10px] font-mono opacity-0 group-hover:opacity-60 transition-opacity" style={{ color: 'var(--text-secondary)' }}>
+          Click to chat
+        </span>
       </div>
     </div>
   );

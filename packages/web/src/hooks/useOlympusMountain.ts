@@ -217,7 +217,7 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior }: Use
         if (behavior === 'idle' || behavior === 'thinking' || behavior === 'completed') {
           const targetZoneId = resolveZone(behavior, runtime.deskZone);
           if (targetZoneId === 'gods_plaza' && updated.path.length === 0) {
-            const wanderInterval = 50 + (idx * 17) % 40; // 50~90 tick interval (~1.7-3s at 30fps)
+            const wanderInterval = 300 + (idx * 17) % 60; // 300~360 tick interval (~10-12s at 30fps)
             const behTicks = behaviorTicksRef.current[runtime.id] ?? 0;
             if (behTicks > 0 && behTicks % wanderInterval === 0) {
               const plazaZone = getZone('gods_plaza', workers.length);
@@ -341,7 +341,7 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior }: Use
 
         // Check if NPC needs to wander
         if (homeZone && updated.path.length === 0) {
-          const wanderInterval = 50 + (npc.id === 'unicorn' ? 20 : 30); // 70 or 80 ticks
+          const wanderInterval = 300 + (npc.id === 'unicorn' ? 30 : 60); // 330 or 360 ticks (~11-12s at 30fps)
           if (newTick > 0 && newTick % wanderInterval === 0) {
             const newTarget = getRandomPointInZone(homeZone);
             const path = findPath(walkGridRef.current, updated.pos, newTarget);

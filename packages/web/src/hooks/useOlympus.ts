@@ -78,6 +78,7 @@ export interface WorkerConfigEntry {
   emoji?: string;
   color: string;
   avatar: string;
+  projectPath?: string;
 }
 
 export interface ActivityEventEntry {
@@ -149,6 +150,7 @@ function registeredWorkerToConfig(w: RegisteredWorker, index: number): WorkerCon
     name: w.name || `Worker-${w.id.slice(0, 6)}`,
     color: WORKER_COLORS[index % WORKER_COLORS.length],
     avatar: WORKER_AVATARS[index % WORKER_AVATARS.length],
+    projectPath: w.projectPath,
   };
 }
 

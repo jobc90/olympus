@@ -7,11 +7,18 @@ interface ChatMessage {
   timestamp: number;
 }
 
+interface AgentDetail {
+  label: string;
+  value: string;
+  color?: string;
+}
+
 interface ChatWindowProps {
   agentId: string;
   agentName: string;
   agentEmoji?: string;
   agentColor?: string;
+  details?: AgentDetail[];
   messages: ChatMessage[];
   onSend: (agentId: string, message: string) => void;
   onClose: () => void;
@@ -22,6 +29,7 @@ export default function ChatWindow({
   agentName,
   agentEmoji = '\u{1F916}',
   agentColor = '#4FC3F7',
+  details,
   messages,
   onSend,
   onClose,
@@ -88,7 +96,7 @@ export default function ChatWindow({
       <div
         className="fixed right-0 top-0 bottom-0 z-50 flex flex-col border-l shadow-2xl"
         style={{
-          width: 384,
+          width: 400,
           background: 'var(--bg-primary)',
           borderColor: 'var(--border)',
           animation: 'slide-in 0.3s ease-out',
@@ -115,9 +123,31 @@ export default function ChatWindow({
             onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           >
-            \u2715
+            {'\u2715'}
           </button>
         </div>
+
+        {/* Agent Detail Info */}
+        {details && details.length > 0 && (
+          <div
+            className="px-4 py-3 border-b grid grid-cols-2 gap-x-4 gap-y-1.5"
+            style={{ borderColor: 'var(--border)', background: `${agentColor}08` }}
+          >
+            {details.map((d, i) => (
+              <div key={i} className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[10px] font-mono flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
+                  {d.label}
+                </span>
+                <span
+                  className="text-[11px] font-mono truncate"
+                  style={{ color: d.color || 'var(--text-primary)' }}
+                >
+                  {d.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Messages */}
         <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -187,7 +217,7 @@ export default function ChatWindow({
               className="px-4 py-2 rounded-xl text-sm font-medium transition-colors"
               style={{ background: agentColor, color: '#fff' }}
             >
-              \u2191
+              {'\u2191'}
             </button>
           </div>
         </div>
