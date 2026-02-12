@@ -5,25 +5,24 @@ import { useOlympusMountain } from './hooks/useOlympusMountain';
 // --- Existing components (preserved) ---
 import { SessionList } from './components/SessionList';
 import { SessionOutputPanel } from './components/SessionOutputPanel';
-import { EmptyState } from './components/EmptyState';
+// EmptyState removed — "Ready to Roll!" 불필요
 import { PhaseProgress } from './components/PhaseProgress';
 import { TaskList } from './components/TaskList';
 import { AgentStream } from './components/AgentStream';
 import { AgentPanel } from './components/AgentPanel';
-import { CommandInput } from './components/CommandInput';
+// CommandInput removed — Codex 직접 입력 불필요
 import { WorkerGrid as LegacyWorkerGrid } from './components/WorkerGrid';
 import { WorkerDetailModal } from './components/WorkerDetailModal';
 import { TaskTimeline } from './components/TaskTimeline';
 import { AgentApprovalDialog } from './components/AgentApprovalDialog';
 import { LogPanel } from './components/LogPanel';
 import { Card } from './components/Card';
-import { ContextExplorer } from './components/ContextExplorer';
-import { CodexPanel } from './components/CodexPanel';
+// ContextExplorer, CodexPanel removed — 불필요
 import { AgentHistoryPanel } from './components/AgentHistoryPanel';
 import { LiveOutputPanel } from './components/LiveOutputPanel';
 import { SessionCostTracker } from './components/SessionCostTracker';
 import { ProjectBrowser } from './components/ProjectBrowser';
-import { useContextTree } from './hooks/useContextTree';
+// useContextTree removed — ContextExplorer 삭제
 
 // --- New dashboard components ---
 import Navbar from './components/dashboard/Navbar';
@@ -150,11 +149,6 @@ export default function App() {
   } = useOlympus(config);
 
   const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
-
-  const contextTree = useContextTree({
-    baseUrl: `http://${config.host}:${config.port}`,
-    apiKey: config.apiKey,
-  });
 
   // --- Demo data (used when not connected to gateway) ---
   const demoMode = hookDemoMode || !connected;
@@ -376,16 +370,10 @@ export default function App() {
                       onCancel={cancelAgentTask}
                     />
                     <LiveOutputPanel streams={cliStreams} />
-                    <CommandInput
-                      onSubmit={sendAgentCommand}
-                      agentState={agentState}
-                      disabled={!connected}
-                    />
                     <LegacyWorkerGrid workers={legacyWorkers} />
                     <TaskTimeline tasks={taskHistory} />
                     <AgentHistoryPanel history={cliHistory} />
                     <LogPanel logs={logs} />
-                    <EmptyState config={config} hasRuns={runs.length > 0} hasSessions={sessions.filter(s => s.status === 'active').length > 0} />
                   </>
                 )}
               </div>
@@ -405,9 +393,7 @@ export default function App() {
                 <ActivityFeed events={connected && polledActivityEvents.length > 0 ? polledActivityEvents.map(e => ({
                   id: e.id, type: e.type, agentName: e.agentName, message: e.message, timestamp: e.timestamp, color: e.color,
                 })) : demo.events} />
-                <CodexPanel connected={connected} onRoute={codexRoute} />
-                <ContextExplorer ctx={contextTree} onSettingsClick={() => setShowSettings(true)} />
-                {/* SessionList moved to bottom */}
+                {/* SessionList */}
                 <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)' }}>
                   <SessionList
                     runs={runs}

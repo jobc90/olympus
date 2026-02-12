@@ -47,7 +47,7 @@ export function LogPanel({ logs }: Props) {
   };
 
   return (
-    <Card className="h-full flex flex-col">
+    <Card className="flex flex-col">
       <CardHeader
         action={
           <div className="flex items-center gap-2">
@@ -87,7 +87,7 @@ export function LogPanel({ logs }: Props) {
 
       <div
         ref={scrollRef}
-        className="flex-1 max-h-[calc(100vh-300px)] overflow-y-auto font-mono text-xs space-y-0.5"
+        className="max-h-48 overflow-y-auto font-mono text-xs space-y-0.5"
       >
         {filteredLogs.length === 0 ? (
           <div className="text-text-muted text-center py-8">
