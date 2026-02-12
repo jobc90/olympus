@@ -4,7 +4,7 @@ import { resolve, basename } from 'path';
 import { spawn, type ChildProcess } from 'child_process';
 import WebSocket from 'ws';
 import { createMessage, GATEWAY_PATH } from '@olympus-dev/protocol';
-import type { PtyWorker as PtyWorkerType, TaskResult } from '../pty-worker.js';
+import type { PtyWorker as PtyWorkerType, TaskResult, TimeoutAwareResult } from '../pty-worker.js';
 
 interface TaskPayload {
   taskId: string;
@@ -129,16 +129,34 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
   // ─── PTY 모드: 작업 처리 ───
 
   async function handleTaskPty(task: TaskPayload): Promise<void> {
-    // PTY 모드: TUI가 전체 터미널을 제어하므로 상태 메시지 출력하지 않음
-    // (프롬프트 입력 → 응답 → 결과 추출 모두 TUI 안에서 자연스럽게 진행)
     try {
-      const result: TaskResult = await ptyWorker!.executeTask(task.prompt);
+      const { result, finalResult } = await ptyWorker!.executeTaskWithTimeout(task.prompt);
 
-      await reportResult(task.taskId, {
-        success: result.success,
-        text: result.text.slice(0, 50000),
-        durationMs: result.durationMs,
-      });
+      if (result.timeout && finalResult) {
+        // Phase 1: 30분 타임아웃 부분 결과 보고
+        await reportResult(task.taskId, {
+          success: result.success,
+          text: result.text.slice(0, 50000),
+          durationMs: result.durationMs,
+          timeout: true,
+        });
+
+        // Phase 2: 최종 결과 대기 (isProcessing = true 유지 → 새 작업 차단)
+        const final = await finalResult;
+        await reportResult(task.taskId, {
+          success: final.success,
+          text: final.text.slice(0, 50000),
+          durationMs: final.durationMs,
+          isFinalAfterTimeout: true,
+        });
+      } else {
+        // 정상 완료: 단일 보고
+        await reportResult(task.taskId, {
+          success: result.success,
+          text: result.text.slice(0, 50000),
+          durationMs: result.durationMs,
+        });
+      }
     } catch (err) {
       process.stderr.write(`[worker] 작업 실행 실패: ${(err as Error).message}\n`);
       await reportResult(task.taskId, {

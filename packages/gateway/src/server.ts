@@ -36,12 +36,14 @@ import { CliSessionStore } from './cli-session-store.js';
 import type { CodexAdapter } from './codex-adapter.js';
 import { WorkerRegistry } from './worker-registry.js';
 import { LocalContextStoreManager, extractContext } from '@olympus-dev/core';
+import type { GeminiAdvisor } from './gemini-advisor.js';
 
 export interface GatewayOptions {
   port?: number;
   host?: string;
   maxConcurrentRuns?: number;
   codexAdapter?: CodexAdapter;
+  geminiAdvisor?: GeminiAdvisor;
   /** Server mode: legacy (full agent/worker), hybrid (both), codex (slim — no agent/worker) */
   mode?: 'legacy' | 'hybrid' | 'codex';
 }
@@ -69,6 +71,7 @@ export class Gateway {
   private memoryStore: MemoryStore | null = null;
   private cliSessionStore: CliSessionStore;
   private codexAdapter: CodexAdapter | null = null;
+  private geminiAdvisor: GeminiAdvisor | null = null;
   private workerRegistry: WorkerRegistry;
   private localContextManager: LocalContextStoreManager;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -104,6 +107,12 @@ export class Gateway {
     });
     this.workerRegistry.on('task:completed', (task: unknown) => {
       this.broadcastToAll('worker:task:completed', task);
+    });
+    this.workerRegistry.on('task:timeout', (task: unknown) => {
+      this.broadcastToAll('worker:task:timeout', task);
+    });
+    this.workerRegistry.on('task:final_after_timeout', (task: unknown) => {
+      this.broadcastToAll('worker:task:final_after_timeout', task);
     });
 
     // Initialize LocalContextStoreManager
@@ -230,6 +239,18 @@ export class Gateway {
       this.codexAdapter.setLocalContextManager(this.localContextManager);
       this.codexAdapter.registerRpcMethods(this.rpcRouter);
     }
+
+    // Wire Gemini Advisor if provided
+    if (options.geminiAdvisor) {
+      this.geminiAdvisor = options.geminiAdvisor;
+      this.geminiAdvisor.setLocalContextManager(this.localContextManager);
+      this.geminiAdvisor.on('status', (status: unknown) => {
+        this.broadcastToAll('gemini:status', status);
+      });
+      this.geminiAdvisor.on('analysis:complete', (analysis: unknown) => {
+        this.broadcastToAll('gemini:analysis', analysis);
+      });
+    }
   }
 
   async start(): Promise<{ port: number; host: string; apiKey: string }> {
@@ -256,6 +277,7 @@ export class Gateway {
         cliSessionStore: this.cliSessionStore,
         memoryStore: this.memoryStore ?? undefined,
         codexAdapter: this.codexAdapter ?? undefined,
+        geminiAdvisor: this.geminiAdvisor ?? undefined,
         workerRegistry: this.workerRegistry,
         localContextManager: this.localContextManager,
         onRunCreated: () => this.broadcastRunsList(),
@@ -324,6 +346,11 @@ export class Gateway {
       }
     }
     this.clients.clear();
+
+    // Shutdown Gemini Advisor
+    if (this.geminiAdvisor) {
+      await this.geminiAdvisor.shutdown().catch(() => {});
+    }
 
     // Close stores last (may have pending writes)
     if (this.memoryStore) this.memoryStore.close();

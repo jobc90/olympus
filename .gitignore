@@ -6,6 +6,9 @@ dist/
 .env.local
 .env.*.local
 
+# Temp files
+.tmp/
+
 # OS files
 .DS_Store
 Thumbs.db
@@ -42,7 +45,7 @@ coverage/
 !CLAUDE.md
 
 # Olympus orchestrator auto-generated files (created by `olympus server start`)
-AGENTS.md
+/AGENTS.md
 
 # Claude Code local settings (machine-specific, NOT committed)
 .claude/settings.local.json

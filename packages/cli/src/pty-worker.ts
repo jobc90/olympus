@@ -53,6 +53,7 @@ export interface TaskResult {
   success: boolean;
   text: string;
   durationMs: number;
+  timeout?: boolean;  // 30분 타임아웃 발생 여부
 }
 
 interface ProcessingState {
@@ -70,6 +71,20 @@ interface ProcessingState {
   /** 백그라운드 에이전트가 활성 상태인지 (완료 감지 억제) */
   hasBackgroundAgents: boolean;
   /** 마지막으로 백그라운드 에이전트 출력이 감지된 시각 */
+  lastAgentActivityAt: number;
+}
+
+interface TimeoutMonitoringState {
+  phase: 'timeout_monitoring';
+  prompt: string;
+  startTime: number;
+  buffer: string;
+  onFinalResult: (r: TaskResult) => void;
+  postTimeoutBuffer: string;
+  absoluteTimer: ReturnType<typeof setTimeout>;
+  monitorInactivityTimer: ReturnType<typeof setTimeout> | null;
+  monitorSettleTimer: ReturnType<typeof setTimeout> | null;
+  hasBackgroundAgents: boolean;
   lastAgentActivityAt: number;
 }
 
@@ -94,6 +109,10 @@ const AGENT_COOLDOWN_MS = 30_000;
 
 /** 절대 최대 타임아웃 */
 const MAX_TASK_TIMEOUT_MS = 30 * 60 * 1000; // 30분
+
+const ABSOLUTE_MAX_TIMEOUT_MS = 60 * 60 * 1000; // 60분 절대 한계
+const MONITOR_INACTIVITY_TIMEOUT_MS = 60_000;    // 모니터링 비활동 1분
+const MONITOR_SETTLE_MS = 10_000;                 // 모니터링 settle 10초
 
 /** 준비 상태 대기 최대 시간 */
 const READY_TIMEOUT_MS = 60_000;
@@ -307,9 +326,14 @@ export function extractResultFromBuffer(buffer: string, prompt: string): string 
 // PtyWorker Class
 // ──────────────────────────────────────────────
 
+export interface TimeoutAwareResult {
+  result: TaskResult;
+  finalResult?: Promise<TaskResult>;  // timeout 시에만 존재
+}
+
 export class PtyWorker {
   private pty: { write: (data: string) => void; kill: () => void; onData: { (handler: (data: string) => void): { dispose: () => void } }; onExit: { (handler: (e: { exitCode: number }) => void): { dispose: () => void } }; resize: (cols: number, rows: number) => void } | null = null;
-  private state: { phase: 'idle' } | ProcessingState = { phase: 'idle' };
+  private state: { phase: 'idle' } | ProcessingState | TimeoutMonitoringState = { phase: 'idle' };
   private idleBuffer = '';
   private ready = false;
   private readyResolve: (() => void) | null = null;
@@ -368,6 +392,31 @@ export class PtyWorker {
         }
       }
 
+      if (this.state.phase === 'timeout_monitoring') {
+        this.state.postTimeoutBuffer += data;
+        this.state.buffer += data;
+        // 메모리 관리: 버퍼 500KB 상한
+        if (this.state.buffer.length > 500_000) {
+          this.state.buffer = this.state.buffer.slice(-400_000);
+        }
+        if (this.state.postTimeoutBuffer.length > 200_000) {
+          this.state.postTimeoutBuffer = this.state.postTimeoutBuffer.slice(-150_000);
+        }
+        // 백그라운드 에이전트 감지
+        if (hasBackgroundAgentActivity(data)) {
+          this.state.hasBackgroundAgents = true;
+          this.state.lastAgentActivityAt = Date.now();
+          if (this.state.monitorSettleTimer) {
+            clearTimeout(this.state.monitorSettleTimer);
+            this.state.monitorSettleTimer = null;
+          }
+        }
+        this.checkMonitorCompletion();
+        if (!isStatusBarUpdate(data)) {
+          this.resetMonitorInactivityTimer();
+        }
+      }
+
       if (!this.ready) {
         const clean = stripAnsi(this.idleBuffer);
         if (this.detectIdlePrompt(clean)) {
@@ -383,6 +432,14 @@ export class PtyWorker {
       if (this.state.phase === 'processing') {
         this.clearTimers();
         this.state.reject(new Error(`Claude CLI가 예기치 않게 종료됨 (code: ${exitCode})`));
+        this.state = { phase: 'idle' };
+      } else if (this.state.phase === 'timeout_monitoring') {
+        this.clearMonitorTimers();
+        this.state.onFinalResult({
+          success: false,
+          text: `Claude CLI가 예기치 않게 종료됨 (code: ${exitCode})`,
+          durationMs: Date.now() - this.state.startTime,
+        });
         this.state = { phase: 'idle' };
       }
       this.restoreStdin();
@@ -444,6 +501,113 @@ export class PtyWorker {
     });
 
     this.idleBuffer = '';
+  }
+
+  /**
+   * 타임아웃 인식 작업 실행.
+   * 30분 미만 완료: { result } 반환.
+   * 30분 타임아웃: { result(부분), finalResult: Promise } 반환.
+   */
+  async executeTaskWithTimeout(prompt: string): Promise<TimeoutAwareResult> {
+    if (this.state.phase !== 'idle') {
+      throw new Error('이미 작업 진행 중입니다');
+    }
+    if (!this.pty) {
+      throw new Error('PTY가 시작되지 않았습니다');
+    }
+
+    return new Promise<TimeoutAwareResult>((resolveOuter) => {
+      const startTime = Date.now();
+
+      const maxTimer = setTimeout(() => {
+        if (this.state.phase === 'processing') {
+          // 30분 타임아웃 → 부분 결과 생성 + monitoring 전환
+          const partialResult = this.extractResult();
+          const processingState = this.state as ProcessingState;
+
+          // processing 타이머 정리
+          if (processingState.inactivityTimer) clearTimeout(processingState.inactivityTimer);
+          if (processingState.settleTimer) clearTimeout(processingState.settleTimer);
+          // maxTimer는 이미 발동됨
+
+          // finalResult Promise 생성
+          let resolveFinal: (r: TaskResult) => void;
+          const finalResult = new Promise<TaskResult>((resolve) => {
+            resolveFinal = resolve;
+          });
+
+          // 60분 절대 한계 타이머
+          const absoluteTimer = setTimeout(() => {
+            this.forceCompleteMonitoring();
+          }, ABSOLUTE_MAX_TIMEOUT_MS - MAX_TASK_TIMEOUT_MS);
+
+          // timeout_monitoring 상태로 전환
+          this.state = {
+            phase: 'timeout_monitoring',
+            prompt,
+            startTime,
+            buffer: processingState.buffer,
+            onFinalResult: resolveFinal!,
+            postTimeoutBuffer: '',
+            absoluteTimer,
+            monitorInactivityTimer: null,
+            monitorSettleTimer: null,
+            hasBackgroundAgents: processingState.hasBackgroundAgents,
+            lastAgentActivityAt: processingState.lastAgentActivityAt,
+          };
+
+          // 모니터링 비활동 타이머 시작
+          this.resetMonitorInactivityTimer();
+
+          // 부분 결과 즉시 반환 + finalResult Promise 전달
+          resolveOuter({
+            result: {
+              success: true,
+              text: partialResult || '(작업 시간 초과 — 30분, 계속 모니터링 중)',
+              durationMs: Date.now() - startTime,
+              timeout: true,
+            },
+            finalResult,
+          });
+        }
+      }, MAX_TASK_TIMEOUT_MS);
+
+      // 내부 resolve: 정상 완료 시 resolveOuter를 timeout 없이 호출
+      const innerResolve = (r: TaskResult) => {
+        resolveOuter({ result: r });
+      };
+
+      this.state = {
+        phase: 'processing',
+        prompt,
+        startTime,
+        buffer: '',
+        resolve: innerResolve,
+        reject: (e: Error) => {
+          resolveOuter({
+            result: { success: false, text: e.message, durationMs: Date.now() - startTime },
+          });
+        },
+        inactivityTimer: null,
+        maxTimer,
+        settleTimer: null,
+        submitted: false,
+        submittedAt: 0,
+        hasBackgroundAgents: false,
+        lastAgentActivityAt: 0,
+      };
+
+      // 프롬프트 입력
+      this.pty!.write(prompt);
+      setTimeout(() => {
+        if (this.pty && this.state.phase === 'processing') {
+          this.pty.write('\r');
+          (this.state as ProcessingState).submitted = true;
+          (this.state as ProcessingState).submittedAt = Date.now();
+          this.resetInactivityTimer();
+        }
+      }, SUBMIT_DELAY_MS);
+    });
   }
 
   /**
@@ -509,7 +673,7 @@ export class PtyWorker {
   }
 
   get isProcessing(): boolean {
-    return this.state.phase === 'processing';
+    return this.state.phase === 'processing' || this.state.phase === 'timeout_monitoring';
   }
 
   get isAlive(): boolean {
@@ -519,6 +683,13 @@ export class PtyWorker {
   destroy(): void {
     if (this.state.phase === 'processing') {
       this.clearTimers();
+    } else if (this.state.phase === 'timeout_monitoring') {
+      this.clearMonitorTimers();
+      this.state.onFinalResult({
+        success: false,
+        text: '워커 종료로 인한 작업 중단',
+        durationMs: Date.now() - this.state.startTime,
+      });
     }
     this.restoreStdin();
     this.pty?.kill();
@@ -662,6 +833,93 @@ export class PtyWorker {
     if (this.state.inactivityTimer) clearTimeout(this.state.inactivityTimer);
     if (this.state.settleTimer) clearTimeout(this.state.settleTimer);
     clearTimeout(this.state.maxTimer);
+  }
+
+  private checkMonitorCompletion(): void {
+    if (this.state.phase !== 'timeout_monitoring') return;
+
+    const now = Date.now();
+
+    // 백그라운드 에이전트 쿨다운
+    if (this.state.hasBackgroundAgents && now - this.state.lastAgentActivityAt < AGENT_COOLDOWN_MS) {
+      if (this.state.monitorSettleTimer) {
+        clearTimeout(this.state.monitorSettleTimer);
+        this.state.monitorSettleTimer = null;
+      }
+      return;
+    }
+
+    const clean = stripAnsi(this.state.postTimeoutBuffer);
+
+    if (this.detectIdlePrompt(clean)) {
+      if (!this.state.monitorSettleTimer) {
+        this.state.monitorSettleTimer = setTimeout(() => {
+          this.completeMonitoring();
+        }, MONITOR_SETTLE_MS);
+      }
+    } else if (this.state.monitorSettleTimer) {
+      clearTimeout(this.state.monitorSettleTimer);
+      this.state.monitorSettleTimer = null;
+    }
+  }
+
+  private resetMonitorInactivityTimer(): void {
+    if (this.state.phase !== 'timeout_monitoring') return;
+
+    if (this.state.monitorInactivityTimer) {
+      clearTimeout(this.state.monitorInactivityTimer);
+    }
+
+    this.state.monitorInactivityTimer = setTimeout(() => {
+      if (this.state.phase === 'timeout_monitoring') {
+        // 비활동 1분 → 완료로 간주
+        this.completeMonitoring();
+      }
+    }, MONITOR_INACTIVITY_TIMEOUT_MS);
+  }
+
+  private completeMonitoring(): void {
+    if (this.state.phase !== 'timeout_monitoring') return;
+
+    const result = extractResultFromBuffer(this.state.buffer, this.state.prompt);
+    const durationMs = Date.now() - this.state.startTime;
+    const onFinalResult = this.state.onFinalResult;
+
+    this.clearMonitorTimers();
+    this.state = { phase: 'idle' };
+    this.idleBuffer = '';
+
+    onFinalResult({
+      success: true,
+      text: result,
+      durationMs,
+    });
+  }
+
+  private forceCompleteMonitoring(): void {
+    if (this.state.phase !== 'timeout_monitoring') return;
+
+    const result = extractResultFromBuffer(this.state.buffer, this.state.prompt);
+    const durationMs = Date.now() - this.state.startTime;
+    const onFinalResult = this.state.onFinalResult;
+
+    this.clearMonitorTimers();
+    this.state = { phase: 'idle' };
+    this.idleBuffer = '';
+
+    onFinalResult({
+      success: true,
+      text: result || '(작업 시간 초과 — 60분, 강제 완료)',
+      durationMs,
+    });
+  }
+
+  private clearMonitorTimers(): void {
+    if (this.state.phase !== 'timeout_monitoring') return;
+
+    if (this.state.monitorInactivityTimer) clearTimeout(this.state.monitorInactivityTimer);
+    if (this.state.monitorSettleTimer) clearTimeout(this.state.monitorSettleTimer);
+    clearTimeout(this.state.absoluteTimer);
   }
 
   // ──────────────────────────────────────

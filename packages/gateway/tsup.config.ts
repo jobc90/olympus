@@ -7,5 +7,5 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   platform: 'node',
-  external: [/^node:/],
+  external: [/^node:/, 'node-pty'],
 });

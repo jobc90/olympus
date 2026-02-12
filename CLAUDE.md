@@ -1,14 +1,17 @@
-# Olympus — Claude CLI Enhanced Platform
+# Olympus v1.0 — Claude CLI Enhanced Platform
 
-**Multi-AI Orchestration + Gateway + Dashboard**
+**Team Engineering Protocol + Gateway + Dashboard**
 
-## Language
+## Language Policy
 
-**항상 한국어(한글)로 응답하세요.** Always respond in Korean.
+**User-facing output (CLI terminal, Telegram chat) → Korean (한국어)**
+**All internal operations → English**: inter-agent communication, subagent task prompts, context storage (LocalContextStore), system prompts, reasoning, logs.
+
+사용자에게 직접 보여지는 응답만 한국어로 작성하고, 나머지 모든 내부 작업은 영어로 진행합니다.
 
 ## Architecture
 
-Olympus는 Claude CLI를 중심으로 한 Multi-AI 협업 개발 플랫폼이다.
+Olympus는 Claude CLI를 중심으로 한 Multi-AI 협업 개발 플랫폼이다. v1.0부터 19개 Custom Agent + Team Engineering Protocol을 내장한다.
 
 ```
 protocol → core → gateway → cli
@@ -45,9 +48,16 @@ protocol → core → gateway → cli
 
 ### Telegram Bot 워커 위임
 - **직접 멘션 방식**: `@워커이름 작업` 형식으로 사용자가 워커에 직접 작업 지시
-- **인라인 쿼리**: `@봇이름` 입력 시 워커 목록 표시 (세션 목록 대신)
-- **Codex chat**: 워커 위임 기능 제거, chat 응답만 반환 (`delegate`, `no_workers` 타입 삭제)
+- **Team 모드**: `/team 작업` 봇 커맨드 또는 `@워커 team 작업` 접두어로 Team Engineering Protocol 활성화
+- **인라인 쿼리**: `@봇이름` 입력 시 워커 목록 표시
 - **`/workers` 명령어**: 워커 목록 조회
+
+### 19 Custom Agents (`.claude/agents/`)
+- **Core 3**: explore (Haiku), executor (Sonnet), writer (Haiku)
+- **On-Demand 16**: architect, analyst, planner, designer, researcher, code-reviewer, verifier, qa-tester, vision, test-engineer, build-fixer, git-master, api-reviewer, performance-reviewer, security-reviewer, style-reviewer
+
+### Team Engineering Protocol (`/team` command)
+5 Core Mechanisms: Consensus Protocol, 2-Phase Development, Two-Stage Review, Evidence-Based QA, Circuit Breaker
 
 ## Development
 

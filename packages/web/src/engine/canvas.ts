@@ -6,7 +6,7 @@ import type { GridPos } from './isometric';
 import { drawIsometricTile, gridToScreen } from './isometric';
 import { drawWalls, drawDividerWall, drawZoneLabel, drawBackground, drawNightOverlay, drawMarbleVeins } from '../sprites/decorations';
 import { drawFurniture, drawMonitorScreen, drawRoomba } from '../sprites/furniture';
-import { drawWorker, drawCodex, drawNameTag, drawStatusAura, drawUnicorn, drawCupid } from '../sprites/characters';
+import { drawWorker, drawCodex, drawGemini, drawNameTag, drawStatusAura, drawUnicorn, drawCupid } from '../sprites/characters';
 import { drawBubble, drawParticle } from '../sprites/effects';
 
 // ---------------------------------------------------------------------------
@@ -35,8 +35,9 @@ export type CharacterAnim =
   | 'nod'
   | 'wave';
 
-export type WorkerAvatar = 'athena' | 'poseidon' | 'ares' | 'apollo' | 'artemis' | 'hermes' | 'hephaestus' | 'dionysus' | 'demeter' | 'aphrodite' | 'hera' | 'hades' | 'persephone' | 'prometheus' | 'helios' | 'nike' | 'pan' | 'hecate' | 'iris' | 'heracles';
+export type WorkerAvatar = 'athena' | 'poseidon' | 'ares' | 'apollo' | 'artemis' | 'hermes' | 'hephaestus' | 'dionysus' | 'demeter' | 'aphrodite' | 'hera' | 'hades' | 'persephone' | 'prometheus' | 'helios' | 'nike' | 'pan' | 'hecate' | 'iris' | 'heracles' | 'selene';
 export type CodexAvatar = 'zeus';
+export type GeminiAvatar = 'hera';
 
 export interface Bubble {
   text: string;
@@ -64,6 +65,12 @@ export interface CodexRuntime {
   anim: CharacterAnim;
 }
 
+export interface GeminiRuntime {
+  behavior: string;
+  currentTask: string | null;
+  anim: CharacterAnim;
+}
+
 export interface NpcRuntime {
   id: string;
   type: 'unicorn' | 'cupid';
@@ -76,6 +83,7 @@ export interface NpcRuntime {
 export interface OlympusMountainState {
   workers: WorkerRuntime[];
   codex: CodexRuntime;
+  gemini: GeminiRuntime;
   npcs: NpcRuntime[];
   bubbles: Bubble[];
   particles: Particle[];
@@ -97,6 +105,12 @@ export interface CodexConfig {
   name: string;
   emoji: string;
   avatar: CodexAvatar;
+}
+
+export interface GeminiConfig {
+  name: string;
+  emoji: string;
+  avatar: GeminiAvatar;
 }
 
 export interface FurnitureItem {
@@ -132,6 +146,7 @@ export interface LayoutProvider {
 interface RenderConfig {
   workers: WorkerConfig[];
   codex: CodexConfig;
+  gemini?: GeminiConfig;
   connected: boolean;
   demoMode: boolean;
   layout: LayoutProvider;
@@ -288,6 +303,25 @@ export function renderFrame(
       drawNameTag(ctx, sp.x, sp.y + 2, config.codex.name, '#FFD700');
     },
   });
+
+  // Gemini (Hera) — positioned near Zeus Temple
+  if (config.gemini && state.gemini) {
+    const geminiPos = { col: 5, row: 7 };
+    drawables.push({
+      depth: geminiPos.row + geminiPos.col,
+      draw: () => {
+        const sp = gridToScreen(geminiPos);
+        drawGemini(
+          ctx, sp.x, sp.y,
+          state.gemini.anim,
+          state.tick,
+          config.gemini!.avatar,
+          config.gemini!.emoji,
+        );
+        drawNameTag(ctx, sp.x, sp.y + 2, config.gemini!.name, '#9C27B0');
+      },
+    });
+  }
 
   drawables.sort((a, b) => a.depth - b.depth);
   for (const d of drawables) d.draw();

@@ -2,7 +2,7 @@
 // Behavior -> Zone + Animation Mapping (Olympus 16 behaviors)
 // ============================================================================
 
-import type { WorkerBehavior, CharacterAnim, ZoneId, Particle } from '../lib/types';
+import type { WorkerBehavior, GeminiBehavior, CharacterAnim, ZoneId, Particle } from '../lib/types';
 
 export interface BehaviorMapping {
   /** Target zone (or '_own_sanctuary' for the worker's assigned sanctuary) */
@@ -42,6 +42,15 @@ export const BEHAVIOR_MAP: Record<WorkerBehavior, BehaviorMapping> = {
   directing:     { zone: 'zeus_temple',    anim: 'point',        altAnims: ['hand_task'],       bubble: 'Assigning',   altBubbles: ['Do this', 'Priority!'],  particle: 'sparkle',   priority: 4 },
   analyzing:     { zone: 'zeus_temple',    anim: 'sit_typing',   altAnims: ['keyboard_mash'],   bubble: 'Analyzing',   altBubbles: ['Hmm...', 'Interesting'],  particle: 'code',      priority: 5 },
   meeting:       { zone: 'agora',          anim: 'raise_hand',   altAnims: ['wave', 'nod'],     bubble: 'Meeting',     particle: null,        priority: 4 },
+};
+
+export const GEMINI_BEHAVIOR_MAP: Record<GeminiBehavior, BehaviorMapping> = {
+  idle:        { zone: 'ambrosia_hall',   anim: 'sit_idle',      bubble: null,         particle: null,        priority: 1 },
+  scanning:    { zone: 'ambrosia_hall',   anim: 'sit_typing',    bubble: 'Scanning',   particle: 'binary',    priority: 3 },
+  analyzing:   { zone: 'ambrosia_hall',   anim: 'keyboard_mash', bubble: 'Analyzing',  particle: 'code',      priority: 5 },
+  advising:    { zone: 'zeus_temple',     anim: 'point',         bubble: 'Advising',   particle: 'sparkle',   priority: 4 },
+  refreshing:  { zone: 'ambrosia_hall',   anim: 'sit_typing',    bubble: 'Refreshing', particle: 'lightbulb', priority: 3 },
+  offline:     { zone: 'propylaea',       anim: 'sleep',         bubble: null,         particle: 'zzz',       priority: 0 },
 };
 
 /** Get the actual zone ID for a behavior, resolving '_own_sanctuary' */

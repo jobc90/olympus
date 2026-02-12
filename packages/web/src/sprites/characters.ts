@@ -2,7 +2,7 @@
 // Generic Character Sprite System
 // ============================================================================
 
-import type { CharacterAnim, Direction, WorkerAvatar, CodexAvatar } from '../engine/canvas';
+import type { CharacterAnim, Direction, WorkerAvatar, CodexAvatar, GeminiAvatar } from '../engine/canvas';
 
 interface CharPalette {
   skin: string;
@@ -30,62 +30,85 @@ const SKIN_TONES: Array<{ skin: string; shadow: string }> = [
 const BASE_SKIN = '#FFDAB9';
 const BASE_SKIN_SHADOW = '#E8C4A0';
 
-type GodFeature = 'warrior_helmet' | 'trident_crown' | 'war_helmet' | 'laurel' | 'silver_tiara' | 'winged_helm' | 'soot' | 'vine_crown' | 'wheat_crown' | 'rose_tiara' | 'royal_crown' | 'dark_helm' | 'flower_crown' | 'torch' | 'solar_crown' | 'wings' | 'horns' | 'mystic_aura' | 'rainbow' | 'lion_mane' | 'golden_crown' | 'none';
+type GodFeature = 'warrior_helmet' | 'trident_crown' | 'war_helmet' | 'laurel' | 'silver_tiara' | 'winged_helm' | 'soot' | 'vine_crown' | 'wheat_crown' | 'rose_tiara' | 'royal_crown' | 'dark_helm' | 'flower_crown' | 'torch' | 'solar_crown' | 'wings' | 'horns' | 'mystic_aura' | 'rainbow' | 'lion_mane' | 'golden_crown' | 'peacock_crown' | 'crescent_diadem' | 'none';
 
 function workerPalette(avatar: WorkerAvatar, color: string, skinToneIndex?: number): CharPalette {
   const tone = SKIN_TONES[(skinToneIndex ?? 0) % SKIN_TONES.length];
   switch (avatar) {
+    // Athena — Goddess of Wisdom & War (vivid steel blue + crimson crest)
     case 'athena':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#3E2723', hairLight: '#5D4037', top: '#78909C', topLight: '#90A4AE', accent: '#607D8B', accentFrame: '#546E7A', pants: '#546E7A', shoes: '#5D4037', eyes: '#333333' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#2C1810', hairLight: '#4A3728', top: '#5C7A99', topLight: '#7B9DBB', accent: '#C62828', accentFrame: '#8E0000', pants: '#3E5871', shoes: '#37474F', eyes: '#263238' };
+    // Poseidon — God of the Sea (deep ocean + seafoam)
     case 'poseidon':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#004D40', hairLight: '#00695C', top: '#0097A7', topLight: '#00BCD4', accent: '#80CBC4', accentFrame: '#4DB6AC', pants: '#00695C', shoes: '#00838F', eyes: '#004D40' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#1A3B4D', hairLight: '#2B5B73', top: '#0277BD', topLight: '#039BE5', accent: '#80DEEA', accentFrame: '#4DD0E1', pants: '#01579B', shoes: '#006064', eyes: '#00838F' };
+    // Ares — God of War (deep crimson + dark bronze)
     case 'ares':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#1A1A1A', hairLight: '#2D2D2D', top: '#B71C1C', topLight: '#D32F2F', accent: '#F44336', accentFrame: '#E53935', pants: '#880E4F', shoes: '#212121', eyes: '#333333' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#1A1A1A', hairLight: '#333333', top: '#C62828', topLight: '#E53935', accent: '#FF5252', accentFrame: '#FF1744', pants: '#880E4F', shoes: '#212121', eyes: '#B71C1C' };
+    // Apollo — God of Sun & Music (warm gold + ivory)
     case 'apollo':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#FFA000', hairLight: '#FFB300', top: '#FFFFFF', topLight: '#FFF8E1', accent: '#FFD700', accentFrame: '#FFC107', pants: '#FFF8E1', shoes: '#FFB300', eyes: '#FF8F00' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#E65100', hairLight: '#FF6D00', top: '#FFFDE7', topLight: '#FFFFFF', accent: '#FFD600', accentFrame: '#FFAB00', pants: '#FFF8E1', shoes: '#F57F17', eyes: '#E65100' };
+    // Artemis — Goddess of the Hunt (deep forest + moonlight silver)
     case 'artemis':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#4E342E', hairLight: '#6D4C41', top: '#2E7D32', topLight: '#388E3C', accent: '#CFD8DC', accentFrame: '#B0BEC5', pants: '#1B5E20', shoes: '#3E2723', eyes: '#333333' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#3E2723', hairLight: '#5D4037', top: '#1B5E20', topLight: '#2E7D32', accent: '#E0E0E0', accentFrame: '#BDBDBD', pants: '#33691E', shoes: '#2E7D32', eyes: '#1B5E20' };
+    // Hermes — Messenger God (vivid sky blue + winged gold)
     case 'hermes':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#795548', hairLight: '#8D6E63', top: '#42A5F5', topLight: '#64B5F6', accent: '#FFFFFF', accentFrame: '#E0E0E0', pants: '#ECEFF1', shoes: '#42A5F5', eyes: '#333333' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#6D4C41', hairLight: '#8D6E63', top: '#1E88E5', topLight: '#42A5F5', accent: '#FFD700', accentFrame: '#FFC107', pants: '#ECEFF1', shoes: '#1565C0', eyes: '#0D47A1' };
+    // Hephaestus — God of the Forge (volcanic brown + forge fire)
     case 'hephaestus':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#3E2723', hairLight: '#4E342E', top: '#6D4C41', topLight: '#795548', accent: '#FF6D00', accentFrame: '#E65100', pants: '#4E342E', shoes: '#3E2723', eyes: '#333333' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#3E2723', hairLight: '#4E342E', top: '#5D4037', topLight: '#795548', accent: '#FF6D00', accentFrame: '#E65100', pants: '#3E2723', shoes: '#4E342E', eyes: '#BF360C' };
+    // Dionysus — God of Wine (rich grape + amethyst)
     case 'dionysus':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#4A148C', hairLight: '#6A1B9A', top: '#7B1FA2', topLight: '#9C27B0', accent: '#CE93D8', accentFrame: '#BA68C8', pants: '#880E4F', shoes: '#6A1B9A', eyes: '#333333' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#4A148C', hairLight: '#6A1B9A', top: '#8E24AA', topLight: '#AB47BC', accent: '#CE93D8', accentFrame: '#BA68C8', pants: '#6A1B9A', shoes: '#4A148C', eyes: '#AA00FF' };
+    // Demeter — Goddess of Harvest (warm earth + harvest gold)
     case 'demeter':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#8D6E63', hairLight: '#A1887F', top: '#558B2F', topLight: '#689F38', accent: '#FFD54F', accentFrame: '#FFCA28', pants: '#5D4037', shoes: '#4E342E', eyes: '#333333' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#6D4C41', hairLight: '#8D6E63', top: '#558B2F', topLight: '#7CB342', accent: '#FFD600', accentFrame: '#FFAB00', pants: '#4E342E', shoes: '#3E2723', eyes: '#33691E' };
+    // Aphrodite — Goddess of Love (vivid rose + pearl)
     case 'aphrodite':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#FFCC80', hairLight: '#FFE0B2', top: '#F48FB1', topLight: '#F8BBD0', accent: '#E91E63', accentFrame: '#EC407A', pants: '#F8BBD0', shoes: '#EC407A', eyes: '#880E4F' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#FFAB91', hairLight: '#FFCCBC', top: '#EC407A', topLight: '#F48FB1', accent: '#FF1744', accentFrame: '#F50057', pants: '#FCE4EC', shoes: '#AD1457', eyes: '#C2185B' };
+    // Hera — Queen of Gods (royal purple + regal gold)
     case 'hera':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#3E2723', hairLight: '#4E342E', top: '#4A148C', topLight: '#6A1B9A', accent: '#FFD700', accentFrame: '#FFC107', pants: '#4A148C', shoes: '#FFD700', eyes: '#333333' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#2C1810', hairLight: '#3E2723', top: '#6A1B9A', topLight: '#8E24AA', accent: '#FFD700', accentFrame: '#FFC107', pants: '#4A148C', shoes: '#FFD700', eyes: '#1B5E20' };
+    // Hades — God of the Underworld (obsidian + ghostly blue)
     case 'hades':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#0D0D0D', hairLight: '#1A1A1A', top: '#212121', topLight: '#303030', accent: '#78909C', accentFrame: '#607D8B', pants: '#0D0D0D', shoes: '#1A1A1A', eyes: '#64B5F6' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#0D0D0D', hairLight: '#1A1A1A', top: '#1A1A2E', topLight: '#263238', accent: '#546E7A', accentFrame: '#455A64', pants: '#0D0D0D', shoes: '#1A1A1A', eyes: '#64B5F6' };
+    // Persephone — Goddess of Spring (spring green + blossom pink)
     case 'persephone':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#5D4037', hairLight: '#795548', top: '#66BB6A', topLight: '#81C784', accent: '#F48FB1', accentFrame: '#F06292', pants: '#4CAF50', shoes: '#388E3C', eyes: '#333333' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#4E342E', hairLight: '#6D4C41', top: '#43A047', topLight: '#66BB6A', accent: '#F06292', accentFrame: '#EC407A', pants: '#2E7D32', shoes: '#1B5E20', eyes: '#2E7D32' };
+    // Prometheus — Titan of Fire (fiery bronze + ember)
     case 'prometheus':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#BF360C', hairLight: '#E65100', top: '#5D4037', topLight: '#6D4C41', accent: '#FF6D00', accentFrame: '#FF9100', pants: '#3E2723', shoes: '#4E342E', eyes: '#333333' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#BF360C', hairLight: '#E65100', top: '#6D4C41', topLight: '#8D6E63', accent: '#FF6D00', accentFrame: '#FF9100', pants: '#3E2723', shoes: '#4E342E', eyes: '#DD2C00' };
+    // Helios — Titan of the Sun (blazing gold + ivory)
     case 'helios':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#FF8F00', hairLight: '#FFA000', top: '#FFF8E1', topLight: '#FFFFFF', accent: '#FFD700', accentFrame: '#FFC107', pants: '#FFB300', shoes: '#FFA000', eyes: '#FF8F00' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#FF8F00', hairLight: '#FFA000', top: '#FFF8E1', topLight: '#FFFFFF', accent: '#FFD600', accentFrame: '#FFAB00', pants: '#F57F17', shoes: '#FF8F00', eyes: '#E65100' };
+    // Nike — Goddess of Victory (radiant white + victory gold)
     case 'nike':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#FFD54F', hairLight: '#FFE082', top: '#FFFFFF', topLight: '#F5F5F5', accent: '#FFD700', accentFrame: '#FFC107', pants: '#F5F5F5', shoes: '#FFD700', eyes: '#333333' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#FFD54F', hairLight: '#FFE082', top: '#FAFAFA', topLight: '#FFFFFF', accent: '#FFD700', accentFrame: '#FFC107', pants: '#F5F5F5', shoes: '#FFD700', eyes: '#F57F17' };
+    // Pan — God of the Wild (rustic brown + forest green)
     case 'pan':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#5D4037', hairLight: '#795548', top: '#6D4C41', topLight: '#8D6E63', accent: '#4CAF50', accentFrame: '#388E3C', pants: '#5D4037', shoes: '#3E2723', eyes: '#333333' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#4E342E', hairLight: '#6D4C41', top: '#5D4037', topLight: '#795548', accent: '#43A047', accentFrame: '#2E7D32', pants: '#4E342E', shoes: '#33691E', eyes: '#2E7D32' };
+    // Hecate — Goddess of Magic (deep midnight + violet flame)
     case 'hecate':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#1A1A2E', hairLight: '#16213E', top: '#311B92', topLight: '#4527A0', accent: '#B388FF', accentFrame: '#9575CD', pants: '#1A237E', shoes: '#0D0D0D', eyes: '#B388FF' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#1A1A2E', hairLight: '#16213E', top: '#4A148C', topLight: '#6A1B9A', accent: '#D500F9', accentFrame: '#AA00FF', pants: '#1A237E', shoes: '#0D0D0D', eyes: '#D500F9' };
+    // Iris — Goddess of Rainbow (vivid prismatic spectrum)
     case 'iris':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#FF5252', hairLight: '#FF8A80', top: '#E040FB', topLight: '#EA80FC', accent: '#E040FB', accentFrame: '#7C4DFF', pants: '#42A5F5', shoes: '#7C4DFF', eyes: '#E040FB' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#FF1744', hairLight: '#FF5252', top: '#D500F9', topLight: '#E040FB', accent: '#00E5FF', accentFrame: '#18FFFF', pants: '#2979FF', shoes: '#AA00FF', eyes: '#D500F9' };
+    // Heracles — Greatest Hero (lion pelt + heroic gold)
     case 'heracles':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#3E2723', hairLight: '#5D4037', top: '#C49A6C', topLight: '#DEB887', accent: '#FFD700', accentFrame: '#FFC107', pants: '#8D6E63', shoes: '#5D4037', eyes: '#333333' };
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#3E2723', hairLight: '#5D4037', top: '#C49A6C', topLight: '#DEB887', accent: '#FFD700', accentFrame: '#FFC107', pants: '#795548', shoes: '#4E342E', eyes: '#5D4037' };
+    // Selene — Goddess of the Moon (silver + lunar blue)
+    case 'selene':
+      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#B0BEC5', hairLight: '#CFD8DC', top: '#283593', topLight: '#3949AB', accent: '#E0E0E0', accentFrame: '#BDBDBD', pants: '#1A237E', shoes: '#303F9F', eyes: '#7986CB' };
   }
 }
 
 function codexPalette(_avatar: CodexAvatar): CharPalette {
-  // Zeus — King of the Gods
+  // Zeus — King of the Gods (Divine Golden Aura)
   return {
-    skin: '#FFDAB9', skinShadow: '#E8C4A0',
-    hair: '#9E9E9E', hairLight: '#BDBDBD',
-    top: '#FFFFFF', topLight: '#E0E0E0',
-    accent: '#FFD700', accentFrame: '#FFC107',
-    pants: '#1A237E', shoes: '#DAA520', eyes: '#333333',
+    skin: '#FFE0B2', skinShadow: '#FFCC80',
+    hair: '#FFD54F', hairLight: '#FFE082',
+    top: '#FFC107', topLight: '#FFD54F',
+    accent: '#FFD700', accentFrame: '#FF8F00',
+    pants: '#F57F17', shoes: '#FFB300', eyes: '#FF6F00',
   };
 }
 
@@ -131,16 +154,36 @@ function drawCharacter(
 
   const frame = Math.floor(tick / 8) % 2;
 
-  ctx.font = '16px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#FFFFFF';
+  // ── Emoji symbol with sparkle effect ──
+  const emojiY = oy - 4;
+  const bob = Math.sin(tick * 0.08) * 1.5; // gentle float
   ctx.save();
   if (direction === 'w') {
     ctx.translate(x, 0);
     ctx.scale(-1, 1);
     ctx.translate(-x, 0);
   }
-  ctx.fillText(emoji, x, oy + 2);
+  // Glow halo behind emoji
+  const glowAlpha = 0.25 + Math.sin(tick * 0.12) * 0.15;
+  ctx.shadowColor = '#FFD700';
+  ctx.shadowBlur = 8 + Math.sin(tick * 0.1) * 4;
+  ctx.font = '22px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(emoji, x, emojiY + bob);
+  ctx.shadowBlur = 0;
+  // Sparkle particles (4 points rotating around emoji)
+  const sparkleR = 14;
+  const sparkleCount = 4;
+  for (let i = 0; i < sparkleCount; i++) {
+    const angle = (tick * 0.05) + (i * Math.PI * 2 / sparkleCount);
+    const sx = x + Math.cos(angle) * sparkleR;
+    const sy = (emojiY + bob - 6) + Math.sin(angle) * sparkleR * 0.6;
+    const sparkAlpha = 0.4 + Math.sin(tick * 0.15 + i * 1.5) * 0.4;
+    ctx.globalAlpha = Math.max(0, sparkAlpha);
+    ctx.fillStyle = i % 2 === 0 ? '#FFFFFF' : '#FFF9C4';
+    ctx.fillRect(sx - 1, sy - 1, 2, 2);
+  }
+  ctx.globalAlpha = 1;
   ctx.restore();
 
   // Hair
@@ -149,14 +192,27 @@ function drawCharacter(
 
   // God-specific features (headgear/accessories)
   switch (feature) {
-    case 'golden_crown': // Zeus
+    case 'golden_crown': { // Zeus — Divine Golden Crown with aura
+      // Expanded crown base (wider)
+      px(ctx, 3, 2, palette.accent, scale, ox, oy);
       px(ctx, 4, 1, palette.accent, scale, ox, oy);
-      px(ctx, 5, 0, palette.accent, scale, ox, oy);
-      px(ctx, 6, 0, palette.accent, scale, ox, oy);
-      px(ctx, 7, 1, palette.accent, scale, ox, oy);
       px(ctx, 5, 1, palette.accentFrame, scale, ox, oy);
       px(ctx, 6, 1, palette.accentFrame, scale, ox, oy);
+      px(ctx, 7, 1, palette.accent, scale, ox, oy);
+      px(ctx, 8, 2, palette.accent, scale, ox, oy);
+      // Crown spires (3 prongs)
+      px(ctx, 4, 0, '#FFF176', scale, ox, oy);
+      px(ctx, 6, 0, '#FFF176', scale, ox, oy);
+      // Center jewel (pulsing glow)
+      const zeusGlow = Math.floor(tick / 20) % 3;
+      px(ctx, 5, 0, zeusGlow === 0 ? '#FFFFFF' : zeusGlow === 1 ? '#FFF9C4' : '#FFD700', scale, ox, oy);
+      // Side glow flickers (divine aura)
+      if (Math.floor(tick / 15) % 4 !== 0) {
+        px(ctx, 2, 3, 'rgba(255,215,0,0.3)', scale, ox, oy);
+        px(ctx, 9, 3, 'rgba(255,215,0,0.3)', scale, ox, oy);
+      }
       break;
+    }
     case 'warrior_helmet': // Athena
       for (let i = 3; i <= 8; i++) px(ctx, i, 2, '#78909C', scale, ox, oy);
       for (let i = 4; i <= 7; i++) px(ctx, i, 1, '#90A4AE', scale, ox, oy);
@@ -323,6 +379,39 @@ function drawCharacter(
       px(ctx, 9, 3, '#DEB887', scale, ox, oy);
       px(ctx, 9, 4, '#C49A6C', scale, ox, oy);
       for (let i = 3; i <= 8; i++) px(ctx, i, 1, '#DEB887', scale, ox, oy);
+      break;
+    case 'crescent_diadem': // Selene — silver crescent moon
+      // Silver crescent arc
+      px(ctx, 4, 1, '#E0E0E0', scale, ox, oy);
+      px(ctx, 5, 0, '#F5F5F5', scale, ox, oy);
+      px(ctx, 6, 0, '#FFFFFF', scale, ox, oy);
+      px(ctx, 7, 1, '#E0E0E0', scale, ox, oy);
+      // Moon glow (subtle shimmer)
+      if (Math.floor(tick / 20) % 2 === 0) {
+        px(ctx, 5, 1, '#E8EAF6', scale, ox, oy);
+        px(ctx, 6, 1, '#C5CAE9', scale, ox, oy);
+      } else {
+        px(ctx, 5, 1, '#C5CAE9', scale, ox, oy);
+        px(ctx, 6, 1, '#E8EAF6', scale, ox, oy);
+      }
+      break;
+    case 'peacock_crown': // Hera (Gemini) — royal diadem with peacock feathers
+      // Gold diadem base
+      px(ctx, 3, 2, '#FFD700', scale, ox, oy);
+      px(ctx, 4, 1, '#FFD700', scale, ox, oy);
+      px(ctx, 5, 1, '#FFD700', scale, ox, oy);
+      px(ctx, 6, 1, '#FFD700', scale, ox, oy);
+      px(ctx, 7, 1, '#FFD700', scale, ox, oy);
+      px(ctx, 8, 2, '#FFD700', scale, ox, oy);
+      // Peacock feather eyes (teal + purple shimmer)
+      px(ctx, 4, 0, '#00897B', scale, ox, oy);
+      px(ctx, 6, 0, '#7B1FA2', scale, ox, oy);
+      // Center jewel (alternating shimmer)
+      if (Math.floor(tick / 30) % 2 === 0) {
+        px(ctx, 5, 0, '#E040FB', scale, ox, oy);
+      } else {
+        px(ctx, 5, 0, '#00BCD4', scale, ox, oy);
+      }
       break;
     case 'none':
     default:
@@ -719,6 +808,7 @@ export function drawWorker(
     hecate: 'mystic_aura',
     iris: 'rainbow',
     heracles: 'lion_mane',
+    selene: 'crescent_diadem',
   };
   drawCharacter(ctx, x, y, anim, direction, tick, pal, emoji, featureMap[avatar]);
 }
@@ -733,6 +823,29 @@ export function drawCodex(
 ): void {
   const pal = codexPalette(_avatar);
   drawCharacter(ctx, x, y, anim, 's', tick, pal, emoji, 'golden_crown');
+}
+
+function geminiPalette(_avatar: GeminiAvatar): CharPalette {
+  // Hera — Queen of the Gods
+  return {
+    skin: '#F5E6D3', skinShadow: '#D4C4B0',
+    hair: '#3E2723', hairLight: '#5D4037',
+    top: '#7B1FA2', topLight: '#AB47BC',
+    accent: '#FFD700', accentFrame: '#FFC107',
+    pants: '#4A148C', shoes: '#5D4037', eyes: '#1B5E20',
+  };
+}
+
+export function drawGemini(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number,
+  anim: CharacterAnim,
+  tick: number,
+  _avatar: GeminiAvatar,
+  emoji: string,
+): void {
+  const pal = geminiPalette(_avatar);
+  drawCharacter(ctx, x, y, anim, 's', tick, pal, emoji, 'peacock_crown');
 }
 
 export function drawNameTag(

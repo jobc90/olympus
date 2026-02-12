@@ -63,9 +63,12 @@ serverCommand
       codexAdapter = await initCodexAdapter(config);
     }
 
+    // Initialize Gemini Advisor (optional, graceful degradation)
+    const geminiAdvisor = await initGeminiAdvisor();
+
     // Start Gateway
     if (startGateway) {
-      gateway = await startGatewayServer(opts.port, config, codexAdapter ?? undefined, mode);
+      gateway = await startGatewayServer(opts.port, config, codexAdapter ?? undefined, mode, geminiAdvisor ?? undefined);
     }
 
     // Start Dashboard
@@ -279,7 +282,7 @@ serverCommand
     console.log();
   });
 
-async function startGatewayServer(port: string, config: { gatewayHost: string; apiKey: string }, codexAdapter?: unknown, mode?: string) {
+async function startGatewayServer(port: string, config: { gatewayHost: string; apiKey: string }, codexAdapter?: unknown, mode?: string, geminiAdvisor?: unknown) {
   const { Gateway } = await import('@olympus-dev/gateway');
 
   const gatewayOpts: Record<string, unknown> = {
@@ -288,6 +291,9 @@ async function startGatewayServer(port: string, config: { gatewayHost: string; a
   };
   if (codexAdapter) {
     gatewayOpts.codexAdapter = codexAdapter;
+  }
+  if (geminiAdvisor) {
+    gatewayOpts.geminiAdvisor = geminiAdvisor;
   }
   if (mode) {
     gatewayOpts.mode = mode;
@@ -503,6 +509,51 @@ async function initCodexAdapter(config: { gatewayHost: string; gatewayPort: numb
     console.log(chalk.yellow(`   ⚠ Codex Orchestrator 초기화 실패: ${(err as Error).message}`));
     console.log(chalk.gray('   Legacy 모드로 계속합니다.'));
     console.log();
+    return null;
+  }
+}
+
+/**
+ * Initialize Gemini Advisor (optional — graceful degradation if gemini CLI not available)
+ */
+async function initGeminiAdvisor() {
+  try {
+    const { execSync } = await import('child_process');
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+
+    // gemini CLI 존재 확인
+    try {
+      execSync('which gemini', { stdio: 'pipe' });
+    } catch {
+      console.log(chalk.gray('  - Gemini Advisor: gemini CLI 미설치 (건너뜀)'));
+      return null;
+    }
+
+    const { GeminiAdvisor } = await import('@olympus-dev/gateway');
+
+    // 프로젝트 스캔
+    const workspacePath = process.cwd();
+    const projects: Array<{ name: string; path: string }> = [];
+
+    const entries = fs.readdirSync(workspacePath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const projectPath = path.join(workspacePath, entry.name);
+      const hasProjectMarker =
+        fs.existsSync(path.join(projectPath, '.git')) ||
+        fs.existsSync(path.join(projectPath, 'package.json'));
+      if (!hasProjectMarker) continue;
+      projects.push({ name: entry.name, path: projectPath });
+    }
+
+    const advisor = new GeminiAdvisor();
+    await advisor.initialize(projects);
+
+    console.log(chalk.green(`  ✓ Gemini Advisor 초기화 완료 (프로젝트 ${projects.length}개)`));
+    return advisor;
+  } catch (err) {
+    console.log(chalk.yellow(`  ⚠ Gemini Advisor 초기화 실패 (선택 기능): ${(err as Error).message}`));
     return null;
   }
 }

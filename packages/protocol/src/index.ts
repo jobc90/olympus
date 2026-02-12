@@ -201,3 +201,7 @@ export type {
 } from './local-context.js';
 
 export { DEFAULT_LOCAL_CONTEXT_CONFIG } from './local-context.js';
+
+// Gemini Advisor types
+export type { GeminiProjectAnalysis, GeminiRootAnalysis, GeminiAdvisorStatus, GeminiBehavior, GeminiAdvisorConfig } from './gemini-advisor.js';
+export { DEFAULT_GEMINI_ADVISOR_CONFIG } from './gemini-advisor.js';

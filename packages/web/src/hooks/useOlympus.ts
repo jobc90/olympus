@@ -125,6 +125,10 @@ export interface OlympusState {
   workerConfigs: WorkerConfigEntry[];
   workerBehaviors: Record<string, string>;
   codexBehavior: string;
+  geminiBehavior: string;
+  geminiCurrentTask: string | null;
+  geminiCacheCount: number;
+  geminiLastAnalyzed: number | null;
   activityEvents: ActivityEventEntry[];
   systemStats: SystemStatsEntry;
   demoMode: boolean;
@@ -186,6 +190,10 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     workerConfigs: [],
     workerBehaviors: {},
     codexBehavior: 'supervising',
+    geminiBehavior: 'offline',
+    geminiCurrentTask: null,
+    geminiCacheCount: 0,
+    geminiLastAnalyzed: null,
     activityEvents: [],
     systemStats: { totalWorkers: 0, activeWorkers: 0, totalTokens: 0, failedTasks: 0 },
     demoMode: false,
@@ -408,6 +416,63 @@ export function useOlympus(options: UseOlympusOptions = {}) {
           },
         }));
       }
+    });
+
+    // Worker task timeout events (30분 타임아웃 → 모니터링)
+    client.on('worker:task:timeout', (m) => {
+      const payload = m.payload as { workerId?: string; taskId: string; workerName?: string };
+      // 타임아웃 모니터링: 워커는 여전히 busy → behavior 유지
+      if (payload.workerId) {
+        setState((s) => ({
+          ...s,
+          activityEvents: [
+            ...s.activityEvents,
+            {
+              id: crypto.randomUUID(),
+              type: 'timeout',
+              agentName: payload.workerName ?? payload.workerId ?? 'unknown',
+              message: '30분 타임아웃 — 모니터링 중',
+              timestamp: Date.now(),
+            },
+          ].slice(-50),
+        }));
+      }
+    });
+
+    client.on('worker:task:final_after_timeout', (m) => {
+      const payload = m.payload as { workerId?: string; taskId: string; status?: string; workerName?: string; success?: boolean };
+      const wId = payload.workerId;
+      if (wId) {
+        setState((s) => ({
+          ...s,
+          workerBehaviors: {
+            ...s.workerBehaviors,
+            [wId]: payload.success ? 'completed' : 'error',
+          },
+          activityEvents: [
+            ...s.activityEvents,
+            {
+              id: crypto.randomUUID(),
+              type: 'final_after_timeout',
+              agentName: payload.workerName ?? wId,
+              message: payload.success ? '타임아웃 후 최종 완료' : '타임아웃 후 실패',
+              timestamp: Date.now(),
+            },
+          ].slice(-50),
+        }));
+      }
+    });
+
+    // Gemini advisor status events
+    client.on('gemini:status', (m) => {
+      const payload = m.payload as { behavior?: string; currentTask?: string | null; cacheSize?: number; lastAnalyzedAt?: number | null };
+      setState((s) => ({
+        ...s,
+        geminiBehavior: payload.behavior ?? s.geminiBehavior,
+        geminiCurrentTask: payload.currentTask ?? s.geminiCurrentTask,
+        geminiCacheCount: payload.cacheSize ?? s.geminiCacheCount,
+        geminiLastAnalyzed: payload.lastAnalyzedAt ?? s.geminiLastAnalyzed,
+      }));
     });
 
     // V2 Worker events

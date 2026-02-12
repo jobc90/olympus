@@ -27,6 +27,15 @@ export type WorkerBehavior =
   | 'analyzing'
   | 'meeting';
 
+/** Gemini advisor behavior */
+export type GeminiBehavior =
+  | 'idle'
+  | 'scanning'
+  | 'analyzing'
+  | 'advising'
+  | 'refreshing'
+  | 'offline';
+
 /** Simplified Olympus Mountain states (mapped from WorkerBehavior) */
 export type WorkerState =
   | 'idle'
@@ -183,6 +192,13 @@ export interface CodexRuntime {
   anim: CharacterAnim;
 }
 
+/** Gemini advisor runtime (OlympusMountain) */
+export interface GeminiRuntime {
+  behavior: GeminiBehavior;
+  currentTask: string | null;
+  anim: CharacterAnim;
+}
+
 /** NPC runtime (유니콘, 큐피트) */
 export interface NpcRuntime {
   id: string;
@@ -197,6 +213,7 @@ export interface NpcRuntime {
 export interface OlympusMountainState {
   workers: WorkerRuntime[];
   codex: CodexRuntime;
+  gemini: GeminiRuntime;
   npcs: NpcRuntime[];
   bubbles: Bubble[];
   particles: Particle[];
@@ -211,10 +228,13 @@ export interface OlympusMountainState {
 // ---------------------------------------------------------------------------
 
 /** Avatar preset for workers */
-export type WorkerAvatar = 'athena' | 'poseidon' | 'ares' | 'apollo' | 'artemis' | 'hermes' | 'hephaestus' | 'dionysus' | 'demeter' | 'aphrodite' | 'hera' | 'hades' | 'persephone' | 'prometheus' | 'helios' | 'nike' | 'pan' | 'hecate' | 'iris' | 'heracles';
+export type WorkerAvatar = 'athena' | 'poseidon' | 'ares' | 'apollo' | 'artemis' | 'hermes' | 'hephaestus' | 'dionysus' | 'demeter' | 'aphrodite' | 'hera' | 'hades' | 'persephone' | 'prometheus' | 'helios' | 'nike' | 'pan' | 'hecate' | 'iris' | 'heracles' | 'selene';
 
 /** Avatar preset for the codex (orchestrator) */
 export type CodexAvatar = 'zeus';
+
+/** Avatar preset for the Gemini advisor */
+export type GeminiAvatar = 'hera';
 
 /** Theme preset */
 export type ThemeName = 'midnight' | 'void' | 'warm' | 'neon';
@@ -238,6 +258,13 @@ export interface CodexConfig {
   avatar: CodexAvatar;
 }
 
+/** Gemini advisor configuration */
+export interface GeminiConfig {
+  name: string;
+  emoji: string;
+  avatar: GeminiAvatar;
+}
+
 /** Gateway connection settings */
 export interface GatewayConfig {
   url: string;
@@ -248,6 +275,7 @@ export interface GatewayConfig {
 export interface DashboardConfig {
   workers: WorkerConfig[];
   codex: CodexConfig;
+  gemini: GeminiConfig;
   gateway: GatewayConfig;
   theme: ThemeName;
   connected: boolean;

@@ -16,66 +16,67 @@
 </p>
 
 <p align="center">
-  <b>Claude CLI Enhanced Platform</b> - Multi-AI Orchestration + Gateway + Dashboard
+  <b>Claude CLI Enhanced Platform v1.0.0</b> - Team Engineering + Gateway + Dashboard
+</p>
+
+<p align="center">
+  <i>"Multi-AI collaboration development tool for boosting Claude CLI productivity"</i>
 </p>
 
 ## Table of Contents
 
 - [What is Olympus?](#what-is-olympus)
-- [Quick Start (60s)](#quick-start-60s)
-- [Quick Install](#quick-install)
-- [Platform Requirements](#platform-requirements)
+- [Quick Start](#quick-start)
+- [Key Features](#key-features)
+- [Installation Guide](#installation-guide)
 - [Usage](#usage)
-- [Model Configuration](#model-configuration)
+- [Worker System](#worker-system)
 - [Telegram Bot Guide](#telegram-bot-guide)
-- [Multi-AI Orchestration (AIOS v5.3)](#multi-ai-orchestration-aios-v53)
+- [Team Engineering Protocol](#team-engineering-protocol)
+- [Custom Agents (19)](#custom-agents-19)
 - [Architecture](#architecture)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
 
 ## What is Olympus?
 
-Olympus extends Claude CLI into a practical development operations platform:
+Olympus is a **Multi-AI collaboration platform** that maximizes Claude CLI productivity.
 
-1. **Multi-AI Orchestration (AIOS v5.3)**: Claude + Gemini + Codex with Co-Leadership workflow
-2. **Codex Orchestrator (V3)**: Multi-project AI orchestrator — routing, session management, context DB, agent brain
-3. **Codex Agent (V2)**: Autonomous AI agent — command analysis → planning → execution → review → reporting pipeline
-4. **Worker Factory (V2)**: 4 worker types (Claude CLI / Anthropic API SSE / Spawn / Docker), FIFO queue, pipeline output chaining, auto-selected per task
-5. **Memory Store (V2)**: SQLite + FTS5 task learning, PatternManager (SQL-level filtering), similar task retrieval, Memory RPC methods
-6. **Context OS**: hierarchical context management (Workspace → Project → Task)
-7. **Remote Access**: run and control local sessions through Gateway + Telegram (with Smart Digest, `/codex` RPC queries, secret masking)
-8. **Stable Sessions**: spawn-based long-running worker sessions (tmux-free)
-9. **Visibility**: Web dashboard with auto-config, CodexPanel, ProjectBrowser, real-time session output
+It integrates Gateway, Dashboard, and Telegram Bot centered around Claude CLI to manage local/remote development environments, and automates complex tasks through Team Engineering Protocol where 19 specialized agents collaborate.
 
-## Quick Start (60s)
+```
+Claude CLI ──┬─→ PTY Worker (persistent CLI)
+             ├─→ Gateway (HTTP API + WebSocket)
+             ├─→ Dashboard (real-time monitoring)
+             ├─→ Telegram Bot (remote control)
+             └─→ 19 Custom Agents (Team Engineering)
+```
 
-**macOS / Linux:**
+## Quick Start
+
+### macOS / Linux
 
 ```bash
 git clone https://github.com/jobc90/olympus.git
 cd olympus
 ./install.sh --global
-olympus setup
-olympus server start
+olympus
 ```
 
-**Windows:**
+### Windows
 
 ```bash
-# Git Bash / MINGW (recommended)
 git clone https://github.com/jobc90/olympus.git
 cd olympus
-./install-win.sh --global
-```
 
-```powershell
+# Git Bash / MINGW (recommended)
+./install-win.sh --global
+
 # PowerShell
-git clone https://github.com/jobc90/olympus.git
-cd olympus
 .\install.ps1 -Mode global
 ```
 
-**Manual install (all platforms):**
+### Manual Install (all platforms)
 
 ```bash
 git clone https://github.com/jobc90/olympus.git
@@ -84,28 +85,61 @@ pnpm install && pnpm build
 cd packages/cli && npm link    # Register olympus CLI globally
 ```
 
-> **Windows note**: `install.sh` is for macOS/Linux only (uses symlinks). On Windows, use `install-win.sh` (Git Bash) or `install.ps1` (PowerShell). The key difference is using `npm link` instead of symlinks — this creates `.cmd` wrappers that work across PowerShell, CMD, and Git Bash.
+> **Windows note**: `install.sh` is for macOS/Linux only (uses symlinks). On Windows, use `install-win.sh` (Git Bash) or `install.ps1` (PowerShell). The key difference is using `npm link` to register the CLI, which creates `.cmd` wrappers that work across PowerShell, CMD, and Git Bash.
 
-Then inside Claude CLI:
-
+After installation, inside Claude CLI:
 ```bash
-/orchestration "Improve login page UI"
+/team "Improve login page UI"
 ```
 
-## Quick Install
+## Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **19 Custom Agents** | 3 Core + 16 On-Demand specialized agents (`.claude/agents/`) |
+| **Team Engineering Protocol** | 5 core mechanisms (Consensus, 2-Phase Dev, Two-Stage Review, Evidence QA, Circuit Breaker) |
+| **PTY Worker** | node-pty based persistent Claude CLI + TUI display + command input + completion detection |
+| **Worker Registry** | In-memory worker registration/heartbeat/task assignment system in Gateway |
+| **stdout Streaming** | Real-time CLI output WebSocket broadcast (`cli:stream` event) |
+| **Parallel CLI Execution** | ConcurrencyLimiter (max 5 concurrent executions) |
+| **Telegram Worker Delegation** | Direct task assignment to workers via @mention + `/team` bot command |
+| **LocalContextStore** | SQLite-based hierarchical context store (project/worker level) |
+| **GeminiAdvisor** | Gemini CLI-based project analysis (Codex context enrichment) |
+| **OlympusMountain v3** | Greek mythology themed dashboard (20 god worker avatars, 10 zones) |
+
+## Installation Guide
+
+### Prerequisites
+
+- **Node.js 18+** (CI: Node 20/22)
+- **pnpm** (`npm i -g pnpm`)
+- **Claude CLI** (`npm i -g @anthropic-ai/claude-code`)
+- **Build tools** (required for node-pty native module):
+  - macOS: Xcode Command Line Tools (`xcode-select --install`)
+  - Linux: `build-essential`, `python3`
+  - Windows: Visual Studio Build Tools + Python 3
+- **Gemini CLI** (optional): Required for Multi-AI collaboration
+- **Codex CLI** (optional): Required for Multi-AI collaboration
+
+### Installation Mode Selection
 
 **macOS / Linux:**
 
 ```bash
+# Global install (recommended) — Install to ~/.claude/, use /team from anywhere
 ./install.sh --global
+
+# Local install — Install to project's .claude/, use only in this directory
 ./install.sh --local
+
+# Apply Olympus managed block to CLAUDE.md (optional)
 ./install.sh --global --with-claude-md
 ```
 
 **Windows (Git Bash / PowerShell):**
 
 ```bash
-# Git Bash
+# Git Bash (recommended)
 ./install-win.sh --global
 ./install-win.sh --local
 ```
@@ -117,294 +151,526 @@ Then inside Claude CLI:
 .\install.ps1 -Mode global -WithClaudeMd
 ```
 
-Install modes:
+> **Default behavior is non-invasive**: `~/.claude/CLAUDE.md` is not modified unless explicitly requested.
 
-- `global`: install to `~/.claude/` and use `/orchestration` from any project
-- `local`: install under current project only
-- `-WithClaudeMd` / `--with-claude-md`: optionally insert/update an Olympus managed block in `~/.claude/CLAUDE.md`
+### Local Install Notes
 
-Default behavior is non-invasive: `~/.claude/CLAUDE.md` is not modified unless explicitly requested.
+```bash
+# Must run from olympus project directory
+cd /path/to/olympus
+claude                     # Start Claude CLI
+/team "task description"   # Ready to use!
+```
 
-## Prerequisites
-
-- Node.js 18+
-- Claude CLI: `npm i -g @anthropic-ai/claude-code`
-- Gemini CLI (optional for Multi-AI)
-- Codex CLI (optional for Multi-AI)
-
-## Platform Requirements
-
-| Feature | macOS | Linux | Windows |
-|---|---|---|---|
-| `/orchestration` protocol | ✅ | ✅ | ✅ |
-| `olympus` CLI wrapper | ✅ | ✅ | ✅ |
-| Worker session (`olympus start`) | ✅ | ✅ | ✅ |
-| Dashboard | ✅ | ✅ | ✅ |
-| Telegram remote control | ✅ | ✅ | ✅ |
+> ⚠️ **Local install**: `/team` is only recognized in the olympus directory.
 
 ## Usage
 
-### Core Commands
+### 1. Launch Claude CLI (default)
 
 ```bash
-olympus                 # Launch Claude CLI (wrapper)
-olympus start           # Register worker and wait for tasks (Gateway required)
-olympus server start    # Start Gateway + Dashboard + Telegram (Dashboard auto-connects)
-olympus setup           # Setup wizard (gateway/telegram/models)
-olympus models show     # Show runtime model preferences
+olympus
 ```
 
-### Services
+Running `olympus` without arguments starts Claude CLI. All Claude CLI features are available as-is.
+
+### 2. Start Worker Session (PTY mode)
 
 ```bash
-olympus gateway
-olympus telegram
-olympus dashboard
-olympus tui
+# Register current directory as worker (PTY mode — default)
+olympus start
+
+# Specify project path
+olympus start -p /path/to/project
+
+# Specify worker name (default: directory name)
+olympus start -n backend-worker
+
+# Auto-approval mode (trust)
+olympus start-trust
 ```
 
-### CLI Commands Reference
+`olympus start` registers a **PTY Worker** to Gateway and waits for tasks. Claude CLI TUI is displayed immediately, and worker output is streamed in real-time via WebSocket.
 
-| Command | Description |
-|---|---|
-| `olympus` | Launch Claude CLI |
-| `olympus start` | Register worker and wait for tasks |
-| `olympus start-trust` | Register worker in trust mode |
-| `olympus server start` | Start integrated services |
-| `olympus server stop` | Stop services |
-| `olympus server status` | Check service status |
-| `olympus setup` | Interactive setup wizard |
-| `olympus quickstart` | Quick setup + run |
-| `olympus config` | Config management |
-| `olympus models` | Model config sync (core + MCP) |
-| `olympus curl` | curl wrapper with auto API key injection |
-| `olympus gateway` | Run gateway only |
-| `olympus telegram` | Run telegram bot only |
-| `olympus dashboard` | Open web dashboard |
-| `olympus tui` | Run terminal UI |
-
-## Model Configuration
-
-Model resolution priority:
-
-1. Model passed directly from command/request
-2. `~/.olympus/config.json`
-3. Environment variables (`OLYMPUS_*_MODEL`)
-4. Built-in defaults
-
-Important env vars:
-
-- `OLYMPUS_GEMINI_MODEL`
-- `OLYMPUS_GEMINI_PRO_MODEL`
-- `OLYMPUS_GEMINI_FALLBACK_MODEL`
-- `OLYMPUS_GEMINI_FALLBACK_PRO_MODEL`
-- `OLYMPUS_CODEX_MODEL`
-- `OLYMPUS_OPENAI_MODEL`
-- `OLYMPUS_OPENAI_API_BASE_URL`
-
-Examples:
+### 3. Server Management
 
 ```bash
-export OLYMPUS_GEMINI_MODEL=gemini-2.5-flash
-export OLYMPUS_GEMINI_PRO_MODEL=gemini-2.5-pro
-export OLYMPUS_CODEX_MODEL=gpt-4.1
+# Start all services (Gateway + Dashboard + Telegram)
+olympus server start
+
+# Start individual services
+olympus server start --gateway      # Gateway only
+olympus server start --dashboard    # Dashboard only
+olympus server start --telegram     # Telegram bot only
+
+# Stop server
+olympus server stop
+
+# Check server status
+olympus server status
 ```
 
-Sync commands:
+### 4. Initial Setup
 
 ```bash
-olympus models show
-olympus models set --gemini gemini-2.5-flash --gemini-pro gemini-2.5-pro --codex gpt-4.1
-olympus models sync
+# Setup wizard (Gateway + Telegram + model settings)
+olympus setup
+
+# Quick setup + start
+olympus quickstart
+```
+
+## Worker System
+
+### PTY Worker (v1.0.0)
+
+**PTY Worker** is a core module that manages persistent Claude CLI based on node-pty.
+
+**Key Features**:
+- **TUI Display**: Shows Claude CLI's Ink TUI as-is
+- **Command Input**: Prompt submission + Enter key handling
+- **Completion Detection**: Prompt pattern (5s settle) → 30s inactivity → 60s forced completion
+- **Background Agent Detection**: 7 patterns (Task completed, Conversation compacted, etc.) + 30s cooldown
+- **Result Extraction**: ⏺ marker-based extraction → ANSI removal → TUI artifact filter
+- **Double Ctrl+C**: Terminate with Ctrl+C twice within 1 second
+
+**TUI Artifact Filter**:
+- Spinners (✢✳✶✻✽·), "(thinking)", "Flowing...", status bars, dividers auto-removed
+- Extracts only actual responses with 8000 char limit
+
+**Fallback Mode**:
+- Falls back to spawn mode when PTY mode fails
+- spawn mode: Foreground execution with `stdio: 'inherit'`
+
+### Worker Registry
+
+In-memory worker registration and heartbeat management in Gateway.
+
+**Worker API**:
+- `POST /api/workers/register` — Register worker (mode: 'pty' | 'spawn')
+- `DELETE /api/workers/:id` — Delete worker
+- `POST /api/workers/:id/heartbeat` — Heartbeat (15s check, 60s timeout)
+- `POST /api/workers/:id/task` — Assign task
+- `POST /api/workers/:id/task/result` — Report task result
+- `GET /api/workers/:id/task/status` — Poll task status
+
+**Worker Type**:
+```typescript
+interface RegisteredWorker {
+  id: string;
+  name: string;
+  projectPath: string;
+  mode?: 'pty' | 'spawn';
+  status: 'idle' | 'busy';
+  lastHeartbeat: Date;
+  currentTask?: {
+    id: string;
+    prompt: string;
+    status: 'pending' | 'running' | 'completed' | 'failed';
+    result?: string;
+    error?: string;
+  };
+}
 ```
 
 ## Telegram Bot Guide
 
-1. Create bot token with `@BotFather`
-2. Get your user ID from `@userinfobot`
-3. Configure:
+Control Claude CLI remotely via Telegram bot.
+
+### Setup
+
+#### Step 1: Create Telegram Bot
+
+1. Search for `@BotFather` in Telegram and start chat
+2. Send `/newbot` and set bot name/username
+3. Save bot token (e.g., `7123456789:AAHxxxxxx...`)
+
+#### Step 2: Get User ID
+
+1. Search for `@userinfobot` in Telegram and start chat
+2. Send `/start`
+3. Save User ID (e.g., `123456789`)
+
+#### Step 3: Environment Variables
 
 ```bash
-export TELEGRAM_BOT_TOKEN="your_token"
-export ALLOWED_USERS="123456789"
+# Add to ~/.zshrc or ~/.bashrc
+export TELEGRAM_BOT_TOKEN="7123456789:AAHxxxxxx..."
+export ALLOWED_USERS="123456789"  # Comma-separated for multiple users
 ```
 
-4. Start services:
+Restart terminal or `source ~/.zshrc` after setting
+
+#### Step 4: Start Server
 
 ```bash
-olympus start
+# Start Gateway + Telegram bot
+olympus server start
+
+# Or Telegram bot only
 olympus server start --telegram
 ```
 
-Telegram commands:
+### Usage
+
+#### Basic Commands
 
 | Command | Description |
-|---|---|
-| `/start` | Help |
-| `/sessions` | List available sessions |
-| `/use <name>` | Connect to session |
-| `/close [name]` | Disconnect session |
+|---------|-------------|
+| `/start` | Show help |
 | `/health` | Check status |
-| `/mode raw\|digest` | Switch output mode (default: digest) |
-| `/raw` | Shortcut for raw mode |
-| `/last` | Show last output |
-| `/codex <question>` | Query Codex Orchestrator via RPC (routing + response) |
-| `/orchestration <request>` | Run Multi-AI orchestration |
-| `/workers` | List available workers |
-| `@worker-name task` | Direct task to a specific worker (bypasses Codex) |
+| `/workers` | List workers |
+| `/team <request>` | Run Team Engineering Protocol |
+| Normal message | Send to Claude CLI |
 
-### Inline Mode (Worker Selection)
+#### Worker Delegation (@mention)
 
-Type `@botname` in any chat to see available workers. Select a worker to pre-fill `@worker-name ` and then type your task.
-
-### Smart Digest Mode
-
-The Telegram bot uses **digest mode** by default. It extracts only key results from hundreds of lines of CLI output into a concise summary (max 1500 chars).
-
-- **6-category classification**: build, test, commit, error, phase, change
-- **Noise removal**: Reading, Searching, spinners, empty lines
-- **Secret masking**: API keys, Bearer tokens, GitHub PAT, long hex strings
-- **Hybrid triggering**: errors/completion flush immediately, normal output debounces 5s
-- **Priority budgeting**: error(5) > build/test(4) > commit/phase(3) fills 1500 chars
-
-## Multi-AI Orchestration (AIOS v5.3)
-
-Olympus ships with AIOS v5.3 — Deep Engineering Protocol with Claude-Codex Co-Leadership.
-
-Run from Claude CLI:
-
-```bash
-# Auto mode (default) — fully autonomous, no user intervention
-/orchestration "Implement cart feature end-to-end"
-
-# Approval mode — user confirms at Phase 3 (plan lock) and Phase 8 (final)
-/orchestration --plan "Refactor authentication flow"
-
-# Strict mode — user approves every phase transition
-/orchestration --strict "Payment system overhaul"
+```
+@worker-name task description
 ```
 
-Highlights:
+Example:
+```
+@backend-worker Add API endpoint /api/users
+```
 
-- 10-phase workflow (planning → execution → validation)
-- **Auto mode by default** — fully autonomous execution
-- `--plan` for approval checkpoints, `--strict` for full control
-- Consensus checkpoints for critical phases
-- Quality gates (build/lint/type/test)
-- Checkpoint and rollback workflow
-- Learning memory for repeated failure prevention
+When you input `@worker-name task` in Telegram:
+1. Gateway assigns task via `POST /api/workers/:id/task`
+2. Worker polls via `GET /api/workers/:id/task/status`
+3. Worker reports result via `POST /api/workers/:id/task/result` after completion
+4. Result sent to Telegram
+
+#### Team Engineering Protocol (Telegram)
+
+```
+/team Add cart feature
+```
+
+Or with worker mention:
+```
+@backend-worker team Optimize API performance
+```
+
+#### Inline Query (Worker List)
+
+Type `@botname` in any chat to see available workers. Select a worker to pre-fill `@worker-name ` and continue with task description.
+
+## Team Engineering Protocol
+
+Olympus v1.0.0 introduces **Team Engineering Protocol** providing a framework where 19 specialized agents collaborate.
+
+### Usage
+
+```bash
+# Run from Claude CLI
+/team "Improve login page UI"
+
+# Run from Telegram bot
+/team Add cart feature
+
+# Delegate team task to worker
+@backend-worker team Optimize API performance
+```
+
+### 5 Core Mechanisms
+
+| Mechanism | Description |
+|-----------|-------------|
+| **Consensus Protocol** | Leader (Claude) gathers team opinions for major decisions (architecture, tech choices) |
+| **2-Phase Development** | Coding Phase → Debugging Phase separation (prevents masking issues by fixing tests) |
+| **Two-Stage Review** | Stage 1 (spec compliance) → Stage 2 (code quality), Stage 2 skipped if Stage 1 fails |
+| **Evidence-Based QA** | All assertions require capture evidence, no assumption-based judgments |
+| **Circuit Breaker** | Re-evaluate approach after 3 failures, prevents infinite loops |
+
+### Agent Activation Policy
+
+**Core Agents (always available — 3)**:
+- `explore` (Haiku) — Fast codebase search
+- `executor` (Sonnet) — Focused execution, direct implementation
+- `writer` (Haiku) — Documentation
+
+**On-Demand Agents (Team mode only — 16)**:
+- `architect` (Opus) — Architecture & debugging
+- `analyst` (Opus) — Requirements analysis
+- `planner` (Opus) — Strategic planning
+- `designer` (Sonnet) — UI/UX design
+- `researcher` (Sonnet) — Documentation & research
+- `code-reviewer` (Opus) — Code review (2-stage)
+- `verifier` (Sonnet) — Visual analysis (screenshots/diagrams)
+- `qa-tester` (Sonnet) — CLI/service testing
+- `vision` (Sonnet) — Visual analysis
+- `test-engineer` (Sonnet) — Test design/implementation
+- `build-fixer` (Sonnet) — Build/type error fixes
+- `git-master` (Sonnet) — Git workflow
+- `api-reviewer` (Sonnet) — API design review
+- `performance-reviewer` (Sonnet) — Performance optimization review
+- `security-reviewer` (Sonnet) — Security vulnerability review
+- `style-reviewer` (Haiku) — Code style review
+
+**Disabled Agents (never use without explicit request)**:
+- Duplicate functionality (tiered agents: `*-low`, `*-medium`, `*-high`)
+- Special domains (`smart-contract-*`, `unity-*`, `web3-*`, etc.)
+- Cloud/infra (`terraform-*`, `aws-*`, `kubernetes-*`, etc.)
+- Language-specific (`rust-*`, `go-*`, `kotlin-*`, etc.)
+
+### Verify Installation
+
+```bash
+# Global install
+ls ~/.claude/agents/
+
+# Local install
+ls .claude/agents/
+```
+
+Should have 19 agent files (`*.md`) installed.
+
+## Custom Agents (19)
+
+Starting from v1.0.0, Olympus installs 19 Custom Agents to `.claude/agents/`. These agents collaborate through Claude CLI's `/team` command.
+
+### Agent Role Definitions
+
+#### Core Agents (3 — always available)
+
+**`explore`** — Codebase Search Specialist
+- **Model**: Haiku (cost-efficient)
+- **Allowed tools**: Glob, Grep, Read (parallel execution)
+- **Forbidden tools**: Write, Edit, Task (no code modification/delegation)
+- **Success criteria**: Absolute paths, comprehensive matching, relationship explanation
+
+**`executor`** — Focused Executor
+- **Model**: Sonnet (balanced)
+- **Allowed tools**: All tools (Read, Write, Edit, Bash, Glob, Grep)
+- **Forbidden**: Agent delegation, architecture decisions
+- **Success criteria**: Minimal changes, LSP clean, build/test pass
+
+**`writer`** — Technical Documentation Writer
+- **Model**: Haiku (fast generation)
+- **Allowed tools**: Read, Glob, Grep, Write (documentation files only)
+- **Forbidden**: Code file modifications
+
+#### On-Demand Agents (16 — Team mode only)
+
+**`architect`** — Architecture & Debugging Advisor
+- **Model**: Opus (complex reasoning)
+- **Allowed tools**: Glob, Grep, Read, Bash (git blame/log only)
+- **Forbidden**: Write, Edit (no code modification)
+- **Circuit Breaker**: Re-evaluate approach after 3 failed fixes
+
+**`analyst`** — Requirements Analysis Consultant
+- **Model**: Opus (analytical thinking)
+- **Success criteria**: Identify missing questions, define guardrails, prevent scope creep
+
+**`planner`** — Strategic Planning Specialist
+- **Model**: Opus (strategic thinking)
+- **Process**: User interview → codebase investigation → task plan generation
+- **Success criteria**: 3-6 concrete steps + acceptance criteria
+
+**`designer`** — UI/UX Design Specialist
+- **Model**: Sonnet
+- **Allowed tools**: Read, Glob, Grep, Write (UI/style files)
+
+**`researcher`** — Documentation & Research Specialist
+- **Model**: Sonnet
+- **Allowed tools**: Read, Glob, Grep
+
+**`code-reviewer`** — Code Review & Critique Specialist
+- **Model**: Opus (deep analysis)
+- **2-Stage Review Protocol**:
+  - Stage 1: Spec compliance check
+  - Stage 2: Code quality review (only if Stage 1 passes)
+- **Severity levels**: CRITICAL / HIGH / MEDIUM / LOW
+
+**`verifier`** — Visual Analysis Specialist
+- **Model**: Sonnet
+- **Allowed tools**: Read, Glob, Grep
+
+**`qa-tester`** — Evidence-Based Testing Specialist
+- **Model**: Sonnet (execution + analysis)
+- **Critical Rule**: "Always capture-pane BEFORE asserting"
+- **Session naming**: `qa-{service}-{test}-{timestamp}`
+
+**`vision`** — Visual Analysis Specialist
+- **Model**: Sonnet
+- **Allowed tools**: Screenshot/diagram analysis
+
+**`test-engineer`** — Test Design/Implementation Specialist
+- **Model**: Sonnet
+- **Allowed tools**: Read, Write, Bash
+
+**`build-fixer`** — Build/Type Error Fix Specialist
+- **Model**: Sonnet
+- **Allowed tools**: Read, Edit, Bash
+
+**`git-master`** — Git Workflow Specialist
+- **Model**: Sonnet
+- **Allowed tools**: Bash (git), Read, Edit
+
+**`api-reviewer`** — API Design Review Specialist
+- **Model**: Sonnet
+- **Allowed tools**: Read, Grep, Glob
+
+**`performance-reviewer`** — Performance Optimization Review Specialist
+- **Model**: Sonnet
+- **Allowed tools**: Read, Grep, Bash
+
+**`security-reviewer`** — Security Vulnerability Review Specialist
+- **Model**: Sonnet
+- **Allowed tools**: Read, Grep, Bash
+
+**`style-reviewer`** — Code Style Review Specialist
+- **Model**: Haiku (fast check)
+- **Allowed tools**: Read, Grep, Bash
 
 ## Architecture
 
+### Package Structure (9)
+
 ```
-┌─────────────────────────────────────────────────────────┐
-│              Client Layer                                │
-│  Telegram Bot  │  Web Dashboard  │  TUI  │  CLI         │
-│  (/codex RPC)  │  (CodexPanel)   │       │  (--mode)    │
-└────────────────┴─────────────────┴───────┴──────────────┘
-                         ↕ WebSocket + REST
-┌─────────────────────────────────────────────────────────┐
-│                    Gateway (Core)                        │
-│  RPC Router (+codex.*) │ Channels │ Codex Agent (V2)    │
-│  CodexAdapter ──→ Codex Orchestrator (V3)               │
-│  WorkerManager (legacy/hybrid) │ Memory │ Security      │
-└─────────────────────────────────────────────────────────┘
-                         ↕
-┌─────────────────────────────────────────────────────────┐
-│              Codex Orchestrator (packages/codex/)        │
-│  Router │ SessionManager │ OutputMonitor │ AgentBrain   │
-│  ResponseProcessor │ ContextManager (FTS5 per-project)  │
-└─────────────────────────────────────────────────────────┘
+protocol → core → gateway → cli
+    │        │       ↑        ↑
+    ├→ client → tui ─┤────────┤
+    │        └→ web  │        │
+    ├→ telegram-bot ─┘────────┘
+    └→ codex (Codex Orchestrator)
 ```
 
-### Packages (9)
+**Package Roles**:
 
-```text
-packages/
-├── protocol/     # Message types, Agent state machine, Codex types
-├── core/         # Orchestration, TaskStore (SQLite)
-├── gateway/      # HTTP+WS server, Agent, Workers, Memory, Channels, CodexAdapter
-├── cli/          # CLI entry point + Claude wrapper + --mode selection
-├── client/       # WebSocket client (auto-reconnect, Codex RPC)
-├── web/          # React dashboard (Vite, Tailwind, CodexPanel, ProjectBrowser)
-├── tui/          # Terminal UI (Ink)
-├── telegram-bot/ # Telegram bot (Telegraf, Smart Digest, /codex RPC)
-└── codex/        # ⭐ Codex Orchestrator (multi-project AI orchestrator)
+| Package | Role |
+|---------|------|
+| `protocol` | Message types, Agent state machine, Worker/Task/CliRunner interfaces |
+| `core` | Multi-AI orchestration, TaskStore (SQLite), LocalContextStore |
+| `gateway` | HTTP + WebSocket server, CliRunner, Worker Registry, Session Store |
+| `client` | WebSocket client (auto-reconnect, event subscription) |
+| `cli` | Main CLI, Claude CLI wrapper, PTY Worker |
+| `web` | React dashboard (OlympusMountain v3, LiveOutputPanel, SessionCostTracker) |
+| `telegram-bot` | Telegram bot (worker delegation, /team command, /workers) |
+| `tui` | Terminal UI (React + Ink) |
+| `codex` | Codex Orchestrator (routing, session management, context DB) |
 
-orchestration/
-├── commands/     # Slash commands
-├── mcps/         # MCP servers
-├── skills/       # Bundled skills
-└── plugins/      # Plugins
-```
+### Core Modules
 
-### CLI `--mode` option
+#### CliRunner (Gateway)
 
-| Mode | Behavior |
-|------|----------|
-| `legacy` | Full V2 Agent/Worker/Memory initialization |
-| `hybrid` | V2 + Codex Orchestrator running simultaneously |
-| `codex` (default) | Codex Orchestrator only, V2 Agent/Worker/Memory disabled |
+Spawn CLI process → Parse JSON/JSONL + real-time stdout streaming
 
-> Detailed architecture: [`docs/V2_ARCHITECTURE.md`](docs/V2_ARCHITECTURE.md)
-> API reference: [`docs/V2_API_REFERENCE.md`](docs/V2_API_REFERENCE.md)
+- **Implementation**: `gateway/src/cli-runner.ts`
+- **Types**: `protocol/src/cli-runner.ts` (12 types + AgentEvent + CliStreamChunk)
+- **Parallel execution**: `ConcurrencyLimiter(5)` — max 5 concurrent CLI spawns
+- **stdout streaming**: `spawnCli`'s `onStdout` → `runCli`'s `params.onStream` → server `cli:stream` broadcast
+
+#### PTY Worker (CLI)
+
+node-pty based persistent Claude CLI management
+
+- **Implementation**: `cli/src/pty-worker.ts`
+- **strip-ansi**: `cli/src/utils/strip-ansi.ts` (ANSI+OSC+control char removal)
+- **Completion detection**: Prompt pattern (5s) → 30s inactivity → 60s forced completion
+- **Background agent detection**: 7 patterns + 30s cooldown
+- **Result extraction**: ⏺ marker-based → stripAnsi → isTuiArtifactLine filter → 8000 char limit
+
+#### Worker Registry (Gateway)
+
+In-memory worker registration + heartbeat + task assignment
+
+- **Implementation**: `gateway/src/worker-registry.ts`
+- **Heartbeat**: 15s check, 60s timeout
+- **Types**: `protocol/src/worker.ts` (RegisteredWorker, WorkerRegistration, WorkerTaskRecord)
+
+#### Session Store (Gateway)
+
+SQLite-based CLI session store (token/cost accumulation)
+
+- **Implementation**: `gateway/src/cli-session-store.ts`
+- **API**: `GET /api/cli/sessions`, `DELETE /api/cli/sessions/:id`
+
+#### LocalContextStore (Core)
+
+SQLite-based hierarchical context store
+
+- **Implementation**: `core/src/local-context-store.ts`
+- **Project DB**: `{project}/.olympus/context.db`
+- **Root DB**: `{root}/.olympus/context.db`
+- **FTS5**: Full-text search support
+
+#### GeminiAdvisor (Gateway)
+
+Gemini CLI-based project analysis
+
+- **Implementation**: `gateway/src/gemini-advisor.ts`
+- **GeminiPty**: `gateway/src/gemini-pty.ts` (PTY + spawn fallback)
+- **API**: GET /api/gemini-advisor/status, /projects, /projects/:path, POST /refresh, /analyze/:path
 
 ## Development
 
+### Build + Test
+
 ```bash
-pnpm install
+# Full build
+pnpm install && pnpm build
+
+# Tests (105 tests)
+pnpm test
+
+# TypeScript type check (6 packages)
+pnpm lint
+
+# Dev mode
+pnpm dev
+```
+
+### Local CLI Execution
+
+```bash
+cd packages/cli
 pnpm build
-pnpm test       # 535 tests (gateway 372 + codex 82 + telegram 57 + core 24)
-pnpm lint       # tsc --noEmit (6 packages)
+node dist/index.js
+```
+
+### Register Global CLI (development)
+
+```bash
+# macOS / Linux
+./install.sh --local
+
+# Windows (PowerShell) — choose one
+.\install.ps1 -Mode local
+# Or manual:
+cd packages\cli && npm link
 ```
 
 ## Troubleshooting
 
-### Dashboard shows "Failed to fetch" or "Cannot connect to Gateway"
+### Dashboard shows "Failed to fetch" error
 
-When using `olympus server start`, the Dashboard receives Gateway config (host, port, apiKey) automatically via `window.__OLYMPUS_CONFIG__` injection. No manual setup is needed.
+**Cause**: Gateway not running or CORS configuration issue
 
-If running the Vite dev server separately (port 5173), CORS is allowed by default. For any other port, add it to `packages/gateway/src/cors.ts`.
+**Solution**:
+1. Start server with `olympus server start` (Dashboard receives Gateway config automatically)
+2. If developing with Vite dev server (port 5173), CORS is allowed by default
+3. **Must restart Gateway** after Gateway configuration changes
 
-Always **restart Gateway** after changing Gateway code.
+### CLI output not showing in dashboard
 
-### Telegram bot sends too many notifications
+**Cause**: Gateway server not running or WebSocket connection lost
 
-The bot uses **Smart Digest mode** by default. All output passes through the digest engine, extracting only key results (build/test/error/commit info). Switch to raw mode with `/mode raw` if needed.
-
-**Digest Engine Features**:
-- 6-category line classification with priority scoring
-- Noise pattern filtering (tool actions, spinners, dividers)
-- Secret redaction (API keys, tokens, hex strings)
-- Hybrid triggering (immediate on error/completion, 5s debounce otherwise)
-
-**Additional Gateway-level anti-spam**:
-- 2s debounce + 3s throttle
-- 10-char minimum change threshold
-- Noise filtering: prompts, status bars, spinners
-
-If spam persists, **restart Gateway** to apply the latest filters.
-
-### `olympus start` fails to connect to Gateway
-
-`olympus start` registers a worker through Gateway APIs. Start Gateway first:
-
-```bash
-olympus server start
-olympus start -n my-worker
-```
+**Solution**:
+1. Check Gateway server: `olympus server status`
+2. Restart server: `olympus server start`
+3. LiveOutputPanel displays real-time stdout output
 
 ### Windows: `olympus` command not recognized
 
-**Cause**: `install.sh` creates bash symlinks that don't work in PowerShell/CMD. Windows needs `.cmd` wrappers via `npm link`.
+**Cause**: `install.sh` creates symlinks for macOS/Linux which don't work on Windows. Windows needs `.cmd` wrappers via `npm link`.
 
-**Fix**:
+**Solution**:
 ```bash
-# Option 1: Use the Windows bash installer (Git Bash / MINGW)
+# Option 1: Windows bash installer (Git Bash / MINGW)
 ./install-win.sh --global
 
-# Option 2: Use the PowerShell installer
-# (run in PowerShell, not Git Bash)
+# Option 2: PowerShell installer
 .\install.ps1 -Mode global
 
 # Option 3: Manual npm link (works in any shell)
@@ -417,6 +683,39 @@ olympus --version
 
 > `npm link` creates a `.cmd` wrapper in npm's global bin directory, which works in PowerShell, CMD, and Git Bash.
 
+### node-pty build failure
+
+**Cause**: Native module build tools not installed
+
+**Solution**:
+- **macOS**: `xcode-select --install`
+- **Linux**: `sudo apt install build-essential python3`
+- **Windows**: Install Visual Studio Build Tools + Python 3
+
+### Telegram bot not responding
+
+**Cause**: Environment variables not set or Gateway not running
+
+**Solution**:
+1. Check `TELEGRAM_BOT_TOKEN`, `ALLOWED_USERS` environment variables
+2. `olympus server start --telegram` or `olympus server start`
+3. Check status with `/health` command
+
+### `/team` command not recognized
+
+**Cause**: Agent files not installed
+
+**Solution**:
+1. Check global install: `ls ~/.claude/agents/` (19 files)
+2. Check local install: `ls .claude/agents/` (19 files)
+3. Reinstall: `./install.sh --global` or `./install-win.sh --global`
+
 ## License
 
 MIT
+
+---
+
+<p align="center">
+  <b>Olympus v1.0.0</b> - Multi-AI collaboration development tool for boosting Claude CLI productivity
+</p>

@@ -1,6 +1,6 @@
 {
   "name": "@olympus-dev/gateway",
-  "version": "0.5.1",
+  "version": "1.0.0",
   "type": "module",
   "description": "WebSocket gateway server for Olympus",
   "main": "dist/index.js",
@@ -24,7 +24,8 @@
     "ws": "^8.18.0"
   },
   "optionalDependencies": {
-    "better-sqlite3": "^11.0.0"
+    "better-sqlite3": "^11.0.0",
+    "node-pty": "^1.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

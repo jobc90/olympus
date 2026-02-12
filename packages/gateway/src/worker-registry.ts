@@ -125,17 +125,32 @@ export class WorkerRegistry extends EventEmitter {
     return task;
   }
 
+  timeoutTask(taskId: string, result: CliRunResult): void {
+    const task = this.tasks.get(taskId);
+    if (!task) {
+      console.warn('[WorkerRegistry] Unknown task timeout:', taskId);
+      return;
+    }
+    task.status = 'timeout';
+    task.timeoutAt = Date.now();
+    task.timeoutResult = result;
+    // 핵심: markIdle() 호출하지 않음 → 워커는 busy 유지
+    this.emit('task:timeout', task);
+    this.saveTasksToFile();
+  }
+
   completeTask(taskId: string, result: CliRunResult): void {
     const task = this.tasks.get(taskId);
     if (!task) {
       console.warn('[WorkerRegistry] Unknown task completion:', taskId);
       return;
     }
+    const wasTimeout = task.status === 'timeout';
     task.status = result.success ? 'completed' : 'failed';
     task.completedAt = Date.now();
     task.result = result;
     this.markIdle(task.workerId);
-    this.emit('task:completed', task);
+    this.emit(wasTimeout ? 'task:final_after_timeout' : 'task:completed', task);
     this.saveTasksToFile();
   }
 
@@ -144,7 +159,7 @@ export class WorkerRegistry extends EventEmitter {
   }
 
   getActiveTasks(): WorkerTaskRecord[] {
-    return Array.from(this.tasks.values()).filter(t => t.status === 'running');
+    return Array.from(this.tasks.values()).filter(t => t.status === 'running' || t.status === 'timeout');
   }
 
   private get tasksFilePath(): string {
@@ -155,8 +170,8 @@ export class WorkerRegistry extends EventEmitter {
 
   private saveTasksToFile(): void {
     try {
-      const running = Array.from(this.tasks.values()).filter(t => t.status === 'running');
-      writeFileSync(this.tasksFilePath, JSON.stringify(running, null, 2));
+      const active = Array.from(this.tasks.values()).filter(t => t.status === 'running' || t.status === 'timeout');
+      writeFileSync(this.tasksFilePath, JSON.stringify(active, null, 2));
     } catch { /* ignore write errors */ }
   }
 
@@ -167,7 +182,7 @@ export class WorkerRegistry extends EventEmitter {
       const now = Date.now();
       const ONE_HOUR = 60 * 60 * 1000;
       for (const t of data) {
-        if (t.status === 'running' && now - t.startedAt < ONE_HOUR) {
+        if ((t.status === 'running' || t.status === 'timeout') && now - t.startedAt < ONE_HOUR) {
           this.tasks.set(t.taskId, t);
         }
       }

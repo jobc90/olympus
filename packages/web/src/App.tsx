@@ -36,7 +36,8 @@ import { OlympusMountainControls } from './components/olympus-mountain/OlympusMo
 import ChatWindow from './components/chat/ChatWindow';
 import SettingsPanel from './components/settings/SettingsPanel';
 
-import type { WorkerConfig, WorkerDashboardState, CodexConfig, WorkerAvatar, WorkerBehavior } from './lib/types';
+import type { WorkerConfig, WorkerDashboardState, CodexConfig, GeminiConfig, WorkerAvatar, WorkerBehavior } from './lib/types';
+import { DEFAULT_GEMINI } from './lib/config';
 import { generateDemoData, generateDemoEvent, BEHAVIOR_INFO, formatTokens, formatRelativeTime } from './lib/state-mapper';
 
 // ---------------------------------------------------------------------------
@@ -163,6 +164,10 @@ export default function App() {
     workerConfigs: polledWorkerConfigs,
     workerBehaviors: polledWorkerBehaviors,
     codexBehavior: polledCodexBehavior,
+    geminiBehavior: polledGeminiBehavior,
+    geminiCurrentTask: polledGeminiCurrentTask,
+    geminiCacheCount: polledGeminiCacheCount,
+    geminiLastAnalyzed: polledGeminiLastAnalyzed,
     systemStats: polledSystemStats,
     activityEvents: polledActivityEvents,
     demoMode: hookDemoMode,
@@ -210,6 +215,7 @@ export default function App() {
     : demo.states;
 
   const codexConfig: CodexConfig = { name: 'Zeus', emoji: '\u26A1', avatar: 'zeus' };
+  const geminiConfig: GeminiConfig = DEFAULT_GEMINI;
 
   // useOlympusMountain hook
   const { olympusMountainState, tick } = useOlympusMountain({
@@ -219,6 +225,7 @@ export default function App() {
     ),
     codexConfig,
     codexBehavior: connected ? polledCodexBehavior : 'supervising',
+    geminiBehavior: connected ? polledGeminiBehavior : 'idle',
   });
 
   // System stats
@@ -340,6 +347,44 @@ export default function App() {
                   onChatClick={() => setChatTarget({ id: 'codex-1', name: 'Zeus', emoji: '\u26A1', color: '#FFD700' })}
                 />
 
+                {/* Gemini Advisor (Hera) Section */}
+                <Card>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{geminiConfig.emoji}</span>
+                      <div>
+                        <h3 className="font-pixel text-sm" style={{ color: 'var(--text-primary)' }}>
+                          {geminiConfig.name}
+                          <span className="ml-2 text-xs font-normal" style={{ color: 'var(--text-secondary)' }}>Gemini Advisor</span>
+                        </h3>
+                        <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                          <span>
+                            Status:{' '}
+                            <span style={{ color: polledGeminiBehavior === 'offline' ? 'var(--accent-danger)' : polledGeminiBehavior === 'analyzing' ? 'var(--accent-info)' : 'var(--accent-success)' }}>
+                              {polledGeminiBehavior}
+                            </span>
+                          </span>
+                          <span>Cache: {polledGeminiCacheCount}</span>
+                          <span>Last: {polledGeminiLastAnalyzed ? formatRelativeTime(polledGeminiLastAnalyzed) : 'Never'}</span>
+                          {polledGeminiCurrentTask && (
+                            <span className="truncate max-w-[200px]" title={polledGeminiCurrentTask}>
+                              Task: {polledGeminiCurrentTask}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{
+                        backgroundColor: polledGeminiBehavior === 'offline' ? '#F44336' :
+                          polledGeminiBehavior === 'analyzing' || polledGeminiBehavior === 'scanning' ? '#4FC3F7' :
+                          polledGeminiBehavior === 'advising' ? '#FFD700' : '#4CAF50',
+                      }}
+                    />
+                  </div>
+                </Card>
+
                 {/* Operational panels */}
                 {currentRunId && currentRun ? (
                   <>
@@ -441,6 +486,7 @@ export default function App() {
               olympusMountainState={olympusMountainState}
               workers={workerConfigs}
               codexConfig={codexConfig}
+              geminiConfig={geminiConfig}
               onTick={tick}
               demoMode={demoMode}
               connected={connected}

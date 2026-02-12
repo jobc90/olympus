@@ -6,13 +6,15 @@ import type {
   DashboardConfig,
   WorkerConfig,
   CodexConfig,
+  GeminiConfig,
   GatewayConfig,
   ThemeName,
   WorkerAvatar,
   CodexAvatar,
+  GeminiAvatar,
 } from './types';
 
-export type { DashboardConfig, WorkerConfig, CodexConfig, GatewayConfig, ThemeName, WorkerAvatar, CodexAvatar };
+export type { DashboardConfig, WorkerConfig, CodexConfig, GeminiConfig, GatewayConfig, ThemeName, WorkerAvatar, CodexAvatar, GeminiAvatar };
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -29,8 +31,9 @@ export const WORKER_COLOR_PALETTE = [
   '#EF5350', // red
 ];
 
-export const AVATAR_OPTIONS: WorkerAvatar[] = ['athena', 'poseidon', 'ares', 'apollo', 'artemis', 'hermes', 'hephaestus', 'dionysus', 'demeter', 'aphrodite', 'hera', 'hades', 'persephone', 'prometheus', 'helios', 'nike', 'pan', 'hecate', 'iris', 'heracles'];
+export const AVATAR_OPTIONS: WorkerAvatar[] = ['athena', 'poseidon', 'ares', 'apollo', 'artemis', 'hermes', 'hephaestus', 'dionysus', 'demeter', 'aphrodite', 'hera', 'hades', 'persephone', 'prometheus', 'helios', 'nike', 'pan', 'hecate', 'iris', 'heracles', 'selene'];
 export const CODEX_AVATAR_OPTIONS: CodexAvatar[] = ['zeus'];
+export const GEMINI_AVATAR_OPTIONS: GeminiAvatar[] = ['hera'];
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -47,8 +50,14 @@ export const DEFAULT_CODEX: CodexConfig = {
   avatar: 'zeus',
 };
 
+export const DEFAULT_GEMINI: GeminiConfig = {
+  name: 'Hera',
+  emoji: '\u{1F451}',
+  avatar: 'hera',
+};
+
 export const DEFAULT_WORKERS: WorkerConfig[] = [
-  { id: 'atlas', name: 'Athena', emoji: '\u{1F989}', color: '#4FC3F7', avatar: 'athena' },
+  { id: 'atlas', name: 'Poseidon', emoji: '\u{1F531}', color: '#4FC3F7', avatar: 'poseidon' },
   { id: 'nova', name: 'Ares', emoji: '\u2694\uFE0F', color: '#FF7043', avatar: 'ares' },
   { id: 'spark', name: 'Apollo', emoji: '\u2600\uFE0F', color: '#66BB6A', avatar: 'apollo' },
 ];
@@ -56,6 +65,7 @@ export const DEFAULT_WORKERS: WorkerConfig[] = [
 export const DEFAULT_CONFIG: DashboardConfig = {
   workers: DEFAULT_WORKERS,
   codex: DEFAULT_CODEX,
+  gemini: DEFAULT_GEMINI,
   gateway: DEFAULT_GATEWAY,
   theme: 'midnight',
   connected: false,
@@ -78,6 +88,7 @@ export function loadConfig(): DashboardConfig {
     const config: DashboardConfig = {
       workers: Array.isArray(parsed.workers) ? parsed.workers.slice(0, MAX_WORKERS) : DEFAULT_CONFIG.workers,
       codex: parsed.codex ?? DEFAULT_CONFIG.codex,
+      gemini: (parsed as Record<string, unknown>).gemini as DashboardConfig['gemini'] ?? DEFAULT_GEMINI,
       gateway: parsed.gateway ?? DEFAULT_CONFIG.gateway,
       theme: parsed.theme ?? DEFAULT_CONFIG.theme,
       connected: false,
@@ -95,6 +106,7 @@ export function saveConfig(config: DashboardConfig): void {
   const serializable = {
     workers: config.workers,
     codex: config.codex,
+    gemini: config.gemini,
     gateway: config.gateway,
     theme: config.theme,
     demoMode: config.demoMode,
@@ -113,6 +125,7 @@ export function exportConfig(config: DashboardConfig): string {
   return JSON.stringify({
     workers: config.workers,
     codex: config.codex,
+    gemini: config.gemini,
     gateway: config.gateway,
     theme: config.theme,
   }, null, 2);
@@ -126,6 +139,7 @@ export function importConfig(json: string): DashboardConfig | null {
     return {
       workers: parsed.workers,
       codex: parsed.codex,
+      gemini: parsed.gemini ?? DEFAULT_GEMINI,
       gateway: parsed.gateway ?? DEFAULT_GATEWAY,
       theme: parsed.theme ?? 'midnight',
       connected: false,

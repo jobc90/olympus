@@ -3,12 +3,13 @@
 // ============================================================================
 
 import { useRef, useEffect, useState, useCallback } from 'react';
-import type { WorkerConfig, CodexConfig, WorkerAvatar, CodexAvatar } from '../../lib/types';
+import type { WorkerConfig, CodexConfig, GeminiConfig, WorkerAvatar, CodexAvatar, GeminiAvatar } from '../../lib/types';
 import {
   renderFrame,
   type OlympusMountainState,
   type WorkerConfig as CanvasWorkerConfig,
   type CodexConfig as CanvasCodexConfig,
+  type GeminiConfig as CanvasGeminiConfig,
   type LayoutProvider,
 } from '../../engine/canvas';
 import {
@@ -56,6 +57,7 @@ interface OlympusMountainCanvasProps {
   olympusMountainState: OlympusMountainState;
   workers: WorkerConfig[];
   codexConfig: CodexConfig;
+  geminiConfig?: GeminiConfig;
   onTick: () => void;
   /** Internal render resolution width (default: 1100) */
   width?: number;
@@ -75,6 +77,7 @@ export function OlympusMountainCanvas({
   olympusMountainState,
   workers,
   codexConfig,
+  geminiConfig,
   onTick,
   width = BASE_WIDTH,
   height = BASE_HEIGHT,
@@ -120,11 +123,11 @@ export function OlympusMountainCanvas({
 
   // Store latest props in refs to avoid stale closures in the render loop
   const propsRef = useRef({
-    olympusMountainState, workers, codexConfig, connected, demoMode, onTick, width, height, scale, dpr,
+    olympusMountainState, workers, codexConfig, geminiConfig, connected, demoMode, onTick, width, height, scale, dpr,
   });
   useEffect(() => {
     propsRef.current = {
-      olympusMountainState, workers, codexConfig, connected, demoMode, onTick, width, height, scale, dpr,
+      olympusMountainState, workers, codexConfig, geminiConfig, connected, demoMode, onTick, width, height, scale, dpr,
     };
   });
 
@@ -134,6 +137,7 @@ export function OlympusMountainCanvas({
         olympusMountainState: os,
         workers: ws,
         codexConfig: cc,
+        geminiConfig: gc,
         connected: cn,
         demoMode: dm,
         onTick: ot,
@@ -180,9 +184,16 @@ export function OlympusMountainCanvas({
           avatar: cc.avatar as CodexAvatar,
         };
 
+        const canvasGemini: CanvasGeminiConfig | undefined = gc ? {
+          name: gc.name,
+          emoji: gc.emoji,
+          avatar: gc.avatar as GeminiAvatar,
+        } : undefined;
+
         renderFrame(ctx, w, h, os, {
           workers: canvasWorkers,
           codex: canvasCodex,
+          gemini: canvasGemini,
           connected: cn,
           demoMode: dm,
           layout: layoutProvider,

@@ -44,9 +44,11 @@ export interface WorkerTaskRecord {
   workerId: string;
   workerName: string;
   prompt: string;
-  status: 'running' | 'completed' | 'failed';
+  status: 'running' | 'completed' | 'failed' | 'timeout';
   startedAt: number;
   completedAt?: number;
   result?: CliRunResult;
   chatId?: number;       // 텔레그램 응답 대상 chat ID
+  timeoutResult?: CliRunResult;  // 30분 타임아웃 시 부분 결과
+  timeoutAt?: number;            // 타임아웃 발생 시점
 }

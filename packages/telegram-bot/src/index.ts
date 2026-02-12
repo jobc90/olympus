@@ -481,24 +481,24 @@ class OlympusBot {
       }
     });
 
-    // /orchestration <prompt> - Multi-AI orchestration via async API + polling
-    this.bot.command('orchestration', async (ctx) => {
+    // /team <prompt> - Team Engineering Protocol via async API + polling
+    this.bot.command('team', async (ctx) => {
       const text = ctx.message.text;
-      const prompt = text.replace(/^\/orchestration\s*/, '').trim();
+      const prompt = text.replace(/^\/team\s*/, '').trim();
 
       if (!prompt) {
         await ctx.reply(
           '❌ 요청 내용을 입력해주세요.\n\n' +
           '예:\n' +
-          '`/orchestration 로그인 UI 개선` (Auto)\n' +
-          '`/orchestration --plan 장바구니 추가` (확인)\n' +
-          '`/orchestration --strict 결제 리팩토링` (엄격)',
+          '`/team 로그인 UI 개선`\n' +
+          '`/team 장바구니 기능 추가`\n' +
+          '`/team 결제 시스템 리팩토링`',
           { parse_mode: 'Markdown' }
         );
         return;
       }
 
-      const statusMsg = await ctx.reply(`🚀 *Multi-AI Orchestration* 시작 중...`, { parse_mode: 'Markdown' });
+      const statusMsg = await ctx.reply(`🚀 *Team Engineering Protocol* 시작 중...`, { parse_mode: 'Markdown' });
       await ctx.sendChatAction('typing');
 
       try {
@@ -510,8 +510,8 @@ class OlympusBot {
             Authorization: `Bearer ${this.config.apiKey}`,
           },
           body: JSON.stringify({
-            prompt: `/orchestration "${prompt}"`,
-            sessionKey: `telegram:${ctx.chat.id}:orchestration`,
+            prompt: `[TEAM ENGINEERING PROTOCOL] Execute the Team Engineering Protocol defined in your CLAUDE.md for the following task. Activate all On-Demand agents, follow the full workflow (Skill Discovery → Work Decomposition → Team Creation → Consensus → 2-Phase Development → Review → QA). Task: ${prompt}`,
+            sessionKey: `telegram:${ctx.chat.id}:team`,
             provider: 'claude',
             timeoutMs: 1_800_000,
             dangerouslySkipPermissions: true,
@@ -525,80 +525,12 @@ class OlympusBot {
         }
 
         const { taskId } = await startRes.json() as { taskId: string };
-
-        // 2. 폴링으로 결과 대기
-        const POLL_INTERVAL = 10_000;
-        const MAX_POLLS = 180; // 30분
-
-        for (let polls = 1; polls <= MAX_POLLS; polls++) {
-          await new Promise(r => setTimeout(r, POLL_INTERVAL));
-
-          try {
-            const statusRes = await fetch(
-              `${this.config.gatewayUrl}/api/cli/run/${taskId}/status`,
-              {
-                headers: { Authorization: `Bearer ${this.config.apiKey}` },
-                signal: AbortSignal.timeout(10_000),
-              }
-            );
-            const data = await statusRes.json() as {
-              status: string;
-              result?: CliRunResult;
-              error?: string;
-              elapsedMs?: number;
-            };
-
-            if (data.status === 'completed' && data.result) {
-              const result = data.result;
-              const footer = result.usage
-                ? `\n\n📊 ${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4)} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
-                : '';
-
-              const fullText = `✅ *Orchestration 완료*\n\n${result.text}${footer}`;
-              const chunks = splitLongMessage(fullText, 4000);
-              await ctx.telegram.editMessageText(
-                ctx.chat.id, statusMsg.message_id, undefined,
-                chunks[0], { parse_mode: 'Markdown' }
-              ).catch(() => {});
-              for (let i = 1; i < chunks.length; i++) {
-                await ctx.reply(chunks[i], { parse_mode: 'Markdown' }).catch(() => {});
-              }
-              return;
-            }
-
-            if (data.status === 'failed') {
-              await ctx.telegram.editMessageText(
-                ctx.chat.id, statusMsg.message_id, undefined,
-                `❌ Orchestration 실패: ${data.error}`
-              ).catch(() => {});
-              return;
-            }
-
-            // Progress update every 60초
-            if (polls % 6 === 0) {
-              const elapsed = Math.round((data.elapsedMs ?? polls * POLL_INTERVAL) / 1000);
-              await ctx.telegram.editMessageText(
-                ctx.chat.id, statusMsg.message_id, undefined,
-                `🔄 *Orchestration 진행 중...* (${elapsed}초 경과)`,
-                { parse_mode: 'Markdown' }
-              ).catch(() => {});
-            }
-          } catch {
-            // 네트워크 에러 시 다음 폴링까지 대기
-            continue;
-          }
-        }
-
-        // 타임아웃
-        await ctx.telegram.editMessageText(
-          ctx.chat.id, statusMsg.message_id, undefined,
-          '⏰ Orchestration 타임아웃 (30분)'
-        ).catch(() => {});
+        await this.pollTeamTask(ctx, taskId, statusMsg.message_id);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         await ctx.telegram.editMessageText(
           ctx.chat.id, statusMsg.message_id, undefined,
-          `❌ Orchestration 오류: ${msg}`
+          `❌ Team 오류: ${msg}`
         ).catch(() => {});
       }
     });
@@ -1014,6 +946,47 @@ class OlympusBot {
       message = text;
     }
 
+    // "team" or "team:" prefix detection → Team Engineering Protocol (async 30min)
+    const teamMatch = message.match(/^team[:\s]\s*(.+)$/is);
+    if (teamMatch) {
+      const teamPrompt = teamMatch[1].trim();
+      const statusMsg = await ctx.reply(`🚀 *Team Engineering Protocol* 시작 중...\n워커: ${displayName}`, { parse_mode: 'Markdown' });
+      await ctx.sendChatAction('typing');
+
+      try {
+        const startRes = await fetch(`${this.config.gatewayUrl}/api/cli/run/async`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.config.apiKey}`,
+          },
+          body: JSON.stringify({
+            prompt: `[TEAM ENGINEERING PROTOCOL] Execute the Team Engineering Protocol defined in your CLAUDE.md for the following task. Activate all On-Demand agents, follow the full workflow (Skill Discovery → Work Decomposition → Team Creation → Consensus → 2-Phase Development → Review → QA). Task: ${teamPrompt}`,
+            sessionKey: `${sessionKey}:team`,
+            provider: 'claude',
+            timeoutMs: 1_800_000,
+            dangerouslySkipPermissions: true,
+          }),
+          signal: AbortSignal.timeout(30_000),
+        });
+
+        if (!startRes.ok) {
+          const error = await startRes.json() as { message: string };
+          throw new Error(error.message);
+        }
+
+        const { taskId } = await startRes.json() as { taskId: string };
+        await this.pollTeamTask(ctx, taskId, statusMsg.message_id);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        await ctx.telegram.editMessageText(
+          ctx.chat.id, statusMsg.message_id, undefined,
+          `❌ Team 오류: ${msg}`
+        ).catch(() => {});
+      }
+      return;
+    }
+
     await ctx.sendChatAction('typing');
 
     try {
@@ -1111,6 +1084,84 @@ class OlympusBot {
 
     const text = prefix ? `${prefix}\n\n${result.text}${footer}` : `${result.text}${footer}`;
     await this.sendLongMessage(ctx.chat.id, text);
+  }
+
+  /**
+   * Poll a team task for completion (30min max, 10s interval).
+   * Shared by /team command and @worker team prefix.
+   */
+  private async pollTeamTask(
+    ctx: Context & { chat: { id: number } },
+    taskId: string,
+    statusMsgId: number,
+  ): Promise<void> {
+    const POLL_INTERVAL = 10_000;
+    const MAX_POLLS = 180; // 30분
+
+    for (let polls = 1; polls <= MAX_POLLS; polls++) {
+      await new Promise(r => setTimeout(r, POLL_INTERVAL));
+
+      try {
+        const statusRes = await fetch(
+          `${this.config.gatewayUrl}/api/cli/run/${taskId}/status`,
+          {
+            headers: { Authorization: `Bearer ${this.config.apiKey}` },
+            signal: AbortSignal.timeout(10_000),
+          }
+        );
+        const data = await statusRes.json() as {
+          status: string;
+          result?: CliRunResult;
+          error?: string;
+          elapsedMs?: number;
+        };
+
+        if (data.status === 'completed' && data.result) {
+          const result = data.result;
+          const footer = result.usage
+            ? `\n\n📊 ${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4)} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
+            : '';
+
+          const fullText = `✅ *Team 완료*\n\n${result.text}${footer}`;
+          const chunks = splitLongMessage(fullText, 4000);
+          await ctx.telegram.editMessageText(
+            ctx.chat.id, statusMsgId, undefined,
+            chunks[0], { parse_mode: 'Markdown' }
+          ).catch(() => {});
+          for (let i = 1; i < chunks.length; i++) {
+            await ctx.reply(chunks[i], { parse_mode: 'Markdown' }).catch(() => {});
+          }
+          return;
+        }
+
+        if (data.status === 'failed') {
+          await ctx.telegram.editMessageText(
+            ctx.chat.id, statusMsgId, undefined,
+            `❌ Team 실패: ${data.error}`
+          ).catch(() => {});
+          return;
+        }
+
+        // Progress update every 60초
+        if (polls % 6 === 0) {
+          const elapsed = Math.round((data.elapsedMs ?? polls * POLL_INTERVAL) / 1000);
+          await ctx.telegram.editMessageText(
+            ctx.chat.id, statusMsgId, undefined,
+            `🔄 *Team 진행 중...* (${elapsed}초 경과)`,
+            { parse_mode: 'Markdown' }
+          ).catch(() => {});
+        }
+      } catch {
+        // 네트워크 에러 시 다음 폴링까지 대기
+        continue;
+      }
+    }
+
+    // 타임아웃
+    await ctx.telegram.editMessageText(
+      ctx.chat.id, statusMsgId, undefined,
+      '⏰ Team 타임아웃 (30분)'
+    ).catch(() => {});
   }
 
   /**
@@ -1475,6 +1526,51 @@ class OlympusBot {
       return;
     }
 
+    // Handle worker task:timeout — 30분 타임아웃 중간 결과
+    if (msg.type === 'task:timeout') {
+      const taskPayload = msg.payload as {
+        taskId: string;
+        workerName: string;
+        chatId?: number;
+        summary?: string;
+        success: boolean;
+        durationMs?: number;
+      };
+
+      if (taskPayload.chatId) {
+        const durationMin = Math.round((taskPayload.durationMs ?? 0) / 60000);
+        const summaryText = taskPayload.summary ?? '(결과 추출 중)';
+        const text = `[${taskPayload.workerName}] ⏰ ${durationMin}분 타임아웃 — 계속 모니터링 중\n\n중간 결과:\n${summaryText}\n\n_실제 완료 시 최종 결과가 전송됩니다._`;
+        this.sendLongMessage(taskPayload.chatId, text).catch((err) => {
+          structuredLog('error', 'telegram-bot', 'task_timeout_send_failed', { error: (err as Error).message });
+        });
+      }
+      return;
+    }
+
+    // Handle worker task:final_after_timeout — 타임아웃 후 최종 완료
+    if (msg.type === 'task:final_after_timeout') {
+      const taskPayload = msg.payload as {
+        taskId: string;
+        workerName: string;
+        chatId?: number;
+        summary?: string;
+        success: boolean;
+        durationMs?: number;
+      };
+
+      if (taskPayload.chatId) {
+        const durationMin = Math.round((taskPayload.durationMs ?? 0) / 60000);
+        const icon = taskPayload.success ? '✅' : '❌';
+        const summaryText = taskPayload.summary ?? (taskPayload.success ? '작업 완료' : '작업 실패');
+        const text = `[${taskPayload.workerName}] ${icon} 최종 완료 (${durationMin}분)\n\n${summaryText}`;
+        this.sendLongMessage(taskPayload.chatId, text).catch((err) => {
+          structuredLog('error', 'telegram-bot', 'task_final_send_failed', { error: (err as Error).message });
+        });
+      }
+      return;
+    }
+
     const payload = msg.payload as { sessionId?: string; runId?: string };
     const sessionId = payload.sessionId ?? payload.runId;
 
@@ -1561,7 +1657,7 @@ class OlympusBot {
         break;
       }
 
-      // Legacy support for existing run events (for orchestration)
+      // Legacy support for existing run events (for team protocol)
       case 'phase:change': {
         const p = payload as PhasePayload;
         if (p.status === 'completed') {

@@ -1,6 +1,6 @@
 {
   "name": "@olympus-dev/tui",
-  "version": "0.5.1",
+  "version": "1.0.0",
   "type": "module",
   "description": "Terminal UI for Olympus built with Ink",
   "main": "dist/index.js",

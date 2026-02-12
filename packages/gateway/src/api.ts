@@ -7,6 +7,7 @@ import { SessionManager, type SessionEvent } from './session-manager.js';
 import { runParallel, GeminiExecutor, TaskStore, ContextStore, ContextService, extractContext, type LocalContextStoreManager } from '@olympus-dev/core';
 import type { CreateTaskInput, UpdateTaskInput, CreateContextInput, UpdateContextInput, ContextScope, CreateMergeInput, ReportUpstreamInput } from '@olympus-dev/protocol';
 import type { CodexAdapter } from './codex-adapter.js';
+import type { GeminiAdvisor } from './gemini-advisor.js';
 
 export interface ApiHandlerOptions {
   runManager: RunManager;
@@ -14,6 +15,7 @@ export interface ApiHandlerOptions {
   cliSessionStore?: import('./cli-session-store.js').CliSessionStore;
   memoryStore?: import('./memory/store.js').MemoryStore;
   codexAdapter?: CodexAdapter;
+  geminiAdvisor?: GeminiAdvisor;
   workerRegistry?: import('./worker-registry.js').WorkerRegistry;
   onRunCreated?: () => void;  // Callback to broadcast runs:list
   onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
@@ -221,6 +223,25 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     }
   }
 
+  // /api/gemini-advisor routes
+  if (parts[0] === 'api' && parts[1] === 'gemini-advisor') {
+    if (parts[2] === 'status') {
+      return { path: '/api/gemini-advisor/status', query };
+    }
+    if (parts[2] === 'refresh') {
+      return { path: '/api/gemini-advisor/refresh', query };
+    }
+    if (parts[2] === 'projects') {
+      if (parts[3]) {
+        return { path: '/api/gemini-advisor/projects/:id', id: parts[3], query };
+      }
+      return { path: '/api/gemini-advisor/projects', query };
+    }
+    if (parts[2] === 'analyze' && parts[3]) {
+      return { path: '/api/gemini-advisor/analyze/:id', id: parts[3], query };
+    }
+  }
+
   // /api/operations/:id
   if (parts[0] === 'api' && parts[1] === 'operations' && parts[2]) {
     return { path: '/api/operations/:id', id: parts[2], query };
@@ -233,7 +254,7 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
  * Create HTTP API request handler
  */
 export function createApiHandler(options: ApiHandlerOptions) {
-  const { runManager, sessionManager, cliSessionStore, memoryStore, codexAdapter, workerRegistry, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete, onCliStream, onWorkerEvent, localContextManager } = options;
+  const { runManager, sessionManager, cliSessionStore, memoryStore, codexAdapter, geminiAdvisor, workerRegistry, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete, onCliStream, onWorkerEvent, localContextManager } = options;
 
   // 비동기 CLI 실행 태스크 저장소 (in-memory, 1시간 TTL)
   const asyncTasks = new Map<string, { status: 'running' | 'completed' | 'failed'; result?: import('@olympus-dev/protocol').CliRunResult; error?: string; startedAt: number }>();
@@ -373,9 +394,19 @@ export function createApiHandler(options: ApiHandlerOptions) {
             const store = await localContextManager.getProjectStore(worker.projectPath);
             const injection = store.buildContextInjection({ maxTokens: 2000 });
             if (injection.projectSummary) {
-              enrichedPrompt = `## 프로젝트 컨텍스트\n${injection.projectSummary}\n\n## 최근 활동\n${injection.recentActivity}\n\n---\n\n${body.prompt}`;
+              enrichedPrompt = `## Project Context\n${injection.projectSummary}\n\n## Recent Activity\n${injection.recentActivity}\n\n---\n\n${body.prompt}`;
             }
           } catch { /* 주입 실패해도 원본 프롬프트 사용 */ }
+        }
+
+        // Gemini Advisor 프로젝트 분석 주입
+        if (geminiAdvisor && worker.projectPath) {
+          try {
+            const geminiContext = geminiAdvisor.buildProjectContext(worker.projectPath, { maxLength: 2000 });
+            if (geminiContext) {
+              enrichedPrompt = `## Project Analysis (Gemini)\n${geminiContext}\n\n${enrichedPrompt}`;
+            }
+          } catch { /* Gemini not available */ }
         }
 
         // 1. WorkerRegistry에 태스크 생성 (worker → busy)
@@ -402,7 +433,7 @@ export function createApiHandler(options: ApiHandlerOptions) {
           sendJson(res, 503, { error: 'Worker registry not available' });
           return;
         }
-        const body = await parseBody<{ success: boolean; text?: string; error?: string; durationMs?: number; usage?: Record<string, number>; cost?: number }>(req);
+        const body = await parseBody<{ success: boolean; text?: string; error?: string; durationMs?: number; usage?: Record<string, number>; cost?: number; timeout?: boolean; isFinalAfterTimeout?: boolean }>(req);
         const task = workerRegistry.getTask(id);
         if (!task) {
           sendJson(res, 404, { error: 'Task not found' });
@@ -426,6 +457,112 @@ export function createApiHandler(options: ApiHandlerOptions) {
           error: body.error ? { type: 'unknown' as const, message: body.error } : undefined,
         };
 
+        // ── 타임아웃 분기 처리 ──
+        if (body.timeout && !body.isFinalAfterTimeout) {
+          // 30분 타임아웃: 부분 결과 기록, 워커는 busy 유지
+          workerRegistry.timeoutTask(id, result);
+
+          // Codex 요약 (간단히 — 부분 결과)
+          let summary = result.text ?? '';
+          if (summary.length > 2000) {
+            summary = summary.slice(0, 2000);
+          }
+
+          onWorkerEvent?.('task:timeout', {
+            taskId: id,
+            workerId: task.workerId,
+            workerName: task.workerName,
+            success: body.success,
+            durationMs: body.durationMs,
+            chatId: task.chatId,
+            summary,
+          });
+
+          sendJson(res, 200, { ok: true, status: 'timeout_monitoring' });
+          return;
+        }
+
+        if (body.isFinalAfterTimeout) {
+          // 타임아웃 후 최종 완료
+          workerRegistry.completeTask(id, result);
+
+          // LocalContextStore에 워커 컨텍스트 저장
+          if (localContextManager && task) {
+            try {
+              const worker = workerRegistry?.getAll().find(w => w.id === task.workerId);
+              const extracted = extractContext(result, task.prompt);
+              const projectPath = worker?.projectPath ?? process.cwd();
+              const store = await localContextManager.getProjectStore(projectPath);
+              store.saveWorkerContext({
+                id: randomUUID(),
+                workerId: task.workerId,
+                workerName: task.workerName,
+                taskId: id,
+                prompt: task.prompt.slice(0, 500),
+                success: result.success,
+                summary: extracted.summary,
+                filesChanged: extracted.filesChanged,
+                decisions: extracted.decisions,
+                errors: extracted.errors,
+                dependencies: extracted.dependencies,
+                model: result.model,
+                inputTokens: result.usage?.inputTokens ?? 0,
+                outputTokens: result.usage?.outputTokens ?? 0,
+                costUsd: result.cost ?? 0,
+                durationMs: result.durationMs ?? 0,
+                numTurns: result.numTurns ?? 0,
+                rawText: result.text?.slice(0, 8000),
+                createdAt: new Date().toISOString(),
+              });
+              store.updateProjectContext();
+              await localContextManager.propagateToRoot(projectPath, process.cwd());
+            } catch { /* 저장 실패해도 응답은 정상 */ }
+          }
+
+          // Gemini 증분 갱신 트리거
+          if (geminiAdvisor) {
+            const taskWorker = workerRegistry?.getAll().find(w => w.id === task.workerId);
+            if (taskWorker?.projectPath) {
+              geminiAdvisor.onProjectUpdate(taskWorker.projectPath);
+            }
+          }
+
+          // 요약
+          let summary = result.text ?? '';
+          if (result.success && summary) {
+            try {
+              const { runCli } = await import('./cli-runner.js');
+              const summarizeResult = await runCli({
+                prompt: `Summarize the following work result from worker "${task.workerName}" concisely in Korean. Only key outcomes — no greetings or extra explanations.\n\n---\n${summary.slice(0, 8000)}`,
+                provider: 'codex',
+                model: 'gpt-5.3-codex',
+                dangerouslySkipPermissions: true,
+                timeoutMs: 60_000,
+              });
+              if (summarizeResult.success && summarizeResult.text) {
+                summary = summarizeResult.text;
+              }
+            } catch {
+              summary = summary.slice(0, 2000);
+            }
+          }
+
+          onWorkerEvent?.('task:final_after_timeout', {
+            taskId: id,
+            workerId: task.workerId,
+            workerName: task.workerName,
+            success: body.success,
+            durationMs: body.durationMs,
+            chatId: task.chatId,
+            summary,
+          });
+          onCliComplete?.(result);
+
+          sendJson(res, 200, { ok: true });
+          return;
+        }
+
+        // ── 일반 완료 (기존 로직) ──
         workerRegistry.completeTask(id, result);
 
         // LocalContextStore에 워커 컨텍스트 저장
@@ -461,13 +598,21 @@ export function createApiHandler(options: ApiHandlerOptions) {
           } catch { /* 저장 실패해도 응답은 정상 */ }
         }
 
+        // Gemini 증분 갱신 트리거
+        if (geminiAdvisor) {
+          const taskWorker = workerRegistry?.getAll().find(w => w.id === task.workerId);
+          if (taskWorker?.projectPath) {
+            geminiAdvisor.onProjectUpdate(taskWorker.projectPath);
+          }
+        }
+
         // Codex로 결과 요약
         let summary = result.text ?? '';
         if (result.success && summary) {
           try {
             const { runCli } = await import('./cli-runner.js');
             const summarizeResult = await runCli({
-              prompt: `다음은 "${task.workerName}" 워커의 작업 결과입니다. 핵심만 간결하게 요약해주세요. 불필요한 인사말이나 부가 설명 없이 결과만 전달하세요.\n\n---\n${summary.slice(0, 8000)}`,
+              prompt: `Summarize the following work result from worker "${task.workerName}" concisely in Korean. Only key outcomes — no greetings or extra explanations.\n\n---\n${summary.slice(0, 8000)}`,
               provider: 'codex',
               model: 'gpt-5.3-codex',
               dangerouslySkipPermissions: true,
@@ -488,8 +633,8 @@ export function createApiHandler(options: ApiHandlerOptions) {
           workerName: task.workerName,
           success: body.success,
           durationMs: body.durationMs,
-          chatId: task.chatId,    // chatId 포함
-          summary,                // 요약본 포함
+          chatId: task.chatId,
+          summary,
         });
         onCliComplete?.(result);
 
@@ -556,111 +701,126 @@ export function createApiHandler(options: ApiHandlerOptions) {
           } catch { /* context not available */ }
         }
 
-        const systemPrompt = `당신은 Olympus Codex — 사용자의 개인 AI 비서입니다.
-사용자의 로컬 컴퓨터 환경에서 작업을 실행하며,
-업무와 일상 생산성을 돕는 것이 역할입니다.
+        // Gemini Advisor 컨텍스트 추가
+        let geminiContextStr = '';
+        if (geminiAdvisor) {
+          try {
+            geminiContextStr = geminiAdvisor.buildCodexContext({ maxLength: 3000 });
+          } catch { /* Gemini not available */ }
+        }
 
-사용자 환경은 macOS / Windows / Linux 모두 가능합니다.
-항상 상황에 맞게 자연스럽게 행동하세요.
+        const systemPrompt = `You are Olympus Codex — the user's personal AI assistant.
+You execute tasks in the user's local computer environment,
+helping with work and daily productivity.
+
+The user's environment may be macOS / Windows / Linux.
+Always act naturally according to the context.
 
 ---
 
-## 역할 분리
+## Language Policy (CRITICAL)
 
-- Codex는 대부분의 작업을 직접 수행합니다.
-- Claude 워커는 오직 **코딩/개발 작업**만 담당합니다.
-  (코드 작성, 빌드, 테스트, 리팩토링 등)
+- ALL internal operations MUST be in English: thinking, reasoning, inter-agent communication, context storage, system messages, logs.
+- ONLY user-facing responses MUST be in Korean: direct replies to user in chat (Telegram, CLI terminal).
+- When responding to the user, use friendly and concise Korean.
 
 ---
 
-## 응답 모드 규칙 (가장 중요)
+## Role Separation
 
-Codex는 요청을 먼저 2가지로 분류합니다.
+- Codex handles most tasks directly.
+- Claude workers handle ONLY **coding/development tasks**
+  (code writing, builds, tests, refactoring, etc.)
 
-### 1) Casual Mode (기본값)
+---
 
-다음 요청은 Casual Mode입니다:
-- 단순 질문
-- 가벼운 대화
-- 개념 설명
-- 짧은 정보 요청
+## Response Mode Rules (Most Important)
 
-이 경우:
+Codex first classifies requests into 2 modes:
 
-- 짧고 자연스럽게 답변하세요.
-- 불필요한 단계 요약/보고서 말투를 쓰지 마세요.
-- "요청 요약 / 작업 판단 / 다음 액션" 같은 형식을 절대 붙이지 마세요.
+### 1) Casual Mode (default)
 
-예시 톤:
+These are Casual Mode requests:
+- Simple questions
+- Light conversation
+- Concept explanations
+- Short information requests
+
+In this case:
+- Answer briefly and naturally.
+- Do NOT use unnecessary step summaries or report-style language.
+- NEVER prepend formats like "Request Summary / Task Decision / Next Action".
+
+Example tone (in Korean):
 "그건 'gpt-5.3-codex'가 기본이에요."
 "응, 그거 이렇게 하면 돼요."
 
 ---
 
-### 2) Execution Mode (실행 작업일 때만)
+### 2) Execution Mode (only for execution tasks)
 
-다음이 포함되면 Execution Mode입니다:
-- 파일/폴더 조작
-- 시스템 설정 변경
-- 앱 실행
-- 자동화 실행
-- 개발/코딩 작업
+These trigger Execution Mode:
+- File/folder operations
+- System configuration changes
+- App execution
+- Automation execution
+- Development/coding tasks
 
-이 경우에만 실행 프로세스를 따릅니다:
+Only in this case, follow the execution process:
 
-1) 실행 또는 위임
-2) 완료 후 핵심만 짧게 보고
-3) 필요할 때만 다음 액션 제안
-
----
-
-## 워커 안내
-
-사용자가 \`@워커이름 명령\` 형식으로 멘션하면 해당 워커에 작업을 위임합니다.
-워커 작업이 완료되면 결과를 요약하여 사용자에게 전달합니다.
-
-코딩/개발 작업 요청이 오면:
-- 워커가 있으면: 해당 워커에 자동으로 작업을 위임합니다
-- 워커가 없으면: \`olympus start\`로 워커를 시작하라고 안내합니다
-
-${workers.length > 0 ? '현재 워커: ' + workers.map(w => `@${w.name}`).join(', ') : ''}
+1) Execute or delegate
+2) Report key results briefly after completion
+3) Suggest next actions only when necessary
 
 ---
 
-## Codex가 직접 하는 작업
+## Worker Guide
 
-- 대화, 질문 답변, 브레인스토밍
-- 정보 검색, 요약, 번역
-- 간단한 계산, 개념 설명
+When the user mentions \`@workerName command\`, delegate the task to that worker.
+When worker task completes, summarize the result and deliver to the user.
 
----
+For coding/development requests:
+- If workers are available: automatically delegate to the appropriate worker
+- If no workers: advise user to start one with \`olympus start\`
 
-## 안전 규칙
-
-- 비밀번호/OTP 요청 금지
-- 불확실하면 먼저 확인 후 진행
+${workers.length > 0 ? 'Current workers: ' + workers.map(w => `@${w.name}`).join(', ') : ''}
 
 ---
 
-## Execution Mode 결과 보고 (필요할 때만)
+## Tasks Codex Handles Directly
 
-실행 작업이 끝났을 때만 간단히:
+- Conversation, Q&A, brainstorming
+- Information search, summarization, translation
+- Simple calculations, concept explanations
+
+---
+
+## Safety Rules
+
+- Never request passwords/OTP
+- When uncertain, confirm before proceeding
+
+---
+
+## Execution Mode Result Reporting (only when needed)
+
+Only after execution tasks, report briefly:
 
 ✅ 완료: …
 📌 참고: …
-➡️ 다음: (정말 필요할 때만)
+➡️ 다음: (only when truly needed)
 
 ---
 
-## 톤
+## Tone
 
-- 한국어로 친근하고 간결하게
-- 과한 보고서 말투 금지
-- 필요한 경우에만 구조적으로 정리
+- Respond to users in Korean, friendly and concise
+- No excessive report-style language
+- Structure only when necessary
 
-## 현재 상태
-- 워커 세션: ${workers.length > 0 ? workers.length + '개 활성' : '없음 (olympus start 필요)'}
-${workers.length > 0 ? '- 워커 목록:\n' + workerListStr : ''}${projectContextStr}`;
+## Current State
+- Worker sessions: ${workers.length > 0 ? workers.length + ' active' : 'none (need olympus start)'}
+${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextStr}${geminiContextStr}`;
 
         // @mention 감지 → 워커 위임
         const mentionMatch = body.message.match(/^@(\S+)\s+([\s\S]+)/);
@@ -1640,6 +1800,73 @@ ${workers.length > 0 ? '- 워커 목록:\n' + workerListStr : ''}${projectContex
           const store = await localContextManager.getProjectStore(projectPath);
           const injection = store.buildContextInjection({ maxTokens });
           sendJson(res, 200, { injection });
+        } catch (e) {
+          sendJson(res, 500, { error: (e as Error).message });
+        }
+        return;
+      }
+
+      // ============ Gemini Advisor API ============
+
+      // GET /api/gemini-advisor/status
+      if (path === '/api/gemini-advisor/status' && method === 'GET') {
+        if (!geminiAdvisor) {
+          sendJson(res, 200, { running: false, behavior: 'offline', cacheSize: 0 });
+          return;
+        }
+        sendJson(res, 200, geminiAdvisor.getStatus());
+        return;
+      }
+
+      // GET /api/gemini-advisor/projects — 캐시된 프로젝트 분석 목록
+      if (path === '/api/gemini-advisor/projects' && method === 'GET') {
+        if (!geminiAdvisor) {
+          sendJson(res, 200, { projects: [] });
+          return;
+        }
+        sendJson(res, 200, { projects: geminiAdvisor.getAllCachedAnalyses() });
+        return;
+      }
+
+      // GET /api/gemini-advisor/projects/:encodedPath — 특정 프로젝트 분석
+      if (path === '/api/gemini-advisor/projects/:id' && method === 'GET' && id) {
+        if (!geminiAdvisor) {
+          sendJson(res, 503, { error: 'Gemini Advisor not available' });
+          return;
+        }
+        const projectPath = decodeURIComponent(id);
+        const analysis = geminiAdvisor.getCachedAnalysis(projectPath);
+        if (!analysis) {
+          sendJson(res, 404, { error: 'Analysis not found for this project' });
+          return;
+        }
+        sendJson(res, 200, { analysis });
+        return;
+      }
+
+      // POST /api/gemini-advisor/refresh — 수동 전체 갱신
+      if (path === '/api/gemini-advisor/refresh' && method === 'POST') {
+        if (!geminiAdvisor) {
+          sendJson(res, 503, { error: 'Gemini Advisor not available' });
+          return;
+        }
+        geminiAdvisor.analyzeAllProjects().catch(() => {});
+        sendJson(res, 202, { status: 'refresh_started' });
+        return;
+      }
+
+      // POST /api/gemini-advisor/analyze/:encodedPath — 특정 프로젝트 즉시 분석
+      if (path === '/api/gemini-advisor/analyze/:id' && method === 'POST' && id) {
+        if (!geminiAdvisor) {
+          sendJson(res, 503, { error: 'Gemini Advisor not available' });
+          return;
+        }
+        const projectPath = decodeURIComponent(id);
+        try {
+          const body = await parseBody<{ name?: string }>(req);
+          const projectName = body.name ?? projectPath.split('/').pop() ?? 'unknown';
+          const analysis = await geminiAdvisor.analyzeProject(projectPath, projectName);
+          sendJson(res, 200, { analysis });
         } catch (e) {
           sendJson(res, 500, { error: (e as Error).message });
         }

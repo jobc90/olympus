@@ -10,6 +10,7 @@ import type {
 } from '@olympus-dev/protocol';
 import type { RpcRouter } from './rpc/handler.js';
 import type { LocalContextStoreManager } from '@olympus-dev/core';
+import type { GeminiAdvisor } from './gemini-advisor.js';
 
 /**
  * CodexAdapter — Gateway ↔ Codex Orchestrator 어댑터
@@ -32,14 +33,17 @@ export class CodexAdapter {
   private codex: CodexOrchestratorLike;
 
   private localContextManager: LocalContextStoreManager | null;
+  private geminiAdvisor: GeminiAdvisor | null;
 
   constructor(
     codex: CodexOrchestratorLike,
     private broadcast: (eventType: string, payload: unknown) => void,
     localContextManager?: LocalContextStoreManager,
+    geminiAdvisor?: GeminiAdvisor,
   ) {
     this.codex = codex;
     this.localContextManager = localContextManager ?? null;
+    this.geminiAdvisor = geminiAdvisor ?? null;
 
     // Codex 이벤트 → Gateway 브로드캐스트
     this.codex.on('session:screen', (...args: unknown[]) => {
@@ -81,6 +85,13 @@ export class CodexAdapter {
    */
   setLocalContextManager(manager: LocalContextStoreManager): void {
     this.localContextManager = manager;
+  }
+
+  /**
+   * GeminiAdvisor 설정 — Gateway에서 초기화 후 주입
+   */
+  setGeminiAdvisor(advisor: GeminiAdvisor): void {
+    this.geminiAdvisor = advisor;
   }
 
   /**
@@ -201,6 +212,15 @@ export class CodexAdapter {
 
     rpcRouter.register('codex.activeTasks', async () => {
       return this.codex.getActiveTasks();
+    });
+
+    // Gemini Advisor RPC
+    rpcRouter.register('gemini.status', async () => {
+      return this.geminiAdvisor?.getStatus() ?? { running: false, behavior: 'offline' };
+    });
+
+    rpcRouter.register('gemini.projects', async () => {
+      return this.geminiAdvisor?.getAllCachedAnalyses() ?? [];
     });
   }
 }

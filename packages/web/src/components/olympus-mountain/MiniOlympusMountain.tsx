@@ -25,6 +25,7 @@ function createPlaceholderState(workers: WorkerConfig[]): OlympusMountainState {
       anim: 'sit_typing' as const,
     })),
     codex: { anim: 'stand' as const },
+    gemini: { behavior: 'idle', currentTask: null, anim: 'sit_idle' as const },
     npcs: [],
     bubbles: [],
     particles: [],

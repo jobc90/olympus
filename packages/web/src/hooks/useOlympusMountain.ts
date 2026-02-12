@@ -7,6 +7,8 @@ import type {
   OlympusMountainState,
   WorkerRuntime,
   NpcRuntime,
+  GeminiRuntime,
+  GeminiBehavior,
   WorkerBehavior,
   WorkerConfig,
   CodexConfig,
@@ -18,7 +20,7 @@ import type { Particle } from '../engine/canvas';
 import { findPath, type WalkGrid } from '../engine/pathfinding';
 import { gridToScreen } from '../engine/isometric';
 import { createWalkGrid } from '../olympus-mountain/layout';
-import { BEHAVIOR_MAP, resolveZone, getAnimForTick, getBubbleText, getParticleType } from '../olympus-mountain/behaviors';
+import { BEHAVIOR_MAP, GEMINI_BEHAVIOR_MAP, resolveZone, getAnimForTick, getBubbleText, getParticleType } from '../olympus-mountain/behaviors';
 import { getZone, getRandomPointInZone } from '../olympus-mountain/zones';
 import { createParticle, tickParticles } from '../sprites/effects';
 
@@ -31,6 +33,7 @@ export interface UseOlympusMountainParams {
   workerStates: Record<string, { behavior: string }>;
   codexConfig: CodexConfig;
   codexBehavior: string;
+  geminiBehavior?: string;
 }
 
 export interface UseOlympusMountainReturn {
@@ -66,7 +69,7 @@ function createInitialWorkerRuntime(id: string, index: number, workerCount: numb
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useOlympusMountain({ workers, workerStates, codexBehavior }: UseOlympusMountainParams): UseOlympusMountainReturn {
+export function useOlympusMountain({ workers, workerStates, codexBehavior, geminiBehavior = 'offline' }: UseOlympusMountainParams): UseOlympusMountainReturn {
   const [olympusMountainState, setOlympusMountainState] = useState<OlympusMountainState>(() => {
     const gardenZone = getZone('olympus_garden', workers.length);
     const ambrosiaZone = getZone('ambrosia_hall', workers.length);
@@ -76,6 +79,7 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior }: Use
     return {
       workers: workers.map((w, i) => createInitialWorkerRuntime(w.id, i, workers.length)),
       codex: { anim: 'sit_typing' as CharacterAnim },
+      gemini: { behavior: 'offline' as GeminiBehavior, currentTask: null, anim: 'sleep' as CharacterAnim },
       npcs: [
         {
           id: 'unicorn',
@@ -380,9 +384,16 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior }: Use
         : (newTick % 600 < 400 ? 'sit_typing' :
           newTick % 600 < 500 ? 'sit_idle' : 'drink_coffee');
 
+      // Gemini animation based on geminiBehavior
+      const geminiMapping = GEMINI_BEHAVIOR_MAP[geminiBehavior as GeminiBehavior];
+      const geminiAnim: CharacterAnim = geminiMapping
+        ? getAnimForTick(geminiMapping, newTick)
+        : 'sleep';
+
       return {
         workers: newWorkers,
         codex: { anim: codexAnim },
+        gemini: { behavior: geminiBehavior as GeminiBehavior, currentTask: prev.gemini.currentTask, anim: geminiAnim },
         npcs: newNpcs,
         bubbles: newBubbles,
         particles: newParticles,
@@ -392,7 +403,7 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior }: Use
         dayNightPhase,
       };
     });
-  }, [workerStates, workers.length, codexBehavior]);
+  }, [workerStates, workers.length, codexBehavior, geminiBehavior]);
 
   return { olympusMountainState, tick: tickFn };
 }

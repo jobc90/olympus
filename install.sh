@@ -38,7 +38,7 @@ for arg in "$@"; do
             echo "  --global  전역 설치 (모든 프로젝트에서 사용)"
             echo "            • 주요 리소스를 ~/.claude/에 symlink 연결"
             echo "            • skills, commands, plugins 전역 연결 (git pull 시 자동 최신화)"
-            echo "            • 어디서든 /orchestration 사용 가능"
+            echo "            • 어디서든 Team Engineering Protocol 사용 가능"
             echo ""
             echo "  --with-claude-md"
             echo "            • ~/.claude/CLAUDE.md에 Olympus managed block을 삽입/업데이트"
@@ -71,7 +71,7 @@ if [ -z "$INSTALL_MODE" ]; then
     echo ""
     echo -e "${CYAN}설치 모드를 선택하세요:${NC}"
     echo ""
-    echo -e "  ${GREEN}1) 전역 설치 (Global)${NC} - 모든 프로젝트에서 /orchestration 사용 가능"
+    echo -e "  ${GREEN}1) 전역 설치 (Global)${NC} - 모든 프로젝트에서 Team Engineering Protocol 사용 가능"
     echo "     → ~/.claude/에 MCP, commands, skills, plugins 모두 설치"
     echo ""
     echo -e "  ${YELLOW}2) 로컬 설치 (Local)${NC} - 이 프로젝트에서만 사용"
@@ -353,7 +353,7 @@ if [ "$INSTALL_MODE" = "local" ]; then
 
     cd "$SCRIPT_DIR"
     info "로컬 모드: .claude/settings.json이 프로젝트 orchestration/mcps/를 참조합니다."
-    info "이 프로젝트 디렉토리에서만 /orchestration이 작동합니다."
+    info "이 프로젝트 디렉토리에서만 MCP/스킬이 작동합니다."
 else
     # ── 전역 모드: ~/.claude/에 symlink 연결 후 npm install ──
     mkdir -p "$CLAUDE_DIR/mcps/ai-agents"
@@ -364,7 +364,7 @@ else
     success "디렉토리 생성 완료: $CLAUDE_DIR"
 
     # Learning Memory 디렉토리 안내
-    info "Learning Memory 시스템은 /orchestration 실행 시 .sisyphus/ 디렉토리에 자동 생성됩니다."
+    info "Learning Memory 시스템은 Team 모드 실행 시 자동 활성화됩니다."
 
     echo ""
 
@@ -409,11 +409,6 @@ if [ "$INSTALL_MODE" = "local" ]; then
     mkdir -p "$PROJECT_CLAUDE_DIR/commands"
     mkdir -p "$PROJECT_CLAUDE_DIR/skills"
     success "프로젝트 .claude/ 디렉토리 생성 완료"
-
-    # /orchestration 명령어 복사
-    step "/orchestration 명령어 설치 중..."
-    cp "$ORCHESTRATION_DIR/commands/orchestration.md" "$PROJECT_CLAUDE_DIR/commands/"
-    success "/orchestration v5.3 명령어 설치 완료 (.claude/commands/)"
 
     # 번들 스킬 복사
     step "번들 스킬 복사 중..."
@@ -494,7 +489,6 @@ EOF
     info "📌 로컬 모드 설정 완료:"
     info "   • .mcp.json - MCP 서버 설정 (포터블, Git 커밋 가능)"
     info "   • .claude/settings.json - 플러그인 설정 (Git 커밋 가능)"
-    info "   • .claude/commands/orchestration.md - /orchestration 명령어"
     info "   • .claude/skills/ - 번들 스킬"
     if [ "$WITH_CLAUDE_MD" -eq 1 ]; then
         info "   • ~/.claude/CLAUDE.md - Olympus managed block 반영"
@@ -502,7 +496,7 @@ EOF
         info "   • ~/.claude/CLAUDE.md - 기존 사용자 설정 유지 (비수정)"
     fi
     echo ""
-    warn "이 프로젝트 디렉토리에서 claude를 실행하면 /orchestration 사용 가능!"
+    warn "이 프로젝트 디렉토리에서 claude를 실행하면 MCP/스킬 사용 가능!"
     echo ""
 fi
 
@@ -514,11 +508,40 @@ if [ "$INSTALL_MODE" = "global" ]; then
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 phase "Phase 3: Commands 설치"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+# /team 커맨드 설치 (symlink 기반)
+migrate_to_symlink "$ORCHESTRATION_DIR/commands/team.md" "$CLAUDE_DIR/commands/team.md"
+success "/team 명령어 설치 완료 (symlink)"
+
+# /agents 커맨드 설치 (symlink 기반)
+migrate_to_symlink "$ORCHESTRATION_DIR/commands/agents.md" "$CLAUDE_DIR/commands/agents.md"
+success "/agents 명령어 설치 완료 (symlink)"
+
 echo ""
 
-# /orchestration 커맨드 설치 (symlink 기반 — git pull 시 자동 최신화)
-migrate_to_symlink "$ORCHESTRATION_DIR/commands/orchestration.md" "$CLAUDE_DIR/commands/orchestration.md"
-success "/orchestration v5.3 명령어 설치 완료 (symlink)"
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Phase 3.5: Custom Agents 설치 (19개)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+phase "Phase 3.5: Custom Agents 설치 (19개)"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+AGENTS_SRC_DIR="$SCRIPT_DIR/.claude/agents"
+AGENTS_DST_DIR="$CLAUDE_DIR/agents"
+mkdir -p "$AGENTS_DST_DIR"
+
+AGENT_COUNT=0
+if [ -d "$AGENTS_SRC_DIR" ]; then
+    for agent_file in "$AGENTS_SRC_DIR"/*.md; do
+        if [ -f "$agent_file" ]; then
+            agent_name=$(basename "$agent_file")
+            cp "$agent_file" "$AGENTS_DST_DIR/$agent_name"
+            AGENT_COUNT=$((AGENT_COUNT + 1))
+        fi
+    done
+    success "Custom Agents $AGENT_COUNT개 설치 완료 (~/.claude/agents/)"
+else
+    warn "Custom Agents 소스 디렉토리가 없습니다: $AGENTS_SRC_DIR"
+fi
 
 echo ""
 
@@ -905,7 +928,6 @@ echo ""
 
 if [ "$INSTALL_MODE" = "global" ]; then
     echo -e "${CYAN}설치된 파일:${NC}"
-    [ -f "$CLAUDE_DIR/commands/orchestration.md" ] && success "/orchestration 명령어" || warn "/orchestration 명령어 없음"
     [ -d "$CLAUDE_DIR/mcps/ai-agents" ] && success "ai-agents MCP" || warn "ai-agents MCP 없음"
     [ -d "$CLAUDE_DIR/mcps/openapi" ] && success "openapi MCP" || warn "openapi MCP 없음"
     [ -d "$CLAUDE_DIR/skills/frontend-ui-ux" ] && success "frontend-ui-ux 스킬" || warn "frontend-ui-ux 스킬 없음"
@@ -969,7 +991,6 @@ if [ "$INSTALL_MODE" = "local" ]; then
 echo -e "${CYAN}📁 프로젝트 로컬 설정:${NC}"
 echo "   [✔] .mcp.json - MCP 서버 설정 (포터블, Git 커밋 가능)"
 echo "   [✔] .claude/settings.json - 플러그인 설정 (Git 커밋 가능)"
-echo "   [✔] .claude/commands/orchestration.md - /orchestration 명령어"
 echo "   [✔] .claude/skills/ - 번들 스킬 (frontend-ui-ux, git-master, agent-browser)"
 echo ""
 echo -e "${CYAN}🔌 MCP 서버 (프로젝트 로컬 - \${PWD} 기반):${NC}"
@@ -980,7 +1001,6 @@ echo ""
 echo -e "${GREEN}✅ 로컬 모드 사용법:${NC}"
 echo "   cd $SCRIPT_DIR"
 echo "   claude                        # 이 디렉토리에서 claude 실행"
-echo "   /orchestration \"작업 설명\"    # 바로 사용 가능!"
 echo ""
 echo -e "${YELLOW}📌 주의사항:${NC}"
 echo "   • 반드시 이 프로젝트 디렉토리에서 claude를 실행해야 합니다"
@@ -1021,7 +1041,7 @@ echo "   [✔] claude-dashboard (상태줄 플러그인 - Codex/Gemini 사용량
 echo ""
 echo -e "${GREEN}🔗 Symlink 기반 설치:${NC}"
 echo "   • git pull만으로 모든 전역 파일이 자동 최신화됩니다"
-echo "   • orchestration.md, MCP 서버, 스킬, 플러그인은 symlink"
+echo "   • MCP 서버, 스킬, 플러그인은 symlink"
 if [ "$WITH_CLAUDE_MD" -eq 1 ]; then
 echo "   • CLAUDE.md는 managed block 방식으로 업데이트됩니다 (재실행 필요)"
 else
@@ -1042,8 +1062,8 @@ echo "   olympus server start       # Gateway + Dashboard + Telegram 시작"
 echo "   olympus start              # 워커 등록 후 작업 대기 (Gateway 필요)"
 echo "   olympus curl /healthz      # API Key 자동 주입으로 Gateway 호출"
 echo ""
-echo "   # Multi-AI Orchestration"
-echo "   /orchestration \"작업 설명\"    # 10 Phase 프로토콜 시작"
+echo "   # Team Engineering Protocol"
+echo "   # Team 모드에서 자동 활성화 (TeamCreate)"
 echo ""
 echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
