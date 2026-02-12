@@ -35,28 +35,6 @@ vi.mock('../session-manager.js', () => ({
   })),
 }));
 
-vi.mock('../context-manager.js', () => ({
-  ContextManager: vi.fn().mockImplementation(() => ({
-    initialize: vi.fn(async () => {}),
-    registerProject: vi.fn(async () => {}),
-    getAllProjects: vi.fn(async () => [
-      { name: 'test', path: '/dev/test', aliases: ['테스트'], techStack: ['TS'] },
-    ]),
-    getProjectContext: vi.fn(async () => ({
-      path: '/dev/test',
-      name: 'test',
-      lastUpdated: Date.now(),
-      recentTasks: [],
-      learningPatterns: [],
-      techStack: ['TS'],
-      activeIssues: [],
-      taskCount: 0,
-      patternCount: 0,
-    })),
-    globalSearch: vi.fn(async () => []),
-    close: vi.fn(),
-  })),
-}));
 
 describe('CodexOrchestrator', () => {
   let orchestrator: CodexOrchestrator;
@@ -126,19 +104,18 @@ describe('CodexOrchestrator', () => {
   });
 
   describe('getProjects', () => {
-    it('should return project list', async () => {
+    it('should return empty array (deprecated)', async () => {
       await orchestrator.initialize();
       const projects = await orchestrator.getProjects();
-      expect(projects.length).toBe(1);
-      expect(projects[0].name).toBe('test');
+      expect(projects).toEqual([]);
     });
   });
 
   describe('globalSearch', () => {
-    it('should return search results', async () => {
+    it('should return empty array (deprecated)', async () => {
       await orchestrator.initialize();
       const results = await orchestrator.globalSearch('build');
-      expect(Array.isArray(results)).toBe(true);
+      expect(results).toEqual([]);
     });
   });
 

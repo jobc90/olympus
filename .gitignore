@@ -34,6 +34,9 @@ coverage/
 *.db
 *.sqlite
 
+# Olympus local context
+.olympus/
+
 # Claude Code - override global gitignore to allow project settings
 !.claude/settings.json
 !CLAUDE.md

@@ -1,9 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { authMiddleware, loadConfig, validateApiKey } from './auth.js';
 import { handleCorsPrefllight, setCorsHeaders } from './cors.js';
 import type { RunManager, RunOptions } from './run-manager.js';
 import { SessionManager, type SessionEvent } from './session-manager.js';
-import { runParallel, GeminiExecutor, TaskStore, ContextStore, ContextService } from '@olympus-dev/core';
+import { runParallel, GeminiExecutor, TaskStore, ContextStore, ContextService, extractContext, type LocalContextStoreManager } from '@olympus-dev/core';
 import type { CreateTaskInput, UpdateTaskInput, CreateContextInput, UpdateContextInput, ContextScope, CreateMergeInput, ReportUpstreamInput } from '@olympus-dev/protocol';
 import type { CodexAdapter } from './codex-adapter.js';
 
@@ -21,6 +22,7 @@ export interface ApiHandlerOptions {
   onCliComplete?: (result: import('@olympus-dev/protocol').CliRunResult) => void;
   onCliStream?: (chunk: import('@olympus-dev/protocol').CliStreamChunk) => void;
   onWorkerEvent?: (eventType: string, payload: unknown) => void;
+  localContextManager?: LocalContextStoreManager;
 }
 
 /**
@@ -203,6 +205,22 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     return { path: '/api/workers', query };
   }
 
+  // /api/local-context routes
+  if (parts[0] === 'api' && parts[1] === 'local-context') {
+    if (parts[2] === 'projects') {
+      return { path: '/api/local-context/projects', query };
+    }
+    if (parts[2] && parts[3] === 'summary') {
+      return { path: '/api/local-context/:id/summary', id: parts[2], query };
+    }
+    if (parts[2] && parts[3] === 'workers') {
+      return { path: '/api/local-context/:id/workers', id: parts[2], query };
+    }
+    if (parts[2] && parts[3] === 'injection') {
+      return { path: '/api/local-context/:id/injection', id: parts[2], query };
+    }
+  }
+
   // /api/operations/:id
   if (parts[0] === 'api' && parts[1] === 'operations' && parts[2]) {
     return { path: '/api/operations/:id', id: parts[2], query };
@@ -215,7 +233,7 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
  * Create HTTP API request handler
  */
 export function createApiHandler(options: ApiHandlerOptions) {
-  const { runManager, sessionManager, cliSessionStore, memoryStore, codexAdapter, workerRegistry, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete, onCliStream, onWorkerEvent } = options;
+  const { runManager, sessionManager, cliSessionStore, memoryStore, codexAdapter, workerRegistry, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete, onCliStream, onWorkerEvent, localContextManager } = options;
 
   // 비동기 CLI 실행 태스크 저장소 (in-memory, 1시간 TTL)
   const asyncTasks = new Map<string, { status: 'running' | 'completed' | 'failed'; result?: import('@olympus-dev/protocol').CliRunResult; error?: string; startedAt: number }>();
@@ -348,8 +366,20 @@ export function createApiHandler(options: ApiHandlerOptions) {
           return;
         }
 
+        // 프로젝트 컨텍스트 주입
+        let enrichedPrompt = body.prompt;
+        if (localContextManager && worker.projectPath) {
+          try {
+            const store = await localContextManager.getProjectStore(worker.projectPath);
+            const injection = store.buildContextInjection({ maxTokens: 2000 });
+            if (injection.projectSummary) {
+              enrichedPrompt = `## 프로젝트 컨텍스트\n${injection.projectSummary}\n\n## 최근 활동\n${injection.recentActivity}\n\n---\n\n${body.prompt}`;
+            }
+          } catch { /* 주입 실패해도 원본 프롬프트 사용 */ }
+        }
+
         // 1. WorkerRegistry에 태스크 생성 (worker → busy)
-        const task = workerRegistry.createTask(worker.id, body.prompt);
+        const task = workerRegistry.createTask(worker.id, enrichedPrompt);
 
         // 2. task:assigned 브로드캐스트 → Worker가 수신하여 직접 CLI 실행
         onWorkerEvent?.('task:assigned', {
@@ -397,6 +427,39 @@ export function createApiHandler(options: ApiHandlerOptions) {
         };
 
         workerRegistry.completeTask(id, result);
+
+        // LocalContextStore에 워커 컨텍스트 저장
+        if (localContextManager && task) {
+          try {
+            const worker = workerRegistry?.getAll().find(w => w.id === task.workerId);
+            const extracted = extractContext(result, task.prompt);
+            const projectPath = worker?.projectPath ?? process.cwd();
+            const store = await localContextManager.getProjectStore(projectPath);
+            store.saveWorkerContext({
+              id: randomUUID(),
+              workerId: task.workerId,
+              workerName: task.workerName,
+              taskId: id,
+              prompt: task.prompt.slice(0, 500),
+              success: result.success,
+              summary: extracted.summary,
+              filesChanged: extracted.filesChanged,
+              decisions: extracted.decisions,
+              errors: extracted.errors,
+              dependencies: extracted.dependencies,
+              model: result.model,
+              inputTokens: result.usage?.inputTokens ?? 0,
+              outputTokens: result.usage?.outputTokens ?? 0,
+              costUsd: result.cost ?? 0,
+              durationMs: result.durationMs ?? 0,
+              numTurns: result.numTurns ?? 0,
+              rawText: result.text?.slice(0, 8000),
+              createdAt: new Date().toISOString(),
+            });
+            store.updateProjectContext();
+            await localContextManager.propagateToRoot(projectPath, process.cwd());
+          } catch { /* 저장 실패해도 응답은 정상 */ }
+        }
 
         // Codex로 결과 요약
         let summary = result.text ?? '';
@@ -471,6 +534,27 @@ export function createApiHandler(options: ApiHandlerOptions) {
         const workerListStr = workers.length > 0
           ? workers.map(w => `- "${w.name}" (${w.status}) @ ${w.projectPath}`).join('\n')
           : '없음';
+
+        // 프로젝트 컨텍스트 주입
+        let projectContextStr = '';
+        if (localContextManager) {
+          try {
+            const rootStore = await localContextManager.getRootStore(process.cwd());
+            const projects = rootStore.getAllProjects();
+            if (projects.length > 0) {
+              const lines = projects.map(p => {
+                const status = p.successfulTasks > 0
+                  ? `${p.successfulTasks}/${p.totalTasks} 성공`
+                  : `${p.totalTasks} 작업`;
+                const issues = p.knownIssues.length > 0
+                  ? ` | 이슈: ${p.knownIssues.slice(0, 2).join(', ')}`
+                  : '';
+                return `- **${p.projectName}** (${p.projectPath}): ${p.summary.slice(0, 100)}${status ? ` [${status}]` : ''}${issues}`;
+              });
+              projectContextStr = `\n\n## 프로젝트 현황\n${lines.join('\n')}`;
+            }
+          } catch { /* context not available */ }
+        }
 
         const systemPrompt = `당신은 Olympus Codex — 사용자의 개인 AI 비서입니다.
 사용자의 로컬 컴퓨터 환경에서 작업을 실행하며,
@@ -576,7 +660,7 @@ ${workers.length > 0 ? '현재 워커: ' + workers.map(w => `@${w.name}`).join('
 
 ## 현재 상태
 - 워커 세션: ${workers.length > 0 ? workers.length + '개 활성' : '없음 (olympus start 필요)'}
-${workers.length > 0 ? '- 워커 목록:\n' + workerListStr : ''}`;
+${workers.length > 0 ? '- 워커 목록:\n' + workerListStr : ''}${projectContextStr}`;
 
         // @mention 감지 → 워커 위임
         const mentionMatch = body.message.match(/^@(\S+)\s+([\s\S]+)/);
@@ -764,7 +848,6 @@ ${workers.length > 0 ? '- 워커 목록:\n' + workerListStr : ''}`;
         // 메모리에 결과 저장 (비동기, 실패 무시)
         if (memoryStore && result.success) {
           try {
-            const { randomUUID } = await import('node:crypto');
             memoryStore.saveTask({
               id: randomUUID(),
               command: body.prompt!,
@@ -780,6 +863,36 @@ ${workers.length > 0 ? '- 워커 목록:\n' + workerListStr : ''}`;
           } catch { /* 저장 실패해도 응답은 정상 반환 */ }
         }
 
+        // LocalContextStore에 워커 컨텍스트 저장
+        if (localContextManager && body.workspaceDir) {
+          try {
+            const extracted = extractContext(result, body.prompt!);
+            const store = await localContextManager.getProjectStore(body.workspaceDir);
+            store.saveWorkerContext({
+              id: randomUUID(),
+              workerId: 'cli-direct',
+              workerName: 'cli',
+              prompt: body.prompt!.slice(0, 500),
+              success: result.success,
+              summary: extracted.summary,
+              filesChanged: extracted.filesChanged,
+              decisions: extracted.decisions,
+              errors: extracted.errors,
+              dependencies: extracted.dependencies,
+              model: result.model,
+              inputTokens: result.usage.inputTokens,
+              outputTokens: result.usage.outputTokens,
+              costUsd: result.cost,
+              durationMs: result.durationMs,
+              numTurns: result.numTurns,
+              rawText: result.text.slice(0, 8000),
+              createdAt: new Date().toISOString(),
+            });
+            store.updateProjectContext();
+            await localContextManager.propagateToRoot(body.workspaceDir, process.cwd());
+          } catch { /* 저장 실패해도 응답은 정상 */ }
+        }
+
         onCliComplete?.(result);
         sendJson(res, 200, { result });
         return;
@@ -793,7 +906,6 @@ ${workers.length > 0 ? '- 워커 목록:\n' + workerListStr : ''}`;
           return;
         }
 
-        const { randomUUID } = await import('node:crypto');
         const taskId = randomUUID();
 
         const { runCli } = await import('./cli-runner.js');
@@ -1460,6 +1572,77 @@ ${workers.length > 0 ? '- 워커 목록:\n' + workerListStr : ''}`;
           return;
         }
         sendJson(res, 200, { operation });
+        return;
+      }
+
+      // ============ Local Context API ============
+
+      // GET /api/local-context/projects — 루트 전체 프로젝트 컨텍스트
+      if (path === '/api/local-context/projects' && method === 'GET') {
+        if (!localContextManager) {
+          sendJson(res, 503, { error: 'Local context not available' });
+          return;
+        }
+        try {
+          const rootStore = await localContextManager.getRootStore(process.cwd());
+          const projects = rootStore.getAllProjects();
+          sendJson(res, 200, { projects });
+        } catch (e) {
+          sendJson(res, 500, { error: (e as Error).message });
+        }
+        return;
+      }
+
+      // GET /api/local-context/:id/summary — 프로젝트 통합 컨텍스트
+      if (path === '/api/local-context/:id/summary' && method === 'GET' && id) {
+        if (!localContextManager) {
+          sendJson(res, 503, { error: 'Local context not available' });
+          return;
+        }
+        try {
+          const projectPath = decodeURIComponent(id);
+          const store = await localContextManager.getProjectStore(projectPath);
+          const ctx = store.getProjectContext();
+          sendJson(res, 200, { context: ctx });
+        } catch (e) {
+          sendJson(res, 500, { error: (e as Error).message });
+        }
+        return;
+      }
+
+      // GET /api/local-context/:id/workers — 워커 컨텍스트 목록
+      if (path === '/api/local-context/:id/workers' && method === 'GET' && id) {
+        if (!localContextManager) {
+          sendJson(res, 503, { error: 'Local context not available' });
+          return;
+        }
+        try {
+          const projectPath = decodeURIComponent(id);
+          const limit = Number(query?.limit) || 20;
+          const store = await localContextManager.getProjectStore(projectPath);
+          const workers = store.getRecentWorkerContexts(limit);
+          sendJson(res, 200, { workers });
+        } catch (e) {
+          sendJson(res, 500, { error: (e as Error).message });
+        }
+        return;
+      }
+
+      // GET /api/local-context/:id/injection — 주입용 컨텍스트
+      if (path === '/api/local-context/:id/injection' && method === 'GET' && id) {
+        if (!localContextManager) {
+          sendJson(res, 503, { error: 'Local context not available' });
+          return;
+        }
+        try {
+          const projectPath = decodeURIComponent(id);
+          const maxTokens = Number(query?.maxTokens) || 2000;
+          const store = await localContextManager.getProjectStore(projectPath);
+          const injection = store.buildContextInjection({ maxTokens });
+          sendJson(res, 200, { injection });
+        } catch (e) {
+          sendJson(res, 500, { error: (e as Error).message });
+        }
         return;
       }
 

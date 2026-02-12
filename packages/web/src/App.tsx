@@ -39,6 +39,26 @@ import SettingsPanel from './components/settings/SettingsPanel';
 import type { WorkerConfig, WorkerDashboardState, CodexConfig, WorkerAvatar, WorkerBehavior } from './lib/types';
 import { generateDemoData, generateDemoEvent, BEHAVIOR_INFO, formatTokens, formatRelativeTime } from './lib/state-mapper';
 
+// ---------------------------------------------------------------------------
+// localStorage 마이그레이션 — 낡은 키 일괄 정리 (버전 기반, 1회 실행)
+// ---------------------------------------------------------------------------
+const LS_VERSION_KEY = 'olympus-ls-version';
+const LS_CURRENT_VERSION = '1'; // 버전 올리면 다시 정리됨
+
+function migrateLocalStorage() {
+  if (localStorage.getItem(LS_VERSION_KEY) === LS_CURRENT_VERSION) return;
+  // 기존 세션에서 쌓인 불필요한 키 제거
+  const staleKeys = [
+    'olympus-config',
+    'olympus-dashboard-config',
+    'olympus-active-tab',
+    'olympus-theme',
+  ];
+  for (const key of staleKeys) localStorage.removeItem(key);
+  localStorage.setItem(LS_VERSION_KEY, LS_CURRENT_VERSION);
+}
+migrateLocalStorage();
+
 // Config priority: server-injected > URL params > localStorage > defaults
 declare global {
   interface Window {

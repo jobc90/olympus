@@ -79,48 +79,6 @@ vi.mock('../session-manager.js', () => ({
   })),
 }));
 
-// ── Mock ContextManager ──
-
-vi.mock('../context-manager.js', () => ({
-  ContextManager: vi.fn().mockImplementation(() => ({
-    initialize: vi.fn(async () => {}),
-    registerProject: vi.fn(async () => {}),
-    getAllProjects: vi.fn(async () => [
-      { name: 'alpha', path: '/dev/alpha', aliases: ['알파', 'a'], techStack: ['TypeScript', 'React'] },
-      { name: 'beta', path: '/dev/beta', aliases: ['베타', 'b'], techStack: ['Python', 'FastAPI'] },
-    ]),
-    getProjectContext: vi.fn(async (path: string) => ({
-      path,
-      name: path.includes('alpha') ? 'alpha' : 'beta',
-      lastUpdated: Date.now(),
-      recentTasks: [{
-        id: 'task-1',
-        command: 'build project',
-        analysis: '{}',
-        plan: '{}',
-        result: 'success',
-        success: true,
-        duration: 5000,
-        timestamp: Date.now() - 60000,
-        projectPath: path,
-        workerCount: 1,
-      }],
-      learningPatterns: [],
-      techStack: path.includes('alpha') ? ['TypeScript'] : ['Python'],
-      activeIssues: [],
-      taskCount: 5,
-      patternCount: 2,
-    })),
-    globalSearch: vi.fn(async (query: string, limit?: number) => {
-      const results = [
-        { projectName: 'alpha', projectPath: '/dev/alpha', matchType: 'task' as const, content: `found: ${query}`, score: 5, timestamp: Date.now() },
-        { projectName: 'beta', projectPath: '/dev/beta', matchType: 'pattern' as const, content: `match: ${query}`, score: 3, timestamp: Date.now() },
-      ];
-      return limit ? results.slice(0, limit) : results;
-    }),
-    close: vi.fn(),
-  })),
-}));
 
 // ── Helper: emit events from mock SessionManager ──
 
@@ -263,17 +221,14 @@ describe('Codex E2E: Full Pipeline', () => {
       expect(sessions[1].id).toBe('sess-beta');
     });
 
-    it('should list all projects', async () => {
+    it('should return empty projects (deprecated)', async () => {
       const projects = await orchestrator.getProjects();
-      expect(projects).toHaveLength(2);
-      expect(projects[0].name).toBe('alpha');
-      expect(projects[1].name).toBe('beta');
+      expect(projects).toEqual([]);
     });
 
-    it('should perform global search', async () => {
+    it('should return empty search results (deprecated)', async () => {
       const results = await orchestrator.globalSearch('deploy');
-      expect(results).toHaveLength(2);
-      expect(results[0].content).toContain('deploy');
+      expect(results).toEqual([]);
     });
 
     it('should create new session', async () => {

@@ -189,3 +189,15 @@ export type {
   WorkerRegistration,
   WorkerTaskRecord,
 } from './worker.js';
+
+// Local Context types
+export type {
+  ExtractedContext,
+  WorkerContextRecord,
+  ProjectContextSnapshot,
+  RootProjectEntry,
+  LocalContextStoreConfig,
+  ContextInjection,
+} from './local-context.js';
+
+export { DEFAULT_LOCAL_CONTEXT_CONFIG } from './local-context.js';

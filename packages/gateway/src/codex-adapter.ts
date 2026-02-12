@@ -9,6 +9,7 @@ import type {
   CodexSearchResult,
 } from '@olympus-dev/protocol';
 import type { RpcRouter } from './rpc/handler.js';
+import type { LocalContextStoreManager } from '@olympus-dev/core';
 
 /**
  * CodexAdapter — Gateway ↔ Codex Orchestrator 어댑터
@@ -30,11 +31,15 @@ export class CodexAdapter {
   // CodexOrchestrator interface — duck typing으로 codex 패키지 의존 회피
   private codex: CodexOrchestratorLike;
 
+  private localContextManager: LocalContextStoreManager | null;
+
   constructor(
     codex: CodexOrchestratorLike,
     private broadcast: (eventType: string, payload: unknown) => void,
+    localContextManager?: LocalContextStoreManager,
   ) {
     this.codex = codex;
+    this.localContextManager = localContextManager ?? null;
 
     // Codex 이벤트 → Gateway 브로드캐스트
     this.codex.on('session:screen', (...args: unknown[]) => {
@@ -69,6 +74,13 @@ export class CodexAdapter {
         this.codex.completeTask(taskId, false);
       });
     });
+  }
+
+  /**
+   * LocalContextManager 설정 — Gateway에서 초기화 후 주입
+   */
+  setLocalContextManager(manager: LocalContextStoreManager): void {
+    this.localContextManager = manager;
   }
 
   /**
@@ -140,6 +152,32 @@ export class CodexAdapter {
 
     rpcRouter.register('codex.search', async (params) => {
       const { query, limit } = params as { query: string; limit?: number };
+
+      // Use localContextManager if available, fallback to (deprecated) codex.globalSearch
+      if (this.localContextManager) {
+        try {
+          const rootStore = await this.localContextManager.getRootStore(process.cwd());
+          const projects = rootStore.getAllProjects();
+          const queryLower = query.toLowerCase();
+          const matched = projects
+            .filter(p =>
+              p.projectName.toLowerCase().includes(queryLower) ||
+              p.summary.toLowerCase().includes(queryLower) ||
+              p.knownIssues.some(i => i.toLowerCase().includes(queryLower)),
+            )
+            .slice(0, limit ?? 20);
+
+          return matched.map((p): CodexSearchResult => ({
+            projectName: p.projectName,
+            projectPath: p.projectPath,
+            matchType: 'context',
+            content: p.summary.slice(0, 200),
+            score: 1,
+            timestamp: new Date(p.updatedAt).getTime(),
+          }));
+        } catch { /* fallback below */ }
+      }
+
       const results = await this.codex.globalSearch(query, limit);
       return results.map((r): CodexSearchResult => ({
         projectName: r.projectName,

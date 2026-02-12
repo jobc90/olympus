@@ -1,8 +1,6 @@
 import type { CodexSessionManager } from './session-manager.js';
-import type { ContextManager } from './context-manager.js';
 import type {
   InputSource,
-  IntentType,
   Intent,
   ProcessedResponse,
 } from './types.js';
@@ -21,7 +19,6 @@ import type {
  */
 export class AgentBrain {
   constructor(
-    private contextManager: ContextManager,
     private sessionManager: CodexSessionManager,
   ) {}
 
@@ -69,45 +66,10 @@ export class AgentBrain {
    */
   async enrichResponse(
     response: ProcessedResponse,
-    projectPath: string,
+    _projectPath: string,
   ): Promise<ProcessedResponse> {
-    const context = await this.contextManager.getProjectContext(projectPath);
-    const insights: string[] = [];
-
-    // Similar previous tasks
-    const similarTasks = context.recentTasks
-      .filter(t => this.isSimilarContent(t.command, response.content))
-      .slice(0, 2);
-
-    if (similarTasks.length > 0) {
-      const last = similarTasks[0];
-      if (last.success) {
-        insights.push(`이전에 비슷한 작업 성공 (${this.timeAgo(last.timestamp)})`);
-      } else {
-        insights.push(`⚠️ 이전에 비슷한 작업 실패 경험 있음`);
-      }
-    }
-
-    // Failure pattern warnings
-    const failPatterns = context.learningPatterns
-      .filter(p => p.trigger && response.content.includes(p.trigger))
-      .slice(0, 1);
-
-    if (failPatterns.length > 0) {
-      insights.push(`⚠️ 알려진 패턴: ${failPatterns[0].action}`);
-    }
-
-    // Next step suggestions
-    if (response.type === 'build') {
-      insights.push('💡 빌드 완료 — 테스트 실행 권장');
-    } else if (response.type === 'error') {
-      insights.push('💡 에러 발생 — 로그 확인 후 수정 필요');
-    }
-
-    if (insights.length > 0) {
-      response.agentInsight = insights.join(' | ');
-    }
-
+    // Context enrichment disabled — ContextManager removed
+    // Gateway /api/local-context API provides context
     return response;
   }
 
@@ -150,51 +112,12 @@ export class AgentBrain {
   /**
    * 입력 인리치먼트 — Claude 전달 전 컨텍스트 주입
    */
-  private async enrichInput(input: string, sessionId?: string): Promise<string> {
-    if (!sessionId) return input;
-
-    const session = this.sessionManager.getSession(sessionId);
-    if (!session) return input;
-
-    const context = await this.contextManager.getProjectContext(session.projectPath);
-    if (!context.recentTasks.length && !context.learningPatterns.length) return input;
-
-    const parts = [input, '', '[Codex Context]'];
-
-    parts.push(`- 프로젝트: ${context.name} (${context.path})`);
-
-    if (context.techStack.length > 0) {
-      parts.push(`- 기술 스택: ${context.techStack.join(', ')}`);
-    }
-    if (context.recentTasks.length > 0) {
-      const last = context.recentTasks[0];
-      parts.push(`- 최근 작업: ${last.command} (${last.success ? '성공' : '실패'})`);
-    }
-
-    return parts.join('\n');
+  private async enrichInput(input: string, _sessionId?: string): Promise<string> {
+    return input;
   }
 
   private async answerHistoryQuery(_query: string): Promise<string> {
-    const projects = await this.contextManager.getAllProjects();
-    const lines: string[] = ['📋 최근 작업 이력:\n'];
-
-    for (const project of projects) {
-      const ctx = await this.contextManager.getProjectContext(project.path);
-      if (ctx.recentTasks.length === 0) continue;
-
-      lines.push(`**${project.name}**:`);
-      for (const task of ctx.recentTasks.slice(0, 3)) {
-        const icon = task.success ? '✅' : '❌';
-        lines.push(`  ${icon} ${task.command.slice(0, 80)} (${this.timeAgo(task.timestamp)})`);
-      }
-      lines.push('');
-    }
-
-    if (lines.length === 1) {
-      lines.push('작업 이력이 없습니다.');
-    }
-
-    return lines.join('\n');
+    return '작업 이력은 Gateway API를 통해 제공됩니다.';
   }
 
   private async generateStatusReport(): Promise<string> {
@@ -220,29 +143,7 @@ export class AgentBrain {
     return lines.join('\n');
   }
 
-  private async crossProjectReasoning(question: string): Promise<string> {
-    const results = await this.contextManager.globalSearch(question, 10);
-    if (results.length === 0) return '관련 정보를 찾을 수 없습니다.';
-
-    const lines: string[] = ['🔍 크로스 프로젝트 검색 결과:\n'];
-    for (const r of results.slice(0, 5)) {
-      lines.push(`**${r.projectName}** (${r.matchType}): ${r.content.slice(0, 100)}`);
-    }
-    return lines.join('\n');
-  }
-
-  private timeAgo(timestamp: number): string {
-    const diff = Date.now() - timestamp;
-    if (diff < 60_000) return '방금';
-    if (diff < 3600_000) return `${Math.floor(diff / 60_000)}분 전`;
-    if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}시간 전`;
-    return `${Math.floor(diff / 86400_000)}일 전`;
-  }
-
-  private isSimilarContent(cmd: string, content: string): boolean {
-    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z가-힣0-9]/g, '');
-    const normalized = normalize(cmd);
-    if (normalized.length < 5) return false;
-    return normalize(content).includes(normalized.slice(0, 15));
+  private async crossProjectReasoning(_question: string): Promise<string> {
+    return '크로스 프로젝트 검색은 Gateway API를 통해 제공됩니다.';
   }
 }

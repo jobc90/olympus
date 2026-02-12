@@ -45,3 +45,7 @@ export { ContextResolver, type ContextResolverOptions } from './contextResolver.
 
 // Context Service
 export { ContextService, type AutoReportPolicy, type ContextServiceConfig, type ContextEvent, type ContextEventCallback, type ContextEventType } from './contextService.js';
+
+// Local Context
+export { extractContext } from './context-extractor.js';
+export { LocalContextStore, LocalContextStoreManager } from './local-context-store.js';

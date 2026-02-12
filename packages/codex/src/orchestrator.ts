@@ -1,7 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { Router } from './router.js';
 import { CodexSessionManager } from './session-manager.js';
-import { ContextManager } from './context-manager.js';
 import { AgentBrain } from './agent-brain.js';
 import type {
   UserInput,
@@ -30,21 +29,17 @@ import type {
 export class CodexOrchestrator extends EventEmitter {
   private router: Router;
   private sessionManager: CodexSessionManager;
-  private contextManager: ContextManager;
   private agentBrain: AgentBrain;
   private _initialized = false;
   private activeTasks = new Map<string, ActiveCliTask>();
 
   constructor(private config: CodexOrchestratorConfig = {}) {
     super();
-    this.contextManager = new ContextManager({
-      globalDbPath: config.globalDbPath,
-    });
     this.sessionManager = new CodexSessionManager({
       maxSessions: config.maxSessions ?? 5,
     });
-    this.router = new Router(this.sessionManager, this.contextManager);
-    this.agentBrain = new AgentBrain(this.contextManager, this.sessionManager);
+    this.router = new Router(this.sessionManager);
+    this.agentBrain = new AgentBrain(this.sessionManager);
 
     // Forward session status events
     this.sessionManager.on('session:status', (event) => {
@@ -62,17 +57,7 @@ export class CodexOrchestrator extends EventEmitter {
   async initialize(): Promise<void> {
     if (this._initialized) return;
 
-    // Initialize ContextManager (DB setup)
-    await this.contextManager.initialize();
-
-    // Register configured projects
-    if (this.config.projects) {
-      for (const project of this.config.projects) {
-        await this.contextManager.registerProject(project);
-      }
-    }
-
-    // Discover existing tmux sessions
+    // Discover existing sessions
     await this.sessionManager.discoverExistingSessions();
 
     this._initialized = true;
@@ -127,17 +112,13 @@ export class CodexOrchestrator extends EventEmitter {
       }
 
       case 'CONTEXT_QUERY': {
-        const results = await this.contextManager.globalSearch(input.text);
-        const content = results.map(r =>
-          `**${r.projectName}**: ${r.content.slice(0, 100)}`
-        ).join('\n');
         return {
           decision,
           response: {
             type: 'text',
-            content: content || '결과 없음',
+            content: '컨텍스트 검색은 Gateway API를 통해 제공됩니다.',
             metadata: { projectName: 'codex', sessionId: '', duration: 0 },
-            rawOutput: content,
+            rawOutput: '',
           },
         };
       }
@@ -168,17 +149,17 @@ export class CodexOrchestrator extends EventEmitter {
   }
 
   /**
-   * 프로젝트 목록
+   * 프로젝트 목록 (deprecated — Gateway /api/local-context API 사용 권장)
    */
   async getProjects(): Promise<ProjectMetadata[]> {
-    return this.contextManager.getAllProjects();
+    return [];
   }
 
   /**
-   * 전역 검색
+   * 전역 검색 (deprecated — Gateway /api/local-context API 사용 권장)
    */
-  async globalSearch(query: string): Promise<GlobalSearchResult[]> {
-    return this.contextManager.globalSearch(query);
+  async globalSearch(_query: string, _limit?: number): Promise<GlobalSearchResult[]> {
+    return [];
   }
 
   // ── Task Tracking ──
@@ -205,7 +186,6 @@ export class CodexOrchestrator extends EventEmitter {
    */
   async shutdown(): Promise<void> {
     this.sessionManager.shutdown();
-    this.contextManager.close();
     this._initialized = false;
   }
 }

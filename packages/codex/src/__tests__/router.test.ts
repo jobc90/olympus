@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Router } from '../router.js';
 import type { CodexSessionManager } from '../session-manager.js';
-import type { ContextManager } from '../context-manager.js';
-import type { UserInput, ManagedSession, ProjectMetadata } from '../types.js';
+import type { UserInput, ManagedSession } from '../types.js';
 
 function createMockSessionManager(): CodexSessionManager {
   const sessions: ManagedSession[] = [
@@ -40,37 +39,13 @@ function createMockSessionManager(): CodexSessionManager {
   } as unknown as CodexSessionManager;
 }
 
-function createMockContextManager(): ContextManager {
-  const projects: ProjectMetadata[] = [
-    { name: 'console', path: '/dev/console', aliases: ['콘솔', 'api', '백엔드'], techStack: ['NestJS'] },
-    { name: 'user-next', path: '/dev/user-next', aliases: ['유저', '프론트'], techStack: ['Next.js'] },
-  ];
-
-  return {
-    getAllProjects: vi.fn(async () => projects),
-    getProjectContext: vi.fn(async () => ({
-      path: '/dev/console',
-      name: 'console',
-      lastUpdated: Date.now(),
-      recentTasks: [],
-      learningPatterns: [],
-      techStack: ['NestJS'],
-      activeIssues: [],
-      taskCount: 0,
-      patternCount: 0,
-    })),
-  } as unknown as ContextManager;
-}
-
 describe('Router', () => {
   let router: Router;
   let sessionManager: CodexSessionManager;
-  let contextManager: ContextManager;
 
   beforeEach(() => {
     sessionManager = createMockSessionManager();
-    contextManager = createMockContextManager();
-    router = new Router(sessionManager, contextManager);
+    router = new Router(sessionManager);
   });
 
   function input(text: string): UserInput {
@@ -108,17 +83,10 @@ describe('Router', () => {
       expect(result.type).toBe('MULTI_SESSION');
     });
 
-    it('should route by project keyword', async () => {
+    it('should fallback for keyword input (project keyword matching disabled)', async () => {
       const result = await router.route(input('console API 수정해줘'));
-      expect(result.type).toBe('SESSION_FORWARD');
-      expect(result.targetSessions).toEqual(['sess-1']);
-      expect(result.reason).toContain('console');
-    });
-
-    it('should route by alias keyword (한국어)', async () => {
-      const result = await router.route(input('콘솔 빌드해줘'));
-      expect(result.type).toBe('SESSION_FORWARD');
-      expect(result.targetSessions).toEqual(['sess-1']);
+      // Without ContextManager, keyword matching returns null → falls to SELF_ANSWER
+      expect(result.type).toBe('SELF_ANSWER');
     });
 
     it('should fallback to last active session', async () => {
@@ -131,7 +99,6 @@ describe('Router', () => {
 
     it('should return SELF_ANSWER when no sessions available', async () => {
       (sessionManager.listSessions as ReturnType<typeof vi.fn>).mockReturnValue([]);
-      (contextManager.getAllProjects as ReturnType<typeof vi.fn>).mockResolvedValue([]);
       const result = await router.route(input('아무거나'));
       expect(result.type).toBe('SELF_ANSWER');
       expect(result.confidence).toBe(0.3);

@@ -35,6 +35,7 @@ import { MemoryStore } from './memory/store.js';
 import { CliSessionStore } from './cli-session-store.js';
 import type { CodexAdapter } from './codex-adapter.js';
 import { WorkerRegistry } from './worker-registry.js';
+import { LocalContextStoreManager, extractContext } from '@olympus-dev/core';
 
 export interface GatewayOptions {
   port?: number;
@@ -69,6 +70,7 @@ export class Gateway {
   private cliSessionStore: CliSessionStore;
   private codexAdapter: CodexAdapter | null = null;
   private workerRegistry: WorkerRegistry;
+  private localContextManager: LocalContextStoreManager;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private sessionCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private startTime = Date.now();
@@ -103,6 +105,9 @@ export class Gateway {
     this.workerRegistry.on('task:completed', (task: unknown) => {
       this.broadcastToAll('worker:task:completed', task);
     });
+
+    // Initialize LocalContextStoreManager
+    this.localContextManager = new LocalContextStoreManager();
 
     // Initialize Channel Manager (always needed for broadcast)
     this.channelManager = new ChannelManager();
@@ -222,6 +227,7 @@ export class Gateway {
     // Wire Codex Adapter if provided (hybrid/codex mode)
     if (options.codexAdapter) {
       this.codexAdapter = options.codexAdapter;
+      this.codexAdapter.setLocalContextManager(this.localContextManager);
       this.codexAdapter.registerRpcMethods(this.rpcRouter);
     }
   }
@@ -251,6 +257,7 @@ export class Gateway {
         memoryStore: this.memoryStore ?? undefined,
         codexAdapter: this.codexAdapter ?? undefined,
         workerRegistry: this.workerRegistry,
+        localContextManager: this.localContextManager,
         onRunCreated: () => this.broadcastRunsList(),
         onSessionEvent: (sessionId, event) => this.broadcastSessionEvent(sessionId, event),
         onContextEvent: (eventType, payload) => this.broadcastContextEvent(eventType, payload),
@@ -320,6 +327,7 @@ export class Gateway {
 
     // Close stores last (may have pending writes)
     if (this.memoryStore) this.memoryStore.close();
+    this.localContextManager.closeAll();
     this.cliSessionStore.close();
     this.workerRegistry.dispose();
 
@@ -367,6 +375,10 @@ export class Gateway {
 
   getWorkerRegistry(): WorkerRegistry {
     return this.workerRegistry;
+  }
+
+  getLocalContextManager(): LocalContextStoreManager {
+    return this.localContextManager;
   }
 
   getMode(): string {

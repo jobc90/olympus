@@ -20,7 +20,7 @@ export default function Navbar({ connected, demoMode = false, activeTab, onTabCh
 
   return (
     <nav
-      className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-2 border-b"
+      className="fixed top-0 left-0 right-0 z-50 flex items-center px-4 py-3 border-b gap-3"
       style={{
         backgroundColor: 'var(--bg-primary)',
         borderColor: 'var(--border)',
@@ -35,13 +35,13 @@ export default function Navbar({ connected, demoMode = false, activeTab, onTabCh
         </span>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="flex items-center gap-1">
+      {/* Tab Navigation — fills remaining space, each tab 50% */}
+      <div className="flex-1 flex items-center justify-center gap-1">
         {tabs.map(tab => (
           <button
             key={tab.key}
             onClick={() => onTabChange(tab.key)}
-            className="px-3 py-1.5 rounded-md text-xs font-mono transition-colors"
+            className="flex-1 py-2 rounded-md text-sm font-mono transition-colors text-center max-w-[300px]"
             style={{
               backgroundColor: activeTab === tab.key ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)' : 'transparent',
               color: activeTab === tab.key ? 'var(--accent-primary)' : 'var(--text-secondary)',

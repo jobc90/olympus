@@ -1,11 +1,9 @@
 import type { CodexSessionManager } from './session-manager.js';
-import type { ContextManager } from './context-manager.js';
 import type {
   UserInput,
   RoutingDecision,
   InputSource,
   ManagedSession,
-  ProjectContext,
 } from './types.js';
 
 /**
@@ -24,7 +22,6 @@ export class Router {
 
   constructor(
     private sessionManager: CodexSessionManager,
-    private contextManager: ContextManager,
   ) {}
 
   /**
@@ -78,7 +75,6 @@ export class Router {
         type: 'SESSION_FORWARD',
         targetSessions: [keywordMatch.sessionId],
         processedInput: input.text,
-        contextToInject: keywordMatch.context,
         confidence: keywordMatch.confidence,
         reason: `키워드 "${keywordMatch.keyword}" → ${keywordMatch.projectName}`,
       };
@@ -145,34 +141,14 @@ export class Router {
     return patterns.some(p => p.test(text));
   }
 
-  private async matchProjectKeyword(text: string): Promise<{
+  private async matchProjectKeyword(_text: string): Promise<{
     sessionId: string;
     projectName: string;
     keyword: string;
     confidence: number;
-    context?: ProjectContext;
   } | null> {
-    const sessions = this.sessionManager.listSessions();
-    const projects = await this.contextManager.getAllProjects();
-
-    for (const project of projects) {
-      const keywords = [project.name, ...(project.aliases ?? [])];
-      for (const kw of keywords) {
-        if (text.toLowerCase().includes(kw.toLowerCase())) {
-          const session = sessions.find(s => s.projectPath === project.path);
-          if (session) {
-            const context = await this.contextManager.getProjectContext(project.path);
-            return {
-              sessionId: session.id,
-              projectName: project.name,
-              keyword: kw,
-              confidence: 0.8,
-              context,
-            };
-          }
-        }
-      }
-    }
+    // Project keyword matching disabled — ContextManager removed
+    // Gateway /api/local-context API provides context search
     return null;
   }
 
