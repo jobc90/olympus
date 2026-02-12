@@ -56,18 +56,19 @@ protocol → core → gateway → cli
 - **Core 3**: explore (Haiku), executor (Sonnet), writer (Haiku)
 - **On-Demand 16**: architect, analyst, planner, designer, researcher, code-reviewer, verifier, qa-tester, vision, test-engineer, build-fixer, git-master, api-reviewer, performance-reviewer, security-reviewer, style-reviewer
 
-### Team Engineering Protocol (`/team` command)
+### Team Engineering Protocol v3 (`/team` command — AgentTeam Benchmark)
 - **Step 0**: Skill & Plugin Discovery
 - **Step 1**: Requirement Registry (ZERO LOSS — analyst + explore 병렬 분석, Traceability 검증)
-- **Step 2**: Work Decomposition (planner DAG 설계, researcher 기술조사, architect Quality Gate)
-- **Step 3**: Team Creation (designer, executor, test-engineer, build-fixer, git-master 등)
+- **Step 2**: Work Decomposition + **File Ownership Analysis** (planner DAG, researcher 기술조사, **File Ownership Matrix** — CONFLICT 0 필수, **Wave-based Execution Strategy**, architect Quality Gate)
+- **Step 3**: Team Creation + **Parallel Execution Assignment** (역할별 독립 인스턴스, **OWNED FILES + BOUNDARY 규칙** per WI, **Wave-based Parallel Dispatch**, **Shared File Request Protocol**)
 - **Step 4**: Consensus Protocol (codex_analyze MCP)
-- **Step 5**: 2-Phase Development (ai_team_patch MCP + Team 구현)
+- **Step 5**: 2-Phase Development + **Parallel Execution** (ai_team_patch MCP, **Wave 실행 루프** — 독립 WI 병렬/의존 WI 순차, **Leader Reconciliation** per Wave — git diff + build + lint + test)
 - **Step 6**: Multi-Reviewer Gate (code-reviewer + style-reviewer 항상, api/security/performance/vision 조건부 병렬)
 - **Step 7**: Spec Verification (verifier — R# 증거 기반 충족 검증)
 - **Step 8**: Evidence-Based QA (qa-tester)
 - **Step 9**: Finalization (writer 문서화 + git-master 커밋 정리)
-- **Circuit Breaker**: 모든 Step에서 3회 실패 시 architect escalate (순차 Step 아님)
+- **Circuit Breaker**: 모든 Step에서 3회 실패 시 architect escalate
+- **File Ownership Invariant**: 동일 시점에 1파일 = 최대 1팀원 (Last Write Wins 방지)
 
 ## Development
 
