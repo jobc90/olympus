@@ -11,7 +11,9 @@ import type {
   SessionInfo,
   AvailableSession,
   CliRunResult,
+  RegisteredWorker,
 } from '@olympus-dev/protocol';
+import { generateDemoData } from '../lib/state-mapper';
 
 export interface SessionOutput {
   sessionId: string;
@@ -70,6 +72,30 @@ export interface PendingApproval {
   timestamp: number;
 }
 
+export interface WorkerConfigEntry {
+  id: string;
+  name: string;
+  emoji?: string;
+  color: string;
+  avatar: string;
+}
+
+export interface ActivityEventEntry {
+  id: string;
+  type: string;
+  agentName: string;
+  message: string;
+  timestamp: number;
+  color?: string;
+}
+
+export interface SystemStatsEntry {
+  totalWorkers: number;
+  activeWorkers: number;
+  totalTokens: number;
+  failedTasks: number;
+}
+
 export interface OlympusState {
   connected: boolean;
   phase: PhasePayload | null;
@@ -94,6 +120,13 @@ export interface OlympusState {
   pendingApproval: PendingApproval | null;
   cliHistory: CliHistoryItem[];
   cliStreams: Map<string, CliStreamState>;
+  // Office dashboard extensions
+  workerConfigs: WorkerConfigEntry[];
+  workerBehaviors: Record<string, string>;
+  codexBehavior: string;
+  activityEvents: ActivityEventEntry[];
+  systemStats: SystemStatsEntry;
+  demoMode: boolean;
 }
 
 export interface UseOlympusOptions {
@@ -101,6 +134,27 @@ export interface UseOlympusOptions {
   host?: string;
   apiKey?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Worker color palette for auto-assignment
+// ---------------------------------------------------------------------------
+
+const WORKER_COLORS = ['#4FC3F7', '#FF7043', '#66BB6A', '#AB47BC', '#FFCA28', '#EF5350'];
+const WORKER_AVATARS = ['athena', 'poseidon', 'ares', 'apollo', 'artemis', 'hermes', 'hephaestus', 'dionysus', 'demeter', 'aphrodite', 'hera', 'hades', 'persephone', 'prometheus', 'helios', 'nike', 'pan', 'hecate', 'iris', 'heracles'];
+const ACTIVE_BEHAVIORS = new Set(['working', 'thinking', 'reviewing', 'deploying', 'analyzing', 'collaborating', 'chatting']);
+
+function registeredWorkerToConfig(w: RegisteredWorker, index: number): WorkerConfigEntry {
+  return {
+    id: w.id,
+    name: w.name || `Worker-${w.id.slice(0, 6)}`,
+    color: WORKER_COLORS[index % WORKER_COLORS.length],
+    avatar: WORKER_AVATARS[index % WORKER_AVATARS.length],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 
 export function useOlympus(options: UseOlympusOptions = {}) {
   const clientRef = useRef<OlympusClient | null>(null);
@@ -126,11 +180,27 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     pendingApproval: null,
     cliHistory: [],
     cliStreams: new Map(),
+    // Office extensions
+    workerConfigs: [],
+    workerBehaviors: {},
+    codexBehavior: 'supervising',
+    activityEvents: [],
+    systemStats: { totalWorkers: 0, activeWorkers: 0, totalTokens: 0, failedTasks: 0 },
+    demoMode: false,
   });
 
   const { port, host, apiKey } = options;
+  const prevBehaviorsRef = useRef<Record<string, string>>({});
+  const connectTimeRef = useRef<number>(Date.now());
+  const demoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // =========================================================================
+  // Main connection effect (existing)
+  // =========================================================================
 
   useEffect(() => {
+    connectTimeRef.current = Date.now();
+
     // Don't attempt connection without API key
     if (!apiKey) {
       setState((s) => ({ ...s, connected: false, error: 'API key required. Configure in Settings.' }));
@@ -146,7 +216,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     clientRef.current = client;
 
     client.on('connected', () => {
-      setState((s) => ({ ...s, connected: true, error: null }));
+      setState((s) => ({ ...s, connected: true, error: null, demoMode: false }));
     });
 
     client.onRunsList((runs: RunStatus[]) => {
@@ -360,7 +430,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
           durationMs: result.durationMs,
           timestamp: Date.now(),
         };
-        // Mark active stream as inactive (sessionKey ≠ result.sessionId)
+        // Mark active stream as inactive (sessionKey != result.sessionId)
         const streams = new Map(s.cliStreams);
         for (const [key, stream] of streams) {
           if (stream.active) {
@@ -401,6 +471,248 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       client.disconnect();
     };
   }, [port, host, apiKey]);
+
+  // =========================================================================
+  // Worker polling (GET /api/workers every 10s)
+  // =========================================================================
+
+  useEffect(() => {
+    if (!apiKey || !host || !port) return;
+
+    const pollWorkers = async () => {
+      try {
+        const res = await fetch(`http://${host}:${port}/api/workers`, {
+          headers: apiKey ? { 'x-api-key': apiKey } : {},
+        });
+        if (!res.ok) return;
+        const data = await res.json() as { workers: RegisteredWorker[] };
+        const registeredWorkers = data.workers ?? [];
+
+        setState((s) => {
+          // Convert to workerConfigs
+          const workerConfigs = registeredWorkers.map((w, i) => registeredWorkerToConfig(w, i));
+
+          // Derive behaviors from worker status + CLI streams
+          const workerBehaviors: Record<string, string> = {};
+          for (const w of registeredWorkers) {
+            // Check CLI stream activity
+            const hasActiveStream = Array.from(s.cliStreams.values()).some(
+              stream => stream.active && stream.sessionKey.includes(w.id),
+            );
+
+            if (w.status === 'failed' as string) {
+              workerBehaviors[w.id] = 'error';
+            } else if (hasActiveStream) {
+              workerBehaviors[w.id] = 'working';
+            } else if (w.status === 'busy' && w.currentTaskId) {
+              workerBehaviors[w.id] = 'working';
+            } else if (w.status === 'busy') {
+              workerBehaviors[w.id] = 'thinking';
+            } else {
+              // Check if recently completed (within last 5s via cliHistory)
+              const recentComplete = s.cliHistory.find(
+                h => h.sessionKey.includes(w.id) && (Date.now() - h.timestamp) < 5000,
+              );
+              if (recentComplete) {
+                workerBehaviors[w.id] = 'completed';
+              } else {
+                // Check idle duration
+                const idleDuration = Date.now() - w.lastHeartbeat;
+                if (idleDuration > 60000 && w.lastHeartbeat > 0) {
+                  workerBehaviors[w.id] = 'offline';
+                } else {
+                  workerBehaviors[w.id] = 'idle';
+                }
+              }
+            }
+          }
+
+          // Codex behavior
+          let codexBehavior = 'supervising';
+          if (!s.connected) {
+            codexBehavior = 'offline';
+          } else if (registeredWorkers.some(w => w.currentTaskId)) {
+            codexBehavior = 'directing';
+          } else if (s.agentState !== 'IDLE') {
+            codexBehavior = 'analyzing';
+          }
+
+          // Detect behavior changes and emit activity events
+          const newEvents: ActivityEventEntry[] = [...s.activityEvents];
+          for (const w of registeredWorkers) {
+            const prevBeh = prevBehaviorsRef.current[w.id];
+            const newBeh = workerBehaviors[w.id];
+            if (prevBeh && prevBeh !== newBeh) {
+              newEvents.push({
+                id: crypto.randomUUID(),
+                type: 'state_change',
+                agentName: w.name || w.id,
+                message: `Changed to ${newBeh}`,
+                timestamp: Date.now(),
+                color: workerConfigs.find(c => c.id === w.id)?.color,
+              });
+            }
+          }
+          prevBehaviorsRef.current = workerBehaviors;
+
+          // System stats
+          const totalTokens = s.cliHistory.reduce(
+            (sum, h) => sum + (h.usage?.inputTokens || 0) + (h.usage?.outputTokens || 0), 0,
+          );
+          const failedTasks = s.cliHistory.filter(
+            h => !h.cost && h.text?.includes('error'),
+          ).length;
+
+          return {
+            ...s,
+            workerConfigs,
+            workerBehaviors,
+            codexBehavior,
+            activityEvents: newEvents.slice(-50),
+            systemStats: {
+              totalWorkers: workerConfigs.length,
+              activeWorkers: Object.values(workerBehaviors).filter(b => ACTIVE_BEHAVIORS.has(b)).length,
+              totalTokens,
+              failedTasks,
+            },
+          };
+        });
+      } catch {
+        // Silently fail polling
+      }
+    };
+
+    pollWorkers();
+    const interval = setInterval(pollWorkers, 10_000);
+    return () => clearInterval(interval);
+  }, [apiKey, host, port]);
+
+  // =========================================================================
+  // Demo mode (activates when not connected after 5s)
+  // =========================================================================
+
+  useEffect(() => {
+    // Clear demo timer on cleanup
+    return () => {
+      if (demoTimerRef.current) clearInterval(demoTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    // If connected, disable demo mode
+    if (state.connected) {
+      if (demoTimerRef.current) {
+        clearInterval(demoTimerRef.current);
+        demoTimerRef.current = null;
+      }
+      if (state.demoMode) {
+        setState(s => ({ ...s, demoMode: false }));
+      }
+      return;
+    }
+
+    // Wait 5s before enabling demo mode
+    const timeout = setTimeout(() => {
+      if (state.connected) return;
+
+      const demo = generateDemoData();
+      const workerConfigs = demo.workers.map(w => ({
+        id: w.id,
+        name: w.name,
+        emoji: w.emoji,
+        color: w.color,
+        avatar: w.avatar,
+      }));
+
+      const workerBehaviors: Record<string, string> = {};
+      for (const w of demo.workers) {
+        workerBehaviors[w.id] = demo.states[w.id]?.behavior ?? 'idle';
+      }
+
+      setState(s => ({
+        ...s,
+        demoMode: true,
+        workerConfigs,
+        workerBehaviors,
+        codexBehavior: 'supervising',
+        systemStats: {
+          totalWorkers: workerConfigs.length,
+          activeWorkers: Object.values(workerBehaviors).filter(b => ACTIVE_BEHAVIORS.has(b)).length,
+          totalTokens: 42000,
+          failedTasks: 1,
+        },
+      }));
+
+      // Periodically change behaviors (every 5s) and add events (every 3s)
+      const DEMO_BEHAVIORS = ['working', 'thinking', 'idle', 'completed', 'reviewing', 'deploying', 'collaborating', 'chatting', 'resting'];
+      const CODEX_BEHAVIORS = ['supervising', 'directing', 'analyzing', 'meeting'];
+      let eventCounter = 0;
+
+      demoTimerRef.current = setInterval(() => {
+        eventCounter++;
+
+        setState(s => {
+          if (!s.demoMode) return s;
+
+          const newBehaviors = { ...s.workerBehaviors };
+          const newEvents = [...s.activityEvents];
+
+          // Every 5s: change a random worker behavior
+          if (eventCounter % 5 === 0) {
+            const workerIds = Object.keys(newBehaviors);
+            if (workerIds.length > 0) {
+              const randomId = workerIds[Math.floor(Math.random() * workerIds.length)];
+              const newBeh = DEMO_BEHAVIORS[Math.floor(Math.random() * DEMO_BEHAVIORS.length)];
+              newBehaviors[randomId] = newBeh;
+            }
+          }
+
+          // Every 3s: add an activity event
+          if (eventCounter % 3 === 0) {
+            const configs = s.workerConfigs;
+            if (configs.length > 0) {
+              const randomWorker = configs[Math.floor(Math.random() * configs.length)];
+              const messages = [
+                'Started working on task', 'Thinking about approach', 'Taking a break',
+                'Deploying changes', 'Reviewing code', 'Collaborating with team',
+                'Task completed', 'Analyzing logs', 'Running tests',
+              ];
+              newEvents.push({
+                id: crypto.randomUUID(),
+                type: 'state_change',
+                agentName: randomWorker.name,
+                message: messages[Math.floor(Math.random() * messages.length)],
+                timestamp: Date.now(),
+                color: randomWorker.color,
+              });
+            }
+          }
+
+          // Occasionally change codex behavior
+          const codexBeh = eventCounter % 8 === 0
+            ? CODEX_BEHAVIORS[Math.floor(Math.random() * CODEX_BEHAVIORS.length)]
+            : s.codexBehavior;
+
+          return {
+            ...s,
+            workerBehaviors: newBehaviors,
+            codexBehavior: codexBeh,
+            activityEvents: newEvents.slice(-50),
+            systemStats: {
+              ...s.systemStats,
+              activeWorkers: Object.values(newBehaviors).filter(b => ACTIVE_BEHAVIORS.has(b)).length,
+            },
+          };
+        });
+      }, 1000);
+    }, 5000);
+
+    return () => clearTimeout(timeout);
+  }, [state.connected, state.demoMode]);
+
+  // =========================================================================
+  // Actions (existing)
+  // =========================================================================
 
   const subscribe = useCallback((runId: string) => {
     clientRef.current?.subscribe(runId);
@@ -556,5 +868,21 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     }
   }, []);
 
-  return { ...state, subscribe, unsubscribe, subscribeSession, unsubscribeSession, cancel, connectAvailableSession, sendAgentCommand, cancelAgentTask, approveTask, rejectTask, codexRoute, codexProjects, codexSessions, codexSearch };
+  return {
+    ...state,
+    subscribe,
+    unsubscribe,
+    subscribeSession,
+    unsubscribeSession,
+    cancel,
+    connectAvailableSession,
+    sendAgentCommand,
+    cancelAgentTask,
+    approveTask,
+    rejectTask,
+    codexRoute,
+    codexProjects,
+    codexSessions,
+    codexSearch,
+  };
 }

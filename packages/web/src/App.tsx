@@ -1,21 +1,22 @@
 import React, { useState, useCallback } from 'react';
 import { useOlympus } from './hooks/useOlympus';
-import { Header } from './components/Header';
+import { useOffice } from './hooks/useOffice';
+
+// --- Existing components (preserved) ---
 import { SessionList } from './components/SessionList';
 import { SessionOutputPanel } from './components/SessionOutputPanel';
 import { EmptyState } from './components/EmptyState';
-import { SettingsModal } from './components/SettingsModal';
 import { PhaseProgress } from './components/PhaseProgress';
 import { TaskList } from './components/TaskList';
 import { AgentStream } from './components/AgentStream';
 import { AgentPanel } from './components/AgentPanel';
 import { CommandInput } from './components/CommandInput';
-import { WorkerGrid } from './components/WorkerGrid';
+import { WorkerGrid as LegacyWorkerGrid } from './components/WorkerGrid';
 import { WorkerDetailModal } from './components/WorkerDetailModal';
 import { TaskTimeline } from './components/TaskTimeline';
 import { AgentApprovalDialog } from './components/AgentApprovalDialog';
 import { LogPanel } from './components/LogPanel';
-import { Card, CardHeader } from './components/Card';
+import { Card } from './components/Card';
 import { ContextExplorer } from './components/ContextExplorer';
 import { CodexPanel } from './components/CodexPanel';
 import { AgentHistoryPanel } from './components/AgentHistoryPanel';
@@ -24,8 +25,21 @@ import { SessionCostTracker } from './components/SessionCostTracker';
 import { ProjectBrowser } from './components/ProjectBrowser';
 import { useContextTree } from './hooks/useContextTree';
 
+// --- New dashboard components ---
+import Navbar from './components/dashboard/Navbar';
+import SystemStats from './components/dashboard/SystemStats';
+import { WorkerGrid } from './components/dashboard/WorkerGrid';
+import ActivityFeed from './components/dashboard/ActivityFeed';
+import { MiniOffice } from './components/office/MiniOffice';
+import { OfficeCanvas } from './components/office/OfficeCanvas';
+import { OfficeControls } from './components/office/OfficeControls';
+import ChatWindow from './components/chat/ChatWindow';
+import SettingsPanel from './components/settings/SettingsPanel';
+
+import type { WorkerConfig, WorkerDashboardState, CodexConfig, WorkerAvatar, WorkerBehavior } from './lib/types';
+import { generateDemoData, generateDemoEvent } from './lib/state-mapper';
+
 // Config priority: server-injected > URL params > localStorage > defaults
-// Server injects window.__OLYMPUS_CONFIG__ via <script> tag in index.html
 declare global {
   interface Window {
     __OLYMPUS_CONFIG__?: { host: string; port: number; apiKey: string };
@@ -52,7 +66,6 @@ function getConfig() {
     apiKey: injected?.apiKey ?? params.get('apiKey') ?? (storedConfig.apiKey as string) ?? '',
   };
 
-  // Persist to localStorage for consistency
   if (config.apiKey) {
     localStorage.setItem('olympus-config', JSON.stringify(config));
   }
@@ -60,9 +73,38 @@ function getConfig() {
   return config;
 }
 
+// ---------------------------------------------------------------------------
+// Demo data helpers
+// ---------------------------------------------------------------------------
+
+function useDemoData(connected: boolean) {
+  const [data] = useState(() => generateDemoData());
+  const [events, setEvents] = useState<Array<{ id: string; type: string; agentName: string; message: string; timestamp: number }>>([]);
+  const [states, setStates] = useState(data.states);
+
+  // Periodically generate new events in demo mode
+  React.useEffect(() => {
+    if (connected) return;
+    const timer = setInterval(() => {
+      const event = generateDemoEvent(data.workers);
+      setEvents(prev => [{ id: event.id, type: event.type, agentName: event.workerName, message: event.message, timestamp: event.timestamp }, ...prev].slice(0, 50));
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [connected, data.workers]);
+
+  return { workers: data.workers, states, events, setStates };
+}
+
+// ---------------------------------------------------------------------------
+// App
+// ---------------------------------------------------------------------------
+
 export default function App() {
   const [config, setConfig] = useState(getConfig);
-  const [showSettings, setShowSettings] = useState(!config.apiKey);
+  const [showSettings, setShowSettings] = useState(false);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'office'>('dashboard');
+  const [chatTarget, setChatTarget] = useState<{ id: string; name: string; emoji?: string; color?: string } | null>(null);
+  const [chatMessages, setChatMessages] = useState<Record<string, Array<{ id: string; role: 'user' | 'agent'; content: string; timestamp: number }>>>({});
 
   const {
     connected,
@@ -81,7 +123,7 @@ export default function App() {
     agentState,
     agentProgress,
     agentTaskId,
-    workers,
+    workers: legacyWorkers,
     taskHistory,
     pendingApproval,
     subscribe,
@@ -98,6 +140,12 @@ export default function App() {
     codexSearch,
     cliHistory,
     cliStreams,
+    workerConfigs: polledWorkerConfigs,
+    workerBehaviors: polledWorkerBehaviors,
+    codexBehavior: polledCodexBehavior,
+    systemStats: polledSystemStats,
+    activityEvents: polledActivityEvents,
+    demoMode: hookDemoMode,
   } = useOlympus(config);
 
   const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
@@ -107,6 +155,67 @@ export default function App() {
     apiKey: config.apiKey,
   });
 
+  // --- Demo data (used when not connected to gateway) ---
+  const demoMode = hookDemoMode || !connected;
+  const demo = useDemoData(connected);
+
+  // Build WorkerConfig[] and WorkerDashboardState map for new components
+  const WORKER_AVATARS = ['athena', 'poseidon', 'ares', 'apollo', 'artemis', 'hermes', 'hephaestus', 'dionysus', 'demeter', 'aphrodite', 'hera', 'hades', 'persephone', 'prometheus', 'helios', 'nike', 'pan', 'hecate', 'iris', 'heracles'];
+  const workerConfigs: WorkerConfig[] = (connected && polledWorkerConfigs.length > 0)
+    ? polledWorkerConfigs.map((w, i) => ({
+        id: w.id,
+        name: w.name,
+        emoji: w.emoji ?? '',
+        color: w.color,
+        avatar: (w.avatar || WORKER_AVATARS[i % WORKER_AVATARS.length]) as WorkerAvatar,
+        behavior: polledWorkerBehaviors[w.id],
+        skinToneIndex: i,
+      } satisfies WorkerConfig))
+    : demo.workers.map((w, i) => ({ ...w, skinToneIndex: i }));
+
+  const workerStates: Record<string, WorkerDashboardState> = (connected && polledWorkerConfigs.length > 0)
+    ? Object.fromEntries(
+        polledWorkerConfigs.map(w => [
+          w.id,
+          {
+            behavior: (polledWorkerBehaviors[w.id] ?? 'idle') as WorkerBehavior,
+            officeState: 'idle',
+            currentTask: null,
+            taskHistory: [],
+            tokenUsage: [],
+            totalTokens: 0,
+            totalTasks: 0,
+            lastActivity: Date.now(),
+            sessionLog: [],
+            uptime: 0,
+          } as WorkerDashboardState,
+        ])
+      )
+    : demo.states;
+
+  const codexConfig: CodexConfig = { name: 'Zeus', emoji: '\u26A1', avatar: 'zeus' };
+
+  // useOffice hook
+  const { officeState, tick } = useOffice({
+    workers: workerConfigs,
+    workerStates: Object.fromEntries(
+      Object.entries(workerStates).map(([k, v]) => [k, { behavior: v.behavior }])
+    ),
+    codexConfig,
+    codexBehavior: connected ? polledCodexBehavior : 'supervising',
+  });
+
+  // System stats
+  const systemStats = (connected && polledSystemStats.totalWorkers > 0)
+    ? polledSystemStats
+    : {
+        totalWorkers: workerConfigs.length,
+        activeWorkers: Object.values(workerStates).filter(s => s.behavior === 'working' || s.behavior === 'thinking' || s.behavior === 'deploying').length,
+        totalTokens: Object.values(workerStates).reduce((sum, s) => sum + (s.totalTokens ?? 0), 0),
+        failedTasks: Object.values(workerStates).filter(s => s.behavior === 'error').length,
+      };
+
+  // --- Config handlers ---
   const handleConfigSave = useCallback(
     (newConfig: { host: string; port: number; apiKey: string }) => {
       setConfig(newConfig);
@@ -116,21 +225,60 @@ export default function App() {
     []
   );
 
+  const handleThemeChange = useCallback((theme: string) => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('olympus-theme', theme);
+  }, []);
+
+  // --- Chat handlers ---
+  const handleChatSend = useCallback(async (agentId: string, message: string) => {
+    const userMsg = { id: crypto.randomUUID(), role: 'user' as const, content: message, timestamp: Date.now() };
+    setChatMessages(prev => ({
+      ...prev,
+      [agentId]: [...(prev[agentId] || []), userMsg],
+    }));
+
+    if (codexRoute) {
+      try {
+        const response = await codexRoute(message);
+        if (response) {
+          const content = typeof response === 'object' && 'response' in response
+            ? String((response as { response?: { content?: string } }).response?.content ?? 'No response')
+            : String(response);
+          const agentMsg = { id: crypto.randomUUID(), role: 'agent' as const, content, timestamp: Date.now() };
+          setChatMessages(prev => ({
+            ...prev,
+            [agentId]: [...(prev[agentId] || []), agentMsg],
+          }));
+        }
+      } catch {
+        // best effort
+      }
+    }
+  }, [codexRoute]);
+
+  const handleChatClick = useCallback((workerId: string) => {
+    const w = workerConfigs.find(w => w.id === workerId);
+    setChatTarget(w ? { id: w.id, name: w.name, emoji: w.emoji, color: w.color } : { id: workerId, name: workerId });
+  }, [workerConfigs]);
+
   const currentRun = runs.find((r) => r.runId === currentRunId);
   const currentSession = sessions.find((s) => s.id === currentSessionId);
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Header */}
-      <Header
+    <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg-primary, #0A0F1C)' }}>
+      {/* Navbar (replaces old Header) */}
+      <Navbar
         connected={connected}
-        error={error}
+        demoMode={demoMode}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
         onSettingsClick={() => setShowSettings(true)}
       />
 
       {/* Error Banner */}
       {error && (
-        <div className="mx-6 mt-4 p-3 bg-error/10 border border-error/30 rounded-lg text-error text-sm flex items-center gap-2">
+        <div className="mx-6 mt-20 p-3 bg-error/10 border border-error/30 rounded-lg text-error text-sm flex items-center gap-2">
           <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
             <path
               fillRule="evenodd"
@@ -143,129 +291,215 @@ export default function App() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
-          {/* Left Sidebar: Sessions */}
-          <aside className="lg:col-span-3 xl:col-span-2">
-            <SessionList
-              runs={runs}
-              sessions={sessions}
-              availableSessions={availableSessions}
-              currentRunId={currentRunId}
-              currentSessionId={currentSessionId}
-              onSelect={subscribe}
-              onSelectSession={subscribeSession}
-              onCancel={(runId) => cancel(runId)}
-              onConnectAvailable={connectAvailableSession}
-            />
-          </aside>
+      <main className="flex-1 pt-16 px-4 pb-8 max-w-7xl mx-auto w-full">
+        {/* ===================== DASHBOARD TAB ===================== */}
+        {activeTab === 'dashboard' && (
+          <>
+            {/* System Stats — primary content for dashboard */}
+            <div className="mb-6">
+              <SystemStats stats={systemStats} />
+            </div>
 
-          {/* Center: Main Content */}
-          <section className="lg:col-span-6 xl:col-span-7 space-y-4">
-            {currentRunId && currentRun ? (
-              <>
-                {/* Run Header */}
-                <Card className="flex items-center justify-between py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                    <span className="font-mono text-sm text-primary">
-                      {currentRunId}
-                    </span>
-                    <span className="text-xs text-text-muted">
-                      Phase {currentRun.phase}: {currentRun.phaseName}
-                    </span>
-                  </div>
-                  {currentRun.status === 'running' && (
-                    <button
-                      onClick={() => cancel(currentRunId)}
-                      className="text-xs text-error hover:text-error/80 transition-colors flex items-center gap-1"
-                    >
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                        <path
-                          fillRule="evenodd"
-                          d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                      Cancel
-                    </button>
-                  )}
-                </Card>
-
-                {/* Phase Progress */}
-                <PhaseProgress phase={phase} />
-
-                {/* Tasks */}
-                <TaskList tasks={tasks} />
-
-                {/* Agent Stream */}
-                <AgentStream agentStreams={agentStreams} />
-              </>
-            ) : currentSessionId && currentSession ? (
-              <SessionOutputPanel session={currentSession} outputs={sessionOutputs.filter(o => o.sessionId === currentSessionId)} screen={sessionScreens.get(currentSessionId!)} />
-            ) : (
-              <>
-                {/* V2 Agent Interface */}
-                <AgentPanel
-                  state={agentState}
-                  progress={agentProgress}
-                  taskId={agentTaskId}
-                  onCancel={cancelAgentTask}
+            {/* 3-column layout */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Left Sidebar: Sessions */}
+              <aside className="lg:col-span-3 xl:col-span-2">
+                <SessionList
+                  runs={runs}
+                  sessions={sessions}
+                  availableSessions={availableSessions}
+                  currentRunId={currentRunId}
+                  currentSessionId={currentSessionId}
+                  onSelect={subscribe}
+                  onSelectSession={subscribeSession}
+                  onCancel={(runId) => cancel(runId)}
+                  onConnectAvailable={connectAvailableSession}
                 />
-                <LiveOutputPanel streams={cliStreams} />
-                <CommandInput
-                  onSubmit={sendAgentCommand}
-                  agentState={agentState}
-                  disabled={!connected}
+              </aside>
+
+              {/* Center: Main Content */}
+              <section className="lg:col-span-6 xl:col-span-7 space-y-4">
+                {currentRunId && currentRun ? (
+                  <>
+                    {/* Run Header */}
+                    <Card className="flex items-center justify-between py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                        <span className="font-mono text-sm text-primary">
+                          {currentRunId}
+                        </span>
+                        <span className="text-xs text-text-muted">
+                          Phase {currentRun.phase}: {currentRun.phaseName}
+                        </span>
+                      </div>
+                      {currentRun.status === 'running' && (
+                        <button
+                          onClick={() => cancel(currentRunId)}
+                          className="text-xs text-error hover:text-error/80 transition-colors flex items-center gap-1"
+                        >
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path
+                              fillRule="evenodd"
+                              d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                          Cancel
+                        </button>
+                      )}
+                    </Card>
+
+                    {/* Phase Progress */}
+                    <PhaseProgress phase={phase} />
+
+                    {/* Tasks */}
+                    <TaskList tasks={tasks} />
+
+                    {/* Agent Stream */}
+                    <AgentStream agentStreams={agentStreams} />
+                  </>
+                ) : currentSessionId && currentSession ? (
+                  <SessionOutputPanel session={currentSession} outputs={sessionOutputs.filter(o => o.sessionId === currentSessionId)} screen={sessionScreens.get(currentSessionId!)} />
+                ) : (
+                  <>
+                    {/* V2 Agent Interface */}
+                    <AgentPanel
+                      state={agentState}
+                      progress={agentProgress}
+                      taskId={agentTaskId}
+                      onCancel={cancelAgentTask}
+                    />
+                    <LiveOutputPanel streams={cliStreams} />
+                    <CommandInput
+                      onSubmit={sendAgentCommand}
+                      agentState={agentState}
+                      disabled={!connected}
+                    />
+
+                    {/* New Worker Grid (dashboard cards) */}
+                    <WorkerGrid
+                      workers={workerConfigs}
+                      workerStates={workerStates}
+                      onChatClick={handleChatClick}
+                    />
+
+                    {/* Legacy Worker Grid (running worker info) */}
+                    <LegacyWorkerGrid workers={legacyWorkers} />
+                    <TaskTimeline tasks={taskHistory} />
+                    <AgentHistoryPanel history={cliHistory} />
+
+                    <EmptyState config={config} hasRuns={runs.length > 0} hasSessions={sessions.filter(s => s.status === 'active').length > 0} />
+                  </>
+                )}
+              </section>
+
+              {/* Right Sidebar: Mini Office + Activity + Logs */}
+              <aside className="lg:col-span-3 space-y-4">
+                {/* Compact office preview — click to go to Office tab */}
+                <div className="cursor-pointer" onClick={() => setActiveTab('office')}>
+                  <MiniOffice
+                    workers={workerConfigs}
+                    workerStates={workerStates}
+                    codexConfig={codexConfig}
+                    officeState={officeState}
+                    onTick={tick}
+                  />
+                </div>
+                <ActivityFeed events={connected && polledActivityEvents.length > 0 ? polledActivityEvents.map(e => ({
+                  id: e.id, type: e.type, agentName: e.agentName, message: e.message, timestamp: e.timestamp, color: e.color,
+                })) : demo.events} />
+                <CodexPanel connected={connected} onRoute={codexRoute} />
+                <SessionCostTracker history={cliHistory} />
+                <ProjectBrowser
+                  connected={connected}
+                  getProjects={codexProjects}
+                  getSessions={codexSessions}
+                  search={codexSearch}
                 />
-                <WorkerGrid workers={workers} />
-                <TaskTimeline tasks={taskHistory} />
-                <AgentHistoryPanel history={cliHistory} />
+                <ContextExplorer ctx={contextTree} onSettingsClick={() => setShowSettings(true)} />
+                <LogPanel logs={logs} />
+              </aside>
+            </div>
+          </>
+        )}
 
-                <EmptyState config={config} hasRuns={runs.length > 0} hasSessions={sessions.filter(s => s.status === 'active').length > 0} />
-              </>
-            )}
-          </section>
-
-          {/* Right Sidebar: Codex + Context + Logs */}
-          <aside className="lg:col-span-3 space-y-4">
-            <CodexPanel connected={connected} onRoute={codexRoute} />
-            <SessionCostTracker history={cliHistory} />
-            <ProjectBrowser
-              connected={connected}
-              getProjects={codexProjects}
-              getSessions={codexSessions}
-              search={codexSearch}
+        {/* ===================== OFFICE TAB ===================== */}
+        {activeTab === 'office' && (
+          <div className="space-y-4">
+            <div className="w-full flex justify-center">
+              <OfficeCanvas
+                officeState={officeState}
+                workers={workerConfigs}
+                codexConfig={codexConfig}
+                onTick={tick}
+                width={1100}
+                height={620}
+                displayWidth={1100}
+                displayHeight={620}
+                demoMode={demoMode}
+                connected={connected}
+                className="w-full"
+              />
+            </div>
+            <OfficeControls
+              workers={workerConfigs}
+              workerStates={workerStates}
+              demoMode={demoMode}
             />
-            <ContextExplorer ctx={contextTree} onSettingsClick={() => setShowSettings(true)} />
-            <LogPanel logs={logs} />
-          </aside>
-        </div>
+          </div>
+        )}
       </main>
 
       {/* Footer */}
-      <footer className="py-3 px-6 border-t border-border text-center">
-        <span className="text-xs text-text-muted">
+      <footer className="py-3 px-6 border-t text-center" style={{ borderColor: 'var(--border)' }}>
+        <span className="text-xs" style={{ color: 'var(--text-secondary, #666)' }}>
           Gateway: {config.host}:{config.port}
           {config.apiKey && (
-            <span className="ml-2 text-success">● Authenticated</span>
+            <span className="ml-2" style={{ color: 'var(--accent-success, #4CAF50)' }}>Authenticated</span>
           )}
         </span>
       </footer>
 
-      {/* Settings Modal */}
+      {/* ChatWindow */}
+      {chatTarget && (
+        <ChatWindow
+          agentId={chatTarget.id}
+          agentName={chatTarget.name}
+          agentEmoji={chatTarget.emoji}
+          agentColor={chatTarget.color}
+          messages={chatMessages[chatTarget.id] || []}
+          onSend={handleChatSend}
+          onClose={() => setChatTarget(null)}
+        />
+      )}
+
+      {/* Settings Panel (replaces old SettingsModal) */}
       {showSettings && (
-        <SettingsModal
-          config={config}
-          onSave={handleConfigSave}
+        <SettingsPanel
+          config={{
+            gateway: { url: `${config.host}:${config.port}`, token: config.apiKey },
+            theme: localStorage.getItem('olympus-theme') || 'midnight',
+          }}
+          onUpdate={(cfg) => {
+            if (cfg.theme) handleThemeChange(cfg.theme);
+            // Parse gateway URL back to host:port
+            if (cfg.gateway) {
+              const parts = cfg.gateway.url.split(':');
+              const host = parts[0] || config.host;
+              const port = parseInt(parts[1]) || config.port;
+              handleConfigSave({ host, port, apiKey: cfg.gateway.token || config.apiKey });
+            } else {
+              setShowSettings(false);
+            }
+          }}
           onClose={() => setShowSettings(false)}
         />
       )}
 
-      {/* Worker Detail Modal */}
-      {selectedWorker && workers.get(selectedWorker) && (
+      {/* Worker Detail Modal (legacy) */}
+      {selectedWorker && legacyWorkers.get(selectedWorker) && (
         <WorkerDetailModal
-          worker={workers.get(selectedWorker)!}
+          worker={legacyWorkers.get(selectedWorker)!}
           onClose={() => setSelectedWorker(null)}
           onTerminate={async (id) => {
             try {
