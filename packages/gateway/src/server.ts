@@ -607,6 +607,11 @@ export class Gateway {
     // Send list of active sessions
     const sessions = this.sessionManager.getAll().filter(s => s.status === 'active');
     this.send(ws, createMessage('sessions:list', { sessions, availableSessions: [] }));
+
+    // Send current Gemini Advisor status
+    if (this.geminiAdvisor) {
+      this.send(ws, createMessage('gemini:status', this.geminiAdvisor.getStatus()));
+    }
   }
 
   /**

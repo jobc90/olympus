@@ -57,7 +57,17 @@ protocol → core → gateway → cli
 - **On-Demand 16**: architect, analyst, planner, designer, researcher, code-reviewer, verifier, qa-tester, vision, test-engineer, build-fixer, git-master, api-reviewer, performance-reviewer, security-reviewer, style-reviewer
 
 ### Team Engineering Protocol (`/team` command)
-5 Core Mechanisms: Consensus Protocol, 2-Phase Development, Two-Stage Review, Evidence-Based QA, Circuit Breaker
+- **Step 0**: Skill & Plugin Discovery
+- **Step 1**: Requirement Registry (ZERO LOSS — analyst + explore 병렬 분석, Traceability 검증)
+- **Step 2**: Work Decomposition (planner DAG 설계, researcher 기술조사, architect Quality Gate)
+- **Step 3**: Team Creation (designer, executor, test-engineer, build-fixer, git-master 등)
+- **Step 4**: Consensus Protocol (codex_analyze MCP)
+- **Step 5**: 2-Phase Development (ai_team_patch MCP + Team 구현)
+- **Step 6**: Multi-Reviewer Gate (code-reviewer + style-reviewer 항상, api/security/performance/vision 조건부 병렬)
+- **Step 7**: Spec Verification (verifier — R# 증거 기반 충족 검증)
+- **Step 8**: Evidence-Based QA (qa-tester)
+- **Step 9**: Finalization (writer 문서화 + git-master 커밋 정리)
+- **Circuit Breaker**: 모든 Step에서 3회 실패 시 architect escalate (순차 Step 아님)
 
 ## Development
 

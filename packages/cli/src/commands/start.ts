@@ -16,15 +16,9 @@ interface TaskPayload {
   projectPath: string;
 }
 
-/**
- * PTY 모드에서는 TUI가 전체 터미널을 제어하므로 상태 메시지를 출력하지 않습니다.
- * Spawn 모드에서는 console.log로 출력합니다.
- */
-function createLogger(isPtyMode: boolean) {
-  if (isPtyMode) {
-    return (..._args: unknown[]) => { /* PTY 모드: TUI 간섭 방지 */ };
-  }
-  return (...args: unknown[]) => console.log(...args);
+/** Write a brief message to stderr (visible even in PTY mode, doesn't corrupt TUI) */
+function logBrief(msg: string): void {
+  process.stderr.write(msg + '\n');
 }
 
 async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): Promise<void> {
@@ -37,17 +31,15 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
   const gatewayUrl = config.gatewayUrl || `http://${config.gatewayHost}:${config.gatewayPort}`;
   const apiKey = config.apiKey;
 
-  // 초기 메시지는 항상 stdout (PTY 시작 전)
-  console.log(chalk.cyan.bold('\n⚡ Olympus Worker\n'));
+  logBrief(chalk.gray('⚡ Olympus Worker'));
 
   // 2. Check gateway health
   try {
     const healthRes = await fetch(`${gatewayUrl}/healthz`);
     if (!healthRes.ok) throw new Error(`HTTP ${healthRes.status}`);
-    console.log(chalk.green(`  ✓ Gateway: ${gatewayUrl}`));
   } catch {
-    console.log(chalk.red(`  ✗ Gateway 연결 실패: ${gatewayUrl}`));
-    console.log(chalk.gray('    olympus server start로 Gateway를 먼저 시작하세요.'));
+    logBrief(chalk.red(`  Gateway 연결 실패: ${gatewayUrl}`));
+    logBrief(chalk.gray('  olympus server start로 Gateway를 먼저 시작하세요.'));
     process.exit(1);
   }
 
@@ -62,24 +54,17 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
     ptyWorker = new PtyWorker({
       projectPath,
       trustMode: forceTrust,
-      onReady: () => {
-        // PTY TUI가 터미널을 제어하므로 상태 메시지 출력하지 않음
-      },
+      onReady: () => {},
       onExit: () => {
-        // Double Ctrl+C → 종료
         if (shutdownFn) shutdownFn('Ctrl+C');
       },
     });
-    console.log(chalk.cyan('  ⏳ Claude CLI 시작 중...'));
     await ptyWorker.start();
   } catch (err) {
     ptyWorker = null;
-    console.log(chalk.yellow(`  ⚠ PTY 모드 불가: ${(err as Error).message}`));
-    console.log(chalk.gray('    기존 spawn 모드로 실행합니다.'));
+    logBrief(chalk.yellow(`  PTY 불가: ${(err as Error).message}`));
+    logBrief(chalk.gray('  spawn 모드로 실행합니다.'));
   }
-
-  // PTY 모드 여부에 따라 로거 생성
-  const log = createLogger(!!ptyWorker);
 
   // 4. Register worker
   let workerId: string;
@@ -93,16 +78,12 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
     const data = await regRes.json() as { worker: { id: string; name: string } };
     workerId = data.worker.id;
     workerName = data.worker.name;
-    log(chalk.green(`  ✓ Worker "${workerName}" 등록됨 (${workerId.slice(0, 8)})`));
+    logBrief(chalk.gray(`  Worker: ${workerName} (${ptyWorker ? 'PTY' : 'Spawn'})`));
   } catch (err) {
-    log(chalk.red(`  ✗ 워커 등록 실패: ${(err as Error).message}`));
+    logBrief(chalk.red(`  워커 등록 실패: ${(err as Error).message}`));
     if (ptyWorker) ptyWorker.destroy();
     process.exit(1);
   }
-
-  log(chalk.green(`  ✓ Project: ${projectPath}`));
-  log(chalk.green(`  ✓ 모드: ${ptyWorker ? 'PTY (상주)' : 'Spawn (프로세스 생성)'}`));
-  if (forceTrust) log(chalk.yellow('  ⚠ Trust mode 활성화'));
 
   // 5. Start heartbeat
   const heartbeatInterval = setInterval(async () => {
@@ -283,9 +264,8 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
   // 7. Print status (Spawn 모드만 — PTY 모드는 TUI가 자체 표시)
   function printStatus(status: 'idle' | 'busy') {
     if (status === 'idle' && !ptyWorker) {
-      const mode = 'Spawn';
-      console.log(chalk.green(`\n🟢 "${workerName}" 대기 중 @ ${projectPath} [${mode}]`));
-      console.log(chalk.gray('   작업을 기다리는 중... (Ctrl+C로 종료)\n'));
+      console.log(chalk.green(`\n  ${workerName} — ready`));
+      console.log(chalk.gray('  Waiting for tasks... (Ctrl+C to exit)\n'));
     }
   }
 
@@ -293,7 +273,8 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
 
   // 8. Graceful shutdown
   async function shutdown(signal: string) {
-    process.stderr.write(chalk.yellow(`\n${signal} 수신, 종료 중...\n`));
+    logBrief('');
+    logBrief(chalk.gray('Shutting down...'));
     clearInterval(heartbeatInterval);
 
     if (ptyWorker) {
@@ -309,7 +290,6 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
         method: 'DELETE',
         headers: { Authorization: `Bearer ${apiKey}` },
       });
-      process.stderr.write(chalk.green('✓ 워커 등록 해제 완료\n'));
     } catch { /* ignore */ }
     process.exit(0);
   }

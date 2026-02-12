@@ -102,7 +102,7 @@ export function WorkerCard({ worker, state, onChatClick, onDetailClick }: Worker
             {worker.emoji && <span>{worker.emoji}</span>}
           </div>
           <div className="text-[10px] font-mono truncate" style={{ color: 'var(--text-secondary)' }}>
-            {worker.name}
+            {worker.projectPath ? worker.projectPath.replace(/^\/Users\/[^/]+\//, '~/') : worker.name}
           </div>
           <div className="mt-1">
             <StatusBadge behavior={behavior} size="sm" />

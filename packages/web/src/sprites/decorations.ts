@@ -121,15 +121,34 @@ export function drawWalls(
     gridToScreen({ col: 0, row: mapRows - 1 }),
   ];
   for (const c of corners) {
-    // 기둥 몸체
-    ctx.fillStyle = '#E0E0E0';
-    ctx.fillRect(c.x - 3, c.y - 20, 6, 20);
-    // 기둥 캡 (금색)
+    // 기둥 몸체 (두꺼운 대리석)
+    ctx.fillStyle = '#E8E0D5';
+    ctx.fillRect(c.x - 5, c.y - 36, 10, 36);
+    // 세로 홈 (플루팅)
+    ctx.strokeStyle = '#D5CCC0';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(c.x - 2, c.y - 34);
+    ctx.lineTo(c.x - 2, c.y - 2);
+    ctx.moveTo(c.x, c.y - 34);
+    ctx.lineTo(c.x, c.y - 2);
+    ctx.moveTo(c.x + 2, c.y - 34);
+    ctx.lineTo(c.x + 2, c.y - 2);
+    ctx.stroke();
+    // 캐피탈 (금색 상단 장식)
     ctx.fillStyle = '#FFD700';
-    ctx.fillRect(c.x - 4, c.y - 22, 8, 3);
-    // 기둥 베이스
+    ctx.fillRect(c.x - 7, c.y - 40, 14, 4);
+    // 삼각 페디먼트
+    ctx.beginPath();
+    ctx.moveTo(c.x - 7, c.y - 40);
+    ctx.lineTo(c.x, c.y - 46);
+    ctx.lineTo(c.x + 7, c.y - 40);
+    ctx.closePath();
+    ctx.fillStyle = '#FFF3E0';
+    ctx.fill();
+    // 기둥 기초
     ctx.fillStyle = '#BDBDBD';
-    ctx.fillRect(c.x - 4, c.y - 1, 8, 3);
+    ctx.fillRect(c.x - 6, c.y - 1, 12, 3);
   }
 
   // 상단 벽을 따라 도리아 기둥 (col 0~mapCols-1, row 0 라인)
@@ -137,52 +156,68 @@ export function drawWalls(
   for (let i = 1; i <= pillarCount; i++) {
     const pillarCol = Math.floor((mapCols - 1) * i / (pillarCount + 1));
     const p = gridToScreen({ col: pillarCol, row: 0 });
-    // 기둥 몸체 (더 크게)
+    // 기둥 몸체 (두꺼운 대리석)
     ctx.fillStyle = '#E8E0D5';
-    ctx.fillRect(p.x - 4, p.y - 28, 8, 28);
+    ctx.fillRect(p.x - 5, p.y - 36, 10, 36);
     // 세로 홈 (플루팅)
     ctx.strokeStyle = '#D5CCC0';
     ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.moveTo(p.x - 1, p.y - 26);
-    ctx.lineTo(p.x - 1, p.y - 2);
-    ctx.moveTo(p.x + 1, p.y - 26);
-    ctx.lineTo(p.x + 1, p.y - 2);
+    ctx.moveTo(p.x - 2, p.y - 34);
+    ctx.lineTo(p.x - 2, p.y - 2);
+    ctx.moveTo(p.x, p.y - 34);
+    ctx.lineTo(p.x, p.y - 2);
+    ctx.moveTo(p.x + 2, p.y - 34);
+    ctx.lineTo(p.x + 2, p.y - 2);
     ctx.stroke();
     // 캐피탈 (금색 상단 장식)
     ctx.fillStyle = '#FFD700';
-    ctx.fillRect(p.x - 6, p.y - 31, 12, 4);
+    ctx.fillRect(p.x - 7, p.y - 40, 14, 4);
     // 삼각 페디먼트 힌트
     ctx.beginPath();
-    ctx.moveTo(p.x - 6, p.y - 31);
-    ctx.lineTo(p.x, p.y - 36);
-    ctx.lineTo(p.x + 6, p.y - 31);
+    ctx.moveTo(p.x - 7, p.y - 40);
+    ctx.lineTo(p.x, p.y - 46);
+    ctx.lineTo(p.x + 7, p.y - 40);
     ctx.closePath();
     ctx.fillStyle = '#FFF3E0';
     ctx.fill();
     // 기둥 기초
     ctx.fillStyle = '#BDBDBD';
-    ctx.fillRect(p.x - 5, p.y - 1, 10, 3);
+    ctx.fillRect(p.x - 6, p.y - 1, 12, 3);
   }
 
   // 좌측 벽을 따라 도리아 기둥 (col 0, row 0~mapRows-1)
   for (let i = 1; i <= 4; i++) {
     const pillarRow = Math.floor((mapRows - 1) * i / 5);
     const p = gridToScreen({ col: 0, row: pillarRow });
+    // 기둥 몸체 (두꺼운 대리석)
     ctx.fillStyle = '#E8E0D5';
-    ctx.fillRect(p.x - 4, p.y - 28, 8, 28);
+    ctx.fillRect(p.x - 5, p.y - 36, 10, 36);
+    // 세로 홈 (플루팅)
     ctx.strokeStyle = '#D5CCC0';
     ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.moveTo(p.x - 1, p.y - 26);
-    ctx.lineTo(p.x - 1, p.y - 2);
-    ctx.moveTo(p.x + 1, p.y - 26);
-    ctx.lineTo(p.x + 1, p.y - 2);
+    ctx.moveTo(p.x - 2, p.y - 34);
+    ctx.lineTo(p.x - 2, p.y - 2);
+    ctx.moveTo(p.x, p.y - 34);
+    ctx.lineTo(p.x, p.y - 2);
+    ctx.moveTo(p.x + 2, p.y - 34);
+    ctx.lineTo(p.x + 2, p.y - 2);
     ctx.stroke();
+    // 캐피탈 (금색 상단 장식)
     ctx.fillStyle = '#FFD700';
-    ctx.fillRect(p.x - 6, p.y - 31, 12, 4);
+    ctx.fillRect(p.x - 7, p.y - 40, 14, 4);
+    // 삼각 페디먼트 힌트
+    ctx.beginPath();
+    ctx.moveTo(p.x - 7, p.y - 40);
+    ctx.lineTo(p.x, p.y - 46);
+    ctx.lineTo(p.x + 7, p.y - 40);
+    ctx.closePath();
+    ctx.fillStyle = '#FFF3E0';
+    ctx.fill();
+    // 기둥 기초
     ctx.fillStyle = '#BDBDBD';
-    ctx.fillRect(p.x - 5, p.y - 1, 10, 3);
+    ctx.fillRect(p.x - 6, p.y - 1, 12, 3);
   }
 }
 
@@ -239,60 +274,47 @@ export function drawDividerWall(
     ctx.lineWidth = 1;
     ctx.strokeRect(x - pillarW / 2 - 2, y - pillarH - 4, pillarW + 4, 4);
   } else {
-    // Standard wall (row 10 horizontal divider, etc.)
-    const wallH = 24;
-    // Top surface — marble white
-    ctx.fillStyle = '#F5F5F5';
-    ctx.beginPath();
-    ctx.moveTo(x, y - TILE_H / 2 - wallH);
-    ctx.lineTo(x + TILE_W / 2, y - wallH);
-    ctx.lineTo(x, y + TILE_H / 2 - wallH);
-    ctx.lineTo(x - TILE_W / 2, y - wallH);
-    ctx.closePath();
-    ctx.fill();
+    // Thick marble column (same style as vertical divider)
+    const pw = 8;
+    const ph = 36;
 
-    // Gold accent at the very top
-    ctx.fillStyle = '#FFD700';
-    ctx.beginPath();
-    ctx.moveTo(x, y - TILE_H / 2 - wallH);
-    ctx.lineTo(x + TILE_W / 2, y - wallH);
-    ctx.lineTo(x, y + TILE_H / 2 - wallH);
-    ctx.lineTo(x - TILE_W / 2, y - wallH);
-    ctx.closePath();
-    ctx.save();
-    ctx.globalAlpha = 0.8;
-    ctx.fill();
-    ctx.restore();
+    // Pillar body (marble)
+    ctx.fillStyle = '#E8E0D5';
+    ctx.fillRect(x - pw / 2, y - ph, pw, ph);
 
-    // Left face — light marble
-    ctx.fillStyle = '#E0E0E0';
+    // Fluting (vertical grooves)
+    ctx.strokeStyle = '#D5CCC0';
+    ctx.lineWidth = 0.5;
     ctx.beginPath();
-    ctx.moveTo(x - TILE_W / 2, y - wallH);
-    ctx.lineTo(x, y + TILE_H / 2 - wallH);
-    ctx.lineTo(x, y + TILE_H / 2);
-    ctx.lineTo(x - TILE_W / 2, y);
-    ctx.closePath();
-    ctx.fill();
-
-    // Right face — shadow marble
-    ctx.fillStyle = '#CFD8DC';
-    ctx.beginPath();
-    ctx.moveTo(x + TILE_W / 2, y - wallH);
-    ctx.lineTo(x, y + TILE_H / 2 - wallH);
-    ctx.lineTo(x, y + TILE_H / 2);
-    ctx.lineTo(x + TILE_W / 2, y);
-    ctx.closePath();
-    ctx.fill();
-
-    // 대리석 결 디테일
-    ctx.strokeStyle = '#BDBDBD';
-    ctx.lineWidth = 0.3;
-    ctx.globalAlpha = 0.15;
-    ctx.beginPath();
-    ctx.moveTo(x + TILE_W / 4, y - wallH + 5);
-    ctx.lineTo(x + TILE_W / 4 - 2, y - 5);
+    ctx.moveTo(x - 2, y - ph + 2);
+    ctx.lineTo(x - 2, y - 2);
+    ctx.moveTo(x, y - ph + 2);
+    ctx.lineTo(x, y - 2);
+    ctx.moveTo(x + 2, y - ph + 2);
+    ctx.lineTo(x + 2, y - 2);
     ctx.stroke();
-    ctx.globalAlpha = 1;
+
+    // Capital (top decoration)
+    ctx.fillStyle = '#FFD700';
+    ctx.fillRect(x - pw / 2 - 2, y - ph - 4, pw + 4, 4);
+
+    // Pediment (triangular top)
+    ctx.beginPath();
+    ctx.moveTo(x - pw / 2 - 2, y - ph - 4);
+    ctx.lineTo(x, y - ph - 10);
+    ctx.lineTo(x + pw / 2 + 2, y - ph - 4);
+    ctx.closePath();
+    ctx.fillStyle = '#FFF3E0';
+    ctx.fill();
+
+    // Base
+    ctx.fillStyle = '#BDBDBD';
+    ctx.fillRect(x - pw / 2 - 1, y - 1, pw + 2, 3);
+
+    // Gold highlights
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - pw / 2 - 2, y - ph - 4, pw + 4, 4);
   }
 }
 

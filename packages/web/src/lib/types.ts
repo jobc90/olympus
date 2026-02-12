@@ -158,6 +158,7 @@ export interface Bubble {
   ttl: number;
   x: number;
   y: number;
+  workerId?: string;
 }
 
 /** Effect particle */
@@ -197,6 +198,10 @@ export interface GeminiRuntime {
   behavior: GeminiBehavior;
   currentTask: string | null;
   anim: CharacterAnim;
+  pos: GridPos;
+  screenPos: ScreenPos;
+  direction: Direction;
+  path: GridPos[];
 }
 
 /** NPC runtime (유니콘, 큐피트) */

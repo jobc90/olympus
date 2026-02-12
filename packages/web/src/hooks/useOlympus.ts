@@ -145,15 +145,16 @@ export interface UseOlympusOptions {
 // ---------------------------------------------------------------------------
 
 const WORKER_COLORS = ['#4FC3F7', '#FF7043', '#66BB6A', '#AB47BC', '#FFCA28', '#EF5350'];
-const WORKER_AVATARS = ['athena', 'poseidon', 'ares', 'apollo', 'artemis', 'hermes', 'hephaestus', 'dionysus', 'demeter', 'aphrodite', 'hera', 'hades', 'persephone', 'prometheus', 'helios', 'nike', 'pan', 'hecate', 'iris', 'heracles'];
+const WORKER_AVATARS = ['athena', 'poseidon', 'ares', 'apollo', 'artemis', 'hermes', 'hephaestus', 'dionysus', 'demeter', 'aphrodite', 'hades', 'persephone', 'prometheus', 'helios', 'nike', 'pan', 'hecate', 'iris', 'heracles'];
 const ACTIVE_BEHAVIORS = new Set(['working', 'thinking', 'reviewing', 'deploying', 'analyzing', 'collaborating', 'chatting']);
 
 function registeredWorkerToConfig(w: RegisteredWorker, index: number): WorkerConfigEntry {
+  const avatarName = WORKER_AVATARS[index % WORKER_AVATARS.length];
   return {
     id: w.id,
-    name: w.name || `Worker-${w.id.slice(0, 6)}`,
+    name: avatarName.charAt(0).toUpperCase() + avatarName.slice(1),
     color: WORKER_COLORS[index % WORKER_COLORS.length],
-    avatar: WORKER_AVATARS[index % WORKER_AVATARS.length],
+    avatar: avatarName,
     projectPath: w.projectPath,
   };
 }
@@ -601,9 +602,9 @@ export function useOlympus(options: UseOlympusOptions = {}) {
             } else if (w.status === 'busy') {
               workerBehaviors[w.id] = 'thinking';
             } else {
-              // Check if recently completed (within last 5s via cliHistory)
+              // Check if recently completed (within last 30s via cliHistory)
               const recentComplete = s.cliHistory.find(
-                h => h.sessionKey.includes(w.id) && (Date.now() - h.timestamp) < 5000,
+                h => h.sessionKey.includes(w.id) && (Date.now() - h.timestamp) < 30000,
               );
               if (recentComplete) {
                 workerBehaviors[w.id] = 'completed';
@@ -638,7 +639,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
               newEvents.push({
                 id: crypto.randomUUID(),
                 type: 'state_change',
-                agentName: w.name || w.id,
+                agentName: workerConfigs.find(c => c.id === w.id)?.name || w.name || w.id,
                 message: `Changed to ${newBeh}`,
                 timestamp: Date.now(),
                 color: workerConfigs.find(c => c.id === w.id)?.color,
@@ -674,8 +675,34 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       }
     };
 
+    const pollGemini = async () => {
+      try {
+        const res = await fetch(`http://${host}:${port}/api/gemini-advisor/status`, {
+          headers: apiKey ? { 'x-api-key': apiKey } : {},
+        });
+        if (!res.ok) return;
+        const data = await res.json() as {
+          running?: boolean;
+          behavior?: string;
+          currentTask?: string | null;
+          cacheSize?: number;
+          lastAnalyzedAt?: number | null;
+        };
+        setState((s) => ({
+          ...s,
+          geminiBehavior: data.behavior ?? s.geminiBehavior,
+          geminiCurrentTask: data.currentTask ?? s.geminiCurrentTask,
+          geminiCacheCount: data.cacheSize ?? s.geminiCacheCount,
+          geminiLastAnalyzed: data.lastAnalyzedAt ?? s.geminiLastAnalyzed,
+        }));
+      } catch {
+        // Silently fail
+      }
+    };
+
     pollWorkers();
-    const interval = setInterval(pollWorkers, 10_000);
+    pollGemini();
+    const interval = setInterval(() => { pollWorkers(); pollGemini(); }, 10_000);
     return () => clearInterval(interval);
   }, [apiKey, host, port]);
 

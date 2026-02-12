@@ -69,6 +69,8 @@ export interface GeminiRuntime {
   behavior: string;
   currentTask: string | null;
   anim: CharacterAnim;
+  pos: GridPos;
+  direction: Direction;
 }
 
 export interface NpcRuntime {
@@ -304,9 +306,9 @@ export function renderFrame(
     },
   });
 
-  // Gemini (Hera) — positioned near Zeus Temple
-  if (config.gemini && state.gemini) {
-    const geminiPos = { col: 5, row: 7 };
+  // Gemini (Hera) — positioned dynamically
+  if (config.gemini && state.gemini && state.gemini.pos) {
+    const geminiPos = state.gemini.pos;
     drawables.push({
       depth: geminiPos.row + geminiPos.col,
       draw: () => {

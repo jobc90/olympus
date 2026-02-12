@@ -30,6 +30,7 @@ import SystemStats from './components/dashboard/SystemStats';
 import { WorkerGrid } from './components/dashboard/WorkerGrid';
 import ActivityFeed from './components/dashboard/ActivityFeed';
 import { CodexAgentPanel } from './components/dashboard/CodexAgentPanel';
+import { GeminiAdvisorPanel } from './components/dashboard/GeminiAdvisorPanel';
 import { MiniOlympusMountain } from './components/olympus-mountain/MiniOlympusMountain';
 import { OlympusMountainCanvas } from './components/olympus-mountain/OlympusMountainCanvas';
 import { OlympusMountainControls } from './components/olympus-mountain/OlympusMountainControls';
@@ -52,7 +53,6 @@ function migrateLocalStorage() {
   const staleKeys = [
     'olympus-config',
     'olympus-dashboard-config',
-    'olympus-active-tab',
     'olympus-theme',
   ];
   for (const key of staleKeys) localStorage.removeItem(key);
@@ -123,7 +123,14 @@ function useDemoData(connected: boolean) {
 export default function App() {
   const [config, setConfig] = useState(getConfig);
   const [showSettings, setShowSettings] = useState(false);
-  const [activeTab, setActiveTab] = useState<'console' | 'monitor'>('console');
+  const [activeTab, setActiveTabRaw] = useState<'console' | 'monitor'>(() => {
+    const saved = localStorage.getItem('olympus-active-tab');
+    return saved === 'monitor' ? 'monitor' : 'console';
+  });
+  const setActiveTab = useCallback((tab: 'console' | 'monitor') => {
+    setActiveTabRaw(tab);
+    localStorage.setItem('olympus-active-tab', tab);
+  }, []);
   const [chatTarget, setChatTarget] = useState<{ id: string; name: string; emoji?: string; color?: string } | null>(null);
   const [chatMessages, setChatMessages] = useState<Record<string, Array<{ id: string; role: 'user' | 'agent'; content: string; timestamp: number }>>>({});
 
@@ -180,7 +187,7 @@ export default function App() {
   const demo = useDemoData(connected);
 
   // Build WorkerConfig[] and WorkerDashboardState map for new components
-  const WORKER_AVATARS = ['athena', 'poseidon', 'ares', 'apollo', 'artemis', 'hermes', 'hephaestus', 'dionysus', 'demeter', 'aphrodite', 'hera', 'hades', 'persephone', 'prometheus', 'helios', 'nike', 'pan', 'hecate', 'iris', 'heracles'];
+  const WORKER_AVATARS = ['athena', 'poseidon', 'ares', 'apollo', 'artemis', 'hermes', 'hephaestus', 'dionysus', 'demeter', 'aphrodite', 'hades', 'persephone', 'prometheus', 'helios', 'nike', 'pan', 'hecate', 'iris', 'heracles'];
   const workerConfigs: WorkerConfig[] = (connected && polledWorkerConfigs.length > 0)
     ? polledWorkerConfigs.map((w, i) => ({
         id: w.id,
@@ -212,7 +219,16 @@ export default function App() {
           } as WorkerDashboardState,
         ])
       )
-    : demo.states;
+    : Object.fromEntries(
+        demo.workers.map(w => [
+          w.id,
+          {
+            ...demo.states[w.id],
+            // Use polled behaviors from useOlympus demo timer (they cycle!)
+            behavior: (polledWorkerBehaviors[w.id] ?? demo.states[w.id]?.behavior ?? 'idle') as WorkerBehavior,
+          } as WorkerDashboardState,
+        ])
+      );
 
   const codexConfig: CodexConfig = { name: 'Zeus', emoji: '\u26A1', avatar: 'zeus' };
   const geminiConfig: GeminiConfig = DEFAULT_GEMINI;
@@ -314,23 +330,50 @@ export default function App() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 pt-16 px-4 pb-16 max-w-7xl mx-auto w-full">
+      <main className={`flex-1 pt-16 px-4 pb-16 mx-auto w-full ${activeTab === 'monitor' ? 'max-w-[80vw]' : 'max-w-[1600px]'}`}>
         {/* ===================== CONSOLE TAB ===================== */}
         {activeTab === 'console' && (
           <>
-            {/* System Stats — full width top */}
+            {/* Overview — System Stats */}
             <div className="mb-6">
+              <h2 className="font-pixel text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
+                Overview
+              </h2>
               <SystemStats stats={systemStats} />
             </div>
 
             {/* Main 4-column layout */}
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-              {/* Left: Workers + Codex + Operational panels (3/4) */}
+              {/* Left: Command + Workers + Operational panels (3/4) */}
               <div className="lg:col-span-3 space-y-6">
-                {/* Workers Section */}
+                {/* Olympian Command — Zeus + Hera */}
                 <div>
                   <h2 className="font-pixel text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
-                    🤖 Active Workers
+                    Olympian Command
+                  </h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <CodexAgentPanel
+                      codexConfig={codexConfig}
+                      codexBehavior={connected ? polledCodexBehavior : 'supervising'}
+                      connected={connected}
+                      onChatClick={() => setChatTarget({ id: 'codex-1', name: 'Zeus', emoji: '\u26A1', color: '#FFD700' })}
+                    />
+                    <GeminiAdvisorPanel
+                      geminiConfig={geminiConfig}
+                      geminiBehavior={connected ? polledGeminiBehavior : 'offline'}
+                      cacheCount={polledGeminiCacheCount}
+                      lastAnalyzed={polledGeminiLastAnalyzed}
+                      currentTask={polledGeminiCurrentTask}
+                      formatRelativeTime={formatRelativeTime}
+                      onChatClick={() => setChatTarget({ id: 'gemini-1', name: 'Hera', emoji: '\uD83E\uDD89', color: '#CE93D8' })}
+                    />
+                  </div>
+                </div>
+
+                {/* Active Workers */}
+                <div>
+                  <h2 className="font-pixel text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
+                    Active Workers
                   </h2>
                   <WorkerGrid
                     workers={workerConfigs}
@@ -338,52 +381,6 @@ export default function App() {
                     onChatClick={handleChatClick}
                   />
                 </div>
-
-                {/* Codex Agent (Zeus) Section */}
-                <CodexAgentPanel
-                  codexConfig={codexConfig}
-                  codexBehavior={connected ? polledCodexBehavior : 'supervising'}
-                  connected={connected}
-                  onChatClick={() => setChatTarget({ id: 'codex-1', name: 'Zeus', emoji: '\u26A1', color: '#FFD700' })}
-                />
-
-                {/* Gemini Advisor (Hera) Section */}
-                <Card>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">{geminiConfig.emoji}</span>
-                      <div>
-                        <h3 className="font-pixel text-sm" style={{ color: 'var(--text-primary)' }}>
-                          {geminiConfig.name}
-                          <span className="ml-2 text-xs font-normal" style={{ color: 'var(--text-secondary)' }}>Gemini Advisor</span>
-                        </h3>
-                        <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                          <span>
-                            Status:{' '}
-                            <span style={{ color: polledGeminiBehavior === 'offline' ? 'var(--accent-danger)' : polledGeminiBehavior === 'analyzing' ? 'var(--accent-info)' : 'var(--accent-success)' }}>
-                              {polledGeminiBehavior}
-                            </span>
-                          </span>
-                          <span>Cache: {polledGeminiCacheCount}</span>
-                          <span>Last: {polledGeminiLastAnalyzed ? formatRelativeTime(polledGeminiLastAnalyzed) : 'Never'}</span>
-                          {polledGeminiCurrentTask && (
-                            <span className="truncate max-w-[200px]" title={polledGeminiCurrentTask}>
-                              Task: {polledGeminiCurrentTask}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{
-                        backgroundColor: polledGeminiBehavior === 'offline' ? '#F44336' :
-                          polledGeminiBehavior === 'analyzing' || polledGeminiBehavior === 'scanning' ? '#4FC3F7' :
-                          polledGeminiBehavior === 'advising' ? '#FFD700' : '#4CAF50',
-                      }}
-                    />
-                  </div>
-                </Card>
 
                 {/* Operational panels */}
                 {currentRunId && currentRun ? (

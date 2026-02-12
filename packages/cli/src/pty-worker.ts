@@ -92,17 +92,17 @@ interface TimeoutMonitoringState {
 // Constants
 // ──────────────────────────────────────────────
 
-/** 비활동 타임아웃: 의미있는 출력이 없으면 완료로 간주 */
-const INACTIVITY_TIMEOUT_MS = 30_000;
+/** 비활동 타임아웃: 의미있는 출력이 없으면 완료로 간주 (2분) */
+const INACTIVITY_TIMEOUT_MS = 120_000;
 
-/** 비활동 2차 타임아웃: 패턴 미매칭 시 강제 완료 */
-const INACTIVITY_FORCE_MS = 60_000;
+/** 비활동 2차 타임아웃: 패턴 미매칭 시 강제 완료 (3분) */
+const INACTIVITY_FORCE_MS = 180_000;
 
-/** 프롬프트 감지 후 추가 대기 */
-const SETTLE_MS = 5_000;
+/** 프롬프트 감지 후 추가 대기 (15초) */
+const SETTLE_MS = 15_000;
 
-/** 최소 실행 시간: 이 시간 이전에는 완료 감지하지 않음 */
-const MIN_EXECUTION_MS = 10_000;
+/** 최소 실행 시간: 이 시간 이전에는 완료 감지하지 않음 (2분) */
+const MIN_EXECUTION_MS = 120_000;
 
 /** 백그라운드 에이전트 활동 후 완료 감지 유예 시간 */
 const AGENT_COOLDOWN_MS = 30_000;
@@ -208,7 +208,7 @@ export function hasBackgroundAgentActivity(data: string): boolean {
 function isStatusBarUpdate(data: string): boolean {
   const clean = stripAnsi(data).trim();
   if (!clean) return true;
-  return TUI_CHROME_PATTERNS.some(p => p.test(clean)) || TUI_ARTIFACT_PATTERNS.some(p => p.test(clean));
+  return TUI_CHROME_PATTERNS.some(p => p.test(clean));
 }
 
 // ──────────────────────────────────────────────
@@ -338,8 +338,10 @@ export class PtyWorker {
   private ready = false;
   private readyResolve: (() => void) | null = null;
   private stdinHandler: ((data: Buffer) => void) | null = null;
+  private resizeHandler: (() => void) | null = null;
   private originalRawMode: boolean | undefined;
   private lastCtrlC = 0;
+  private ctrlCResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private options: PtyWorkerOptions) {}
 
@@ -468,6 +470,14 @@ export class PtyWorker {
             return;
           }
           this.lastCtrlC = now;
+          // Clear the timestamp after the double-press window expires
+          if (this.ctrlCResetTimer) clearTimeout(this.ctrlCResetTimer);
+          this.ctrlCResetTimer = setTimeout(() => {
+            this.lastCtrlC = 0;
+            this.ctrlCResetTimer = null;
+          }, DOUBLE_CTRLC_MS);
+          // Show hint after first Ctrl+C
+          process.stderr.write('\x1b[90m  (Ctrl+C once more to exit)\x1b[0m\r\n');
           // 첫 Ctrl+C → Claude CLI에 전달 (작업 중단)
         }
 
@@ -477,11 +487,12 @@ export class PtyWorker {
     }
 
     // 터미널 리사이즈 핸들링
-    process.stdout.on('resize', () => {
+    this.resizeHandler = () => {
       if (this.pty && process.stdout.columns && process.stdout.rows) {
         this.pty.resize(process.stdout.columns, process.stdout.rows);
       }
-    });
+    };
+    process.stdout.on('resize', this.resizeHandler);
 
     // 유휴 프롬프트가 나타날 때까지 대기
     await new Promise<void>((resolve) => {
@@ -691,6 +702,14 @@ export class PtyWorker {
         durationMs: Date.now() - this.state.startTime,
       });
     }
+    if (this.ctrlCResetTimer) {
+      clearTimeout(this.ctrlCResetTimer);
+      this.ctrlCResetTimer = null;
+    }
+    if (this.resizeHandler) {
+      process.stdout.removeListener('resize', this.resizeHandler);
+      this.resizeHandler = null;
+    }
     this.restoreStdin();
     this.pty?.kill();
     this.pty = null;
@@ -707,7 +726,11 @@ export class PtyWorker {
       this.stdinHandler = null;
     }
     if (process.stdin.isTTY && this.originalRawMode !== undefined) {
-      process.stdin.setRawMode(this.originalRawMode);
+      try {
+        process.stdin.setRawMode(this.originalRawMode);
+      } catch {
+        // stdin may already be destroyed
+      }
     }
   }
 
@@ -783,7 +806,7 @@ export class PtyWorker {
     const lastChunk = clean.slice(-500);
     const lines = lastChunk.split('\n').filter(l => l.trim());
     const chromeLines = lines.filter(l => isTuiChromeLine(l));
-    if (lines.length > 0 && chromeLines.length / lines.length > 0.7) {
+    if (lines.length > 0 && chromeLines.length / lines.length > 0.9) {
       this.completeTask();
       return;
     }

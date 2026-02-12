@@ -7,14 +7,7 @@
 import { spawn } from 'child_process';
 import { which } from './utils/which.js';
 
-const OLYMPUS_BANNER = `
-\x1b[36m⚡ Olympus\x1b[0m - Claude CLI Enhanced Platform
-\x1b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m
-\x1b[90m• Gateway/Telegram: olympus start\x1b[0m
-\x1b[90m• Dashboard: olympus dashboard\x1b[0m
-\x1b[90m• Help: olympus --help\x1b[0m
-\x1b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m
-`;
+const OLYMPUS_BANNER = `\x1b[90m⚡ Olympus\x1b[0m\n`;
 
 /**
  * Launch Claude CLI in passthrough mode

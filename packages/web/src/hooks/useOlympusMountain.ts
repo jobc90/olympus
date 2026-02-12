@@ -13,6 +13,7 @@ import type {
   WorkerConfig,
   CodexConfig,
   CharacterAnim,
+  Direction,
   ZoneId,
   Bubble,
 } from '../lib/types';
@@ -76,10 +77,22 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
     const gardenCenter = gardenZone ? { ...gardenZone.center } : { col: 4, row: 4 };
     const ambrosiaCenter = ambrosiaZone ? { ...ambrosiaZone.center } : { col: 4, row: 15 };
 
+    // Gemini starts at athenas_library
+    const athenaLibZone = getZone('athenas_library', workers.length);
+    const geminiStartPos = athenaLibZone ? { ...athenaLibZone.center } : { col: 9, row: 14 };
+
     return {
       workers: workers.map((w, i) => createInitialWorkerRuntime(w.id, i, workers.length)),
       codex: { anim: 'sit_typing' as CharacterAnim },
-      gemini: { behavior: 'offline' as GeminiBehavior, currentTask: null, anim: 'sleep' as CharacterAnim },
+      gemini: {
+        behavior: 'offline' as GeminiBehavior,
+        currentTask: null,
+        anim: 'sleep' as CharacterAnim,
+        pos: geminiStartPos,
+        screenPos: gridToScreen(geminiStartPos),
+        direction: 's' as Direction,
+        path: [],
+      },
       npcs: [
         {
           id: 'unicorn',
@@ -300,6 +313,7 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
                 ttl: 120,
                 x: sp.x,
                 y: sp.y - 40,
+                workerId: runtime.id,
               });
             }
           }
@@ -318,6 +332,17 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
           'idle';
 
         newWorkers.push(updated);
+      }
+
+      // Update bubble positions to follow their attached workers
+      for (const bubble of newBubbles) {
+        if (bubble.workerId) {
+          const owner = newWorkers.find(w => w.id === bubble.workerId);
+          if (owner) {
+            bubble.x = owner.screenPos.x;
+            bubble.y = owner.screenPos.y - 40;
+          }
+        }
       }
 
       // Worker interaction: face each other when in the same non-sanctuary zone
@@ -384,16 +409,66 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
         : (newTick % 600 < 400 ? 'sit_typing' :
           newTick % 600 < 500 ? 'sit_idle' : 'drink_coffee');
 
-      // Gemini animation based on geminiBehavior
+      // Gemini zone-based movement
       const geminiMapping = GEMINI_BEHAVIOR_MAP[geminiBehavior as GeminiBehavior];
-      const geminiAnim: CharacterAnim = geminiMapping
-        ? getAnimForTick(geminiMapping, newTick)
-        : 'sleep';
+      const geminiTargetZone = geminiMapping?.zone as ZoneId | undefined;
+      let updatedGemini = { ...prev.gemini, behavior: geminiBehavior as GeminiBehavior };
+
+      if (geminiTargetZone) {
+        const gZone = getZone(geminiTargetZone, workers.length);
+        if (gZone) {
+          const inZone =
+            updatedGemini.pos.col >= gZone.minCol && updatedGemini.pos.col <= gZone.maxCol &&
+            updatedGemini.pos.row >= gZone.minRow && updatedGemini.pos.row <= gZone.maxRow;
+
+          if (!inZone && updatedGemini.path.length === 0) {
+            const target = getRandomPointInZone(gZone);
+            const path = findPath(walkGridRef.current, updatedGemini.pos, target);
+            if (path.length > 0) {
+              updatedGemini.path = [...path];
+            }
+          }
+        }
+      }
+
+      // Move Gemini along path
+      if (updatedGemini.path.length > 0) {
+        if (newTick % 2 === 0) {
+          const next = updatedGemini.path[0];
+          if (next.col > updatedGemini.pos.col) updatedGemini.direction = 'e';
+          else if (next.col < updatedGemini.pos.col) updatedGemini.direction = 'w';
+          else if (next.row > updatedGemini.pos.row) updatedGemini.direction = 's';
+          else if (next.row < updatedGemini.pos.row) updatedGemini.direction = 'n';
+
+          updatedGemini.pos = { ...next };
+          updatedGemini.screenPos = gridToScreen(updatedGemini.pos);
+          updatedGemini.path = updatedGemini.path.slice(1);
+          updatedGemini.anim = newTick % 8 < 4 ? 'walk_frame1' : 'walk_frame2';
+        }
+      } else {
+        // At destination — play behavior animation
+        updatedGemini.anim = geminiMapping ? getAnimForTick(geminiMapping, newTick) : 'sleep';
+      }
+
+      // Gemini idle wandering within ambrosia_hall
+      if ((geminiBehavior === 'idle' || geminiBehavior === 'scanning') && updatedGemini.path.length === 0) {
+        const wanderInterval = 400;
+        if (newTick > 0 && newTick % wanderInterval === 0) {
+          const homeZone = getZone(geminiTargetZone ?? 'ambrosia_hall', workers.length);
+          if (homeZone) {
+            const target = getRandomPointInZone(homeZone);
+            const path = findPath(walkGridRef.current, updatedGemini.pos, target);
+            if (path.length > 0) {
+              updatedGemini.path = [...path];
+            }
+          }
+        }
+      }
 
       return {
         workers: newWorkers,
         codex: { anim: codexAnim },
-        gemini: { behavior: geminiBehavior as GeminiBehavior, currentTask: prev.gemini.currentTask, anim: geminiAnim },
+        gemini: { ...updatedGemini, currentTask: prev.gemini.currentTask },
         npcs: newNpcs,
         bubbles: newBubbles,
         particles: newParticles,

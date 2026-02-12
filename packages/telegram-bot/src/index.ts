@@ -140,20 +140,50 @@ class OlympusBot {
 
     // /start - Welcome message
     this.bot.command('start', async (ctx) => {
-      await ctx.reply(
-        `⚡ *Olympus — 개인 AI 비서*\n\n` +
-        `Codex가 대화하고, Claude 워커가 작업을 수행합니다.\n\n` +
-        `*워커에 작업 지시:*\n` +
-        `\`@워커이름 할 일\` 형식으로 직접 멘션\n` +
-        `예: \`@olympus 커밋하고 푸시해\`\n\n` +
-        `*일반 대화:*\n` +
-        `그냥 메시지 → Codex가 응답\n\n` +
-        `*명령어:*\n` +
-        `/workers — 워커 목록\n` +
-        `/health — 상태 확인\n\n` +
-        `*인라인 모드:* 아무 채팅에서 \`@봇이름\` 입력 → 워커 선택`,
-        { parse_mode: 'Markdown' }
-      );
+      // Fetch workers to show quick-start examples
+      let workers: Array<{ name: string; status: string; projectPath: string }> = [];
+      try {
+        const res = await fetch(`${this.config.gatewayUrl}/api/workers`, {
+          headers: { Authorization: `Bearer ${this.config.apiKey}` },
+        });
+        const data = await res.json() as { workers: Array<{ name: string; status: string; projectPath: string }> };
+        workers = data.workers;
+      } catch {
+        // ignore - show generic example
+      }
+
+      const exampleWorker = workers.length > 0 ? workers[0].name : 'olympus';
+
+      let msg = `⚡ *Olympus*\n\n`;
+
+      // Show available workers in compact format
+      if (workers.length > 0) {
+        msg += `*활성 워커* (${workers.length}개)\n`;
+        for (const w of workers) {
+          const icon = w.status === 'idle' ? '🟢' : w.status === 'busy' ? '🔴' : '⚫';
+          const shortPath = w.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
+          msg += `${icon} \`@${w.name}\` — \`${shortPath}\`\n`;
+        }
+        msg += '\n';
+      }
+
+      msg += `*사용법*\n`;
+      msg += `워커에게 지시 → \`@워커이름 작업내용\`\n`;
+      msg += `일반 대화 → 그냥 메시지 입력\n\n`;
+
+      msg += `*예시*\n`;
+      msg += `\`@${exampleWorker} 현재 브랜치 상태 알려줘\`\n`;
+      msg += `\`@${exampleWorker} 테스트 돌려줘\`\n\n`;
+
+      msg += `*명령어*\n`;
+      msg += `/workers — 워커 목록 + 빠른 지시\n`;
+      msg += `/health — 시스템 상태\n\n`;
+
+      if (workers.length > 0) {
+        msg += `💡 팁: \`@워커이름\` 뒤에 작업 내용을 입력하면 해당 워커가 바로 실행합니다.`;
+      }
+
+      await ctx.reply(msg, { parse_mode: 'Markdown' });
     });
 
     // /health - Check gateway health
@@ -665,34 +695,38 @@ class OlympusBot {
 
         if (workers.length === 0) {
           await ctx.reply(
-            '등록된 워커가 없습니다.\n\n' +
-            '터미널에서 `olympus start`로 워커를 시작하세요.\n' +
-            '   예: `olympus start --name hub --project ~/dev/console`',
+            '📭 등록된 워커가 없습니다.\n\n' +
+            '💡 터미널에서 워커를 시작하세요:\n' +
+            '`olympus start --name hub --project ~/dev/console`',
+            { parse_mode: 'Markdown' }
           );
           return;
         }
 
-        let msg = `*워커 세션* (${workers.length}개)\n${'─'.repeat(30)}\n\n`;
+        let msg = `⚡ *워커 목록* (${workers.length}개)\n\n`;
 
         for (const w of workers) {
-          const icon = w.status === 'idle' ? '🟢' : '🔵';
-          const statusText = w.status === 'idle' ? '대기 중' : '작업 중';
+          const icon = w.status === 'idle' ? '🟢' : w.status === 'busy' ? '🔴' : '⚫';
+          const statusText = w.status === 'idle' ? '대기 중' : w.status === 'busy' ? '작업 중' : '오프라인';
           const shortPath = w.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
           const age = this.formatAge(w.registeredAt);
-          msg += `${icon} *${w.name}* — ${statusText}\n`;
-          msg += `   \`${shortPath}\`\n`;
-          msg += `   ${age}\n`;
+
+          msg += `*${w.name}* ${icon} ${statusText}\n`;
+          msg += `📂 \`${shortPath}\`\n`;
+          msg += `⏱ ${age}\n`;
           if (w.currentTaskPrompt) {
-            msg += `   ${w.currentTaskPrompt.slice(0, 60)}${w.currentTaskPrompt.length > 60 ? '...' : ''}\n`;
+            msg += `💬 ${w.currentTaskPrompt.slice(0, 60)}${w.currentTaskPrompt.length > 60 ? '...' : ''}\n`;
           }
-          msg += '\n';
+          msg += `➡️ \`@${w.name} 명령\`\n\n`;
         }
 
-        msg += `${'─'.repeat(30)}\n🟢 대기 중 | 🔵 작업 중`;
+        msg += `${'─'.repeat(25)}\n`;
+        msg += `💡 *사용법*: \`@워커이름 작업내용\`\n\n`;
+        msg += `예시: \`@${workers[0].name} 빌드하고 테스트 돌려줘\``;
 
         await ctx.reply(msg, { parse_mode: 'Markdown' });
       } catch (err) {
-        await ctx.reply(`워커 목록 조회 실패: ${(err as Error).message}`);
+        await ctx.reply(`❌ 워커 목록 조회 실패: ${(err as Error).message}`);
       }
     });
 
