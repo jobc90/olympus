@@ -12,7 +12,10 @@ let hasSqlite = false;
 type ContextStoreType = Awaited<typeof import('../contextStore.js')>['ContextStore'];
 let ContextStore: ContextStoreType;
 try {
-  await import('better-sqlite3');
+  const bs3 = await import('better-sqlite3');
+  // Verify native binary actually loads (import succeeds but binding may fail)
+  const testDb = new bs3.default(':memory:');
+  testDb.close();
   const mod = await import('../contextStore.js');
   ContextStore = mod.ContextStore;
   hasSqlite = true;

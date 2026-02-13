@@ -16,7 +16,10 @@ import * as fs from 'node:fs';
 // Check if better-sqlite3 native module is available (may fail in CI)
 let hasSqlite = false;
 try {
-  await import('better-sqlite3');
+  const bs3 = await import('better-sqlite3');
+  // Verify native binary actually loads (import succeeds but binding may fail)
+  const testDb = new bs3.default(':memory:');
+  testDb.close();
   hasSqlite = true;
 } catch {
   // Native module not available — skip SQLite-dependent tests
