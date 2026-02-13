@@ -9,7 +9,8 @@ import { mkdtempSync, rmSync } from 'fs';
 
 // Check if better-sqlite3 native module is available (may fail in CI)
 let hasSqlite = false;
-let ContextStore: (typeof import('../contextStore.js'))['ContextStore'];
+type ContextStoreType = Awaited<typeof import('../contextStore.js')>['ContextStore'];
+let ContextStore: ContextStoreType;
 try {
   await import('better-sqlite3');
   const mod = await import('../contextStore.js');
@@ -21,7 +22,7 @@ try {
 }
 
 describe.skipIf(!hasSqlite)('ContextStore', () => {
-  let store: ContextStore;
+  let store: ReturnType<ContextStoreType['create']>;
   let testDir: string;
   let dbPath: string;
 
@@ -203,7 +204,7 @@ describe.skipIf(!hasSqlite)('ContextStore', () => {
 
       const children = store.getChildren(workspace.id);
       expect(children).toHaveLength(2);
-      expect(children.every(c => c.parentId === workspace.id)).toBe(true);
+      expect(children.every((c: any) => c.parentId === workspace.id)).toBe(true);
     });
 
     it('should get ancestors', () => {
@@ -226,8 +227,8 @@ describe.skipIf(!hasSqlite)('ContextStore', () => {
 
       const ancestors = store.getAncestors(task.id);
       expect(ancestors).toHaveLength(2);
-      expect(ancestors.some(a => a.id === workspace.id)).toBe(true);
-      expect(ancestors.some(a => a.id === project.id)).toBe(true);
+      expect(ancestors.some((a: any) => a.id === workspace.id)).toBe(true);
+      expect(ancestors.some((a: any) => a.id === project.id)).toBe(true);
     });
 
     it('should build tree structure', () => {
