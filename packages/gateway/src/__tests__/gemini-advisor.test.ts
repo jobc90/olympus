@@ -8,6 +8,7 @@ const mockSendPrompt = vi.fn().mockResolvedValue(JSON.stringify({
   keyPatterns: ['CQRS', 'Repository'],
   activeContext: '주문 API 리팩토링 중',
   recommendations: ['에러 핸들링 개선', '캐시 도입'],
+  workHistory: 'Phase 1: API 기본 구조 구축. Phase 2: 주문 모듈 리팩토링.',
 }));
 
 vi.mock('../gemini-pty.js', () => ({
@@ -32,6 +33,7 @@ describe('GeminiAdvisor', () => {
       keyPatterns: ['CQRS', 'Repository'],
       activeContext: '주문 API 리팩토링 중',
       recommendations: ['에러 핸들링 개선', '캐시 도입'],
+      workHistory: 'Phase 1: API 기본 구조 구축. Phase 2: 주문 모듈 리팩토링.',
     }));
     advisor = new GeminiAdvisor({ refreshIntervalMs: 0 }); // 주기적 갱신 비활성화
   });

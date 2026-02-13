@@ -11,6 +11,8 @@ export interface GeminiProjectAnalysis {
   keyPatterns: string[];
   activeContext: string;
   recommendations: string[];
+  /** Synthesized work history from ALL worker task records (up to 50) */
+  workHistory: string;
   analyzedAt: number;
 }
 

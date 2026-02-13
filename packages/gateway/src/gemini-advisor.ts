@@ -107,8 +107,9 @@ export class GeminiAdvisor extends EventEmitter {
 
     this.setBehavior('analyzing', projectName);
 
-    // Collect LocalContext data
+    // Collect ALL worker contexts (up to 50) for comprehensive work history
     let localContextStr = '';
+    let workerHistoryStr = '';
     if (this.localContextManager) {
       try {
         const store = await this.localContextManager.getProjectStore(projectPath);
@@ -116,13 +117,21 @@ export class GeminiAdvisor extends EventEmitter {
         if (injection.projectSummary) {
           localContextStr += `${injection.projectSummary}\n`;
         }
-        if (injection.recentActivity) {
-          localContextStr += `${injection.recentActivity}\n`;
+
+        // Read ALL worker contexts for work history synthesis
+        const allWorkers = store.getRecentWorkerContexts(50);
+        if (allWorkers.length > 0) {
+          const entries = allWorkers.map((w, i) => {
+            const status = w.success ? 'OK' : 'FAIL';
+            const files = w.filesChanged.length > 0 ? ` [${w.filesChanged.slice(0, 3).join(', ')}${w.filesChanged.length > 3 ? '...' : ''}]` : '';
+            return `${allWorkers.length - i}. [${w.workerName}] ${status}: ${w.summary.slice(0, 150)}${files}`;
+          });
+          workerHistoryStr = entries.join('\n');
         }
       } catch { /* context not available */ }
     }
 
-    const prompt = this.buildAnalysisPrompt(projectPath, projectName, localContextStr);
+    const prompt = this.buildAnalysisPrompt(projectPath, projectName, localContextStr, workerHistoryStr);
 
     try {
       const response = await this.pty.sendPrompt(prompt, this.config.analysisTimeoutMs);
@@ -136,6 +145,7 @@ export class GeminiAdvisor extends EventEmitter {
         keyPatterns: parsed.keyPatterns ?? [],
         activeContext: parsed.activeContext ?? '',
         recommendations: parsed.recommendations ?? [],
+        workHistory: parsed.workHistory ?? '',
         analyzedAt: Date.now(),
       };
 
@@ -145,7 +155,8 @@ export class GeminiAdvisor extends EventEmitter {
     } catch (err) {
       console.warn(`[GeminiAdvisor] Analysis failed for ${projectName}: ${(err as Error).message}`);
 
-      // Cache fallback on failure
+      // Cache fallback on failure — preserve previous workHistory if available
+      const previous = this.projectCache.get(projectPath);
       const fallback: GeminiProjectAnalysis = {
         projectPath,
         projectName,
@@ -154,6 +165,7 @@ export class GeminiAdvisor extends EventEmitter {
         keyPatterns: [],
         activeContext: '',
         recommendations: [],
+        workHistory: previous?.workHistory ?? '',
         analyzedAt: Date.now(),
       };
       this.projectCache.set(projectPath, fallback);
@@ -197,7 +209,7 @@ export class GeminiAdvisor extends EventEmitter {
   // ── Build context for Codex system prompt ──
 
   buildCodexContext(options?: { maxLength?: number }): string {
-    const maxLength = options?.maxLength ?? 3000;
+    const maxLength = options?.maxLength ?? 4000;
     const analyses = this.getAllCachedAnalyses();
     if (analyses.length === 0) return '';
 
@@ -210,6 +222,7 @@ export class GeminiAdvisor extends EventEmitter {
       if (a.keyPatterns.length > 0) section.push(`- Patterns: ${a.keyPatterns.join(', ')}`);
       if (a.activeContext) section.push(`- Status: ${a.activeContext}`);
       if (a.recommendations.length > 0) section.push(`- Recommendations: ${a.recommendations.slice(0, 2).join('; ')}`);
+      if (a.workHistory) section.push(`\n#### Work History\n${a.workHistory}`);
       section.push('');
 
       const sectionStr = section.join('\n');
@@ -221,7 +234,7 @@ export class GeminiAdvisor extends EventEmitter {
   }
 
   buildProjectContext(projectPath: string, options?: { maxLength?: number }): string {
-    const maxLength = options?.maxLength ?? 2000;
+    const maxLength = options?.maxLength ?? 3000;
     const analysis = this.projectCache.get(projectPath);
     if (!analysis) return '';
 
@@ -231,6 +244,7 @@ export class GeminiAdvisor extends EventEmitter {
     if (analysis.keyPatterns.length > 0) lines.push(`Patterns: ${analysis.keyPatterns.join(', ')}`);
     if (analysis.activeContext) lines.push(`Current Status: ${analysis.activeContext}`);
     if (analysis.recommendations.length > 0) lines.push(`Recommendations: ${analysis.recommendations.join('; ')}`);
+    if (analysis.workHistory) lines.push(`\nWork History:\n${analysis.workHistory}`);
 
     const result = lines.join('\n');
     return result.slice(0, maxLength);
@@ -297,7 +311,7 @@ export class GeminiAdvisor extends EventEmitter {
     }, this.config.refreshIntervalMs);
   }
 
-  private buildAnalysisPrompt(projectPath: string, projectName: string, localContext: string): string {
+  private buildAnalysisPrompt(projectPath: string, projectName: string, localContext: string, workerHistory?: string): string {
     const parts = [
       'Analyze the following project and respond with JSON only. Do not include any other text.',
       '',
@@ -305,13 +319,25 @@ export class GeminiAdvisor extends EventEmitter {
     ];
 
     if (localContext) {
-      parts.push('', 'Recent Activity:', localContext);
+      parts.push('', 'Project Summary:', localContext);
+    }
+
+    if (workerHistory) {
+      parts.push(
+        '',
+        'Complete Task History (oldest→newest, ALL tasks executed by workers):',
+        workerHistory,
+        '',
+        'IMPORTANT: Synthesize ALL tasks above into a coherent "workHistory" narrative.',
+        'Include: what was built, key decisions made, bugs fixed, features added, refactoring done.',
+        'This summary will be used as persistent memory for the orchestrator AI.',
+      );
     }
 
     parts.push(
       '',
       'JSON response (this format only):',
-      '{"structureSummary": "...", "techStack": [...], "keyPatterns": [...], "activeContext": "...", "recommendations": [...]}',
+      '{"structureSummary": "...", "techStack": [...], "keyPatterns": [...], "activeContext": "...", "recommendations": [...], "workHistory": "comprehensive summary of all work done, key changes and decisions (max 1500 chars)"}',
     );
 
     return parts.join('\n');
@@ -330,6 +356,7 @@ export class GeminiAdvisor extends EventEmitter {
         keyPatterns: Array.isArray(parsed.keyPatterns) ? parsed.keyPatterns.filter((s: unknown) => typeof s === 'string') : undefined,
         activeContext: typeof parsed.activeContext === 'string' ? parsed.activeContext : undefined,
         recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations.filter((s: unknown) => typeof s === 'string') : undefined,
+        workHistory: typeof parsed.workHistory === 'string' ? parsed.workHistory.slice(0, 2000) : undefined,
       };
     } catch {
       return {};
