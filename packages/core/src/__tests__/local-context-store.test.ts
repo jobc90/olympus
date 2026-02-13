@@ -6,6 +6,15 @@ import { mkdtempSync, rmSync } from 'fs';
 import { randomUUID } from 'crypto';
 import type { WorkerContextRecord } from '@olympus-dev/protocol';
 
+// Check if better-sqlite3 native module is available (may fail in CI)
+let hasSqlite = false;
+try {
+  await import('better-sqlite3');
+  hasSqlite = true;
+} catch {
+  // Native module not available — skip SQLite-dependent tests
+}
+
 function makeWorkerRecord(overrides?: Partial<WorkerContextRecord>): WorkerContextRecord {
   return {
     id: randomUUID(),
@@ -23,7 +32,7 @@ function makeWorkerRecord(overrides?: Partial<WorkerContextRecord>): WorkerConte
   };
 }
 
-describe('LocalContextStore (project level)', () => {
+describe.skipIf(!hasSqlite)('LocalContextStore (project level)', () => {
   let store: LocalContextStore;
   let testDir: string;
 
@@ -188,7 +197,7 @@ describe('LocalContextStore (project level)', () => {
   });
 });
 
-describe('LocalContextStore (root level)', () => {
+describe.skipIf(!hasSqlite)('LocalContextStore (root level)', () => {
   let store: LocalContextStore;
   let testDir: string;
 
@@ -260,7 +269,7 @@ describe('LocalContextStore (root level)', () => {
   });
 });
 
-describe('LocalContextStoreManager', () => {
+describe.skipIf(!hasSqlite)('LocalContextStoreManager', () => {
   let manager: LocalContextStoreManager;
   let projectDir: string;
   let rootDir: string;

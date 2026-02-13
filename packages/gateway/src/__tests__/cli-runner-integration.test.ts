@@ -13,6 +13,15 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 
+// Check if better-sqlite3 native module is available (may fail in CI)
+let hasSqlite = false;
+try {
+  await import('better-sqlite3');
+  hasSqlite = true;
+} catch {
+  // Native module not available — skip SQLite-dependent tests
+}
+
 // ──────────────────────────────────────────────
 // 1. Sync CLI Run Flow (POST /api/cli/run 관점)
 // ──────────────────────────────────────────────
@@ -126,7 +135,7 @@ describe('Sync CLI Run Flow', () => {
 // 2. Session Persistence (CliSessionStore)
 // ──────────────────────────────────────────────
 
-describe('Session Persistence', () => {
+describe.skipIf(!hasSqlite)('Session Persistence', () => {
   let store: CliSessionStore;
   let dbPath: string;
 
