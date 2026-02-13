@@ -19,7 +19,6 @@ export { DEFAULT_CONFIG, loadConfig, saveConfig, loadCredentials, saveCredential
 // Agents
 export { GeminiExecutor } from './agents/gemini.js';
 export { CodexExecutor } from './agents/codex.js';
-export { GptExecutor } from './agents/gpt.js';
 export { AGENT_METADATA, DELEGATION_TABLE, detectAgent } from './agents/router.js';
 
 // Orchestrator

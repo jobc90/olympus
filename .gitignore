@@ -52,3 +52,4 @@ coverage/
 
 # Demo files
 !orchestration/plugins/claude-dashboard/demo.gif
+.team/

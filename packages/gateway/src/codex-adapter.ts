@@ -81,6 +81,13 @@ export class CodexAdapter {
   }
 
   /**
+   * Broadcast 함수 교체 — Gateway에서 실제 broadcastToAll 주입
+   */
+  setBroadcast(broadcast: (eventType: string, payload: unknown) => void): void {
+    this.broadcast = broadcast;
+  }
+
+  /**
    * LocalContextManager 설정 — Gateway에서 초기화 후 주입
    */
   setLocalContextManager(manager: LocalContextStoreManager): void {

@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { buildCliArgs, parseClaudeJson, classifyError, enqueueCliRun, runCli, setMaxConcurrentCli } from '../cli-runner.js';
+import { buildCliArgs, parseClaudeJson, classifyError, runCli } from '../cli-runner.js';
 import { CliSessionStore } from '../cli-session-store.js';
 import type { CliRunParams, CliBackendConfig, CliRunResult, AgentEvent, CliSessionRecord } from '@olympus-dev/protocol';
 import * as os from 'node:os';
@@ -303,98 +303,7 @@ describe('Timeout Handling', () => {
 });
 
 // ──────────────────────────────────────────────
-// 4. ConcurrencyLimiter Integration
-// ──────────────────────────────────────────────
-
-describe('ConcurrencyLimiter Integration', () => {
-  afterEach(() => {
-    setMaxConcurrentCli(5); // restore default
-  });
-
-  it('should respect maxConcurrent limit across all requests', async () => {
-    setMaxConcurrentCli(2);
-
-    let running = 0;
-    let maxRunning = 0;
-    const timeline: string[] = [];
-
-    const task = (name: string, delayMs: number) => async () => {
-      running++;
-      maxRunning = Math.max(maxRunning, running);
-      await new Promise((r) => setTimeout(r, delayMs));
-      timeline.push(name);
-      running--;
-    };
-
-    await Promise.all([
-      enqueueCliRun('integ-alpha', task('alpha-1', 80)),
-      enqueueCliRun('integ-alpha', task('alpha-2', 10)),
-      enqueueCliRun('integ-beta', task('beta-1', 30)),
-    ]);
-
-    // 최대 동시 실행이 2 이하
-    expect(maxRunning).toBeLessThanOrEqual(2);
-    // 3개 모두 완료
-    expect(timeline).toHaveLength(3);
-  });
-
-  it('should serialize all requests when maxConcurrent=1', async () => {
-    setMaxConcurrentCli(1);
-
-    const results: string[] = [];
-
-    const providers = ['integ-q1', 'integ-q2', 'integ-q3'];
-    const promises: Promise<void>[] = [];
-
-    for (const p of providers) {
-      promises.push(
-        enqueueCliRun(p, async () => {
-          await new Promise((r) => setTimeout(r, 10));
-          results.push(`${p}-1`);
-        }),
-      );
-      promises.push(
-        enqueueCliRun(p, async () => {
-          results.push(`${p}-2`);
-        }),
-      );
-    }
-
-    await Promise.all(promises);
-
-    // maxConcurrent=1이므로 enqueue 순서대로 실행됨
-    expect(results).toEqual([
-      'integ-q1-1', 'integ-q1-2',
-      'integ-q2-1', 'integ-q2-2',
-      'integ-q3-1', 'integ-q3-2',
-    ]);
-  });
-
-  it('should recover queue after failure in middle of chain', async () => {
-    const results: number[] = [];
-
-    const p1 = enqueueCliRun('integ-recover', async () => {
-      results.push(1);
-      return 1;
-    });
-    const p2 = enqueueCliRun('integ-recover', async () => {
-      results.push(2);
-      throw new Error('boom');
-    });
-    const p3 = enqueueCliRun('integ-recover', async () => {
-      results.push(3);
-      return 3;
-    });
-
-    expect(await p1).toBe(1);
-    await expect(p2).rejects.toThrow('boom');
-    expect(await p3).toBe(3);
-    expect(results).toEqual([1, 2, 3]);
-  });
-});
-
-// ──────────────────────────────────────────────
-// 5. Async CLI API (URL 파싱 + asyncTasks 동작)
+// 4. Async CLI API (URL 파싱 + asyncTasks 동작)
 // ──────────────────────────────────────────────
 
 describe('Async CLI API', () => {

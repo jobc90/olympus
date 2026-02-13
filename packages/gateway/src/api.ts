@@ -28,12 +28,28 @@ export interface ApiHandlerOptions {
 }
 
 /**
- * Parse JSON body from request
+ * Parse JSON body from request (10MB limit)
  */
+const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
+
 async function parseBody<T>(req: IncomingMessage): Promise<T> {
   return new Promise((resolve, reject) => {
+    // Check Content-Length header upfront
+    const contentLength = parseInt(req.headers['content-length'] ?? '', 10);
+    if (contentLength > MAX_BODY_SIZE) {
+      reject(new Error('Request body too large'));
+      return;
+    }
+
     let body = '';
-    req.on('data', (chunk) => {
+    let received = 0;
+    req.on('data', (chunk: Buffer) => {
+      received += chunk.length;
+      if (received > MAX_BODY_SIZE) {
+        req.destroy();
+        reject(new Error('Request body too large'));
+        return;
+      }
       body += chunk.toString();
     });
     req.on('end', () => {
@@ -412,8 +428,8 @@ export function createApiHandler(options: ApiHandlerOptions) {
         // 1. WorkerRegistry에 태스크 생성 (worker → busy)
         const task = workerRegistry.createTask(worker.id, enrichedPrompt);
 
-        // 2. task:assigned 브로드캐스트 → Worker가 수신하여 직접 CLI 실행
-        onWorkerEvent?.('task:assigned', {
+        // 2. worker:task:assigned 브로드캐스트 → Worker가 수신하여 직접 CLI 실행
+        onWorkerEvent?.('worker:task:assigned', {
           taskId: task.taskId,
           workerId: worker.id,
           workerName: worker.name,
@@ -468,7 +484,7 @@ export function createApiHandler(options: ApiHandlerOptions) {
             summary = summary.slice(0, 2000);
           }
 
-          onWorkerEvent?.('task:timeout', {
+          onWorkerEvent?.('worker:task:timeout', {
             taskId: id,
             workerId: task.workerId,
             workerName: task.workerName,
@@ -547,7 +563,7 @@ export function createApiHandler(options: ApiHandlerOptions) {
             }
           }
 
-          onWorkerEvent?.('task:final_after_timeout', {
+          onWorkerEvent?.('worker:task:final_after_timeout', {
             taskId: id,
             workerId: task.workerId,
             workerName: task.workerName,
@@ -627,7 +643,7 @@ export function createApiHandler(options: ApiHandlerOptions) {
           }
         }
 
-        onWorkerEvent?.('task:completed', {
+        onWorkerEvent?.('worker:task:completed', {
           taskId: id,
           workerId: task.workerId,
           workerName: task.workerName,
@@ -831,7 +847,7 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextS
           if (worker && worker.status !== 'busy') {
             // 워커에 작업 할당
             const task = workerRegistry.createTask(worker.id, taskPrompt.trim(), body.chatId);
-            onWorkerEvent?.('task:assigned', {
+            onWorkerEvent?.('worker:task:assigned', {
               taskId: task.taskId,
               workerId: worker.id,
               workerName: worker.name,
@@ -1761,6 +1777,10 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextS
         }
         try {
           const projectPath = decodeURIComponent(id);
+          if (projectPath.includes('..')) {
+            sendJson(res, 400, { error: 'Invalid path' });
+            return;
+          }
           const store = await localContextManager.getProjectStore(projectPath);
           const ctx = store.getProjectContext();
           sendJson(res, 200, { context: ctx });
@@ -1778,6 +1798,10 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextS
         }
         try {
           const projectPath = decodeURIComponent(id);
+          if (projectPath.includes('..')) {
+            sendJson(res, 400, { error: 'Invalid path' });
+            return;
+          }
           const limit = Number(query?.limit) || 20;
           const store = await localContextManager.getProjectStore(projectPath);
           const workers = store.getRecentWorkerContexts(limit);
@@ -1796,6 +1820,10 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextS
         }
         try {
           const projectPath = decodeURIComponent(id);
+          if (projectPath.includes('..')) {
+            sendJson(res, 400, { error: 'Invalid path' });
+            return;
+          }
           const maxTokens = Number(query?.maxTokens) || 2000;
           const store = await localContextManager.getProjectStore(projectPath);
           const injection = store.buildContextInjection({ maxTokens });

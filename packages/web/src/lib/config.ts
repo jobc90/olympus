@@ -167,6 +167,13 @@ function applyUrlParams(config: DashboardConfig): DashboardConfig {
     if (token) {
       config.gateway.token = token;
     }
+    // Security: URL에서 민감 파라미터 즉시 제거 (브라우저 히스토리/Referer 노출 방지)
+    if (params.has('token')) {
+      params.delete('token');
+      const cleaned = params.toString();
+      const newUrl = window.location.pathname + (cleaned ? `?${cleaned}` : '');
+      window.history.replaceState(null, '', newUrl);
+    }
   } catch {
     // ignore
   }

@@ -1523,22 +1523,8 @@ class OlympusBot {
       return;
     }
 
-    // Handle codex:session-event (broadcast to all chats)
-    if (msg.type === 'codex:session-event') {
-      const event = msg.payload as { sessionId?: string; status?: string; projectName?: string };
-      if (event.sessionId && event.status) {
-        const statusIcon = event.status === 'ready' ? '🟢' : event.status === 'busy' ? '🔵' : event.status === 'closed' ? '🔴' : '⚪';
-        const text = `${statusIcon} Codex 세션 [${event.projectName ?? event.sessionId.slice(0, 8)}]: ${event.status}`;
-        // Notify all known chats
-        for (const chatId of this.chatSessions.keys()) {
-          this.bot.telegram.sendMessage(chatId, text).catch(() => {});
-        }
-      }
-      return;
-    }
-
     // Handle worker task:completed — Codex가 요약한 결과를 텔레그램에 전달
-    if (msg.type === 'task:completed') {
+    if (msg.type === 'worker:task:completed') {
       const taskPayload = msg.payload as {
         taskId: string;
         workerName: string;
@@ -1561,7 +1547,7 @@ class OlympusBot {
     }
 
     // Handle worker task:timeout — 30분 타임아웃 중간 결과
-    if (msg.type === 'task:timeout') {
+    if (msg.type === 'worker:task:timeout') {
       const taskPayload = msg.payload as {
         taskId: string;
         workerName: string;
@@ -1583,7 +1569,7 @@ class OlympusBot {
     }
 
     // Handle worker task:final_after_timeout — 타임아웃 후 최종 완료
-    if (msg.type === 'task:final_after_timeout') {
+    if (msg.type === 'worker:task:final_after_timeout') {
       const taskPayload = msg.payload as {
         taskId: string;
         workerName: string;

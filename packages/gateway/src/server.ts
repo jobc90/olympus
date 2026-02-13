@@ -236,6 +236,7 @@ export class Gateway {
     // Wire Codex Adapter if provided (hybrid/codex mode)
     if (options.codexAdapter) {
       this.codexAdapter = options.codexAdapter;
+      this.codexAdapter.setBroadcast((eventType, payload) => this.broadcastToAll(eventType, payload));
       this.codexAdapter.setLocalContextManager(this.localContextManager);
       this.codexAdapter.registerRpcMethods(this.rpcRouter);
     }

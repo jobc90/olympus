@@ -13,13 +13,23 @@
 
 Olympus는 Claude CLI를 중심으로 한 Multi-AI 협업 개발 플랫폼이다. v1.0부터 19개 Custom Agent + Team Engineering Protocol을 내장한다.
 
+### Package Dependencies (Build-time)
 ```
-protocol → core → gateway → cli
-    │        │       ↑        ↑
-    ├→ client → tui ─┤────────┤
-    │        └→ web  │        │
-    ├→ telegram-bot ─┘────────┘
-    └→ codex (Codex Orchestrator)
+protocol → core → gateway
+    │        │       ↑
+    ├→ client ─→ tui ┤
+    │   └──────→ web │ (standalone build)
+    ├→ telegram-bot  │
+    └→ codex ─→ core │
+                     │
+cli (depends on all: protocol, core, gateway, client, tui, codex, telegram-bot)
+```
+
+### Runtime Communication
+```
+web ←──WebSocket──→ gateway (served by cli `olympus server start`)
+tui ←──WebSocket──→ gateway (served by cli `olympus server start`)
+telegram-bot ←──HTTP──→ gateway (served by cli `olympus server start`)
 ```
 
 ### Core Pipeline (tmux-free)
@@ -34,17 +44,135 @@ protocol → core → gateway → cli
 - **`olympus start-trust`** — `--dangerously-skip-permissions` 모드
 
 ### API Endpoints
-- `POST /api/cli/run` — 동기 CLI 실행
-- `POST /api/cli/run/async` — 비동기 CLI 실행
-- `GET /api/cli/run/:id/status` — 비동기 작업 상태 조회
-- `GET /api/cli/sessions` — 세션 목록
-- `DELETE /api/cli/sessions/:id` — 세션 삭제
-- `POST /api/codex/chat` — Codex 대화 (chat 응답만, 워커 위임 기능 제거됨)
-- `GET /api/workers` — 워커 목록
 
-### Real-time Streaming
-- `cli:stream` WebSocket 이벤트 — stdout 실시간 청크 브로드캐스트
-- `cli:complete` WebSocket 이벤트 — CLI 실행 완료 결과
+#### Health & Auth
+- `GET /healthz` — 헬스체크 (인증 불필요)
+- `POST /api/auth` — API Key 검증
+- `POST /api/chat` — 경량 Gemini 채팅 (빠른 응답)
+
+#### CLI Runner
+- `POST /api/cli/run` — 동기 CLI 실행
+- `POST /api/cli/run/async` — 비동기 CLI 실행 (즉시 taskId 반환)
+- `GET /api/cli/run/:id/status` — 비동기 작업 상태 조회
+- `GET /api/cli/sessions` — 저장된 CLI 세션 목록
+- `DELETE /api/cli/sessions/:id` — CLI 세션 삭제
+
+#### Workers
+- `POST /api/workers/register` — 워커 등록
+- `GET /api/workers` — 워커 목록
+- `DELETE /api/workers/:id` — 워커 삭제
+- `POST /api/workers/:id/heartbeat` — 워커 하트비트
+- `POST /api/workers/:id/task` — 워커에 작업 할당
+- `POST /api/workers/tasks/:taskId/result` — 워커 작업 결과 보고
+- `GET /api/workers/tasks/:taskId` — 워커 작업 상태 조회
+
+#### Codex
+- `POST /api/codex/chat` — Codex 대화 (@멘션 시 워커 위임)
+- `POST /api/codex/route` — Codex Orchestrator 라우팅
+- `POST /api/codex/summarize` — 경량 텍스트 요약
+
+#### Runs (Orchestration)
+- `POST /api/runs` — 새 실행 생성
+- `GET /api/runs` — 전체 실행 목록
+- `GET /api/runs/:id` — 실행 상태 조회
+- `DELETE /api/runs/:id` — 실행 취소
+
+#### Sessions
+- `POST /api/sessions` — 세션 생성
+- `GET /api/sessions` — 활성 세션 목록
+- `GET /api/sessions/:id` — 세션 조회
+- `GET /api/sessions/:id/context` — 세션 + 연결된 컨텍스트 조회
+- `DELETE /api/sessions/:id` — 세션 종료
+- `POST /api/sessions/:id/input` — *deprecated* (POST /api/cli/run 사용)
+- `GET /api/sessions/:id/output` — *deprecated* (CLI streaming 사용)
+
+#### Tasks (Context OS)
+- `GET /api/tasks` — 루트 태스크 목록 (?format=tree로 트리 조회)
+- `POST /api/tasks` — 태스크 생성
+- `GET /api/tasks/:id` — 태스크 조회
+- `PATCH /api/tasks/:id` — 태스크 수정
+- `DELETE /api/tasks/:id` — 태스크 삭제 (soft)
+- `GET /api/tasks/:id/children` — 하위 태스크 목록
+- `GET /api/tasks/:id/context` — 태스크 + 해결된 컨텍스트
+- `GET /api/tasks/:id/history` — 컨텍스트 변경 이력
+- `GET /api/tasks/search` — 태스크 검색 (?q=)
+- `GET /api/tasks/stats` — 태스크 통계
+
+#### Contexts (Context OS)
+- `GET /api/contexts` — 컨텍스트 목록 (?scope=, ?format=tree)
+- `POST /api/contexts` — 컨텍스트 생성
+- `GET /api/contexts/:id` — 컨텍스트 조회
+- `PATCH /api/contexts/:id` — 컨텍스트 수정 (낙관적 잠금, expectedVersion 필수)
+- `DELETE /api/contexts/:id` — 컨텍스트 삭제 (soft)
+- `GET /api/contexts/:id/versions` — 버전 이력
+- `GET /api/contexts/:id/children` — 하위 컨텍스트
+- `POST /api/contexts/:id/merge` — 병합 요청 (비동기 202)
+- `POST /api/contexts/:id/report-upstream` — 상위 컨텍스트에 보고 (비동기 202)
+
+#### Operations
+- `GET /api/operations/:id` — 비동기 작업 상태 조회
+
+#### Local Context
+- `GET /api/local-context/projects` — 루트 전체 프로젝트 컨텍스트
+- `GET /api/local-context/:encodedPath/summary` — 프로젝트 통합 컨텍스트
+- `GET /api/local-context/:encodedPath/workers` — 워커 컨텍스트 목록
+- `GET /api/local-context/:encodedPath/injection` — 주입용 컨텍스트
+
+#### Gemini Advisor
+- `GET /api/gemini-advisor/status` — Gemini Advisor 상태
+- `GET /api/gemini-advisor/projects` — 캐시된 프로젝트 분석 목록
+- `GET /api/gemini-advisor/projects/:encodedPath` — 특정 프로젝트 분석
+- `POST /api/gemini-advisor/refresh` — 수동 전체 갱신
+- `POST /api/gemini-advisor/analyze/:encodedPath` — 특정 프로젝트 즉시 분석
+
+### WebSocket Events
+
+WebSocket 연결은 `GATEWAY_PATH` 경로로 수립되며, `connect` 메시지로 인증 후 이벤트를 수신한다.
+
+#### Client → Server
+- `connect` — API Key 인증 + 클라이언트 등록
+- `subscribe` — 특정 Run/Session 구독
+- `unsubscribe` — 구독 해제
+- `cancel` — Run 취소
+- `ping` — 하트비트
+- `rpc` — RPC 메서드 호출
+
+#### Server → Client (Broadcast)
+- `connected` — 인증 성공 응답
+- `runs:list` — 전체 실행 목록 (초기 스냅샷 + 변경 시)
+- `sessions:list` — 활성 세션 목록 (초기 스냅샷 + 변경 시)
+- `cli:stream` — CLI stdout 실시간 청크
+- `cli:complete` — CLI 실행 완료 결과
+- `gemini:status` — Gemini Advisor 상태 (초기 스냅샷 + 변경 시)
+- `gemini:analysis` — Gemini 분석 완료
+
+#### Server → Client (Worker Events)
+- `worker:task:assigned` — 워커에 작업 할당됨
+- `worker:task:completed` — 워커 작업 완료
+- `worker:task:timeout` — 워커 작업 타임아웃 (부분 결과)
+- `worker:task:final_after_timeout` — 타임아웃 후 최종 완료
+
+#### Server → Client (Agent Events, legacy/hybrid mode)
+- `agent:progress` — 에이전트 진행 상황
+- `agent:result` — 에이전트 결과
+- `agent:error` — 에이전트 오류
+- `agent:approval` — 에이전트 승인 요청
+- `worker:started` — 레거시 워커 시작
+- `worker:output` — 레거시 워커 출력
+- `worker:done` — 레거시 워커 완료
+
+#### Server → Client (Session Events, subscribed clients only)
+- `session:screen` — 세션 화면 출력
+- `session:error` — 세션 오류
+- `session:closed` — 세션 종료
+
+#### Server → Client (Context Events)
+- `context:created` — 컨텍스트 생성됨
+- `context:updated` — 컨텍스트 수정됨
+- `context:merge_requested` — 병합 요청됨
+- `context:merged` — 병합 완료
+- `context:conflict_detected` — 병합 충돌 감지
+- `context:reported_upstream` — 상위 보고 완료
 
 ### Telegram Bot 워커 위임
 - **직접 멘션 방식**: `@워커이름 작업` 형식으로 사용자가 워커에 직접 작업 지시

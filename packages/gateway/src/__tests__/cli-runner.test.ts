@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildCliArgs, parseClaudeJson, parseCodexJsonl, classifyError, enqueueCliRun, runCli, setMaxConcurrentCli } from '../cli-runner.js';
+import { buildCliArgs, parseClaudeJson, parseCodexJsonl, classifyError, runCli, setMaxConcurrentCli } from '../cli-runner.js';
 import type { CliRunParams, CliBackendConfig } from '@olympus-dev/protocol';
 
 // ──────────────────────────────────────────────
@@ -314,117 +314,6 @@ describe('classifyError', () => {
 
   it('should return unknown for unrecognized errors', () => {
     expect(classifyError(1, 'Something went wrong', false)).toBe('unknown');
-  });
-});
-
-// ──────────────────────────────────────────────
-// enqueueCliRun (backward compatibility wrapper)
-// ──────────────────────────────────────────────
-
-describe('enqueueCliRun', () => {
-  it('should serialize tasks when maxConcurrent=1', async () => {
-    setMaxConcurrentCli(1);
-    const order: number[] = [];
-
-    const p1 = enqueueCliRun('claude', async () => {
-      await new Promise((r) => setTimeout(r, 50));
-      order.push(1);
-      return 1;
-    });
-
-    const p2 = enqueueCliRun('claude', async () => {
-      order.push(2);
-      return 2;
-    });
-
-    const [r1, r2] = await Promise.all([p1, p2]);
-    expect(r1).toBe(1);
-    expect(r2).toBe(2);
-    expect(order).toEqual([1, 2]); // Must be sequential with maxConcurrent=1
-
-    setMaxConcurrentCli(5); // restore
-  });
-
-  it('should allow parallel execution with default concurrency', async () => {
-    setMaxConcurrentCli(5);
-    const order: string[] = [];
-
-    const p1 = enqueueCliRun('claude', async () => {
-      await new Promise((r) => setTimeout(r, 50));
-      order.push('claude');
-    });
-
-    const p2 = enqueueCliRun('codex', async () => {
-      order.push('codex');
-    });
-
-    await Promise.all([p1, p2]);
-    // codex should finish first since it has no delay
-    expect(order[0]).toBe('codex');
-    expect(order[1]).toBe('claude');
-  });
-
-  it('should not block chain on previous failure', async () => {
-    const p1 = enqueueCliRun('test-fail', async () => {
-      throw new Error('deliberate');
-    });
-    const p2 = enqueueCliRun('test-fail', async () => {
-      return 'recovered';
-    });
-
-    await expect(p1).rejects.toThrow('deliberate');
-    expect(await p2).toBe('recovered');
-  });
-});
-
-// ──────────────────────────────────────────────
-// ConcurrencyLimiter (via setMaxConcurrentCli)
-// ──────────────────────────────────────────────
-
-describe('ConcurrencyLimiter', () => {
-  it('should allow parallel execution up to maxConcurrent', async () => {
-    setMaxConcurrentCli(2);
-
-    let running = 0;
-    let maxRunning = 0;
-
-    const makeTask = () => async () => {
-      running++;
-      maxRunning = Math.max(maxRunning, running);
-      await new Promise(r => setTimeout(r, 50));
-      running--;
-      return true;
-    };
-
-    const results = await Promise.all([
-      enqueueCliRun('a', makeTask()),
-      enqueueCliRun('b', makeTask()),
-      enqueueCliRun('c', makeTask()),
-    ]);
-
-    expect(results).toEqual([true, true, true]);
-    expect(maxRunning).toBeLessThanOrEqual(2);
-
-    setMaxConcurrentCli(5); // restore
-  });
-
-  it('should queue tasks when at capacity', async () => {
-    setMaxConcurrentCli(1);
-
-    const order: number[] = [];
-
-    const p1 = enqueueCliRun('x', async () => {
-      await new Promise(r => setTimeout(r, 30));
-      order.push(1);
-    });
-    const p2 = enqueueCliRun('y', async () => {
-      order.push(2);
-    });
-
-    await Promise.all([p1, p2]);
-    expect(order).toEqual([1, 2]);
-
-    setMaxConcurrentCli(5); // restore
   });
 });
 

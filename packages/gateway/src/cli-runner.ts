@@ -291,14 +291,6 @@ export function setMaxConcurrentCli(max: number): void {
   CLI_LIMITER = new ConcurrencyLimiter(max);
 }
 
-/** @deprecated Use CLI_LIMITER directly. Kept for backward compatibility. */
-export function enqueueCliRun<T>(
-  _key: string,
-  task: () => Promise<T>,
-): Promise<T> {
-  return CLI_LIMITER.run(task);
-}
-
 // ──────────────────────────────────────────────
 // spawnCli (내부)
 // ──────────────────────────────────────────────
@@ -315,6 +307,9 @@ function buildSafeEnv(): NodeJS.ProcessEnv {
   delete env.OPENAI_API_KEY;
   delete env.ANTHROPIC_API_KEY;
   delete env.OLYMPUS_AGENT_API_KEY;
+  delete env.TELEGRAM_BOT_TOKEN;
+  delete env.OLYMPUS_API_KEY;
+  delete env.ALLOWED_USERS;
   env.CLAUDE_NO_TELEMETRY = '1';
   return env;
 }

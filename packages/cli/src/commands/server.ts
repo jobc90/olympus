@@ -282,6 +282,12 @@ serverCommand
     console.log();
   });
 
+function maskApiKey(key: string): string {
+  if (!key) return '(not set)';
+  if (key.length >= 8) return key.slice(0, 4) + '****' + key.slice(-4);
+  return '****';
+}
+
 async function startGatewayServer(port: string, config: { gatewayHost: string; apiKey: string }, codexAdapter?: unknown, mode?: string, geminiAdvisor?: unknown) {
   const { Gateway } = await import('@olympus-dev/gateway');
 
@@ -305,7 +311,7 @@ async function startGatewayServer(port: string, config: { gatewayHost: string; a
 
   console.log(chalk.cyan('📡 Gateway 시작됨'));
   console.log(chalk.gray(`   URL: http://${config.gatewayHost}:${port}`));
-  console.log(chalk.gray(`   API Key: ${config.apiKey}`));
+  console.log(chalk.gray(`   API Key: ${maskApiKey(config.apiKey)}`));
   console.log(chalk.gray(`   WebSocket: ws://${config.gatewayHost}:${port}/ws`));
   console.log();
 
@@ -364,7 +370,17 @@ async function startDashboardServer(port: string, gatewayConfig?: DashboardConfi
   };
 
   const server = http.createServer((req, res) => {
-    let filePath = path.join(distPath!, req.url === '/' ? 'index.html' : req.url!);
+    // Strip query string from URL for file resolution
+    const urlPath = (req.url ?? '/').split('?')[0];
+    const requestedPath = urlPath === '/' ? 'index.html' : urlPath;
+    let filePath = path.resolve(distPath!, '.' + path.normalize('/' + requestedPath));
+
+    // Security: path traversal 가드 — distPath 외부 접근 차단
+    if (!filePath.startsWith(distPath!)) {
+      res.writeHead(403);
+      res.end('Forbidden');
+      return;
+    }
 
     // SPA fallback: if file doesn't exist, serve index.html
     if (!fs.existsSync(filePath)) {

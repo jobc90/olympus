@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WorkerManager } from '../workers/manager.js';
 import { ApiWorker } from '../workers/api-worker.js';
-import { TmuxWorker } from '../workers/tmux-worker.js';
 import { ClaudeCliWorker } from '../workers/claude-worker.js';
 
 describe('WorkerManager', () => {
@@ -128,39 +127,3 @@ describe('ApiWorker', () => {
   });
 });
 
-describe('TmuxWorker', () => {
-  it('should start in pending status', () => {
-    const worker = new TmuxWorker(
-      { id: 'w4', type: 'tmux', prompt: 'test', projectPath: '/tmp', dependencies: [], timeout: 5000, orchestration: false, successCriteria: [] },
-      { type: 'tmux', logDir: '/tmp/test-logs', maxOutputBuffer: 10000 },
-    );
-
-    expect(worker.getStatus()).toBe('pending');
-    expect(worker.getOutput()).toBe('');
-  });
-
-  it('should terminate gracefully when not running', () => {
-    const worker = new TmuxWorker(
-      { id: 'w5', type: 'tmux', prompt: 'test', projectPath: '/tmp', dependencies: [], timeout: 5000, orchestration: false, successCriteria: [] },
-      { type: 'tmux', logDir: '/tmp/test-logs', maxOutputBuffer: 10000 },
-    );
-
-    // Should not throw
-    expect(() => worker.terminate()).not.toThrow();
-  });
-
-  it('should generate unique session names', () => {
-    const w1 = new TmuxWorker(
-      { id: 'abc', type: 'tmux', prompt: 'test', projectPath: '/tmp', dependencies: [], timeout: 5000, orchestration: false, successCriteria: [] },
-      { type: 'tmux', logDir: '/tmp/test-logs', maxOutputBuffer: 10000 },
-    );
-    const w2 = new TmuxWorker(
-      { id: 'def', type: 'tmux', prompt: 'test', projectPath: '/tmp', dependencies: [], timeout: 5000, orchestration: false, successCriteria: [] },
-      { type: 'tmux', logDir: '/tmp/test-logs', maxOutputBuffer: 10000 },
-    );
-
-    // Different IDs → different session names (verified by output not being shared)
-    expect(w1.getOutput()).toBe('');
-    expect(w2.getOutput()).toBe('');
-  });
-});
