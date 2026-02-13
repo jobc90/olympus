@@ -13,14 +13,14 @@ import type { LocalContextStoreManager } from '@olympus-dev/core';
 import type { GeminiAdvisor } from './gemini-advisor.js';
 
 /**
- * CodexAdapter — Gateway ↔ Codex Orchestrator 어댑터
+ * CodexAdapter — Gateway ↔ Codex Orchestrator adapter
  *
- * Gateway는 기존 WS 메시지를 받아 Codex에 위임하고,
- * Codex 결과를 기존 브로드캐스트 시스템으로 전달한다.
+ * Gateway receives WS messages, delegates to Codex,
+ * and forwards Codex results through the broadcast system.
  *
- * 핵심: Gateway는 라우팅 로직을 모른다. Codex에 위임만 한다.
+ * Key: Gateway knows no routing logic. It only delegates to Codex.
  *
- * 사용법:
+ * Usage:
  *   const codex = new CodexOrchestrator(config);
  *   await codex.initialize();
  *   const adapter = new CodexAdapter(codex, broadcast);
@@ -29,7 +29,7 @@ import type { GeminiAdvisor } from './gemini-advisor.js';
 export class CodexAdapter {
   static readonly REQUEST_TIMEOUT = 30_000; // 30초
 
-  // CodexOrchestrator interface — duck typing으로 codex 패키지 의존 회피
+  // CodexOrchestrator interface — duck typing to avoid codex package dependency
   private codex: CodexOrchestratorLike;
 
   private localContextManager: LocalContextStoreManager | null;
@@ -45,7 +45,7 @@ export class CodexAdapter {
     this.localContextManager = localContextManager ?? null;
     this.geminiAdvisor = geminiAdvisor ?? null;
 
-    // Codex 이벤트 → Gateway 브로드캐스트
+    // Codex events → Gateway broadcast
     this.codex.on('session:screen', (...args: unknown[]) => {
       this.broadcast('session:screen', args[0] as CodexSessionOutputPayload);
     });
@@ -53,7 +53,7 @@ export class CodexAdapter {
       this.broadcast('codex:session-event', args[0] as CodexSessionEventPayload);
     });
 
-    // session:execute — CLI 실행 요청을 runCli로 위임
+    // session:execute — delegate CLI execution request to runCli
     this.codex.on('session:execute', async (...args: unknown[]) => {
       const event = args[0] as { sessionId: string; input: string; projectPath: string };
       const { runCli } = await import('./cli-runner.js');
@@ -81,28 +81,28 @@ export class CodexAdapter {
   }
 
   /**
-   * Broadcast 함수 교체 — Gateway에서 실제 broadcastToAll 주입
+   * Replace broadcast function — inject actual broadcastToAll from Gateway
    */
   setBroadcast(broadcast: (eventType: string, payload: unknown) => void): void {
     this.broadcast = broadcast;
   }
 
   /**
-   * LocalContextManager 설정 — Gateway에서 초기화 후 주입
+   * Set LocalContextManager — injected after Gateway initialization
    */
   setLocalContextManager(manager: LocalContextStoreManager): void {
     this.localContextManager = manager;
   }
 
   /**
-   * GeminiAdvisor 설정 — Gateway에서 초기화 후 주입
+   * Set GeminiAdvisor — injected after Gateway initialization
    */
   setGeminiAdvisor(advisor: GeminiAdvisor): void {
     this.geminiAdvisor = advisor;
   }
 
   /**
-   * 사용자 입력 처리 — Gateway가 호출하는 메인 엔트리
+   * Handle user input — main entry called by Gateway
    */
   async handleInput(input: {
     text: string;
@@ -127,7 +127,7 @@ export class CodexAdapter {
   }
 
   /**
-   * Codex 상태 조회
+   * Get Codex status
    */
   getStatus(): CodexStatusPayload {
     const sessions = this.codex.getSessions();
@@ -139,7 +139,7 @@ export class CodexAdapter {
   }
 
   /**
-   * RPC 메서드 등록 — 기존 RpcRouter에 Codex 메서드 추가
+   * Register RPC methods — add Codex methods to RpcRouter
    */
   registerRpcMethods(rpcRouter: RpcRouter): void {
     rpcRouter.register('codex.route', async (params) => {

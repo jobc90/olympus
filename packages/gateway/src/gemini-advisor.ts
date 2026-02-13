@@ -1,7 +1,7 @@
 /**
- * GeminiAdvisor — Gemini CLI 기반 프로젝트 분석 + Codex 컨텍스트 보조 AI
+ * GeminiAdvisor — Gemini CLI-based project analysis + Codex context assistant AI
  *
- * 인메모리 캐시 + 주기적 갱신 + 이벤트 기반 증분 갱신
+ * In-memory cache + periodic refresh + event-driven incremental updates
  */
 import { EventEmitter } from 'node:events';
 import type { LocalContextStoreManager } from '@olympus-dev/core';
@@ -15,7 +15,7 @@ import type {
 import { DEFAULT_GEMINI_ADVISOR_CONFIG } from '@olympus-dev/protocol';
 import { GeminiPty } from './gemini-pty.js';
 
-/** Debounce 타이머 맵 */
+/** Debounce timer map */
 const DEBOUNCE_MS = 10_000;
 
 export class GeminiAdvisor extends EventEmitter {
@@ -24,13 +24,13 @@ export class GeminiAdvisor extends EventEmitter {
   private pty: GeminiPty | null = null;
   private projects: Array<{ name: string; path: string }> = [];
 
-  // 인메모리 캐시
+  // In-memory cache
   private projectCache = new Map<string, GeminiProjectAnalysis>();
   private rootCache: GeminiRootAnalysis | null = null;
   private behavior: GeminiBehavior = 'offline';
   private currentTask: string | null = null;
 
-  // 타이머
+  // Timers
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private running = false;
@@ -40,7 +40,7 @@ export class GeminiAdvisor extends EventEmitter {
     this.config = { ...DEFAULT_GEMINI_ADVISOR_CONFIG, ...config };
   }
 
-  // ── 생명주기 ──
+  // ── Lifecycle ──
 
   async initialize(
     projects: Array<{ name: string; path: string }>,
@@ -51,7 +51,7 @@ export class GeminiAdvisor extends EventEmitter {
       this.localContextManager = localContextManager;
     }
 
-    // PTY 시작
+    // Start PTY
     this.pty = new GeminiPty(this.config.model);
     try {
       await this.pty.start();
@@ -64,12 +64,12 @@ export class GeminiAdvisor extends EventEmitter {
     this.running = true;
     this.setBehavior('idle');
 
-    // 비동기 백그라운드 분석 시작
+    // Start async background analysis
     this.analyzeAllProjects().catch((err) => {
       console.warn(`[GeminiAdvisor] Initial analysis failed: ${(err as Error).message}`);
     });
 
-    // 주기적 갱신
+    // Periodic refresh
     this.startPeriodicRefresh();
   }
 
@@ -98,7 +98,7 @@ export class GeminiAdvisor extends EventEmitter {
     this.setBehavior('offline');
   }
 
-  // ── 분석 ──
+  // ── Analysis ──
 
   async analyzeProject(projectPath: string, projectName: string): Promise<GeminiProjectAnalysis> {
     if (!this.pty?.isAlive()) {
@@ -107,7 +107,7 @@ export class GeminiAdvisor extends EventEmitter {
 
     this.setBehavior('analyzing', projectName);
 
-    // LocalContext 데이터 수집
+    // Collect LocalContext data
     let localContextStr = '';
     if (this.localContextManager) {
       try {
@@ -131,7 +131,7 @@ export class GeminiAdvisor extends EventEmitter {
       const analysis: GeminiProjectAnalysis = {
         projectPath,
         projectName,
-        structureSummary: parsed.structureSummary ?? `${projectName} 프로젝트`,
+        structureSummary: parsed.structureSummary ?? `${projectName} project`,
         techStack: parsed.techStack ?? [],
         keyPatterns: parsed.keyPatterns ?? [],
         activeContext: parsed.activeContext ?? '',
@@ -145,11 +145,11 @@ export class GeminiAdvisor extends EventEmitter {
     } catch (err) {
       console.warn(`[GeminiAdvisor] Analysis failed for ${projectName}: ${(err as Error).message}`);
 
-      // 실패 시 기본값 캐시
+      // Cache fallback on failure
       const fallback: GeminiProjectAnalysis = {
         projectPath,
         projectName,
-        structureSummary: `${projectName} 프로젝트 (분석 실패)`,
+        structureSummary: `${projectName} project (analysis failed)`,
         techStack: [],
         keyPatterns: [],
         activeContext: '',
@@ -180,7 +180,7 @@ export class GeminiAdvisor extends EventEmitter {
     }
   }
 
-  // ── 캐시 조회 ──
+  // ── Cache queries ──
 
   getCachedAnalysis(projectPath: string): GeminiProjectAnalysis | null {
     return this.projectCache.get(projectPath) ?? null;
@@ -194,22 +194,22 @@ export class GeminiAdvisor extends EventEmitter {
     return Array.from(this.projectCache.values());
   }
 
-  // ── Codex 시스템 프롬프트용 컨텍스트 생성 ──
+  // ── Build context for Codex system prompt ──
 
   buildCodexContext(options?: { maxLength?: number }): string {
     const maxLength = options?.maxLength ?? 3000;
     const analyses = this.getAllCachedAnalyses();
     if (analyses.length === 0) return '';
 
-    const lines: string[] = ['\n\n## 프로젝트 분석 (Gemini Advisor)\n'];
+    const lines: string[] = ['\n\n## Project Analysis (Gemini Advisor)\n'];
 
     for (const a of analyses) {
       const section: string[] = [`### ${a.projectName} (${a.projectPath})`];
-      if (a.structureSummary) section.push(`- 구조: ${a.structureSummary}`);
-      if (a.techStack.length > 0) section.push(`- 기술: ${a.techStack.join(', ')}`);
-      if (a.keyPatterns.length > 0) section.push(`- 패턴: ${a.keyPatterns.join(', ')}`);
-      if (a.activeContext) section.push(`- 현황: ${a.activeContext}`);
-      if (a.recommendations.length > 0) section.push(`- 권장: ${a.recommendations.slice(0, 2).join('; ')}`);
+      if (a.structureSummary) section.push(`- Structure: ${a.structureSummary}`);
+      if (a.techStack.length > 0) section.push(`- Tech: ${a.techStack.join(', ')}`);
+      if (a.keyPatterns.length > 0) section.push(`- Patterns: ${a.keyPatterns.join(', ')}`);
+      if (a.activeContext) section.push(`- Status: ${a.activeContext}`);
+      if (a.recommendations.length > 0) section.push(`- Recommendations: ${a.recommendations.slice(0, 2).join('; ')}`);
       section.push('');
 
       const sectionStr = section.join('\n');
@@ -226,20 +226,20 @@ export class GeminiAdvisor extends EventEmitter {
     if (!analysis) return '';
 
     const lines: string[] = [];
-    if (analysis.structureSummary) lines.push(`구조: ${analysis.structureSummary}`);
-    if (analysis.techStack.length > 0) lines.push(`기술 스택: ${analysis.techStack.join(', ')}`);
-    if (analysis.keyPatterns.length > 0) lines.push(`패턴: ${analysis.keyPatterns.join(', ')}`);
-    if (analysis.activeContext) lines.push(`현재 상황: ${analysis.activeContext}`);
-    if (analysis.recommendations.length > 0) lines.push(`권장사항: ${analysis.recommendations.join('; ')}`);
+    if (analysis.structureSummary) lines.push(`Structure: ${analysis.structureSummary}`);
+    if (analysis.techStack.length > 0) lines.push(`Tech Stack: ${analysis.techStack.join(', ')}`);
+    if (analysis.keyPatterns.length > 0) lines.push(`Patterns: ${analysis.keyPatterns.join(', ')}`);
+    if (analysis.activeContext) lines.push(`Current Status: ${analysis.activeContext}`);
+    if (analysis.recommendations.length > 0) lines.push(`Recommendations: ${analysis.recommendations.join('; ')}`);
 
     const result = lines.join('\n');
     return result.slice(0, maxLength);
   }
 
-  // ── 이벤트 기반 갱신 ──
+  // ── Event-driven updates ──
 
   onProjectUpdate(projectPath: string): void {
-    // debounce 10초
+    // debounce 10s
     const existing = this.debounceTimers.get(projectPath);
     if (existing) clearTimeout(existing);
 
@@ -258,7 +258,7 @@ export class GeminiAdvisor extends EventEmitter {
     this.onProjectUpdate(projectPath);
   }
 
-  // ── 상태 ──
+  // ── Status ──
 
   getStatus(): GeminiAdvisorStatus {
     const analyses = this.getAllCachedAnalyses();
@@ -277,7 +277,7 @@ export class GeminiAdvisor extends EventEmitter {
     };
   }
 
-  // ── 내부 ──
+  // ── Internal ──
 
   private setBehavior(behavior: GeminiBehavior, task?: string): void {
     this.behavior = behavior;
@@ -319,7 +319,7 @@ export class GeminiAdvisor extends EventEmitter {
 
   private parseAnalysisResponse(response: string): Partial<GeminiProjectAnalysis> {
     try {
-      // JSON 블록 추출 시도
+      // Attempt to extract JSON block
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (!jsonMatch) return {};
 

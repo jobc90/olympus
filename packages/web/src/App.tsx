@@ -174,6 +174,8 @@ export default function App() {
     codexProjects,
     codexSessions,
     codexSearch,
+    chatWithGemini,
+    chatWithCodex,
     cliHistory,
     cliStreams,
     workerConfigs: polledWorkerConfigs,
@@ -285,24 +287,39 @@ export default function App() {
       [agentId]: [...(prev[agentId] || []), userMsg],
     }));
 
-    if (codexRoute) {
-      try {
-        const response = await codexRoute(message);
-        if (response) {
-          const content = typeof response === 'object' && 'response' in response
-            ? String((response as { response?: { content?: string } }).response?.content ?? 'No response')
-            : String(response);
-          const agentMsg = { id: crypto.randomUUID(), role: 'agent' as const, content, timestamp: Date.now() };
-          setChatMessages(prev => ({
-            ...prev,
-            [agentId]: [...(prev[agentId] || []), agentMsg],
-          }));
-        }
-      } catch {
-        // best effort
+    try {
+      let content: string;
+
+      if (agentId.startsWith('gemini')) {
+        // Hera (Gemini) → POST /api/chat
+        const res = await chatWithGemini(message);
+        content = res.reply ?? 'No response';
+      } else if (agentId.startsWith('codex')) {
+        // Zeus (Codex) → POST /api/codex/chat
+        const res = await chatWithCodex(message);
+        content = res.response ?? 'No response';
+      } else {
+        // Worker → POST /api/codex/chat with @mention
+        const worker = workerConfigs.find(w => w.id === agentId);
+        const workerName = worker?.name ?? agentId;
+        const res = await chatWithCodex(`@${workerName} ${message}`);
+        content = res.response ?? 'No response';
       }
+
+      const agentMsg = { id: crypto.randomUUID(), role: 'agent' as const, content, timestamp: Date.now() };
+      setChatMessages(prev => ({
+        ...prev,
+        [agentId]: [...(prev[agentId] || []), agentMsg],
+      }));
+    } catch (e) {
+      const errorContent = `Error: ${(e as Error).message}`;
+      const errorMsg = { id: crypto.randomUUID(), role: 'agent' as const, content: errorContent, timestamp: Date.now() };
+      setChatMessages(prev => ({
+        ...prev,
+        [agentId]: [...(prev[agentId] || []), errorMsg],
+      }));
     }
-  }, [codexRoute]);
+  }, [chatWithGemini, chatWithCodex, workerConfigs]);
 
   const handleChatClick = useCallback((workerId: string) => {
     const w = workerConfigs.find(w => w.id === workerId);

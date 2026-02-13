@@ -7,14 +7,14 @@ import type {
 } from './types.js';
 
 /**
- * Router — 사용자 입력을 분석하여 적절한 세션/행동으로 라우팅
+ * Router — Analyzes user input and routes to appropriate session/action
  *
- * 5단계 우선순위:
- * 1. 명시적 세션 지정: `@projectA 빌드해줘` → SESSION_FORWARD
- * 2. 전체 프로젝트 질의: `모든 프로젝트 현황` → SELF_ANSWER
- * 3. 다중 세션 명령: `모든 프로젝트 빌드` → MULTI_SESSION
- * 4. 프로젝트 키워드 매칭: `console API 수정` → SESSION_FORWARD
- * 5. 기본: 최근 활성 세션 → SESSION_FORWARD
+ * 5-level priority:
+ * 1. Explicit session mention: `@projectA build` → SESSION_FORWARD
+ * 2. Global project query: `all projects status` → SELF_ANSWER
+ * 3. Multi-session command: `all projects build` → MULTI_SESSION
+ * 4. Project keyword matching: `console API fix` → SESSION_FORWARD
+ * 5. Default: most recent active session → SESSION_FORWARD
  */
 export class Router {
   private projectAliases: Map<string, string> = new Map();
@@ -25,10 +25,10 @@ export class Router {
   ) {}
 
   /**
-   * 라우팅 판단
+   * Make routing decision
    */
   async route(input: UserInput): Promise<RoutingDecision> {
-    // Step 1: @mention 파싱
+    // Step 1: Parse @mention
     const mentionMatch = input.text.match(/^@(\S+)\s+(.+)/s);
     if (mentionMatch) {
       const [, target, command] = mentionMatch;
@@ -39,12 +39,12 @@ export class Router {
           targetSessions: [session.id],
           processedInput: command,
           confidence: 1.0,
-          reason: `명시적 @${target} 지정`,
+          reason: `Explicit @${target} mention`,
         };
       }
     }
 
-    // Step 2: 다중 세션 명령 (global query보다 먼저 체크 — "모든 프로젝트 빌드" 등)
+    // Step 2: Multi-session command (check before global query)
     if (this.isMultiSessionCommand(input.text)) {
       const allSessions = this.sessionManager.listSessions()
         .filter(s => s.status === 'ready' || s.status === 'idle');
@@ -53,22 +53,22 @@ export class Router {
         targetSessions: allSessions.map(s => s.id),
         processedInput: this.extractCommand(input.text),
         confidence: 0.85,
-        reason: '다중 세션 명령 감지',
+        reason: 'Multi-session command detected',
       };
     }
 
-    // Step 3: 전체 프로젝트 질의
+    // Step 3: Global project query
     if (this.isGlobalQuery(input.text)) {
       return {
         type: 'SELF_ANSWER',
         targetSessions: [],
         processedInput: input.text,
         confidence: 0.9,
-        reason: '전체 프로젝트 질의 패턴 감지',
+        reason: 'Global project query pattern detected',
       };
     }
 
-    // Step 4: 프로젝트 키워드 매칭
+    // Step 4: Project keyword matching
     const keywordMatch = await this.matchProjectKeyword(input.text);
     if (keywordMatch) {
       return {
@@ -76,11 +76,11 @@ export class Router {
         targetSessions: [keywordMatch.sessionId],
         processedInput: input.text,
         confidence: keywordMatch.confidence,
-        reason: `키워드 "${keywordMatch.keyword}" → ${keywordMatch.projectName}`,
+        reason: `Keyword "${keywordMatch.keyword}" → ${keywordMatch.projectName}`,
       };
     }
 
-    // Step 5: 최근 활성 세션
+    // Step 5: Most recent active session
     const lastSession = this.lastActiveSession.get(input.source);
     if (lastSession && this.sessionManager.getSession(lastSession)) {
       return {
@@ -88,29 +88,29 @@ export class Router {
         targetSessions: [lastSession],
         processedInput: input.text,
         confidence: 0.5,
-        reason: '최근 활성 세션 (기본)',
+        reason: 'Most recent active session (default)',
       };
     }
 
-    // 세션 없음 → 자체 답변
+    // No session available → self-answer
     return {
       type: 'SELF_ANSWER',
       targetSessions: [],
       processedInput: input.text,
       confidence: 0.3,
-      reason: '활성 세션 없음 — 자체 답변',
+      reason: 'No active session — self-answer',
     };
   }
 
   /**
-   * 라우팅 후 최근 세션 기록
+   * Record last session after routing
    */
   recordLastSession(source: InputSource, sessionId: string): void {
     this.lastActiveSession.set(source, sessionId);
   }
 
   /**
-   * 프로젝트 별명 등록
+   * Register project alias
    */
   registerAlias(alias: string, sessionId: string): void {
     this.projectAliases.set(alias.toLowerCase(), sessionId);

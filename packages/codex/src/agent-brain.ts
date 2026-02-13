@@ -6,16 +6,16 @@ import type {
 } from './types.js';
 
 /**
- * AgentBrain — AI Agent 판단 엔진
+ * AgentBrain — AI Agent decision engine
  *
- * 정규식 + 키워드 기반 (LLM API 호출 없음, 레이턴시 0)
+ * Regex + keyword based (no LLM API calls, zero latency)
  *
- * 판단 우선순위:
- * 1. 세션 관리 명령 (/sessions, /use, /close, /new)
- * 2. 작업 이력 질의 ("어제 뭐 했지?")
- * 3. 프로젝트 현황 질의 ("진행 상황")
- * 4. 크로스 프로젝트 질의 ("두 프로젝트 비교")
- * 5. 기본: Claude에 전달 + 컨텍스트 인리치먼트
+ * Decision priority:
+ * 1. Session management commands (/sessions, /use, /close, /new)
+ * 2. Work history queries
+ * 3. Project status queries
+ * 4. Cross-project queries
+ * 5. Default: forward to Claude + context enrichment
  */
 export class AgentBrain {
   constructor(
@@ -23,36 +23,36 @@ export class AgentBrain {
   ) {}
 
   /**
-   * 입력 분석 — 의도 판별
+   * Analyze input — determine intent
    */
   async analyzeIntent(
     input: string,
     source: InputSource,
     currentSessionId?: string,
   ): Promise<Intent> {
-    // 1. 세션 관리 명령
+    // 1. Session management commands
     const sessionCmd = this.parseSessionCommand(input);
     if (sessionCmd) return sessionCmd;
 
-    // 2. 작업 이력 질의
+    // 2. Work history query
     if (this.isHistoryQuery(input)) {
       const answer = await this.answerHistoryQuery(input);
       return { type: 'ANSWER_FROM_CONTEXT', answer, confidence: 0.85 };
     }
 
-    // 3. 프로젝트 현황
+    // 3. Project status
     if (this.isStatusQuery(input)) {
       const answer = await this.generateStatusReport();
       return { type: 'ANSWER_FROM_CONTEXT', answer, confidence: 0.9 };
     }
 
-    // 4. 크로스 프로젝트
+    // 4. Cross-project query
     if (this.isCrossProjectQuery(input)) {
       const answer = await this.crossProjectReasoning(input);
       return { type: 'ANSWER_FROM_CONTEXT', answer, confidence: 0.7 };
     }
 
-    // 5. 기본: Claude에 전달
+    // 5. Default: forward to Claude
     return {
       type: 'FORWARD_TO_CLAUDE',
       sessionId: currentSessionId,
@@ -62,7 +62,7 @@ export class AgentBrain {
   }
 
   /**
-   * 응답 인리치먼트 — Claude 응답에 Codex 인사이트 추가
+   * Enrich response — add Codex insights to Claude response
    */
   async enrichResponse(
     response: ProcessedResponse,
@@ -110,7 +110,7 @@ export class AgentBrain {
   }
 
   /**
-   * 입력 인리치먼트 — Claude 전달 전 컨텍스트 주입
+   * Enrich input — inject context before forwarding to Claude
    */
   private async enrichInput(input: string, _sessionId?: string): Promise<string> {
     return input;

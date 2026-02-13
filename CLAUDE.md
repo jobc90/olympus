@@ -11,7 +11,7 @@
 
 ## Architecture
 
-Olympus는 Claude CLI를 중심으로 한 Multi-AI 협업 개발 플랫폼이다. v1.0부터 19개 Custom Agent + Team Engineering Protocol을 내장한다.
+Olympus is a Multi-AI collaborative development platform centered on Claude CLI. Starting from v1.0, it includes 19 Custom Agents and the Team Engineering Protocol.
 
 ### Package Dependencies (Build-time)
 ```
@@ -36,209 +36,209 @@ telegram-bot ←──HTTP──→ gateway (served by cli `olympus server start
 ```
 ┌──────────────────────── Gateway ─────────────────────────┐
 │                                                           │
-│  Claude CLI ◄── CliRunner ──────► stdout 실시간 스트리밍  │
-│  Codex CLI  ◄── CodexAdapter ◄──► codex 패키지           │
-│  Gemini CLI ◄── GeminiAdvisor ──► 컨텍스트 보강 (Athena) │
-│                     │                                     │
-│                     └──► Codex 채팅 / Worker 작업에       │
-│                          프로젝트 분석 결과 자동 주입     │
+│  Claude CLI ◄── CliRunner ──────► stdout real-time stream │
+│  Codex CLI  ◄── CodexAdapter ◄──► codex package          │
+│  Gemini CLI ◄── GeminiAdvisor ──► context enrichment     │
+│                     │              (Athena)               │
+│                     └──► Auto-injects project analysis    │
+│                          into Codex chat / Worker tasks   │
 │                                                           │
 │  WorkerRegistry · MemoryStore · SessionStore              │
-│  LocalContextStore (SQLite + FTS5 계층적 컨텍스트)        │
+│  LocalContextStore (SQLite + FTS5 hierarchical context)   │
 └───────────────────────────────────────────────────────────┘
 ```
 
 ### Core Pipeline (tmux-free)
-1. **Gateway** (`packages/gateway/`) — HTTP API + WebSocket 서버
-2. **CliRunner** (`gateway/src/cli-runner.ts`) — CLI 프로세스 spawn → JSON/JSONL → parse + stdout 실시간 스트리밍
-3. **Dashboard** (`packages/web/`) — 실시간 대시보드 (LiveOutputPanel, AgentHistoryPanel, SessionCostTracker)
-4. **Telegram Bot** (`packages/telegram-bot/`) — HTTP API 기반 동기/비동기 통신
+1. **Gateway** (`packages/gateway/`) — HTTP API + WebSocket server
+2. **CliRunner** (`gateway/src/cli-runner.ts`) — Spawn CLI process → JSON/JSONL → parse + stdout real-time streaming
+3. **Dashboard** (`packages/web/`) — Real-time dashboard (LiveOutputPanel, AgentHistoryPanel, SessionCostTracker)
+4. **Telegram Bot** (`packages/telegram-bot/`) — HTTP API-based sync/async communication
 
-### CLI 실행 방식
-- **`olympus server start`** — Gateway + Dashboard + Telegram Bot 통합 실행
-- **`olympus start`** — Claude CLI를 현재 터미널에서 foreground 실행 (`spawn + stdio: 'inherit'`)
-- **`olympus start-trust`** — `--dangerously-skip-permissions` 모드
+### CLI Execution Modes
+- **`olympus server start`** — Unified startup of Gateway + Dashboard + Telegram Bot
+- **`olympus start`** — Run Claude CLI in foreground on current terminal (`spawn + stdio: 'inherit'`)
+- **`olympus start-trust`** — `--dangerously-skip-permissions` mode
 
 ### API Endpoints
 
 #### Health & Auth
-- `GET /healthz` — 헬스체크 (인증 불필요)
-- `POST /api/auth` — API Key 검증
-- `POST /api/chat` — 경량 Gemini 채팅 (빠른 응답)
+- `GET /healthz` — Health check (no auth required)
+- `POST /api/auth` — API Key verification
+- `POST /api/chat` — Lightweight Gemini chat (fast response)
 
 #### CLI Runner
-- `POST /api/cli/run` — 동기 CLI 실행
-- `POST /api/cli/run/async` — 비동기 CLI 실행 (즉시 taskId 반환)
-- `GET /api/cli/run/:id/status` — 비동기 작업 상태 조회
-- `GET /api/cli/sessions` — 저장된 CLI 세션 목록
-- `DELETE /api/cli/sessions/:id` — CLI 세션 삭제
+- `POST /api/cli/run` — Synchronous CLI execution
+- `POST /api/cli/run/async` — Asynchronous CLI execution (returns taskId immediately)
+- `GET /api/cli/run/:id/status` — Async task status query
+- `GET /api/cli/sessions` — Saved CLI session list
+- `DELETE /api/cli/sessions/:id` — Delete CLI session
 
 #### Workers
-- `POST /api/workers/register` — 워커 등록
-- `GET /api/workers` — 워커 목록
-- `DELETE /api/workers/:id` — 워커 삭제
-- `POST /api/workers/:id/heartbeat` — 워커 하트비트
-- `POST /api/workers/:id/task` — 워커에 작업 할당
-- `POST /api/workers/tasks/:taskId/result` — 워커 작업 결과 보고
-- `GET /api/workers/tasks/:taskId` — 워커 작업 상태 조회
+- `POST /api/workers/register` — Register worker
+- `GET /api/workers` — Worker list
+- `DELETE /api/workers/:id` — Delete worker
+- `POST /api/workers/:id/heartbeat` — Worker heartbeat
+- `POST /api/workers/:id/task` — Assign task to worker
+- `POST /api/workers/tasks/:taskId/result` — Report worker task result
+- `GET /api/workers/tasks/:taskId` — Worker task status query
 
 #### Codex
-- `POST /api/codex/chat` — Codex 대화 (@멘션 시 워커 위임)
-- `POST /api/codex/route` — Codex Orchestrator 라우팅
-- `POST /api/codex/summarize` — 경량 텍스트 요약
+- `POST /api/codex/chat` — Codex conversation (delegates to worker on @mention)
+- `POST /api/codex/route` — Codex Orchestrator routing
+- `POST /api/codex/summarize` — Lightweight text summarization
 
 #### Runs (Orchestration)
-- `POST /api/runs` — 새 실행 생성
-- `GET /api/runs` — 전체 실행 목록
-- `GET /api/runs/:id` — 실행 상태 조회
-- `DELETE /api/runs/:id` — 실행 취소
+- `POST /api/runs` — Create new run
+- `GET /api/runs` — List all runs
+- `GET /api/runs/:id` — Get run status
+- `DELETE /api/runs/:id` — Cancel run
 
 #### Sessions
-- `POST /api/sessions` — 세션 생성
-- `GET /api/sessions` — 활성 세션 목록
-- `GET /api/sessions/:id` — 세션 조회
-- `GET /api/sessions/:id/context` — 세션 + 연결된 컨텍스트 조회
-- `DELETE /api/sessions/:id` — 세션 종료
-- `POST /api/sessions/:id/input` — *deprecated* (POST /api/cli/run 사용)
-- `GET /api/sessions/:id/output` — *deprecated* (CLI streaming 사용)
+- `POST /api/sessions` — Create session
+- `GET /api/sessions` — List active sessions
+- `GET /api/sessions/:id` — Get session
+- `GET /api/sessions/:id/context` — Get session + linked context
+- `DELETE /api/sessions/:id` — Terminate session
+- `POST /api/sessions/:id/input` — *deprecated* (use POST /api/cli/run)
+- `GET /api/sessions/:id/output` — *deprecated* (use CLI streaming)
 
 #### Tasks (Context OS)
-- `GET /api/tasks` — 루트 태스크 목록 (?format=tree로 트리 조회)
-- `POST /api/tasks` — 태스크 생성
-- `GET /api/tasks/:id` — 태스크 조회
-- `PATCH /api/tasks/:id` — 태스크 수정
-- `DELETE /api/tasks/:id` — 태스크 삭제 (soft)
-- `GET /api/tasks/:id/children` — 하위 태스크 목록
-- `GET /api/tasks/:id/context` — 태스크 + 해결된 컨텍스트
-- `GET /api/tasks/:id/history` — 컨텍스트 변경 이력
-- `GET /api/tasks/search` — 태스크 검색 (?q=)
-- `GET /api/tasks/stats` — 태스크 통계
+- `GET /api/tasks` — Root task list (?format=tree for tree view)
+- `POST /api/tasks` — Create task
+- `GET /api/tasks/:id` — Get task
+- `PATCH /api/tasks/:id` — Update task
+- `DELETE /api/tasks/:id` — Delete task (soft)
+- `GET /api/tasks/:id/children` — Child task list
+- `GET /api/tasks/:id/context` — Task + resolved context
+- `GET /api/tasks/:id/history` — Context change history
+- `GET /api/tasks/search` — Search tasks (?q=)
+- `GET /api/tasks/stats` — Task statistics
 
 #### Contexts (Context OS)
-- `GET /api/contexts` — 컨텍스트 목록 (?scope=, ?format=tree)
-- `POST /api/contexts` — 컨텍스트 생성
-- `GET /api/contexts/:id` — 컨텍스트 조회
-- `PATCH /api/contexts/:id` — 컨텍스트 수정 (낙관적 잠금, expectedVersion 필수)
-- `DELETE /api/contexts/:id` — 컨텍스트 삭제 (soft)
-- `GET /api/contexts/:id/versions` — 버전 이력
-- `GET /api/contexts/:id/children` — 하위 컨텍스트
-- `POST /api/contexts/:id/merge` — 병합 요청 (비동기 202)
-- `POST /api/contexts/:id/report-upstream` — 상위 컨텍스트에 보고 (비동기 202)
+- `GET /api/contexts` — Context list (?scope=, ?format=tree)
+- `POST /api/contexts` — Create context
+- `GET /api/contexts/:id` — Get context
+- `PATCH /api/contexts/:id` — Update context (optimistic locking, expectedVersion required)
+- `DELETE /api/contexts/:id` — Delete context (soft)
+- `GET /api/contexts/:id/versions` — Version history
+- `GET /api/contexts/:id/children` — Child contexts
+- `POST /api/contexts/:id/merge` — Merge request (async 202)
+- `POST /api/contexts/:id/report-upstream` — Report to parent context (async 202)
 
 #### Operations
-- `GET /api/operations/:id` — 비동기 작업 상태 조회
+- `GET /api/operations/:id` — Async operation status query
 
 #### Local Context
-- `GET /api/local-context/projects` — 루트 전체 프로젝트 컨텍스트
-- `GET /api/local-context/:encodedPath/summary` — 프로젝트 통합 컨텍스트
-- `GET /api/local-context/:encodedPath/workers` — 워커 컨텍스트 목록
-- `GET /api/local-context/:encodedPath/injection` — 주입용 컨텍스트
+- `GET /api/local-context/projects` — Root-level all project contexts
+- `GET /api/local-context/:encodedPath/summary` — Project integrated context
+- `GET /api/local-context/:encodedPath/workers` — Worker context list
+- `GET /api/local-context/:encodedPath/injection` — Context for injection
 
 #### Gemini Advisor
-- `GET /api/gemini-advisor/status` — Gemini Advisor 상태
-- `GET /api/gemini-advisor/projects` — 캐시된 프로젝트 분석 목록
-- `GET /api/gemini-advisor/projects/:encodedPath` — 특정 프로젝트 분석
-- `POST /api/gemini-advisor/refresh` — 수동 전체 갱신
-- `POST /api/gemini-advisor/analyze/:encodedPath` — 특정 프로젝트 즉시 분석
+- `GET /api/gemini-advisor/status` — Gemini Advisor status
+- `GET /api/gemini-advisor/projects` — Cached project analysis list
+- `GET /api/gemini-advisor/projects/:encodedPath` — Specific project analysis
+- `POST /api/gemini-advisor/refresh` — Manual full refresh
+- `POST /api/gemini-advisor/analyze/:encodedPath` — Analyze specific project immediately
 
 ### WebSocket Events
 
-WebSocket 연결은 `GATEWAY_PATH` 경로로 수립되며, `connect` 메시지로 인증 후 이벤트를 수신한다.
+WebSocket connections are established on the `GATEWAY_PATH` path. After authentication via a `connect` message, events can be received.
 
 #### Client → Server
-- `connect` — API Key 인증 + 클라이언트 등록
-- `subscribe` — 특정 Run/Session 구독
-- `unsubscribe` — 구독 해제
-- `cancel` — Run 취소
-- `ping` — 하트비트
-- `rpc` — RPC 메서드 호출
+- `connect` — API Key auth + client registration
+- `subscribe` — Subscribe to specific Run/Session
+- `unsubscribe` — Unsubscribe
+- `cancel` — Cancel Run
+- `ping` — Heartbeat
+- `rpc` — RPC method call
 
 #### Server → Client (Broadcast)
-- `connected` — 인증 성공 응답
-- `runs:list` — 전체 실행 목록 (초기 스냅샷 + 변경 시)
-- `sessions:list` — 활성 세션 목록 (초기 스냅샷 + 변경 시)
-- `cli:stream` — CLI stdout 실시간 청크
-- `cli:complete` — CLI 실행 완료 결과
-- `gemini:status` — Gemini Advisor 상태 (초기 스냅샷 + 변경 시)
-- `gemini:analysis` — Gemini 분석 완료
+- `connected` — Auth success response
+- `runs:list` — Full run list (initial snapshot + on change)
+- `sessions:list` — Active session list (initial snapshot + on change)
+- `cli:stream` — CLI stdout real-time chunks
+- `cli:complete` — CLI execution completion result
+- `gemini:status` — Gemini Advisor status (initial snapshot + on change)
+- `gemini:analysis` — Gemini analysis completed
 
 #### Server → Client (Worker Events)
-- `worker:task:assigned` — 워커에 작업 할당됨
-- `worker:task:completed` — 워커 작업 완료
-- `worker:task:timeout` — 워커 작업 타임아웃 (부분 결과)
-- `worker:task:final_after_timeout` — 타임아웃 후 최종 완료
+- `worker:task:assigned` — Task assigned to worker
+- `worker:task:completed` — Worker task completed
+- `worker:task:timeout` — Worker task timeout (partial result)
+- `worker:task:final_after_timeout` — Final completion after timeout
 
 #### Server → Client (Agent Events, legacy/hybrid mode)
-- `agent:progress` — 에이전트 진행 상황
-- `agent:result` — 에이전트 결과
-- `agent:error` — 에이전트 오류
-- `agent:approval` — 에이전트 승인 요청
-- `worker:started` — 레거시 워커 시작
-- `worker:output` — 레거시 워커 출력
-- `worker:done` — 레거시 워커 완료
+- `agent:progress` — Agent progress
+- `agent:result` — Agent result
+- `agent:error` — Agent error
+- `agent:approval` — Agent approval request
+- `worker:started` — Legacy worker started
+- `worker:output` — Legacy worker output
+- `worker:done` — Legacy worker done
 
 #### Server → Client (Session Events, subscribed clients only)
-- `session:screen` — 세션 화면 출력
-- `session:error` — 세션 오류
-- `session:closed` — 세션 종료
+- `session:screen` — Session screen output
+- `session:error` — Session error
+- `session:closed` — Session closed
 
 #### Server → Client (Context Events)
-- `context:created` — 컨텍스트 생성됨
-- `context:updated` — 컨텍스트 수정됨
-- `context:merge_requested` — 병합 요청됨
-- `context:merged` — 병합 완료
-- `context:conflict_detected` — 병합 충돌 감지
-- `context:reported_upstream` — 상위 보고 완료
+- `context:created` — Context created
+- `context:updated` — Context updated
+- `context:merge_requested` — Merge requested
+- `context:merged` — Merge completed
+- `context:conflict_detected` — Merge conflict detected
+- `context:reported_upstream` — Upstream report completed
 
-### Telegram Bot 워커 위임
-- **직접 멘션 방식**: `@워커이름 작업` 형식으로 사용자가 워커에 직접 작업 지시
-- **Team 모드**: `/team 작업` 봇 커맨드 또는 `@워커 team 작업` 접두어로 Team Engineering Protocol 활성화
-- **인라인 쿼리**: `@봇이름` 입력 시 워커 목록 표시
-- **`/workers` 명령어**: 워커 목록 조회
+### Telegram Bot Worker Delegation
+- **Direct mention**: `@workerName task` format for users to directly instruct workers
+- **Team mode**: `/team task` bot command or `@worker team task` prefix to activate Team Engineering Protocol
+- **Inline query**: Type `@botName` to display worker list
+- **`/workers` command**: View worker list
 
 ### 19 Custom Agents (`.claude/agents/`)
 - **Core 3**: explore (Haiku), executor (Sonnet), writer (Haiku)
 - **On-Demand 16**: architect, analyst, planner, designer, researcher, code-reviewer, verifier, qa-tester, vision, test-engineer, build-fixer, git-master, api-reviewer, performance-reviewer, security-reviewer, style-reviewer
 
 ### Team Engineering Protocol v3.1 (`/team` command — AgentTeam Benchmark)
-- **Step 0**: Session Setup (`.team/` 상태 디렉토리 생성)
-- **Step 1**: Requirement Registry (ZERO LOSS — analyst + explore 병렬, `.team/requirements.md` 영속 저장)
+- **Step 0**: Session Setup (`.team/` state directory creation)
+- **Step 1**: Requirement Registry (ZERO LOSS — analyst + explore parallel, `.team/requirements.md` persistent storage)
 - **Step 2**: Work Decomposition + **File Ownership Analysis** (planner DAG, **Shared File Zone**, **File Ownership Matrix** → `.team/ownership.json`, **Dependency DAG** — WI-level blockedBy, architect Quality Gate)
 - **Step 3**: Team Creation (**1 WI = 1 Teammate** dynamic scaling, `{subagent_type}-{N}` naming, **OWNED + SHARED FILES + BOUNDARY** per WI)
 - **Step 4**: Consensus Protocol (codex_analyze MCP)
-- **Step 5**: **DAG-Based Parallel Execution** (ai_team_patch MCP, **blockedBy 없는 WI 전부 즉시 시작**, **Streaming Reconciliation 3-Tier** — C-1 Per-WI 경량검증 + C-2 Checkpoint 빌드 + C-3 Final)
-- **Step 6**: Multi-Reviewer Gate (code-reviewer + style-reviewer 항상, api/security/performance/vision 조건부 병렬)
-- **Step 7**: Spec Verification (verifier — `.team/requirements.md` 기반 R# 증거 검증)
+- **Step 5**: **DAG-Based Parallel Execution** (ai_team_patch MCP, **all WIs without blockedBy start immediately**, **Streaming Reconciliation 3-Tier** — C-1 Per-WI lightweight verification + C-2 Checkpoint build + C-3 Final)
+- **Step 6**: Multi-Reviewer Gate (code-reviewer + style-reviewer always, api/security/performance/vision conditional parallel)
+- **Step 7**: Spec Verification (verifier — `.team/requirements.md` based R# evidence verification)
 - **Step 8**: Evidence-Based QA (qa-tester)
-- **Step 9**: Finalization (writer 문서화 + git-master 커밋 정리 + `.team/` 삭제)
-- **Circuit Breaker**: Task metadata `failCount` 영구 기록, 3회 실패 시 architect escalate
-- **File Ownership Invariant**: 동일 시점 1파일 = 최대 1팀원, SHARED 파일은 리더/전담자 관리
-- **Crash Recovery**: 팀원 무응답 30초→재시도, 60초→재spawn + WI 재할당
+- **Step 9**: Finalization (writer documentation + git-master commit cleanup + `.team/` deletion)
+- **Circuit Breaker**: Task metadata `failCount` permanent record, escalate to architect after 3 failures
+- **File Ownership Invariant**: At any point, 1 file = max 1 teammate; SHARED files managed by leader/designated owner
+- **Crash Recovery**: Teammate unresponsive 30s → retry, 60s → re-spawn + WI reassignment
 
 ## Development
 
 ```bash
-pnpm install && pnpm build    # 전체 빌드
-pnpm test                     # 전체 테스트
-pnpm lint                     # TypeScript 타입 체크
+pnpm install && pnpm build    # Full build
+pnpm test                     # Full test suite
+pnpm lint                     # TypeScript type check
 ```
 
-### CLI 백엔드 설정
-- **Claude**: `-p --output-format json` → JSON 단일 객체
-- **Codex**: `exec --json` → JSONL (thread/turn/item 이벤트)
+### CLI Backend Configuration
+- **Claude**: `-p --output-format json` → JSON single object
+- **Codex**: `exec --json` → JSONL (thread/turn/item events)
 - **skipPermissions**: Codex = `--dangerously-bypass-approvals-and-sandbox`
 
 ## Olympus Local Data
 
-`~/.olympus/` 디렉토리:
-- `sessions.json` — 세션 메타데이터
-- `worker-logs/` — 워커 출력 로그
-- `context.db` — Context OS workspace/project/task 데이터
+`~/.olympus/` directory:
+- `sessions.json` — Session metadata
+- `worker-logs/` — Worker output logs
+- `context.db` — Context OS workspace/project/task data
 
 ## Key Conventions
 
-- `tmux` 의존성 없음 (v0.4.0에서 완전 제거)
-- Gateway `sessionTimeout <= 0` = 타임아웃 없음
+- No `tmux` dependency (fully removed in v0.4.0)
+- Gateway `sessionTimeout <= 0` = no timeout
 - `bot.launch()` — NEVER await (fire-and-forget + `.catch()`)
-- ESM 환경: `vi.spyOn(cp, 'spawn')` 불가, 순수 함수 테스트 집중
-- `parseRoute`의 query는 `Record<string, string>` (Map 아님)
+- ESM environment: `vi.spyOn(cp, 'spawn')` not possible, focus on pure function tests
+- `parseRoute` query is `Record<string, string>` (not Map)

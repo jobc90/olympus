@@ -14,17 +14,17 @@ import type {
 } from './types.js';
 
 /**
- * CodexOrchestrator — 메인 진입점
+ * CodexOrchestrator — Main entry point
  *
- * 생명주기:
+ * Lifecycle:
  * 1. new CodexOrchestrator(config)
- * 2. await orchestrator.initialize()   ← 프로젝트 등록, DB 초기화
- * 3. orchestrator.processInput(input)  ← 메인 루프
- * 4. orchestrator.shutdown()           ← 정리
+ * 2. await orchestrator.initialize()   ← Register projects, init DB
+ * 3. orchestrator.processInput(input)  ← Main loop
+ * 4. orchestrator.shutdown()           ← Cleanup
  *
  * Events:
- * - 'session:status'  — 세션 상태 변경
- * - 'error'           — 에러
+ * - 'session:status'  — Session status change
+ * - 'error'           — Error
  */
 export class CodexOrchestrator extends EventEmitter {
   private router: Router;
@@ -41,7 +41,7 @@ export class CodexOrchestrator extends EventEmitter {
     this.router = new Router(this.sessionManager);
     this.agentBrain = new AgentBrain(this.sessionManager);
 
-    // Forward session status events
+    // Forward session status events to gateway
     this.sessionManager.on('session:status', (event) => {
       this.emit('session:status', event);
     });
@@ -52,7 +52,7 @@ export class CodexOrchestrator extends EventEmitter {
   }
 
   /**
-   * 초기화 — 프로젝트 등록
+   * Initialize — register projects
    */
   async initialize(): Promise<void> {
     if (this._initialized) return;
@@ -64,7 +64,7 @@ export class CodexOrchestrator extends EventEmitter {
   }
 
   /**
-   * 메인 엔트리 — 사용자 입력 처리
+   * Main entry — process user input
    */
   async processInput(input: UserInput): Promise<CodexProcessResult> {
     const decision = await this.router.route(input);
@@ -128,35 +128,35 @@ export class CodexOrchestrator extends EventEmitter {
   // ── External API (called by Gateway Adapter) ──
 
   /**
-   * 세션 목록
+   * List sessions
    */
   getSessions(): ManagedSession[] {
     return this.sessionManager.listSessions();
   }
 
   /**
-   * 세션 생성
+   * Create session
    */
   async createSession(projectPath: string, name?: string): Promise<ManagedSession> {
     return this.sessionManager.createSession(projectPath, name);
   }
 
   /**
-   * 세션 종료
+   * Close session
    */
   closeSession(sessionId: string): boolean {
     return this.sessionManager.closeSession(sessionId);
   }
 
   /**
-   * 프로젝트 목록 (deprecated — Gateway /api/local-context API 사용 권장)
+   * List projects (deprecated — use Gateway /api/local-context API)
    */
   async getProjects(): Promise<ProjectMetadata[]> {
     return [];
   }
 
   /**
-   * 전역 검색 (deprecated — Gateway /api/local-context API 사용 권장)
+   * Global search (deprecated — use Gateway /api/local-context API)
    */
   async globalSearch(_query: string, _limit?: number): Promise<GlobalSearchResult[]> {
     return [];
@@ -182,7 +182,7 @@ export class CodexOrchestrator extends EventEmitter {
   }
 
   /**
-   * 종료
+   * Shutdown
    */
   async shutdown(): Promise<void> {
     this.sessionManager.shutdown();

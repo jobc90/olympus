@@ -991,6 +991,39 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     }
   }, []);
 
+  // HTTP chat helpers for agent-specific routing
+  const chatWithGemini = useCallback(async (message: string): Promise<{ reply: string }> => {
+    const res = await fetch(`http://${host}:${port}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify({ message }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+      throw new Error((err as { message?: string }).message ?? `HTTP ${res.status}`);
+    }
+    return await res.json() as { reply: string };
+  }, [host, port, apiKey]);
+
+  const chatWithCodex = useCallback(async (message: string): Promise<{ type: string; response: string }> => {
+    const res = await fetch(`http://${host}:${port}/api/codex/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify({ message }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+      throw new Error((err as { message?: string }).message ?? `HTTP ${res.status}`);
+    }
+    return await res.json() as { type: string; response: string };
+  }, [host, port, apiKey]);
+
   return {
     ...state,
     subscribe,
@@ -1007,5 +1040,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     codexProjects,
     codexSessions,
     codexSearch,
+    chatWithGemini,
+    chatWithCodex,
   };
 }
