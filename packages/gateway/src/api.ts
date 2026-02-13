@@ -540,9 +540,24 @@ ${body.message}`;
         if (body.isFinalAfterTimeout) {
           // Final completion after timeout
           workerRegistry.completeTask(id, result);
+          onCliComplete?.(result);
 
-          // Broadcast IMMEDIATELY (before any async work)
-          const rawSummary = (result.text ?? '').slice(0, 2000);
+          // Codex summarization → then broadcast (user accepts delay)
+          let summary = (result.text ?? '').slice(0, 2000);
+          try {
+            const { runCli } = await import('./cli-runner.js');
+            const summarizeResult = await runCli({
+              prompt: `Summarize the following work result from "${task.workerName}" concisely. Key outcomes only, no greetings or extra explanations. Respond in Korean.\n\n---\n${(result.text ?? '').slice(0, 4000)}`,
+              provider: 'codex',
+              model: 'gpt-5.3-codex',
+              dangerouslySkipPermissions: true,
+              timeoutMs: 30_000,
+            });
+            if (summarizeResult.success && summarizeResult.text) {
+              summary = summarizeResult.text;
+            }
+          } catch { /* summarization failed — use raw text */ }
+
           onWorkerEvent?.('worker:task:final_after_timeout', {
             taskId: id,
             workerId: task.workerId,
@@ -550,9 +565,8 @@ ${body.message}`;
             success: body.success,
             durationMs: body.durationMs,
             chatId: task.chatId,
-            summary: rawSummary,
+            summary,
           });
-          onCliComplete?.(result);
 
           // Background: LocalContextStore + Gemini refresh (don't block response)
           (async () => {
@@ -588,7 +602,7 @@ ${body.message}`;
               } catch { /* save failure — silent */ }
             }
 
-            // Trigger Gemini incremental refresh
+            // Trigger Gemini incremental refresh (reads LocalContextStore)
             if (geminiAdvisor) {
               const taskWorker = workerRegistry?.getAll().find(w => w.id === task.workerId);
               if (taskWorker?.projectPath) {
@@ -601,11 +615,26 @@ ${body.message}`;
           return;
         }
 
-        // ── Normal completion (existing logic) ──
+        // ── Normal completion ──
         workerRegistry.completeTask(id, result);
+        onCliComplete?.(result);
 
-        // Broadcast IMMEDIATELY (before any async work)
-        const rawSummary = (result.text ?? '').slice(0, 2000);
+        // Codex summarization → then broadcast (user accepts delay)
+        let summary = (result.text ?? '').slice(0, 2000);
+        try {
+          const { runCli } = await import('./cli-runner.js');
+          const summarizeResult = await runCli({
+            prompt: `Summarize the following work result from "${task.workerName}" concisely. Key outcomes only, no greetings or extra explanations. Respond in Korean.\n\n---\n${(result.text ?? '').slice(0, 4000)}`,
+            provider: 'codex',
+            model: 'gpt-5.3-codex',
+            dangerouslySkipPermissions: true,
+            timeoutMs: 30_000,
+          });
+          if (summarizeResult.success && summarizeResult.text) {
+            summary = summarizeResult.text;
+          }
+        } catch { /* summarization failed — use raw text */ }
+
         onWorkerEvent?.('worker:task:completed', {
           taskId: id,
           workerId: task.workerId,
@@ -613,9 +642,8 @@ ${body.message}`;
           success: body.success,
           durationMs: body.durationMs,
           chatId: task.chatId,
-          summary: rawSummary,
+          summary,
         });
-        onCliComplete?.(result);
 
         // Background: LocalContextStore + Gemini refresh (don't block response)
         (async () => {
@@ -651,7 +679,7 @@ ${body.message}`;
             } catch { /* save failure — silent */ }
           }
 
-          // Trigger Gemini incremental refresh
+          // Trigger Gemini incremental refresh (reads LocalContextStore)
           if (geminiAdvisor) {
             const taskWorker = workerRegistry?.getAll().find(w => w.id === task.workerId);
             if (taskWorker?.projectPath) {
