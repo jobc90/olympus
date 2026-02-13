@@ -424,12 +424,29 @@ ls .claude/agents/
 ### 패키지 구조 (9개)
 
 ```
-protocol → core → gateway → cli
-    │        │       ↑        ↑
-    ├→ client → tui ─┤────────┤
-    │        └→ web  │        │
-    ├→ telegram-bot ─┘────────┘
+protocol → core → gateway ──→ cli
+    │        │        ↑         ↑
+    ├→ client → tui ──┤─────────┤
+    │        └→ web   │         │
+    ├→ telegram-bot ──┘─────────┘
     └→ codex (Codex Orchestrator)
+```
+
+### Gateway 내부 아키텍처
+
+```
+┌──────────────────────── Gateway ─────────────────────────┐
+│                                                           │
+│  Claude CLI ◄── CliRunner ──────► stdout 실시간 스트리밍  │
+│  Codex CLI  ◄── CodexAdapter ◄──► codex 패키지           │
+│  Gemini CLI ◄── GeminiAdvisor ──► 컨텍스트 보강 (Athena) │
+│                     │                                     │
+│                     └──► Codex 채팅 / Worker 작업에       │
+│                          프로젝트 분석 결과 자동 주입     │
+│                                                           │
+│  WorkerRegistry · MemoryStore · SessionStore              │
+│  LocalContextStore (SQLite + FTS5 계층적 컨텍스트)        │
+└───────────────────────────────────────────────────────────┘
 ```
 
 | 패키지 | 역할 |

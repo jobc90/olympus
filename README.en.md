@@ -424,12 +424,29 @@ ls .claude/agents/
 ### Package Structure (9 Packages)
 
 ```
-protocol → core → gateway → cli
-    │        │       ↑        ↑
-    ├→ client → tui ─┤────────┤
-    │        └→ web  │        │
-    ├→ telegram-bot ─┘────────┘
+protocol → core → gateway ──→ cli
+    │        │        ↑         ↑
+    ├→ client → tui ──┤─────────┤
+    │        └→ web   │         │
+    ├→ telegram-bot ──┘─────────┘
     └→ codex (Codex Orchestrator)
+```
+
+### Gateway Internal Architecture
+
+```
+┌──────────────────────── Gateway ─────────────────────────┐
+│                                                           │
+│  Claude CLI ◄── CliRunner ──────► real-time stdout stream │
+│  Codex CLI  ◄── CodexAdapter ◄──► codex package          │
+│  Gemini CLI ◄── GeminiAdvisor ──► context enrichment     │
+│                     │              (Athena)               │
+│                     └──► Auto-injects project analysis    │
+│                          into Codex chat / Worker tasks   │
+│                                                           │
+│  WorkerRegistry · MemoryStore · SessionStore              │
+│  LocalContextStore (SQLite + FTS5 hierarchical context)   │
+└───────────────────────────────────────────────────────────┘
 ```
 
 | Package | Role |
