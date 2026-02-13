@@ -49,9 +49,9 @@ export function WorkerTaskBoard({ tasks }: Props) {
         </span>
       </CardHeader>
 
-      <div className="flex-1 overflow-y-auto space-y-2 min-h-0" style={{ maxHeight: '400px' }}>
+      <div className="flex-1 overflow-y-auto space-y-2 min-h-0" style={{ maxHeight: '200px' }}>
         {activeTasks.length === 0 && completedTasks.length === 0 ? (
-          <div className="text-xs text-text-tertiary font-mono text-center py-8">
+          <div className="text-xs text-text-tertiary font-mono text-center py-3">
             No active tasks — assign work via Telegram or CLI
           </div>
         ) : (

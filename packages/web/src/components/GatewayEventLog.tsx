@@ -103,10 +103,10 @@ export function GatewayEventLog({ logs }: Props) {
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto space-y-1 font-mono text-xs min-h-0"
-        style={{ maxHeight: '240px' }}
+        style={{ maxHeight: '160px' }}
       >
         {filteredLogs.length === 0 ? (
-          <div className="text-text-tertiary text-center py-4">
+          <div className="text-text-tertiary text-center py-3">
             Waiting for gateway events...
           </div>
         ) : (

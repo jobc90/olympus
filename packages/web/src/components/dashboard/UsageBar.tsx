@@ -37,9 +37,9 @@ function ProgressBar({ percent }: { percent: number }) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <span
-        className="inline-block h-2.5 rounded-sm"
+        className="inline-block h-3 rounded-sm"
         style={{
-          width: 60,
+          width: 72,
           background: `linear-gradient(to right, ${color} ${percent}%, var(--border) ${percent}%)`,
         }}
       />
@@ -69,7 +69,7 @@ export default function UsageBar({ data }: UsageBarProps) {
   if (!data || !data.timestamp) {
     return (
       <div
-        className="rounded-xl px-4 py-3 font-mono text-xs"
+        className="rounded-xl px-4 py-3 font-mono text-sm"
         style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
       >
         Waiting for statusline data...
@@ -79,7 +79,7 @@ export default function UsageBar({ data }: UsageBarProps) {
 
   return (
     <div
-      className="rounded-xl px-4 py-2.5 font-mono text-xs space-y-1"
+      className="rounded-xl px-4 py-3 font-mono text-sm space-y-1.5"
       style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
     >
       {/* Row 1: Claude — model + context + cost + rate limits */}
