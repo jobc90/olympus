@@ -50,7 +50,7 @@ Claude CLI is powerful. But developing **on your own** has its limits.
 | **Single agent** | One Claude handles everything | 19 specialized agents collaborate with role separation |
 | **Must be at the terminal** | Close your laptop and it's over | Issue commands from bed via Telegram bot |
 | **No visibility into progress** | Scrolling terminal text | Real-time dashboard visualizing all agent activity |
-| **Context is volatile** | Everything forgotten when the session ends | SQLite-based persistent context storage |
+| **Context is volatile** | Everything forgotten when the session ends | SQLite persistent storage + GeminiAdvisor long-term memory synthesis |
 | **One at a time** | 1 terminal = 1 CLI | Up to 5 CLIs running in parallel |
 | **Claude only** | No way to leverage other AIs | Claude + Gemini + Codex collaboration |
 
@@ -61,7 +61,7 @@ Claude CLI is powerful. But developing **on your own** has its limits.
 - 📊 **OlympusMountain Dashboard** — Real-time agent monitoring with a Greek mythology theme
 - 🧠 **LocalContextStore** — Hierarchical context auto-accumulation per project and worker
 - ⚡ **Parallel Execution** — Up to 5 simultaneous CLI spawns via ConcurrencyLimiter
-- 🔮 **GeminiAdvisor** — Gemini analyzes your project and enriches context for Claude/Codex
+- 🔮 **GeminiAdvisor** — Gemini analyzes your project + synthesizes full work history (up to 50 tasks) for Codex long-term memory
 
 ---
 
@@ -193,7 +193,7 @@ Once installed, inside Claude CLI:
 | **Parallel CLI Execution** | ConcurrencyLimiter (up to 5 simultaneous runs) |
 | **Telegram Worker Delegation** | Direct worker commands via `@mention` + `/team` bot command |
 | **LocalContextStore** | SQLite-based hierarchical context store (project/worker level) |
-| **GeminiAdvisor** | Gemini CLI-based project analysis — automatic context enrichment for Codex |
+| **GeminiAdvisor** | Gemini CLI-based project analysis + work history synthesis — Codex long-term memory enrichment |
 | **OlympusMountain v3** | Greek mythology-themed dashboard (20 god avatars, 10 zones, real-time visualization) |
 
 ---
@@ -441,8 +441,10 @@ protocol → core → gateway ──→ cli
 │  Codex CLI  ◄── CodexAdapter ◄──► codex package          │
 │  Gemini CLI ◄── GeminiAdvisor ──► context enrichment     │
 │                     │              (Athena)               │
-│                     └──► Auto-injects project analysis    │
-│                          into Codex chat / Worker tasks   │
+│                     ├──► Auto-injects project analysis    │
+│                     │    into Codex chat / Worker tasks   │
+│                     └──► Memory Synthesizer: ALL worker   │
+│                          history (50) → Codex long-term   │
 │                                                           │
 │  WorkerRegistry · MemoryStore · SessionStore              │
 │  LocalContextStore (SQLite + FTS5 hierarchical context)   │
@@ -470,7 +472,7 @@ protocol → core → gateway ──→ cli
 | **Worker Registry** | `gateway/src/worker-registry.ts` | In-memory worker registration + heartbeat (15s/60s) |
 | **Session Store** | `gateway/src/cli-session-store.ts` | SQLite session storage (token/cost accumulation) |
 | **LocalContextStore** | `core/src/local-context-store.ts` | SQLite hierarchical context (FTS5 full-text search) |
-| **GeminiAdvisor** | `gateway/src/gemini-advisor.ts` | Gemini CLI project analysis (PTY + spawn fallback) |
+| **GeminiAdvisor** | `gateway/src/gemini-advisor.ts` | Gemini CLI project analysis + work history synthesis (PTY + spawn fallback) |
 
 ---
 

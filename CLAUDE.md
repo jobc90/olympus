@@ -40,8 +40,10 @@ telegram-bot ←──HTTP──→ gateway (served by cli `olympus server start
 │  Codex CLI  ◄── CodexAdapter ◄──► codex package          │
 │  Gemini CLI ◄── GeminiAdvisor ──► context enrichment     │
 │                     │              (Athena)               │
-│                     └──► Auto-injects project analysis    │
-│                          into Codex chat / Worker tasks   │
+│                     ├──► Auto-injects project analysis    │
+│                     │    into Codex chat / Worker tasks   │
+│                     └──► Memory Synthesizer: ALL worker   │
+│                          history (50) → workHistory field │
 │                                                           │
 │  WorkerRegistry · MemoryStore · SessionStore              │
 │  LocalContextStore (SQLite + FTS5 hierarchical context)   │

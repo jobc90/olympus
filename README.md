@@ -50,7 +50,7 @@ Claude CLI는 강력합니다. 하지만 **혼자서** 개발하는 데에는 �
 | **에이전트가 1명** | 하나의 Claude가 모든 걸 처리 | 19개 전문 에이전트가 역할을 나눠 협업 |
 | **터미널 앞에 있어야 함** | 노트북 닫으면 끝 | Telegram 봇으로 침대에서도 코딩 지시 |
 | **진행 상황이 보이지 않음** | 터미널 텍스트 스크롤 | 실시간 대시보드로 모든 에이전트 활동 시각화 |
-| **컨텍스트가 휘발** | 세션 끝나면 다 잊어버림 | SQLite 기반 영구 컨텍스트 저장 |
+| **컨텍스트가 휘발** | 세션 끝나면 다 잊어버림 | SQLite 영구 저장 + GeminiAdvisor 장기 기억 합성 |
 | **한 번에 하나만** | 터미널 1개 = CLI 1개 | 최대 5개 CLI 동시 병렬 실행 |
 | **Claude만 쓸 수 있음** | 다른 AI 활용 불가 | Claude + Gemini + Codex 협업 |
 
@@ -61,7 +61,7 @@ Claude CLI는 강력합니다. 하지만 **혼자서** 개발하는 데에는 �
 - 📊 **OlympusMountain 대시보드** — 그리스 신화 테마의 실시간 에이전트 모니터링
 - 🧠 **LocalContextStore** — 프로젝트/워커별 계층적 컨텍스트 자동 축적
 - ⚡ **병렬 실행** — ConcurrencyLimiter로 최대 5개 CLI 동시 spawn
-- 🔮 **GeminiAdvisor** — Gemini가 프로젝트를 분석하여 Claude/Codex에 컨텍스트 보강
+- 🔮 **GeminiAdvisor** — Gemini가 프로젝트 분석 + 전체 작업 이력(최대 50개) 합성하여 Codex 장기 기억 보강
 
 ---
 
@@ -193,7 +193,7 @@ cd packages/cli && npm link    # olympus 글로벌 CLI 등록
 | **병렬 CLI 실행** | ConcurrencyLimiter (최대 5개 동시 실행) |
 | **Telegram 워커 위임** | `@멘션` 방식 워커 직접 지시 + `/team` 봇 명령어 |
 | **LocalContextStore** | SQLite 기반 계층적 컨텍스트 저장소 (프로젝트/워커 레벨) |
-| **GeminiAdvisor** | Gemini CLI 기반 프로젝트 분석 — Codex 컨텍스트 자동 보강 |
+| **GeminiAdvisor** | Gemini CLI 기반 프로젝트 분석 + 작업 이력 합성 — Codex 장기 기억 자동 보강 |
 | **OlympusMountain v3** | 그리스 신화 테마 대시보드 (20 신 아바타, 10 구역, 실시간 시각화) |
 
 ---
@@ -441,8 +441,10 @@ protocol → core → gateway ──→ cli
 │  Codex CLI  ◄── CodexAdapter ◄──► codex 패키지           │
 │  Gemini CLI ◄── GeminiAdvisor ──► 컨텍스트 보강 (Athena) │
 │                     │                                     │
-│                     └──► Codex 채팅 / Worker 작업에       │
-│                          프로젝트 분석 결과 자동 주입     │
+│                     ├──► Codex 채팅 / Worker 작업에       │
+│                     │    프로젝트 분석 결과 자동 주입     │
+│                     └──► 전체 작업 이력(50개) 합성 →     │
+│                          Codex 장기 기억 (workHistory)    │
 │                                                           │
 │  WorkerRegistry · MemoryStore · SessionStore              │
 │  LocalContextStore (SQLite + FTS5 계층적 컨텍스트)        │
@@ -470,7 +472,7 @@ protocol → core → gateway ──→ cli
 | **Worker Registry** | `gateway/src/worker-registry.ts` | 인메모리 워커 등록 + 하트비트 (15초/60초) |
 | **Session Store** | `gateway/src/cli-session-store.ts` | SQLite 세션 저장 (토큰/비용 누적) |
 | **LocalContextStore** | `core/src/local-context-store.ts` | SQLite 계층적 컨텍스트 (FTS5 전문 검색) |
-| **GeminiAdvisor** | `gateway/src/gemini-advisor.ts` | Gemini CLI 프로젝트 분석 (PTY + spawn 폴백) |
+| **GeminiAdvisor** | `gateway/src/gemini-advisor.ts` | Gemini CLI 프로젝트 분석 + 작업 이력 합성 (PTY + spawn 폴백) |
 
 ---
 
