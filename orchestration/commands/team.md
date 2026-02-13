@@ -53,20 +53,28 @@ Step 3 이후는 `Task(subagent_type="{agent-name}", team_name=..., name="{agent
 
 ### Cross-cutting Mechanisms
 
-**Circuit Breaker** — 어떤 Step에서든 동일 이슈 **3회 수정 실패** 시:
-1. `architect`에게 escalate (R# 원문 + 실패 로그)
-2. Architect 판단: 접근법 변경 / 부분 수정 / 근본 한계 → 사용자 보고
-3. 같은 접근법 3회 이상 반복 금지
+**Circuit Breaker** — 어떤 Step에서든 동일 이슈 수정 실패 시:
+- 실패마다 `TaskUpdate(taskId, metadata: { "failCount": N, "lastError": "..." })` 로 카운트 **영구 기록**
+- **failCount ≥ 3** → `architect`에게 escalate (R# 원문 + metadata의 실패 로그 3건)
+- Architect 판단: 접근법 변경 / 부분 수정 / 근본 한계 → 사용자 보고
+- 같은 접근법 3회 이상 반복 금지
 
-**File Ownership Invariant** — 동일 시점에 1파일 = 최대 1팀원. 위반 시 Last Write Wins로 데이터 손실. 충돌 해결법은 Step 2-4 참조.
+**File Ownership Invariant** — 동일 시점에 1파일 = 최대 1팀원. 위반 시 Last Write Wins로 데이터 손실. 충돌 해결법은 Step 2-4, 런타임 검증은 Step 5 Phase C 참조.
+
+**Teammate Crash Recovery** — 팀원 무응답 시:
+1. 30초 무응답 → `SendMessage` 재시도
+2. 60초 무응답 → 새 팀원 spawn (동일 subagent_type) + 동일 WI 재할당
+3. 부분 수정 존재 시 → `git checkout -- {OWNED_FILES}` 후 clean state에서 재시작
 
 ---
 
-## Step 0: Skill & Plugin Discovery
+## Step 0: Session Setup
 
-1. `find-skills`로 관련 스킬 검색
-2. 설치된 플러그인 확인: `postgres-best-practices`, `ui-ux-pro-max`, `vercel-react-best-practices`
-3. 세션에 필요한 스킬 활성화
+1. `find-skills`로 관련 스킬 검색 + 설치된 플러그인 확인
+2. **`.team/` 상태 디렉토리 생성** — 컨텍스트 압축에도 R# Registry, Ownership Matrix 등 핵심 상태를 보존:
+   ```bash
+   mkdir -p .team && grep -qxF '.team/' .gitignore 2>/dev/null || echo '.team/' >> .gitignore
+   ```
 
 ---
 
@@ -116,7 +124,21 @@ Step 3 이후는 `Task(subagent_type="{agent-name}", team_name=..., name="{agent
 
 Requirement Registry를 사용자에게 보여주고 빠진 것이 없는지 확인합니다.
 
-**Output**: R# 테이블 + 파일 매핑. 이후 모든 단계에서 R# 번호로 참조.
+### 1-6. Registry 파일 저장
+
+확정된 R# Registry를 `.team/requirements.md`에 저장:
+
+```bash
+cat > .team/requirements.md << 'EOF'
+| R# | 요구사항 (원문) | 출처 | 관련 파일 |
+|----|----------------|------|----------|
+| R1 | ... | ... | ... |
+EOF
+```
+
+**이후 R# 참조 시 이 파일을 `Read`하여 원문 확인.** 컨텍스트 압축 후에도 원문 유실을 방지합니다.
+
+**Output**: `.team/requirements.md` 파일. 이후 모든 단계에서 R# 번호로 참조.
 
 ---
 
@@ -159,6 +181,16 @@ explore가 수집한 파일 매핑으로, 각 WI가 수정할 파일을 매트�
 | src/api/auth.ts      | ✏️ |    |    | WI-1 |
 | src/components/Login  |    | ✏️ |    | WI-2 |
 | src/models/user.ts   | ✏️ |    | ✏️ | ⚠️ CONFLICT |
+```
+
+Matrix를 `.team/ownership.json`에 저장 (Phase C Reconciliation 자동 검증용):
+
+```json
+{
+  "WI-1": ["src/api/auth.ts"],
+  "WI-2": ["src/components/Login.tsx"],
+  "WI-3": ["src/models/user.ts"]
+}
 ```
 
 #### B. Conflict Resolution
@@ -276,14 +308,22 @@ for each Wave:
 
 ### Phase C — Leader Reconciliation (매 Wave 완료 후)
 
+`.team/ownership.json`과 `git diff`를 대조하여 검증:
+
+```bash
+# 1. 파일 소유권 위반 검증 — ownership.json의 WI별 파일 목록과 실제 변경 파일 대조
+CHANGED=$(git diff --name-only HEAD~1)
+# → 해당 Wave에 할당된 WI의 OWNED FILES에 없는 파일이 변경되었으면 ⚠️ VIOLATION
+
+# 2~4. 빌드/타입/테스트
+pnpm build && pnpm lint && pnpm test
 ```
-[WAVE {N} RECONCILIATION]
-1. 파일 소유권 위반: git diff --name-only → OWNED FILES 대조 → 위반 시 rollback/조율
-2. 빌드: pnpm build → 실패 시 build-fixer 위임
-3. 타입: pnpm lint → 에러 시 관련 팀원 수정
-4. 테스트: pnpm test → 실패 시 원인 파악 → 팀원 수정
-→ ✅ PASS / ❌ FAIL (FAIL 시 해결 후 Wave 재실행, Circuit Breaker 적용)
-```
+
+결과 판정:
+- 소유권 위반 → `git checkout -- {file}` 후 소유 팀원에게 재위임
+- 빌드 실패 → `build-fixer` 위임
+- 타입/테스트 실패 → 관련 팀원 수정 지시
+- **→ ✅ PASS / ❌ FAIL** (FAIL 시 Wave 재실행, Circuit Breaker 적용)
 
 ---
 
@@ -323,7 +363,7 @@ Circuit Breaker 적용 — 동일 이슈 3회 실패 시 architect escalate.
 
 > Code Review와 별도로, R# 충족을 증거 기반으로 최종 검증합니다.
 
-`verifier`에게 전달: Requirement Registry + 코드 diff + Step 6 리뷰 결과.
+`verifier`에게 전달: `.team/requirements.md` (R# Registry 원본) + 코드 diff + Step 6 리뷰 결과.
 
 ```
 | R# | 요구사항 | 충족 | 증거 |
@@ -379,6 +419,7 @@ CHANGELOG, API 문서, AGENTS.md/README 업데이트.
 - [ ] Evidence-Based QA: 증거 기반 통과
 - [ ] No CRITICAL/HIGH issues
 - [ ] Documentation updated
+- [ ] `.team/` 디렉토리 삭제 (`rm -rf .team`)
 - [ ] `TeamDelete` called
 
 **❌가 하나라도 있으면 CONTINUE WORKING.**
