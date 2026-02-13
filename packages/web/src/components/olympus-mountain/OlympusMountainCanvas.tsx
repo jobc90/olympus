@@ -65,7 +65,6 @@ interface OlympusMountainCanvasProps {
   height?: number;
   className?: string;
   scale?: number;
-  demoMode?: boolean;
   connected?: boolean;
 }
 
@@ -83,7 +82,6 @@ export function OlympusMountainCanvas({
   height = BASE_HEIGHT,
   className = '',
   scale = 1,
-  demoMode = true,
   connected = false,
 }: OlympusMountainCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -123,11 +121,11 @@ export function OlympusMountainCanvas({
 
   // Store latest props in refs to avoid stale closures in the render loop
   const propsRef = useRef({
-    olympusMountainState, workers, codexConfig, geminiConfig, connected, demoMode, onTick, width, height, scale, dpr,
+    olympusMountainState, workers, codexConfig, geminiConfig, connected, onTick, width, height, scale, dpr,
   });
   useEffect(() => {
     propsRef.current = {
-      olympusMountainState, workers, codexConfig, geminiConfig, connected, demoMode, onTick, width, height, scale, dpr,
+      olympusMountainState, workers, codexConfig, geminiConfig, connected, onTick, width, height, scale, dpr,
     };
   });
 
@@ -139,7 +137,6 @@ export function OlympusMountainCanvas({
         codexConfig: cc,
         geminiConfig: gc,
         connected: cn,
-        demoMode: dm,
         onTick: ot,
         width: w,
         height: h,
@@ -195,7 +192,6 @@ export function OlympusMountainCanvas({
           codex: canvasCodex,
           gemini: canvasGemini,
           connected: cn,
-          demoMode: dm,
           layout: layoutProvider,
         });
 

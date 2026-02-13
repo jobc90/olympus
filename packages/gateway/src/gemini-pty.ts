@@ -13,7 +13,9 @@ function stripAnsi(text: string): string {
   return text.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07)/g, '');
 }
 
-const SETTLE_MS = 3_000;       // 3초 무활동 → 완료
+const SETTLE_MS = 3_000;        // 3초 무활동 → 완료
+const INIT_SETTLE_MS = 3_000;   // 초기화: 3초 무출력 → ready
+const INIT_MAX_MS = 15_000;     // 초기화: 최대 15초 대기
 const DEFAULT_TIMEOUT_MS = 60_000; // 1분 타임아웃
 const MAX_RESTARTS = 3;
 
@@ -75,7 +77,15 @@ export class GeminiPty extends EventEmitter {
     this.alive = true;
     this.buffer = '';
 
+    // Track initialization phase: discard startup noise, detect when ready
+    let lastInitDataAt = 0;
+
     pty.onData((data: string) => {
+      if (!this.ready) {
+        // Init phase: track timing but discard output (MCP loading, skill conflicts, etc.)
+        lastInitDataAt = Date.now();
+        return;
+      }
       this.onPtyData(data);
     });
 
@@ -101,21 +111,23 @@ export class GeminiPty extends EventEmitter {
       }
     });
 
-    // 초기 프롬프트 대기 (2초)
+    // Wait for Gemini CLI initialization to settle
+    // (MCP servers, skills, credentials loading takes 5-10s)
     await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
+      const maxTimer = setTimeout(() => {
         this.ready = true;
+        clearInterval(check);
         resolve();
-      }, 2000);
+      }, INIT_MAX_MS);
 
-      const onInitData = () => {
-        // 초기 출력이 오면 바로 ready
-        this.ready = true;
-        clearTimeout(timer);
-        resolve();
-      };
-      // 한 번만 체크
-      setTimeout(onInitData, 1500);
+      const check = setInterval(() => {
+        if (lastInitDataAt > 0 && Date.now() - lastInitDataAt >= INIT_SETTLE_MS) {
+          clearInterval(check);
+          clearTimeout(maxTimer);
+          this.ready = true;
+          resolve();
+        }
+      }, 500);
     });
   }
 
@@ -213,10 +225,11 @@ export class GeminiPty extends EventEmitter {
   private sendPromptSpawn(prompt: string, timeoutMs: number): Promise<string> {
     return new Promise((resolve, reject) => {
       let stdout = '';
-      let stderr = '';
       let settled = false;
 
+      // -p '' enables headless mode; actual prompt comes from stdin
       const gemini: ChildProcess = spawn('gemini', [
+        '-p', '',
         '--approval-mode', 'yolo',
         '--model', this.model,
       ], {
@@ -227,16 +240,14 @@ export class GeminiPty extends EventEmitter {
         if (!settled) {
           settled = true;
           gemini.kill();
-          resolve(stripAnsi(stdout || stderr).trim());
+          resolve(stripAnsi(stdout).trim());
         }
       }, timeoutMs);
 
       gemini.stdout?.on('data', (data: Buffer) => {
         stdout += data.toString();
       });
-      gemini.stderr?.on('data', (data: Buffer) => {
-        stderr += data.toString();
-      });
+      // stderr is ignored (contains startup noise: MCP loading, skill conflicts, etc.)
 
       gemini.on('close', () => {
         if (!settled) {

@@ -37,6 +37,7 @@ import type { CodexAdapter } from './codex-adapter.js';
 import { WorkerRegistry } from './worker-registry.js';
 import { LocalContextStoreManager, extractContext } from '@olympus-dev/core';
 import type { GeminiAdvisor } from './gemini-advisor.js';
+import { UsageMonitor } from './usage-monitor.js';
 
 export interface GatewayOptions {
   port?: number;
@@ -74,6 +75,7 @@ export class Gateway {
   private geminiAdvisor: GeminiAdvisor | null = null;
   private workerRegistry: WorkerRegistry;
   private localContextManager: LocalContextStoreManager;
+  private usageMonitor: UsageMonitor | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private sessionCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private startTime = Date.now();
@@ -102,18 +104,6 @@ export class Gateway {
 
     // Initialize Worker Registry
     this.workerRegistry = new WorkerRegistry();
-    this.workerRegistry.on('task:assigned', (task: unknown) => {
-      this.broadcastToAll('worker:task:assigned', task);
-    });
-    this.workerRegistry.on('task:completed', (task: unknown) => {
-      this.broadcastToAll('worker:task:completed', task);
-    });
-    this.workerRegistry.on('task:timeout', (task: unknown) => {
-      this.broadcastToAll('worker:task:timeout', task);
-    });
-    this.workerRegistry.on('task:final_after_timeout', (task: unknown) => {
-      this.broadcastToAll('worker:task:final_after_timeout', task);
-    });
 
     // Initialize LocalContextStoreManager
     this.localContextManager = new LocalContextStoreManager();
@@ -252,6 +242,9 @@ export class Gateway {
         this.broadcastToAll('gemini:analysis', analysis);
       });
     }
+
+    // Usage monitor — polls statusline sidecar JSON
+    this.usageMonitor = new UsageMonitor();
   }
 
   async start(): Promise<{ port: number; host: string; apiKey: string }> {
@@ -267,6 +260,14 @@ export class Gateway {
       console.warn(`[Gateway] CLI session store init failed (operating without persistence): ${(err as Error).message}`);
     });
 
+    // Start usage monitor
+    if (this.usageMonitor) {
+      this.usageMonitor.start();
+      this.usageMonitor.on('update', (data) => {
+        this.broadcastToAll('usage:update', data);
+      });
+    }
+
     // Ensure API key exists (creates one if not)
     const config = loadConfig();
 
@@ -281,6 +282,7 @@ export class Gateway {
         geminiAdvisor: this.geminiAdvisor ?? undefined,
         workerRegistry: this.workerRegistry,
         localContextManager: this.localContextManager,
+        server: this,
         onRunCreated: () => this.broadcastRunsList(),
         onSessionEvent: (sessionId, event) => this.broadcastSessionEvent(sessionId, event),
         onContextEvent: (eventType, payload) => this.broadcastContextEvent(eventType, payload),
@@ -351,6 +353,11 @@ export class Gateway {
     // Shutdown Gemini Advisor
     if (this.geminiAdvisor) {
       await this.geminiAdvisor.shutdown().catch(() => {});
+    }
+
+    // Stop usage monitor
+    if (this.usageMonitor) {
+      this.usageMonitor.stop();
     }
 
     // Close stores last (may have pending writes)
@@ -612,6 +619,14 @@ export class Gateway {
     // Send current Gemini Advisor status
     if (this.geminiAdvisor) {
       this.send(ws, createMessage('gemini:status', this.geminiAdvisor.getStatus()));
+    }
+
+    // Send current usage data
+    if (this.usageMonitor) {
+      const usageData = this.usageMonitor.getData();
+      if (usageData) {
+        this.send(ws, createMessage('usage:update', usageData));
+      }
     }
   }
 

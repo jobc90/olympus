@@ -46,21 +46,9 @@ export const contextWidget: Widget<ContextData> = {
   },
 
   render(data: ContextData): string {
-    const parts: string[] = [];
-
-    // Progress bar
-    parts.push(renderProgressBar(data.percentage));
-
-    // Percentage with color
+    // Progress bar + percentage only (token count shown in dashboard)
+    const bar = renderProgressBar(data.percentage);
     const percentColor = getColorForPercent(data.percentage);
-    parts.push(colorize(`${data.percentage}%`, percentColor));
-
-    // Token count (input tokens / context size)
-    parts.push(
-      `${formatTokens(data.inputTokens)}/${formatTokens(data.contextSize)}`
-    );
-
-    const separator = ` ${COLORS.dim}│${RESET} `;
-    return parts.join(separator);
+    return `${bar} ${colorize(`${data.percentage}%`, percentColor)}`;
   },
 };

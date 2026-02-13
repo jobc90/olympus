@@ -345,9 +345,9 @@ async function getValidCredentials(): Promise<GeminiCredentials | null> {
     if (refreshedCreds) {
       return refreshedCreds;
     }
-    // Refresh failed, return null (token is invalid)
-    debugLog('gemini', 'getValidCredentials: refresh failed');
-    return null;
+    // Refresh failed — still try with existing token
+    // (Gemini CLI may have refreshed it externally, or token may still work)
+    debugLog('gemini', 'getValidCredentials: refresh failed, trying existing token');
   }
 
   return credentials;

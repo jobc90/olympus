@@ -9,7 +9,6 @@ import { BEHAVIOR_INFO } from '../../lib/state-mapper';
 interface OlympusMountainControlsProps {
   workers: WorkerConfig[];
   workerStates: Record<string, WorkerDashboardState>;
-  demoMode?: boolean;
   onSetBehavior?: (workerId: string, behavior: WorkerBehavior) => void;
 }
 
@@ -22,7 +21,6 @@ const QUICK_BEHAVIORS: WorkerBehavior[] = [
 export function OlympusMountainControls({
   workers,
   workerStates,
-  demoMode = false,
   onSetBehavior,
 }: OlympusMountainControlsProps) {
   const [selectedWorker, setSelectedWorker] = useState<string>(workers[0]?.id ?? '');
@@ -39,14 +37,6 @@ export function OlympusMountainControls({
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>Controls</span>
-          {demoMode && (
-            <span
-              className="text-[10px] px-1.5 py-0.5 rounded font-mono"
-              style={{ backgroundColor: 'rgba(255,202,40,0.12)', color: 'var(--accent-warning)' }}
-            >
-              DEMO
-            </span>
-          )}
         </div>
         <button
           onClick={() => setExpanded(!expanded)}
@@ -57,7 +47,7 @@ export function OlympusMountainControls({
         </button>
       </div>
 
-      {expanded && demoMode && (
+      {expanded && (
         <div className="pt-3" style={{ borderTop: '1px solid var(--border)' }}>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>Worker:</span>

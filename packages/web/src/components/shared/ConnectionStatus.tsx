@@ -4,19 +4,14 @@
 
 interface ConnectionStatusProps {
   connected: boolean;
-  demoMode?: boolean;
   error?: string | null;
   compact?: boolean;
 }
 
-export default function ConnectionStatus({ connected, demoMode = false, error, compact = false }: ConnectionStatusProps) {
-  const dotColor = connected ? '#66BB6A' : demoMode ? '#FFCA28' : '#EF5350';
-  const label = connected ? 'Connected' : demoMode ? 'Demo Mode' : 'Disconnected';
-  const bgColor = connected
-    ? 'rgba(102,187,106,0.1)'
-    : demoMode
-      ? 'rgba(255,202,40,0.1)'
-      : 'rgba(239,83,80,0.1)';
+export default function ConnectionStatus({ connected, error, compact = false }: ConnectionStatusProps) {
+  const dotColor = connected ? '#66BB6A' : '#EF5350';
+  const label = connected ? 'Connected' : 'Disconnected';
+  const bgColor = connected ? 'rgba(102,187,106,0.1)' : 'rgba(239,83,80,0.1)';
 
   if (compact) {
     return (
@@ -29,7 +24,7 @@ export default function ConnectionStatus({ connected, demoMode = false, error, c
             />
           )}
           <span
-            className={`relative inline-flex h-2 w-2 rounded-full ${!connected && !demoMode ? 'animate-pulse' : ''}`}
+            className={`relative inline-flex h-2 w-2 rounded-full ${!connected ? 'animate-pulse' : ''}`}
             style={{ backgroundColor: dotColor }}
           />
         </span>
@@ -55,7 +50,7 @@ export default function ConnectionStatus({ connected, demoMode = false, error, c
           />
         )}
         <span
-          className={`relative inline-flex h-2.5 w-2.5 rounded-full ${!connected && !demoMode ? 'animate-pulse' : ''}`}
+          className={`relative inline-flex h-2.5 w-2.5 rounded-full ${!connected ? 'animate-pulse' : ''}`}
           style={{ backgroundColor: dotColor }}
         />
       </span>

@@ -98,11 +98,11 @@ const INACTIVITY_TIMEOUT_MS = 120_000;
 /** 비활동 2차 타임아웃: 패턴 미매칭 시 강제 완료 (3분) */
 const INACTIVITY_FORCE_MS = 180_000;
 
-/** 프롬프트 감지 후 추가 대기 (15초) */
-const SETTLE_MS = 15_000;
+/** 프롬프트 감지 후 추가 대기 (5초) */
+const SETTLE_MS = 5_000;
 
-/** 최소 실행 시간: 이 시간 이전에는 완료 감지하지 않음 (2분) */
-const MIN_EXECUTION_MS = 120_000;
+/** 최소 실행 시간: 이 시간 이전에는 완료 감지하지 않음 (10초) */
+const MIN_EXECUTION_MS = 10_000;
 
 /** 백그라운드 에이전트 활동 후 완료 감지 유예 시간 */
 const AGENT_COOLDOWN_MS = 30_000;

@@ -17,6 +17,7 @@ export interface ApiHandlerOptions {
   codexAdapter?: CodexAdapter;
   geminiAdvisor?: GeminiAdvisor;
   workerRegistry?: import('./worker-registry.js').WorkerRegistry;
+  server?: import('./server.js').Gateway;
   onRunCreated?: () => void;  // Callback to broadcast runs:list
   onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
   onContextEvent?: (eventType: string, payload: unknown) => void;
@@ -270,7 +271,7 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
  * Create HTTP API request handler
  */
 export function createApiHandler(options: ApiHandlerOptions) {
-  const { runManager, sessionManager, cliSessionStore, memoryStore, codexAdapter, geminiAdvisor, workerRegistry, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete, onCliStream, onWorkerEvent, localContextManager } = options;
+  const { runManager, sessionManager, cliSessionStore, memoryStore, codexAdapter, geminiAdvisor, workerRegistry, server, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete, onCliStream, onWorkerEvent, localContextManager } = options;
 
   // Async CLI task store (in-memory, 1-hour TTL)
   const asyncTasks = new Map<string, { status: 'running' | 'completed' | 'failed'; result?: import('@olympus-dev/protocol').CliRunResult; error?: string; startedAt: number }>();
@@ -540,7 +541,84 @@ ${body.message}`;
           // Final completion after timeout
           workerRegistry.completeTask(id, result);
 
-          // Save worker context to LocalContextStore
+          // Broadcast IMMEDIATELY (before any async work)
+          const rawSummary = (result.text ?? '').slice(0, 2000);
+          onWorkerEvent?.('worker:task:final_after_timeout', {
+            taskId: id,
+            workerId: task.workerId,
+            workerName: task.workerName,
+            success: body.success,
+            durationMs: body.durationMs,
+            chatId: task.chatId,
+            summary: rawSummary,
+          });
+          onCliComplete?.(result);
+
+          // Background: LocalContextStore + Gemini refresh (don't block response)
+          (async () => {
+            if (localContextManager && task) {
+              try {
+                const worker = workerRegistry?.getAll().find(w => w.id === task.workerId);
+                const extracted = extractContext(result, task.prompt);
+                const projectPath = worker?.projectPath ?? process.cwd();
+                const store = await localContextManager.getProjectStore(projectPath);
+                store.saveWorkerContext({
+                  id: randomUUID(),
+                  workerId: task.workerId,
+                  workerName: task.workerName,
+                  taskId: id,
+                  prompt: task.prompt.slice(0, 500),
+                  success: result.success,
+                  summary: extracted.summary,
+                  filesChanged: extracted.filesChanged,
+                  decisions: extracted.decisions,
+                  errors: extracted.errors,
+                  dependencies: extracted.dependencies,
+                  model: result.model,
+                  inputTokens: result.usage?.inputTokens ?? 0,
+                  outputTokens: result.usage?.outputTokens ?? 0,
+                  costUsd: result.cost ?? 0,
+                  durationMs: result.durationMs ?? 0,
+                  numTurns: result.numTurns ?? 0,
+                  rawText: result.text?.slice(0, 8000),
+                  createdAt: new Date().toISOString(),
+                });
+                store.updateProjectContext();
+                await localContextManager.propagateToRoot(projectPath, process.cwd());
+              } catch { /* save failure — silent */ }
+            }
+
+            // Trigger Gemini incremental refresh
+            if (geminiAdvisor) {
+              const taskWorker = workerRegistry?.getAll().find(w => w.id === task.workerId);
+              if (taskWorker?.projectPath) {
+                geminiAdvisor.onProjectUpdate(taskWorker.projectPath);
+              }
+            }
+          })().catch(() => {});
+
+          sendJson(res, 200, { ok: true });
+          return;
+        }
+
+        // ── Normal completion (existing logic) ──
+        workerRegistry.completeTask(id, result);
+
+        // Broadcast IMMEDIATELY (before any async work)
+        const rawSummary = (result.text ?? '').slice(0, 2000);
+        onWorkerEvent?.('worker:task:completed', {
+          taskId: id,
+          workerId: task.workerId,
+          workerName: task.workerName,
+          success: body.success,
+          durationMs: body.durationMs,
+          chatId: task.chatId,
+          summary: rawSummary,
+        });
+        onCliComplete?.(result);
+
+        // Background: LocalContextStore + Gemini refresh (don't block response)
+        (async () => {
           if (localContextManager && task) {
             try {
               const worker = workerRegistry?.getAll().find(w => w.id === task.workerId);
@@ -570,7 +648,7 @@ ${body.message}`;
               });
               store.updateProjectContext();
               await localContextManager.propagateToRoot(projectPath, process.cwd());
-            } catch { /* save failure — response still OK */ }
+            } catch { /* save failure — silent */ }
           }
 
           // Trigger Gemini incremental refresh
@@ -580,117 +658,7 @@ ${body.message}`;
               geminiAdvisor.onProjectUpdate(taskWorker.projectPath);
             }
           }
-
-          // Summarize
-          let summary = result.text ?? '';
-          if (result.success && summary) {
-            try {
-              const { runCli } = await import('./cli-runner.js');
-              const summarizeResult = await runCli({
-                prompt: `Summarize the following work result from worker "${task.workerName}" concisely in Korean. Only key outcomes — no greetings or extra explanations.\n\n---\n${summary.slice(0, 8000)}`,
-                provider: 'codex',
-                model: 'gpt-5.3-codex',
-                dangerouslySkipPermissions: true,
-                timeoutMs: 60_000,
-              });
-              if (summarizeResult.success && summarizeResult.text) {
-                summary = summarizeResult.text;
-              }
-            } catch {
-              summary = summary.slice(0, 2000);
-            }
-          }
-
-          onWorkerEvent?.('worker:task:final_after_timeout', {
-            taskId: id,
-            workerId: task.workerId,
-            workerName: task.workerName,
-            success: body.success,
-            durationMs: body.durationMs,
-            chatId: task.chatId,
-            summary,
-          });
-          onCliComplete?.(result);
-
-          sendJson(res, 200, { ok: true });
-          return;
-        }
-
-        // ── Normal completion (existing logic) ──
-        workerRegistry.completeTask(id, result);
-
-        // Save worker context to LocalContextStore
-        if (localContextManager && task) {
-          try {
-            const worker = workerRegistry?.getAll().find(w => w.id === task.workerId);
-            const extracted = extractContext(result, task.prompt);
-            const projectPath = worker?.projectPath ?? process.cwd();
-            const store = await localContextManager.getProjectStore(projectPath);
-            store.saveWorkerContext({
-              id: randomUUID(),
-              workerId: task.workerId,
-              workerName: task.workerName,
-              taskId: id,
-              prompt: task.prompt.slice(0, 500),
-              success: result.success,
-              summary: extracted.summary,
-              filesChanged: extracted.filesChanged,
-              decisions: extracted.decisions,
-              errors: extracted.errors,
-              dependencies: extracted.dependencies,
-              model: result.model,
-              inputTokens: result.usage?.inputTokens ?? 0,
-              outputTokens: result.usage?.outputTokens ?? 0,
-              costUsd: result.cost ?? 0,
-              durationMs: result.durationMs ?? 0,
-              numTurns: result.numTurns ?? 0,
-              rawText: result.text?.slice(0, 8000),
-              createdAt: new Date().toISOString(),
-            });
-            store.updateProjectContext();
-            await localContextManager.propagateToRoot(projectPath, process.cwd());
-          } catch { /* save failure — response still OK */ }
-        }
-
-        // Trigger Gemini incremental refresh
-        if (geminiAdvisor) {
-          const taskWorker = workerRegistry?.getAll().find(w => w.id === task.workerId);
-          if (taskWorker?.projectPath) {
-            geminiAdvisor.onProjectUpdate(taskWorker.projectPath);
-          }
-        }
-
-        // Summarize result via Codex
-        let summary = result.text ?? '';
-        if (result.success && summary) {
-          try {
-            const { runCli } = await import('./cli-runner.js');
-            const summarizeResult = await runCli({
-              prompt: `Summarize the following work result from worker "${task.workerName}" concisely in Korean. Only key outcomes — no greetings or extra explanations.\n\n---\n${summary.slice(0, 8000)}`,
-              provider: 'codex',
-              model: 'gpt-5.3-codex',
-              dangerouslySkipPermissions: true,
-              timeoutMs: 60_000,
-            });
-            if (summarizeResult.success && summarizeResult.text) {
-              summary = summarizeResult.text;
-            }
-          } catch {
-            // Summary failed — use truncated original
-            summary = summary.slice(0, 2000);
-          }
-        }
-
-        onWorkerEvent?.('worker:task:completed', {
-          taskId: id,
-          workerId: task.workerId,
-          workerName: task.workerName,
-          success: body.success,
-          durationMs: body.durationMs,
-          chatId: task.chatId,
-          summary,
-        });
-        onCliComplete?.(result);
+        })().catch(() => {});
 
         sendJson(res, 200, { ok: true });
         return;
@@ -1891,6 +1859,14 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextS
           return;
         }
         sendJson(res, 200, { projects: geminiAdvisor.getAllCachedAnalyses() });
+        return;
+      }
+
+      // GET /api/usage — usage data from statusline sidecar
+      if (path === '/api/usage' && method === 'GET') {
+        const usageMonitor = server?.['usageMonitor'] as import('./usage-monitor.js').UsageMonitor | undefined;
+        const data = usageMonitor?.getData();
+        sendJson(res, 200, data ?? { timestamp: 0 });
         return;
       }
 

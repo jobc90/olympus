@@ -6,7 +6,7 @@
 import type { Widget } from './base.js';
 import type { WidgetContext, GeminiUsageData, Translations } from '../types.js';
 import { COLORS, getColorForPercent, colorize } from '../utils/colors.js';
-import { isGeminiInstalled, fetchGeminiUsage } from '../utils/gemini-client.js';
+import { isGeminiInstalled, fetchGeminiUsage, getGeminiModel } from '../utils/gemini-client.js';
 import { formatTimeRemaining } from '../utils/formatters.js';
 import { debugLog } from '../utils/debug.js';
 
@@ -45,9 +45,10 @@ export const geminiUsageWidget: Widget<GeminiUsageData> = {
     const limits = await fetchGeminiUsage(ctx.config.cache.ttlSeconds);
     debugLog('gemini', 'fetchGeminiUsage result:', limits);
     if (!limits) {
-      // Return error state instead of null to show ⚠️ indicator
+      // Return error state with actual model name from settings
+      const model = await getGeminiModel() || 'gemini';
       return {
-        model: 'gemini',
+        model,
         usedPercent: null,
         resetAt: null,
         isError: true,

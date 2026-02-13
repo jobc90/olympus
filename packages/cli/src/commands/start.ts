@@ -234,7 +234,7 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
           return;
         }
 
-        if (msg.type === 'task:assigned' && msg.payload?.workerId === workerId) {
+        if (msg.type === 'worker:task:assigned' && msg.payload?.workerId === workerId) {
           if (ptyWorker?.isProcessing) {
             process.stderr.write(chalk.yellow('⚠ 이미 작업 진행 중\n'));
             return;

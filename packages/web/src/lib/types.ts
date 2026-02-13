@@ -284,7 +284,6 @@ export interface DashboardConfig {
   gateway: GatewayConfig;
   theme: ThemeName;
   connected: boolean;
-  demoMode: boolean;
 }
 
 // ---------------------------------------------------------------------------

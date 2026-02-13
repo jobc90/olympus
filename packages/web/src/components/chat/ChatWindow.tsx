@@ -40,6 +40,15 @@ export default function ChatWindow({
   const userSentRef = useRef(false);
   const prevMessageCountRef = useRef(0);
 
+  // Close on Escape key
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
   // Smart auto-scroll
   useEffect(() => {
     const container = messagesContainerRef.current;
@@ -92,19 +101,24 @@ export default function ChatWindow({
         onClick={onClose}
       />
 
-      {/* Chat panel */}
+      {/* Chat modal (centered popup) */}
       <div
-        className="fixed right-0 top-0 bottom-0 z-50 flex flex-col border-l shadow-2xl"
+        className="fixed z-50 flex flex-col rounded-2xl shadow-2xl border"
         style={{
-          width: 400,
+          width: 560,
+          height: '70vh',
+          maxHeight: 700,
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
           background: 'var(--bg-primary)',
           borderColor: 'var(--border)',
-          animation: 'slide-in 0.3s ease-out',
+          animation: 'fade-scale-in 0.2s ease-out',
         }}
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-4 py-3 border-b"
+          className="flex items-center justify-between px-4 py-3 border-b rounded-t-2xl"
           style={{
             borderColor: 'var(--border)',
             background: `${agentColor}15`,

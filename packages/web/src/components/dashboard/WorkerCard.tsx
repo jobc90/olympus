@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import type { WorkerConfig, WorkerDashboardState, WorkerAvatar } from '../../lib/types';
-import { BEHAVIOR_INFO, formatTokens, formatRelativeTime } from '../../lib/state-mapper';
+import { BEHAVIOR_INFO, formatRelativeTime } from '../../lib/state-mapper';
 import StatusBadge from '../shared/StatusBadge';
 import { drawWorker } from '../../sprites/characters';
 
@@ -41,23 +41,6 @@ function PixelAvatar({ worker, size = 64 }: { worker: WorkerConfig; size?: numbe
   );
 }
 
-function TokenBar({ used, max }: { used: number; max: number }) {
-  const pct = Math.min(100, (used / max) * 100);
-  const color = pct > 80 ? 'var(--accent-danger)' : pct > 50 ? 'var(--accent-warning)' : 'var(--accent-success)';
-
-  return (
-    <div className="flex items-center gap-2 w-full">
-      <span className="text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>Tokens:</span>
-      <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--border)' }}>
-        <div
-          className="h-full rounded-full transition-all duration-500"
-          style={{ width: `${pct}%`, backgroundColor: color }}
-        />
-      </div>
-      <span className="text-[10px] font-mono" style={{ color }}>{formatTokens(used)}</span>
-    </div>
-  );
-}
 
 export function WorkerCard({ worker, state, onChatClick, onDetailClick }: WorkerCardProps) {
   const [relativeTime, setRelativeTime] = useState('');
@@ -127,11 +110,6 @@ export function WorkerCard({ worker, state, onChatClick, onDetailClick }: Worker
           </span>
         </div>
       )}
-
-      {/* Token bar */}
-      <div className="mb-2">
-        <TokenBar used={state?.totalTokens ?? 0} max={state?.contextTokens || 128000} />
-      </div>
 
       {/* Footer: Last activity */}
       <div className="flex items-center justify-between">

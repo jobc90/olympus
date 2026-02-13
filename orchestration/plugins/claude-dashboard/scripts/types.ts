@@ -53,13 +53,22 @@ export type WidgetId =
   | 'zaiUsage';
 
 /**
- * Fixed 3-line display layout for Multi-AI Orchestration
- * No display mode options - always 3 lines
+ * CLI displays only 1 line (most critical info)
+ * Full 3-line data is exported via sidecar JSON for dashboard
  */
 export const FIXED_LINES: WidgetId[][] = [
-  ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d'],
-  ['projectInfo', 'burnRate', 'sessionDuration', 'todoProgress'],
-  ['codexUsage', 'geminiUsage'],
+  ['model', 'context', 'rateLimit5h', 'rateLimit7d'],
+  ['projectInfo', 'codexUsage', 'geminiUsage'],
+];
+
+/**
+ * All widgets to collect data for sidecar JSON (dashboard display)
+ * Includes all 3 original lines worth of widgets
+ */
+export const SIDECAR_WIDGETS: WidgetId[] = [
+  'model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d',
+  'projectInfo', 'burnRate', 'sessionDuration', 'todoProgress',
+  'codexUsage', 'geminiUsage',
 ];
 
 /**

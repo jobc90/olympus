@@ -150,7 +150,6 @@ interface RenderConfig {
   codex: CodexConfig;
   gemini?: GeminiConfig;
   connected: boolean;
-  demoMode: boolean;
   layout: LayoutProvider;
 }
 
@@ -377,9 +376,6 @@ export function renderFrame(
   if (config.connected) {
     ctx.fillStyle = '#4CAF50';
     ctx.fillText('Connected', width - 16, 24);
-  } else if (config.demoMode) {
-    ctx.fillStyle = '#FF9800';
-    ctx.fillText('Demo Mode', width - 16, 24);
   } else {
     ctx.fillStyle = '#F44336';
     ctx.fillText('Disconnected', width - 16, 24);

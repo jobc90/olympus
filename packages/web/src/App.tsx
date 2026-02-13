@@ -3,25 +3,17 @@ import { useOlympus } from './hooks/useOlympus';
 import { useOlympusMountain } from './hooks/useOlympusMountain';
 
 // --- Existing components (preserved) ---
-import { SessionList } from './components/SessionList';
 import { SessionOutputPanel } from './components/SessionOutputPanel';
 // EmptyState removed — "Ready to Roll!" 불필요
 import { PhaseProgress } from './components/PhaseProgress';
 import { TaskList } from './components/TaskList';
 import { AgentStream } from './components/AgentStream';
-import { AgentPanel } from './components/AgentPanel';
 // CommandInput removed — Codex 직접 입력 불필요
-import { WorkerGrid as LegacyWorkerGrid } from './components/WorkerGrid';
-import { WorkerDetailModal } from './components/WorkerDetailModal';
-import { TaskTimeline } from './components/TaskTimeline';
 import { AgentApprovalDialog } from './components/AgentApprovalDialog';
-import { LogPanel } from './components/LogPanel';
 import { Card } from './components/Card';
 // ContextExplorer, CodexPanel removed — 불필요
 import { AgentHistoryPanel } from './components/AgentHistoryPanel';
 import { LiveOutputPanel } from './components/LiveOutputPanel';
-import { SessionCostTracker } from './components/SessionCostTracker';
-import { ProjectBrowser } from './components/ProjectBrowser';
 // useContextTree removed — ContextExplorer 삭제
 
 // --- New dashboard components ---
@@ -31,15 +23,18 @@ import { WorkerGrid } from './components/dashboard/WorkerGrid';
 import ActivityFeed from './components/dashboard/ActivityFeed';
 import { CodexAgentPanel } from './components/dashboard/CodexAgentPanel';
 import { GeminiAdvisorPanel } from './components/dashboard/GeminiAdvisorPanel';
+import UsageBar from './components/dashboard/UsageBar';
 import { MiniOlympusMountain } from './components/olympus-mountain/MiniOlympusMountain';
 import { OlympusMountainCanvas } from './components/olympus-mountain/OlympusMountainCanvas';
-import { OlympusMountainControls } from './components/olympus-mountain/OlympusMountainControls';
 import ChatWindow from './components/chat/ChatWindow';
 import SettingsPanel from './components/settings/SettingsPanel';
+import { WorkerTaskBoard } from './components/WorkerTaskBoard';
+import { GatewayEventLog } from './components/GatewayEventLog';
+import CliSessionsPanel from './components/dashboard/CliSessionsPanel';
 
 import type { WorkerConfig, WorkerDashboardState, CodexConfig, GeminiConfig, WorkerAvatar, WorkerBehavior } from './lib/types';
 import { DEFAULT_GEMINI } from './lib/config';
-import { generateDemoData, generateDemoEvent, BEHAVIOR_INFO, formatTokens, formatRelativeTime } from './lib/state-mapper';
+import { BEHAVIOR_INFO, formatTokens, formatRelativeTime } from './lib/state-mapper';
 
 // ---------------------------------------------------------------------------
 // localStorage 마이그레이션 — 낡은 키 일괄 정리 (버전 기반, 1회 실행)
@@ -102,27 +97,6 @@ function getConfig() {
   return config;
 }
 
-// ---------------------------------------------------------------------------
-// Demo data helpers
-// ---------------------------------------------------------------------------
-
-function useDemoData(connected: boolean) {
-  const [data] = useState(() => generateDemoData());
-  const [events, setEvents] = useState<Array<{ id: string; type: string; agentName: string; message: string; timestamp: number }>>([]);
-  const [states, setStates] = useState(data.states);
-
-  // Periodically generate new events in demo mode
-  React.useEffect(() => {
-    if (connected) return;
-    const timer = setInterval(() => {
-      const event = generateDemoEvent(data.workers);
-      setEvents(prev => [{ id: event.id, type: event.type, agentName: event.workerName, message: event.message, timestamp: event.timestamp }, ...prev].slice(0, 50));
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [connected, data.workers]);
-
-  return { workers: data.workers, states, events, setStates };
-}
 
 // ---------------------------------------------------------------------------
 // App
@@ -156,18 +130,12 @@ export default function App() {
     sessionOutputs,
     sessionScreens,
     error,
-    agentState,
-    agentProgress,
-    agentTaskId,
-    workers: legacyWorkers,
-    taskHistory,
     pendingApproval,
     subscribe,
     subscribeSession,
     cancel,
     connectAvailableSession,
     sendAgentCommand,
-    cancelAgentTask,
     approveTask,
     rejectTask,
     codexRoute,
@@ -187,14 +155,11 @@ export default function App() {
     geminiLastAnalyzed: polledGeminiLastAnalyzed,
     systemStats: polledSystemStats,
     activityEvents: polledActivityEvents,
-    demoMode: hookDemoMode,
+    usageData,
+    workerTasks,
+    cliSessions,
+    deleteCliSession,
   } = useOlympus(config);
-
-  const [selectedWorker, setSelectedWorker] = useState<string | null>(null);
-
-  // --- Demo data (used when not connected to gateway) ---
-  const demoMode = hookDemoMode || !connected;
-  const demo = useDemoData(connected);
 
   // Build WorkerConfig[] and WorkerDashboardState map for new components
   const WORKER_AVATARS = ['athena', 'poseidon', 'ares', 'apollo', 'artemis', 'hermes', 'hephaestus', 'dionysus', 'demeter', 'aphrodite', 'hades', 'persephone', 'prometheus', 'helios', 'nike', 'pan', 'hecate', 'iris', 'heracles'];
@@ -209,7 +174,7 @@ export default function App() {
         skinToneIndex: i,
         projectPath: w.projectPath,
       } satisfies WorkerConfig))
-    : demo.workers.map((w, i) => ({ ...w, skinToneIndex: i }));
+    : [];
 
   const workerStates: Record<string, WorkerDashboardState> = (connected && polledWorkerConfigs.length > 0)
     ? Object.fromEntries(
@@ -229,16 +194,7 @@ export default function App() {
           } as WorkerDashboardState,
         ])
       )
-    : Object.fromEntries(
-        demo.workers.map(w => [
-          w.id,
-          {
-            ...demo.states[w.id],
-            // Use polled behaviors from useOlympus demo timer (they cycle!)
-            behavior: (polledWorkerBehaviors[w.id] ?? demo.states[w.id]?.behavior ?? 'idle') as WorkerBehavior,
-          } as WorkerDashboardState,
-        ])
-      );
+    : {};
 
   const codexConfig: CodexConfig = { name: 'Zeus', emoji: '\u26A1', avatar: 'zeus' };
   const geminiConfig: GeminiConfig = DEFAULT_GEMINI;
@@ -257,12 +213,7 @@ export default function App() {
   // System stats
   const systemStats = (connected && polledSystemStats.totalWorkers > 0)
     ? polledSystemStats
-    : {
-        totalWorkers: workerConfigs.length,
-        activeWorkers: Object.values(workerStates).filter(s => s.behavior === 'working' || s.behavior === 'thinking' || s.behavior === 'deploying').length,
-        totalTokens: Object.values(workerStates).reduce((sum, s) => sum + (s.totalTokens ?? 0), 0),
-        failedTasks: Object.values(workerStates).filter(s => s.behavior === 'error').length,
-      };
+    : { totalWorkers: 0, activeWorkers: 0, totalTokens: 0, failedTasks: 0 };
 
   // --- Config handlers ---
   const handleConfigSave = useCallback(
@@ -300,9 +251,9 @@ export default function App() {
         content = res.response ?? 'No response';
       } else {
         // Worker → POST /api/codex/chat with @mention
-        const worker = workerConfigs.find(w => w.id === agentId);
-        const workerName = worker?.name ?? agentId;
-        const res = await chatWithCodex(`@${workerName} ${message}`);
+        const wConfig = polledWorkerConfigs.find(w => w.id === agentId);
+        const mentionName = wConfig?.registeredName ?? wConfig?.name ?? agentId;
+        const res = await chatWithCodex(`@${mentionName} ${message}`);
         content = res.response ?? 'No response';
       }
 
@@ -334,7 +285,6 @@ export default function App() {
       {/* Navbar (replaces old Header) */}
       <Navbar
         connected={connected}
-        demoMode={demoMode}
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onSettingsClick={() => setShowSettings(true)}
@@ -359,6 +309,14 @@ export default function App() {
         {/* ===================== CONSOLE TAB ===================== */}
         {activeTab === 'console' && (
           <>
+            {/* Usage — Statusline Dashboard */}
+            <div className="mb-6 mt-4">
+              <h2 className="font-pixel text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
+                Usage
+              </h2>
+              <UsageBar data={usageData} />
+            </div>
+
             {/* Overview — System Stats */}
             <div className="mb-6">
               <h2 className="font-pixel text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
@@ -381,7 +339,7 @@ export default function App() {
                       codexConfig={codexConfig}
                       codexBehavior={connected ? polledCodexBehavior : 'supervising'}
                       connected={connected}
-                      onChatClick={() => setChatTarget({ id: 'codex-1', name: 'Zeus', emoji: '\u26A1', color: '#FFD700' })}
+                      onChatClick={() => setChatTarget({ id: 'codex', name: 'Zeus', emoji: '\u26A1', color: '#FFD700' })}
                     />
                     <GeminiAdvisorPanel
                       geminiConfig={geminiConfig}
@@ -390,7 +348,7 @@ export default function App() {
                       lastAnalyzed={polledGeminiLastAnalyzed}
                       currentTask={polledGeminiCurrentTask}
                       formatRelativeTime={formatRelativeTime}
-                      onChatClick={() => setChatTarget({ id: 'gemini-1', name: 'Hera', emoji: '\uD83E\uDD89', color: '#CE93D8' })}
+                      onChatClick={() => setChatTarget({ id: 'gemini', name: 'Hera', emoji: '\uD83E\uDD89', color: '#CE93D8' })}
                     />
                   </div>
                 </div>
@@ -451,18 +409,10 @@ export default function App() {
                   <SessionOutputPanel session={currentSession} outputs={sessionOutputs.filter(o => o.sessionId === currentSessionId)} screen={sessionScreens.get(currentSessionId!)} />
                 ) : (
                   <>
-                    {/* V2 Agent Interface */}
-                    <AgentPanel
-                      state={agentState}
-                      progress={agentProgress}
-                      taskId={agentTaskId}
-                      onCancel={cancelAgentTask}
-                    />
+                    <WorkerTaskBoard tasks={workerTasks} />
                     <LiveOutputPanel streams={cliStreams} />
-                    <LegacyWorkerGrid workers={legacyWorkers} />
-                    <TaskTimeline tasks={taskHistory} />
                     <AgentHistoryPanel history={cliHistory} />
-                    <LogPanel logs={logs} />
+                    <GatewayEventLog logs={logs} />
                   </>
                 )}
               </div>
@@ -481,21 +431,11 @@ export default function App() {
                 </div>
                 <ActivityFeed events={connected && polledActivityEvents.length > 0 ? polledActivityEvents.map(e => ({
                   id: e.id, type: e.type, agentName: e.agentName, message: e.message, timestamp: e.timestamp, color: e.color,
-                })) : demo.events} />
-                {/* SessionList */}
-                <div className="rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                  <SessionList
-                    runs={runs}
-                    sessions={sessions}
-                    availableSessions={availableSessions}
-                    currentRunId={currentRunId}
-                    currentSessionId={currentSessionId}
-                    onSelect={subscribe}
-                    onSelectSession={subscribeSession}
-                    onCancel={(runId) => cancel(runId)}
-                    onConnectAvailable={connectAvailableSession}
-                  />
-                </div>
+                })) : []} />
+                <CliSessionsPanel
+                  sessions={cliSessions}
+                  onDelete={deleteCliSession}
+                />
               </aside>
             </div>
           </>
@@ -510,13 +450,7 @@ export default function App() {
               codexConfig={codexConfig}
               geminiConfig={geminiConfig}
               onTick={tick}
-              demoMode={demoMode}
               connected={connected}
-            />
-            <OlympusMountainControls
-              workers={workerConfigs}
-              workerStates={workerStates}
-              demoMode={demoMode}
             />
           </div>
         )}
@@ -534,7 +468,7 @@ export default function App() {
 
       {/* ChatWindow */}
       {chatTarget && (() => {
-        const isCodex = chatTarget.id === 'codex-1';
+        const isCodex = chatTarget.id === 'codex';
         const ws = workerStates[chatTarget.id];
         const behavior = isCodex ? (connected ? polledCodexBehavior : 'supervising') : (ws?.behavior ?? 'idle');
         const bInfo = BEHAVIOR_INFO[behavior as keyof typeof BEHAVIOR_INFO];
@@ -585,20 +519,6 @@ export default function App() {
             }
           }}
           onClose={() => setShowSettings(false)}
-        />
-      )}
-
-      {/* Worker Detail Modal (legacy) */}
-      {selectedWorker && legacyWorkers.get(selectedWorker) && (
-        <WorkerDetailModal
-          worker={legacyWorkers.get(selectedWorker)!}
-          onClose={() => setSelectedWorker(null)}
-          onTerminate={async (id) => {
-            try {
-              const client = (window as unknown as { __olympusClient?: { terminateWorker: (id: string) => Promise<unknown> } }).__olympusClient;
-              if (client) await client.terminateWorker(id);
-            } catch { /* best effort */ }
-          }}
         />
       )}
 

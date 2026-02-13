@@ -21,7 +21,7 @@ export function formatTokens(tokens: number): string {
  * Examples: 0.5 -> "$0.50", 1.234 -> "$1.23"
  */
 export function formatCost(cost: number): string {
-  return `$${cost.toFixed(2)}`;
+  return cost.toFixed(2);
 }
 
 /**

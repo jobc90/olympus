@@ -94,7 +94,7 @@ describe('GeminiAdvisor', () => {
       mockSendPrompt.mockRejectedValueOnce(new Error('PTY 에러'));
       const result = await advisor.analyzeProject('/dev/err', 'err');
 
-      expect(result.structureSummary).toBe('err 프로젝트 (분석 실패)');
+      expect(result.structureSummary).toBe('err project (analysis failed)');
       expect(result.techStack).toEqual([]);
     });
 
@@ -104,7 +104,7 @@ describe('GeminiAdvisor', () => {
       mockSendPrompt.mockResolvedValueOnce('not valid json at all');
       const result = await advisor.analyzeProject('/dev/bad', 'bad');
 
-      expect(result.structureSummary).toBe('bad 프로젝트');
+      expect(result.structureSummary).toBe('bad project');
       expect(result.techStack).toEqual([]);
     });
   });
@@ -137,7 +137,7 @@ describe('GeminiAdvisor', () => {
       await advisor.analyzeProject('/dev/test', 'test');
 
       const ctx = advisor.buildCodexContext();
-      expect(ctx).toContain('프로젝트 분석 (Gemini Advisor)');
+      expect(ctx).toContain('Project Analysis (Gemini Advisor)');
       expect(ctx).toContain('test');
       expect(ctx).toContain('NestJS');
     });
@@ -162,8 +162,8 @@ describe('GeminiAdvisor', () => {
       await advisor.analyzeProject('/dev/test', 'test');
 
       const ctx = advisor.buildProjectContext('/dev/test');
-      expect(ctx).toContain('구조: NestJS 기반 API 서버');
-      expect(ctx).toContain('기술 스택: NestJS, TypeScript, PostgreSQL');
+      expect(ctx).toContain('Structure: NestJS 기반 API 서버');
+      expect(ctx).toContain('Tech Stack: NestJS, TypeScript, PostgreSQL');
     });
   });
 

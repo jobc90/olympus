@@ -8,7 +8,6 @@ import type { ThemeName } from '../../lib/types';
 interface SettingsConfig {
   gateway: { url: string; token: string };
   theme: string;
-  demoMode?: boolean;
 }
 
 interface SettingsPanelProps {
@@ -128,10 +127,6 @@ export default function SettingsPanel({ config, onUpdate, onClose }: SettingsPan
     setDraft((d) => ({ ...d, theme }));
   };
 
-  const toggleDemoMode = () => {
-    setDraft((d) => ({ ...d, demoMode: !d.demoMode }));
-  };
-
   const handleSave = () => {
     onUpdate(draft);
     onClose();
@@ -242,36 +237,6 @@ export default function SettingsPanel({ config, onUpdate, onClose }: SettingsPan
                   onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
                 />
               </div>
-              <div
-                className="flex items-center justify-between p-3 rounded-xl"
-                style={{
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border)',
-                }}
-              >
-                <div>
-                  <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                    Demo Mode
-                  </div>
-                  <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    Simulate workers without gateway
-                  </div>
-                </div>
-                <button
-                  onClick={toggleDemoMode}
-                  className="w-11 h-6 rounded-full transition-colors"
-                  style={{
-                    background: draft.demoMode ? 'var(--accent-primary)' : 'var(--border)',
-                  }}
-                >
-                  <div
-                    className="w-5 h-5 rounded-full bg-white shadow transition-transform"
-                    style={{
-                      transform: draft.demoMode ? 'translateX(20px)' : 'translateX(2px)',
-                    }}
-                  />
-                </button>
-              </div>
             </>
           )}
 
@@ -309,7 +274,6 @@ export default function SettingsPanel({ config, onUpdate, onClose }: SettingsPan
                 <div className="space-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
                   <div>Gateway: {draft.gateway.url}</div>
                   <div>Token: {draft.gateway.token ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' : 'Not set'}</div>
-                  <div>Demo Mode: {draft.demoMode ? 'On' : 'Off'}</div>
                 </div>
               </div>
             </div>

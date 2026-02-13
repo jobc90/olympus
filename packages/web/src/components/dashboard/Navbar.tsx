@@ -6,13 +6,12 @@ import ConnectionStatus from '../shared/ConnectionStatus';
 
 interface NavbarProps {
   connected: boolean;
-  demoMode?: boolean;
   activeTab: 'console' | 'monitor';
   onTabChange: (tab: 'console' | 'monitor') => void;
   onSettingsClick: () => void;
 }
 
-export default function Navbar({ connected, demoMode = false, activeTab, onTabChange, onSettingsClick }: NavbarProps) {
+export default function Navbar({ connected, activeTab, onTabChange, onSettingsClick }: NavbarProps) {
   const tabs = [
     { key: 'console' as const, label: 'Console', icon: '\u{1F4CA}' },
     { key: 'monitor' as const, label: 'Monitor', icon: '\u26F0\uFE0F' },
@@ -54,7 +53,7 @@ export default function Navbar({ connected, demoMode = false, activeTab, onTabCh
 
       {/* Right side */}
       <div className="flex items-center gap-3">
-        <ConnectionStatus connected={connected} demoMode={demoMode} compact />
+        <ConnectionStatus connected={connected} compact />
         <button
           onClick={onSettingsClick}
           className="p-1.5 rounded-md text-sm hover:bg-white/5 transition-colors"

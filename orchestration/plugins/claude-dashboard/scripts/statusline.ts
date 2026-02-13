@@ -5,7 +5,7 @@
  * Displays model info, context usage, rate limits, and more
  */
 
-import { readFile, stat } from 'fs/promises';
+import { readFile, stat, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 
@@ -14,9 +14,11 @@ import { DEFAULT_CONFIG } from './types.js';
 import { COLORS, colorize } from './utils/colors.js';
 import { fetchUsageLimits } from './utils/api-client.js';
 import { getTranslations } from './utils/i18n.js';
-import { formatOutput } from './widgets/index.js';
+import { formatOutput, collectAllWidgetData } from './widgets/index.js';
 
 const CONFIG_PATH = join(homedir(), '.claude', 'claude-dashboard.local.json');
+const SIDECAR_DIR = join(homedir(), '.olympus');
+const SIDECAR_PATH = join(SIDECAR_DIR, 'statusline.json');
 
 /**
  * Cached config with mtime-based invalidation
@@ -110,6 +112,14 @@ async function main(): Promise<void> {
   const output = await formatOutput(ctx);
 
   console.log(output);
+
+  // Write sidecar JSON for Olympus dashboard (fire-and-forget)
+  collectAllWidgetData(ctx)
+    .then(async (data) => {
+      await mkdir(SIDECAR_DIR, { recursive: true });
+      await writeFile(SIDECAR_PATH, JSON.stringify(data), { mode: 0o600 });
+    })
+    .catch(() => {});
 }
 
 // Run

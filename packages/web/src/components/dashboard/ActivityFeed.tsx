@@ -19,14 +19,17 @@ interface ActivityFeedProps {
 }
 
 const EVENT_STYLES: Record<string, { icon: string; color: string }> = {
-  state_change:  { icon: '\u{1F504}', color: '#4FC3F7' },
-  task_start:    { icon: '\u{25B6}\u{FE0F}', color: '#66BB6A' },
-  task_complete: { icon: '\u{2705}', color: '#66BB6A' },
-  task_fail:     { icon: '\u{274C}', color: '#EF5350' },
-  tool_call:     { icon: '\u{1F527}', color: '#AB47BC' },
-  message:       { icon: '\u{1F4AC}', color: '#4FC3F7' },
-  error:         { icon: '\u{1F6A8}', color: '#EF5350' },
-  system:        { icon: '\u{1F5A5}\u{FE0F}', color: '#78909C' },
+  state_change:          { icon: '\u{1F504}', color: '#4FC3F7' },
+  task_start:            { icon: '\u{25B6}\u{FE0F}', color: '#66BB6A' },
+  task_complete:         { icon: '\u{2705}', color: '#66BB6A' },
+  task_fail:             { icon: '\u{274C}', color: '#EF5350' },
+  tool_call:             { icon: '\u{1F527}', color: '#AB47BC' },
+  message:               { icon: '\u{1F4AC}', color: '#4FC3F7' },
+  error:                 { icon: '\u{1F6A8}', color: '#EF5350' },
+  system:                { icon: '\u{1F5A5}\u{FE0F}', color: '#78909C' },
+  timeout:               { icon: '\u{23F0}', color: '#FF9800' },
+  final_after_timeout:   { icon: '\u{1F3C1}', color: '#FF9800' },
+  completed:             { icon: '\u{2705}', color: '#66BB6A' },
 };
 
 const DEFAULT_STYLE = EVENT_STYLES.system;
@@ -74,7 +77,7 @@ export default function ActivityFeed({ events, maxHeight = 400 }: ActivityFeedPr
           <div className="text-center py-8">
             <span className="text-2xl block mb-2">{'\u{1F4E1}'}</span>
             <p className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
-              Waiting for events...
+              No activity yet
             </p>
           </div>
         )}
@@ -95,7 +98,7 @@ export default function ActivityFeed({ events, maxHeight = 400 }: ActivityFeedPr
                     {formatRelativeTime(event.timestamp)}
                   </span>
                 </div>
-                <p className="text-xs truncate" style={{ color: 'var(--text-primary)' }}>
+                <p className="text-xs line-clamp-2" style={{ color: 'var(--text-primary)' }}>
                   {event.message}
                 </p>
               </div>
