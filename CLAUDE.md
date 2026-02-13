@@ -56,19 +56,20 @@ protocol → core → gateway → cli
 - **Core 3**: explore (Haiku), executor (Sonnet), writer (Haiku)
 - **On-Demand 16**: architect, analyst, planner, designer, researcher, code-reviewer, verifier, qa-tester, vision, test-engineer, build-fixer, git-master, api-reviewer, performance-reviewer, security-reviewer, style-reviewer
 
-### Team Engineering Protocol v3 (`/team` command — AgentTeam Benchmark)
-- **Step 0**: Skill & Plugin Discovery
-- **Step 1**: Requirement Registry (ZERO LOSS — analyst + explore 병렬 분석, Traceability 검증)
-- **Step 2**: Work Decomposition + **File Ownership Analysis** (planner DAG, researcher 기술조사, **File Ownership Matrix** — CONFLICT 0 필수, **Wave-based Execution Strategy**, architect Quality Gate)
-- **Step 3**: Team Creation + **Parallel Execution Assignment** (역할별 독립 인스턴스, **OWNED FILES + BOUNDARY 규칙** per WI, **Wave-based Parallel Dispatch**, **Shared File Request Protocol**)
+### Team Engineering Protocol v3.1 (`/team` command — AgentTeam Benchmark)
+- **Step 0**: Session Setup (`.team/` 상태 디렉토리 생성)
+- **Step 1**: Requirement Registry (ZERO LOSS — analyst + explore 병렬, `.team/requirements.md` 영속 저장)
+- **Step 2**: Work Decomposition + **File Ownership Analysis** (planner DAG, **Shared File Zone**, **File Ownership Matrix** → `.team/ownership.json`, **Dependency DAG** — WI-level blockedBy, architect Quality Gate)
+- **Step 3**: Team Creation (**1 WI = 1 Teammate** dynamic scaling, `{subagent_type}-{N}` naming, **OWNED + SHARED FILES + BOUNDARY** per WI)
 - **Step 4**: Consensus Protocol (codex_analyze MCP)
-- **Step 5**: 2-Phase Development + **Parallel Execution** (ai_team_patch MCP, **Wave 실행 루프** — 독립 WI 병렬/의존 WI 순차, **Leader Reconciliation** per Wave — git diff + build + lint + test)
+- **Step 5**: **DAG-Based Parallel Execution** (ai_team_patch MCP, **blockedBy 없는 WI 전부 즉시 시작**, **Streaming Reconciliation 3-Tier** — C-1 Per-WI 경량검증 + C-2 Checkpoint 빌드 + C-3 Final)
 - **Step 6**: Multi-Reviewer Gate (code-reviewer + style-reviewer 항상, api/security/performance/vision 조건부 병렬)
-- **Step 7**: Spec Verification (verifier — R# 증거 기반 충족 검증)
+- **Step 7**: Spec Verification (verifier — `.team/requirements.md` 기반 R# 증거 검증)
 - **Step 8**: Evidence-Based QA (qa-tester)
-- **Step 9**: Finalization (writer 문서화 + git-master 커밋 정리)
-- **Circuit Breaker**: 모든 Step에서 3회 실패 시 architect escalate
-- **File Ownership Invariant**: 동일 시점에 1파일 = 최대 1팀원 (Last Write Wins 방지)
+- **Step 9**: Finalization (writer 문서화 + git-master 커밋 정리 + `.team/` 삭제)
+- **Circuit Breaker**: Task metadata `failCount` 영구 기록, 3회 실패 시 architect escalate
+- **File Ownership Invariant**: 동일 시점 1파일 = 최대 1팀원, SHARED 파일은 리더/전담자 관리
+- **Crash Recovery**: 팀원 무응답 30초→재시도, 60초→재spawn + WI 재할당
 
 ## Development
 
