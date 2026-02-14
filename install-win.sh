@@ -182,8 +182,10 @@ if [ "$INSTALL_MODE" = "global" ]; then
 
     # Plugins
     step "claude-dashboard 플러그인..."
-    if [ -d "$ORCHESTRATION_DIR/plugins/claude-dashboard" ]; then
-        cp -r "$ORCHESTRATION_DIR/plugins/claude-dashboard" "$CLAUDE_DIR/plugins/"
+    DASHBOARD_SRC="$SCRIPT_DIR/packages/claude-dashboard"
+    if [ -d "$DASHBOARD_SRC" ]; then
+        mkdir -p "$CLAUDE_DIR/plugins"
+        cp -r "$DASHBOARD_SRC" "$CLAUDE_DIR/plugins/claude-dashboard"
         success "claude-dashboard 복사 완료"
     fi
 

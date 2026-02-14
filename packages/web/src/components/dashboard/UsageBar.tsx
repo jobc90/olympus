@@ -69,10 +69,10 @@ export default function UsageBar({ data }: UsageBarProps) {
   if (!data || !data.timestamp) {
     return (
       <div
-        className="rounded-xl px-4 py-3 font-mono text-sm"
+        className="rounded-xl px-4 py-3 font-mono text-xs"
         style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
       >
-        Waiting for statusline data...
+        <span style={{ opacity: 0.6 }}>Usage data will appear when a Claude CLI session is active with the dashboard plugin.</span>
       </div>
     );
   }

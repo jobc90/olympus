@@ -37,7 +37,7 @@ export function WorkerTaskBoard({ tasks }: Props) {
   const completedTasks = tasks.filter(t => t.status !== 'active').slice(0, 10);
 
   return (
-    <Card className="flex flex-col h-full">
+    <Card className="flex flex-col">
       <CardHeader>
         <span className="flex items-center gap-2">
           Worker Tasks
@@ -51,8 +51,8 @@ export function WorkerTaskBoard({ tasks }: Props) {
 
       <div className="flex-1 overflow-y-auto space-y-2 min-h-0" style={{ maxHeight: '200px' }}>
         {activeTasks.length === 0 && completedTasks.length === 0 ? (
-          <div className="text-xs text-text-tertiary font-mono text-center py-3">
-            No active tasks — assign work via Telegram or CLI
+          <div className="text-xs text-text-tertiary font-mono text-center py-2">
+            No active tasks
           </div>
         ) : (
           <>

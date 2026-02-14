@@ -262,7 +262,7 @@ if ($Mode -eq "global") {
 
     # Plugins
     Write-Step "claude-dashboard 플러그인 복사..."
-    $dashboardSrc = Join-Path $OrchestrationDir "plugins\claude-dashboard"
+    $dashboardSrc = Join-Path $ScriptDir "packages\claude-dashboard"
     if (Test-Path $dashboardSrc) {
         Copy-Item $dashboardSrc (Join-Path $ClaudeDir "plugins\claude-dashboard") -Recurse -Force
         Write-Success "claude-dashboard 복사 완료"

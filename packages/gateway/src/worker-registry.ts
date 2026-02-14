@@ -162,6 +162,12 @@ export class WorkerRegistry extends EventEmitter {
     return Array.from(this.tasks.values()).filter(t => t.status === 'running' || t.status === 'timeout');
   }
 
+  getAllTaskRecords(): WorkerTaskRecord[] {
+    return Array.from(this.tasks.values())
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .slice(0, 50);
+  }
+
   private get tasksFilePath(): string {
     const dir = join(homedir(), '.olympus');
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });

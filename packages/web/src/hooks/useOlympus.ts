@@ -149,6 +149,14 @@ export interface OlympusState {
   activityEvents: ActivityEventEntry[];
   systemStats: SystemStatsEntry;
   usageData: StatuslineUsageData | null;
+  // Worker task completion events for ChatWindow
+  lastWorkerCompletion: {
+    workerId: string;
+    workerName: string;
+    summary: string;
+    success: boolean;
+    timestamp: number;
+  } | null;
 }
 
 export interface UseOlympusOptions {
@@ -224,9 +232,15 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     geminiCurrentTask: null,
     geminiCacheCount: 0,
     geminiLastAnalyzed: null,
-    activityEvents: [],
+    activityEvents: (() => {
+      try {
+        const saved = localStorage.getItem('olympus-activity-events');
+        return saved ? JSON.parse(saved) : [];
+      } catch { return []; }
+    })(),
     systemStats: { totalWorkers: 0, activeWorkers: 0, totalTokens: 0, failedTasks: 0 },
     usageData: null,
+    lastWorkerCompletion: null,
   });
 
   const { port, host, apiKey } = options;
@@ -445,7 +459,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     });
 
     client.on('worker:task:completed', (m) => {
-      const payload = m.payload as { workerId?: string; taskId: string; status?: string; summary?: string; workerName?: string; durationMs?: number };
+      const payload = m.payload as { workerId?: string; taskId: string; status?: string; summary?: string; workerName?: string; durationMs?: number; success?: boolean };
       const wId = payload.workerId;
       if (wId) {
         setState((s) => {
@@ -458,16 +472,24 @@ export function useOlympus(options: UseOlympusOptions = {}) {
             summary: payload.summary,
             durationMs: payload.durationMs ?? (Date.now() - completedTask.startedAt),
           };
+          const success = payload.success ?? (payload.status === 'completed');
           return {
             ...s,
             workerBehaviors: {
               ...s.workerBehaviors,
-              [wId]: payload.status === 'completed' ? 'completed' : 'error',
+              [wId]: success ? 'completed' : 'error',
             },
             workerTasks: [
               newTask,
               ...s.workerTasks.filter(t => t.taskId !== payload.taskId),
             ].slice(0, 50),
+            lastWorkerCompletion: {
+              workerId: wId,
+              workerName: payload.workerName ?? wId,
+              summary: payload.summary ?? (success ? '작업 완료' : '작업 실패'),
+              success,
+              timestamp: Date.now(),
+            },
           };
         });
       }
@@ -810,14 +832,63 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       }
     };
 
+    const pollWorkerTasks = async () => {
+      try {
+        const res = await fetch(`http://${host}:${port}/api/workers/tasks`, {
+          headers: apiKey ? { 'x-api-key': apiKey } : {},
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.tasks && Array.isArray(data.tasks)) {
+          setState((s) => {
+            // Merge: keep WebSocket-updated tasks, add any from API that aren't already tracked
+            const existingIds = new Set(s.workerTasks.map(t => t.taskId));
+            const newTasks = data.tasks
+              .filter((t: any) => !existingIds.has(t.taskId))
+              .map((t: any) => ({
+                taskId: t.taskId,
+                workerId: t.workerId,
+                workerName: t.workerName,
+                prompt: t.prompt ?? '',
+                status: t.status === 'running' ? 'active' as const :
+                        t.status === 'timeout' ? 'timeout' as const :
+                        t.result?.success ? 'completed' as const : 'failed' as const,
+                startedAt: t.startedAt,
+                completedAt: t.completedAt,
+                summary: t.result?.text?.slice(0, 200),
+                durationMs: t.completedAt ? t.completedAt - t.startedAt : undefined,
+              }));
+            if (newTasks.length === 0) return s;
+            return { ...s, workerTasks: [...newTasks, ...s.workerTasks].slice(0, 50) };
+          });
+        }
+      } catch {
+        // Silently fail
+      }
+    };
+
     pollWorkers();
     pollGemini();
     pollUsage();
     pollCliSessions();
+    pollWorkerTasks();
     const interval = setInterval(() => { pollWorkers(); pollGemini(); pollUsage(); pollCliSessions(); }, 10_000);
     return () => clearInterval(interval);
   }, [apiKey, host, port]);
 
+  // =========================================================================
+  // Save activity events to localStorage on change
+  // =========================================================================
+
+  useEffect(() => {
+    try {
+      if (state.activityEvents.length > 0) {
+        localStorage.setItem('olympus-activity-events', JSON.stringify(state.activityEvents.slice(-50)));
+      }
+    } catch {
+      // Silently fail localStorage writes
+    }
+  }, [state.activityEvents]);
 
   // =========================================================================
   // Actions (existing)
@@ -1043,5 +1114,6 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     chatWithGemini,
     chatWithCodex,
     deleteCliSession,
+    lastWorkerCompletion: state.lastWorkerCompletion,
   };
 }

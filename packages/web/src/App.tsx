@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useOlympus } from './hooks/useOlympus';
 import { useOlympusMountain } from './hooks/useOlympusMountain';
 
@@ -159,6 +159,7 @@ export default function App() {
     workerTasks,
     cliSessions,
     deleteCliSession,
+    lastWorkerCompletion,
   } = useOlympus(config);
 
   // Build WorkerConfig[] and WorkerDashboardState map for new components
@@ -270,7 +271,28 @@ export default function App() {
         [agentId]: [...(prev[agentId] || []), errorMsg],
       }));
     }
-  }, [chatWithGemini, chatWithCodex, workerConfigs]);
+  }, [chatWithGemini, chatWithCodex, polledWorkerConfigs]);
+
+  // Worker task completion → ChatWindow message
+  useEffect(() => {
+    if (!lastWorkerCompletion) return;
+
+    const { workerId, workerName, summary, success } = lastWorkerCompletion;
+    const icon = success ? '✅' : '❌';
+    const content = `${icon} ${summary}`;
+
+    const agentMsg = {
+      id: crypto.randomUUID(),
+      role: 'agent' as const,
+      content,
+      timestamp: lastWorkerCompletion.timestamp,
+    };
+
+    setChatMessages(prev => ({
+      ...prev,
+      [workerId]: [...(prev[workerId] || []), agentMsg],
+    }));
+  }, [lastWorkerCompletion?.timestamp]);
 
   const handleChatClick = useCallback((workerId: string) => {
     const w = workerConfigs.find(w => w.id === workerId);

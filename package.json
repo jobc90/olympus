@@ -30,6 +30,13 @@
     "test": "turbo run test",
     "lint": "turbo run lint"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild",
+      "node-pty"
+    ]
+  },
   "devDependencies": {
     "@types/node": "^25.2.0",
     "turbo": "^2.5.0",

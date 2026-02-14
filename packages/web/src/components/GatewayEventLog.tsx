@@ -51,7 +51,7 @@ export function GatewayEventLog({ logs }: Props) {
   const warnCount = logs.filter((l) => l.level === 'warn').length;
 
   return (
-    <Card className="flex flex-col h-full">
+    <Card className="flex flex-col">
       <CardHeader
         action={
           <div className="flex gap-2 text-xs font-mono">
@@ -106,8 +106,8 @@ export function GatewayEventLog({ logs }: Props) {
         style={{ maxHeight: '160px' }}
       >
         {filteredLogs.length === 0 ? (
-          <div className="text-text-tertiary text-center py-3">
-            Waiting for gateway events...
+          <div className="text-text-tertiary text-center py-2 text-xs">
+            No events yet
           </div>
         ) : (
           filteredLogs.map((log, idx) => {

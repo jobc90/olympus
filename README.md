@@ -543,6 +543,33 @@ cd packages/cli && npm link
 olympus --version
 ```
 
+### Windows에서 Gemini Advisor가 "gemini CLI 미설치"로 표시됨
+
+**원인**: Gateway의 Gemini CLI 감지 코드가 Unix 전용 `which` 명령어를 사용하여 Windows에서 항상 실패
+
+**해결**: v1.0.1에서 수정됨. `process.platform`에 따라 `where` (Windows) / `which` (Unix) 분기 처리. 최신 버전으로 업데이트 후 서버 재시작:
+```bash
+pnpm build && olympus server start
+```
+
+### Dashboard Usage 섹션이 표시되지 않음
+
+**원인**: `claude-dashboard` statusline 플러그인이 Claude Code 세션에서 실행되지 않거나, `~/.claude/settings.json`의 `statusLine.command` 경로가 올바르지 않음
+
+**해결**:
+1. `~/.claude/settings.json`의 `statusLine` 경로 확인:
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node <olympus-project-path>/packages/claude-dashboard/dist/index.js"
+  }
+}
+```
+2. `claude-dashboard` 빌드 확인: `cd packages/claude-dashboard && pnpm build`
+3. Claude CLI 세션을 새로 시작 (statusline 플러그인은 세션 시작 시 로드됨)
+4. `~/.olympus/statusline.json` 파일이 생성되는지 확인
+
 ### node-pty 빌드 실패
 
 **해결**:

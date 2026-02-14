@@ -722,7 +722,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 DASHBOARD_DIR="$CLAUDE_DIR/plugins/claude-dashboard"
-DASHBOARD_SRC="$ORCHESTRATION_DIR/plugins/claude-dashboard"
+DASHBOARD_SRC="$SCRIPT_DIR/packages/claude-dashboard"
 if [ -d "$DASHBOARD_SRC" ]; then
     mkdir -p "$CLAUDE_DIR/plugins"
     migrate_to_symlink "$DASHBOARD_SRC" "$DASHBOARD_DIR"
@@ -858,6 +858,13 @@ if [ -f "$SETTINGS_FILE" ]; then
     echo "    \"postgres-best-practices@supabase-agent-skills\": true,"
     echo "    \"vercel-react-best-practices\": true,"
     echo "    \"ui-ux-pro-max@ui-ux-pro-max-skill\": true"
+    echo -e "  }${NC}"
+    echo ""
+    echo "    그리고 statusLine을 추가하세요 (Dashboard Usage 표시):"
+    echo ""
+    echo -e "${YELLOW}  \"statusLine\": {"
+    echo "    \"type\": \"command\","
+    echo "    \"command\": \"node $SCRIPT_DIR/packages/claude-dashboard/dist/index.js\""
     echo -e "  }${NC}"
 else
     cat > "$SETTINGS_FILE" << EOF

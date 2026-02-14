@@ -1,11 +1,13 @@
 {
-  "name": "claude-dashboard",
+  "name": "@olympus-dev/claude-dashboard",
   "version": "1.6.0",
+  "private": true,
   "type": "module",
   "description": "Comprehensive status line with context usage, API rate limits, and cost tracking",
   "main": "dist/index.js",
   "scripts": {
     "build": "node scripts/build.js",
+    "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:manual": "echo '{\"model\":{\"display_name\":\"Opus\"},\"context_window\":{\"context_window_size\":200000,\"current_usage\":{\"input_tokens\":50000,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0}},\"cost\":{\"total_cost_usd\":0.5}}' | node dist/index.js"

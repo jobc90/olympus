@@ -9,6 +9,12 @@ import type { CreateTaskInput, UpdateTaskInput, CreateContextInput, UpdateContex
 import type { CodexAdapter } from './codex-adapter.js';
 import type { GeminiAdvisor } from './gemini-advisor.js';
 
+/** Strip ANSI escape sequences from text */
+function stripAnsi(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07)/g, '');
+}
+
 export interface ApiHandlerOptions {
   runManager: RunManager;
   sessionManager: SessionManager;
@@ -207,6 +213,10 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     if (parts[2] === 'register') {
       return { path: '/api/workers/register', query };
     }
+    // /api/workers/tasks (list all)
+    if (parts[2] === 'tasks' && !parts[3]) {
+      return { path: '/api/workers/tasks', query };
+    }
     // /api/workers/tasks/:taskId — worker task status query
     if (parts[2] === 'tasks' && parts[3]) {
       return { path: '/api/workers/tasks/:id', id: parts[3], query };
@@ -364,10 +374,12 @@ ${body.message}`;
           if (result.success) {
             sendJson(res, 200, { reply: result.output });
           } else {
-            sendJson(res, 200, { reply: '죄송합니다. 응답을 생성할 수 없습니다.' });
+            console.error('[api/chat] Gemini execute failed:', result.error);
+            sendJson(res, 200, { reply: result.error || '죄송합니다. Gemini 응답을 생성할 수 없습니다.' });
           }
-        } catch {
-          sendJson(res, 200, { reply: '죄송합니다. 응답을 생성할 수 없습니다.' });
+        } catch (err) {
+          console.error('[api/chat] Gemini error:', (err as Error).message);
+          sendJson(res, 200, { reply: `Gemini 오류: ${(err as Error).message}` });
         }
         return;
       }
@@ -518,7 +530,7 @@ ${body.message}`;
           workerRegistry.timeoutTask(id, result);
 
           // Codex summary (brief — partial result)
-          let summary = result.text ?? '';
+          let summary = stripAnsi(result.text ?? '');
           if (summary.length > 2000) {
             summary = summary.slice(0, 2000);
           }
@@ -543,11 +555,12 @@ ${body.message}`;
           onCliComplete?.(result);
 
           // Codex summarization → then broadcast (user accepts delay)
-          let summary = (result.text ?? '').slice(0, 2000);
+          const rawText = stripAnsi((result.text ?? '').slice(0, 4000));
+          let summary = rawText.slice(0, 2000);
           try {
             const { runCli } = await import('./cli-runner.js');
             const summarizeResult = await runCli({
-              prompt: `Summarize the following work result from "${task.workerName}" concisely. Key outcomes only, no greetings or extra explanations. Respond in Korean.\n\n---\n${(result.text ?? '').slice(0, 4000)}`,
+              prompt: `Summarize the following work result from "${task.workerName}" concisely. Key outcomes only, no greetings or extra explanations. Respond in Korean.\n\n---\n${rawText}`,
               provider: 'codex',
               model: 'gpt-5.3-codex',
               dangerouslySkipPermissions: true,
@@ -556,7 +569,9 @@ ${body.message}`;
             if (summarizeResult.success && summarizeResult.text) {
               summary = summarizeResult.text;
             }
-          } catch { /* summarization failed — use raw text */ }
+          } catch (err) {
+            console.error('[api] Codex summarization failed:', (err as Error).message);
+          }
 
           onWorkerEvent?.('worker:task:final_after_timeout', {
             taskId: id,
@@ -620,11 +635,12 @@ ${body.message}`;
         onCliComplete?.(result);
 
         // Codex summarization → then broadcast (user accepts delay)
-        let summary = (result.text ?? '').slice(0, 2000);
+        const rawText = stripAnsi((result.text ?? '').slice(0, 4000));
+        let summary = rawText.slice(0, 2000);
         try {
           const { runCli } = await import('./cli-runner.js');
           const summarizeResult = await runCli({
-            prompt: `Summarize the following work result from "${task.workerName}" concisely. Key outcomes only, no greetings or extra explanations. Respond in Korean.\n\n---\n${(result.text ?? '').slice(0, 4000)}`,
+            prompt: `Summarize the following work result from "${task.workerName}" concisely. Key outcomes only, no greetings or extra explanations. Respond in Korean.\n\n---\n${rawText}`,
             provider: 'codex',
             model: 'gpt-5.3-codex',
             dangerouslySkipPermissions: true,
@@ -633,7 +649,9 @@ ${body.message}`;
           if (summarizeResult.success && summarizeResult.text) {
             summary = summarizeResult.text;
           }
-        } catch { /* summarization failed — use raw text */ }
+        } catch (err) {
+          console.error('[api] Codex summarization failed:', (err as Error).message);
+        }
 
         onWorkerEvent?.('worker:task:completed', {
           taskId: id,
@@ -689,6 +707,17 @@ ${body.message}`;
         })().catch(() => {});
 
         sendJson(res, 200, { ok: true });
+        return;
+      }
+
+      // GET /api/workers/tasks — List recent worker tasks
+      if (path === '/api/workers/tasks' && method === 'GET' && !id) {
+        if (!workerRegistry) {
+          sendJson(res, 503, { error: 'Worker registry not available' });
+          return;
+        }
+        const tasks = workerRegistry.getAllTaskRecords();
+        sendJson(res, 200, { tasks });
         return;
       }
 
@@ -942,7 +971,8 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextS
 
           if (!result.success) {
             console.error('[codex/chat] runCli failed:', JSON.stringify(result.error), 'text:', result.text?.slice(0, 200));
-            sendJson(res, 200, { type: 'chat', response: '죄송합니다. 잠시 후 다시 시도해주세요.' });
+            const errorMsg = result.text || (result.error as any)?.message || '죄송합니다. Codex 실행에 실패했습니다.';
+            sendJson(res, 200, { type: 'chat', response: errorMsg });
             return;
           }
 

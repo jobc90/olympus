@@ -540,7 +540,8 @@ async function initGeminiAdvisor() {
 
     // gemini CLI 존재 확인
     try {
-      execSync('which gemini', { stdio: 'pipe' });
+      const isWin = process.platform === 'win32';
+      execSync(isWin ? 'where gemini' : 'which gemini', { stdio: 'pipe' });
     } catch {
       console.log(chalk.gray('  - Gemini Advisor: gemini CLI 미설치 (건너뜀)'));
       return null;
