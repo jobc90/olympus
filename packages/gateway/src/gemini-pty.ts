@@ -15,15 +15,12 @@ function stripAnsi(text: string): string {
 
 const SETTLE_MS = 3_000;        // 3초 무활동 → 완료
 const INIT_SETTLE_MS = 3_000;   // 초기화: 3초 무출력 → ready
-const INIT_MAX_MS = 15_000;     // 초기화: 최대 15초 대기
-const DEFAULT_TIMEOUT_MS = 60_000; // 1분 타임아웃
 const MAX_RESTARTS = 3;
 
 interface PendingRequest {
   resolve: (result: string) => void;
   reject: (err: Error) => void;
   settleTimer: ReturnType<typeof setTimeout> | null;
-  timeoutTimer: ReturnType<typeof setTimeout>;
 }
 
 export class GeminiPty extends EventEmitter {
@@ -96,9 +93,8 @@ export class GeminiPty extends EventEmitter {
 
       // pending 요청이 있으면 현재 버퍼 반환
       if (this.pending) {
-        const { resolve, settleTimer, timeoutTimer } = this.pending;
+        const { resolve, settleTimer } = this.pending;
         if (settleTimer) clearTimeout(settleTimer);
-        clearTimeout(timeoutTimer);
         resolve(stripAnsi(this.buffer).trim());
         this.pending = null;
         this.buffer = '';
@@ -114,16 +110,9 @@ export class GeminiPty extends EventEmitter {
     // Wait for Gemini CLI initialization to settle
     // (MCP servers, skills, credentials loading takes 5-10s)
     await new Promise<void>((resolve) => {
-      const maxTimer = setTimeout(() => {
-        this.ready = true;
-        clearInterval(check);
-        resolve();
-      }, INIT_MAX_MS);
-
       const check = setInterval(() => {
         if (lastInitDataAt > 0 && Date.now() - lastInitDataAt >= INIT_SETTLE_MS) {
           clearInterval(check);
-          clearTimeout(maxTimer);
           this.ready = true;
           resolve();
         }
@@ -143,8 +132,7 @@ export class GeminiPty extends EventEmitter {
     this.pending.settleTimer = setTimeout(() => {
       // 3초 무활동 → 완료
       if (this.pending) {
-        const { resolve, timeoutTimer } = this.pending;
-        clearTimeout(timeoutTimer);
+        const { resolve } = this.pending;
         resolve(stripAnsi(this.buffer).trim());
         this.pending = null;
         this.buffer = '';
@@ -158,9 +146,8 @@ export class GeminiPty extends EventEmitter {
 
     // pending 요청 reject
     if (this.pending) {
-      const { reject, settleTimer, timeoutTimer } = this.pending;
+      const { reject, settleTimer } = this.pending;
       if (settleTimer) clearTimeout(settleTimer);
-      clearTimeout(timeoutTimer);
       reject(new Error('GeminiPty stopped'));
       this.pending = null;
     }
@@ -182,16 +169,14 @@ export class GeminiPty extends EventEmitter {
    * PTY 모드: 상주 프로세스에 입력
    * spawn 폴백: 개별 프로세스 실행
    */
-  async sendPrompt(prompt: string, timeoutMs?: number): Promise<string> {
-    const timeout = timeoutMs ?? DEFAULT_TIMEOUT_MS;
-
+  async sendPrompt(prompt: string, _timeoutMs?: number): Promise<string> {
     if (this.usePty) {
-      return this.sendPromptPty(prompt, timeout);
+      return this.sendPromptPty(prompt);
     }
-    return this.sendPromptSpawn(prompt, timeout);
+    return this.sendPromptSpawn(prompt);
   }
 
-  private sendPromptPty(prompt: string, timeoutMs: number): Promise<string> {
+  private sendPromptPty(prompt: string): Promise<string> {
     if (!this.alive || !this.ready) {
       return Promise.reject(new Error('GeminiPty not ready'));
     }
@@ -201,19 +186,7 @@ export class GeminiPty extends EventEmitter {
 
     return new Promise((resolve, reject) => {
       this.buffer = '';
-
-      const timeoutTimer = setTimeout(() => {
-        if (this.pending) {
-          const { settleTimer } = this.pending;
-          if (settleTimer) clearTimeout(settleTimer);
-          // 타임아웃 시 현재 버퍼 반환 (부분 결과)
-          resolve(stripAnsi(this.buffer).trim());
-          this.pending = null;
-          this.buffer = '';
-        }
-      }, timeoutMs);
-
-      this.pending = { resolve, reject, settleTimer: null, timeoutTimer };
+      this.pending = { resolve, reject, settleTimer: null };
 
       // 프롬프트 전송
       const pty = this.pty as { write: (data: string) => void };
@@ -222,10 +195,9 @@ export class GeminiPty extends EventEmitter {
     });
   }
 
-  private sendPromptSpawn(prompt: string, timeoutMs: number): Promise<string> {
+  private sendPromptSpawn(prompt: string): Promise<string> {
     return new Promise((resolve, reject) => {
       let stdout = '';
-      let settled = false;
 
       // -p '' enables headless mode; actual prompt comes from stdin
       const gemini: ChildProcess = spawn('gemini', [
@@ -236,33 +208,17 @@ export class GeminiPty extends EventEmitter {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      const timer = setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          gemini.kill();
-          resolve(stripAnsi(stdout).trim());
-        }
-      }, timeoutMs);
-
       gemini.stdout?.on('data', (data: Buffer) => {
         stdout += data.toString();
       });
       // stderr is ignored (contains startup noise: MCP loading, skill conflicts, etc.)
 
       gemini.on('close', () => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          resolve(stripAnsi(stdout).trim());
-        }
+        resolve(stripAnsi(stdout).trim());
       });
 
       gemini.on('error', (err: Error) => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          reject(err);
-        }
+        reject(err);
       });
 
       gemini.stdin?.write(prompt);

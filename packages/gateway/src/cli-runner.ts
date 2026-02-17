@@ -325,11 +325,14 @@ function spawnCli(
     let timedOut = false;
     let settled = false;
 
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    let killHandle: ReturnType<typeof setTimeout> | undefined;
+
     const settle = (result: SpawnResult) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timeoutHandle);
-      clearTimeout(killHandle);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (killHandle) clearTimeout(killHandle);
       resolve(result);
     };
 
@@ -366,15 +369,16 @@ function spawnCli(
       settle({ exitCode: null, stdout, stderr: stderr + err.message, timedOut: false });
     });
 
-    // 타임아웃: SIGTERM → 10초 후 SIGKILL
-    let killHandle: ReturnType<typeof setTimeout>;
-    const timeoutHandle = setTimeout(() => {
-      timedOut = true;
-      proc.kill('SIGTERM');
-      killHandle = setTimeout(() => {
-        try { proc.kill('SIGKILL'); } catch { /* already dead */ }
-      }, 10_000);
-    }, options.timeoutMs);
+    // Only set timeout if timeoutMs > 0; when 0, wait for natural process exit
+    if (options.timeoutMs > 0) {
+      timeoutHandle = setTimeout(() => {
+        timedOut = true;
+        proc.kill('SIGTERM');
+        killHandle = setTimeout(() => {
+          try { proc.kill('SIGKILL'); } catch { /* already dead */ }
+        }, 10_000);
+      }, options.timeoutMs);
+    }
   });
 }
 
@@ -406,7 +410,7 @@ export async function runCli(params: CliRunParams): Promise<CliRunResult> {
     );
   }
 
-  const timeoutMs = params.timeoutMs ?? 300_000;
+  const timeoutMs = params.timeoutMs ?? 0;
   const args = buildCliArgs(params, backend);
 
   return CLI_LIMITER.run(async () => {

@@ -111,33 +111,13 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
 
   async function handleTaskPty(task: TaskPayload): Promise<void> {
     try {
-      const { result, finalResult } = await ptyWorker!.executeTaskWithTimeout(task.prompt);
+      const { result } = await ptyWorker!.executeTaskWithTimeout(task.prompt);
 
-      if (result.timeout && finalResult) {
-        // Phase 1: 30분 타임아웃 부분 결과 보고
-        await reportResult(task.taskId, {
-          success: result.success,
-          text: result.text.slice(0, 50000),
-          durationMs: result.durationMs,
-          timeout: true,
-        });
-
-        // Phase 2: 최종 결과 대기 (isProcessing = true 유지 → 새 작업 차단)
-        const final = await finalResult;
-        await reportResult(task.taskId, {
-          success: final.success,
-          text: final.text.slice(0, 50000),
-          durationMs: final.durationMs,
-          isFinalAfterTimeout: true,
-        });
-      } else {
-        // 정상 완료: 단일 보고
-        await reportResult(task.taskId, {
-          success: result.success,
-          text: result.text.slice(0, 50000),
-          durationMs: result.durationMs,
-        });
-      }
+      await reportResult(task.taskId, {
+        success: result.success,
+        text: result.text.slice(0, 50000),
+        durationMs: result.durationMs,
+      });
     } catch (err) {
       process.stderr.write(`[worker] 작업 실행 실패: ${(err as Error).message}\n`);
       await reportResult(task.taskId, {

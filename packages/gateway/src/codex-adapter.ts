@@ -27,8 +27,6 @@ import type { GeminiAdvisor } from './gemini-advisor.js';
  *   adapter.registerRpcMethods(rpcRouter);
  */
 export class CodexAdapter {
-  static readonly REQUEST_TIMEOUT = 30_000; // 30초
-
   // CodexOrchestrator interface — duck typing to avoid codex package dependency
   private codex: CodexOrchestratorLike;
 

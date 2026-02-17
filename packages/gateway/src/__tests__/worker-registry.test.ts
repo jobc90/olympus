@@ -106,21 +106,32 @@ describe('WorkerRegistry', () => {
     });
   });
 
-  // ── heartbeat timeout ──
+  // ── no heartbeat auto-removal ──
 
-  describe('heartbeat timeout', () => {
-    it('removes workers after 60s without heartbeat', () => {
+  describe('no heartbeat auto-removal', () => {
+    it('workers are never auto-removed by heartbeat timeout', () => {
       vi.useFakeTimers();
       const reg = new WorkerRegistry();
       reg.register({ projectPath: '/p', pid: 1 });
       expect(reg.getAll()).toHaveLength(1);
 
-      // Advance 61 seconds (past 60s timeout) + trigger check at 15s intervals
-      vi.advanceTimersByTime(61_000);
-      expect(reg.getAll()).toHaveLength(0);
+      // Advance well past any previous timeout (5 minutes) — worker should remain
+      vi.advanceTimersByTime(300_000);
+      expect(reg.getAll()).toHaveLength(1);
 
       reg.dispose();
       vi.useRealTimers();
+    });
+
+    it('workers are only removed by explicit unregister', () => {
+      const reg = new WorkerRegistry();
+      const worker = reg.register({ projectPath: '/p', pid: 1 });
+      expect(reg.getAll()).toHaveLength(1);
+
+      reg.unregister(worker.id);
+      expect(reg.getAll()).toHaveLength(0);
+
+      reg.dispose();
     });
   });
 

@@ -18,17 +18,12 @@ import type {
   CliRunResult,
 } from '@olympus-dev/protocol';
 
-const HEARTBEAT_CHECK_INTERVAL = 15_000; // 15초
-const HEARTBEAT_TIMEOUT = 60_000; // 60초
-
 export class WorkerRegistry extends EventEmitter {
   private workers = new Map<string, RegisteredWorker>();
   private tasks = new Map<string, WorkerTaskRecord>();
-  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     super();
-    this.heartbeatTimer = setInterval(() => this.checkHeartbeats(), HEARTBEAT_CHECK_INTERVAL);
   }
 
   register(info: WorkerRegistration): RegisteredWorker {
@@ -196,10 +191,7 @@ export class WorkerRegistry extends EventEmitter {
   }
 
   dispose(): void {
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = null;
-    }
+    // no-op — retained for interface compatibility
   }
 
   private deduplicateName(baseName: string): string {
@@ -212,13 +204,4 @@ export class WorkerRegistry extends EventEmitter {
     return `${baseName}-${n}`;
   }
 
-  private checkHeartbeats(): void {
-    const now = Date.now();
-    for (const [id, worker] of this.workers) {
-      if (now - worker.lastHeartbeat >= HEARTBEAT_TIMEOUT) {
-        this.workers.delete(id);
-        this.emit('worker:unregistered', worker);
-      }
-    }
-  }
 }

@@ -115,24 +115,21 @@ describe('GeminiPty', () => {
       await expect(resultPromise).rejects.toThrow('spawn ENOENT');
     });
 
-    it('타임아웃 시 현재 버퍼 반환 + kill', async () => {
-      vi.useFakeTimers();
+    it('타임아웃 없이 프로세스 종료(close) 시에만 결과 반환', async () => {
       await pty.start();
 
-      const resultPromise = pty.sendPrompt('test', 100);
+      const resultPromise = pty.sendPrompt('test');
 
       // stdout 일부 데이터
       const stdoutCb = mockStdoutListeners.get('data');
-      if (stdoutCb) stdoutCb(Buffer.from('partial'));
+      if (stdoutCb) stdoutCb(Buffer.from('full result'));
 
-      // 타임아웃 발동
-      vi.advanceTimersByTime(150);
+      // close 이벤트 (프로세스 자연 종료)
+      const closeCb = mockProcessListeners.get('close');
+      if (closeCb) closeCb(0);
 
       const result = await resultPromise;
-      expect(result).toBe('partial');
-      expect(mockProcess.kill).toHaveBeenCalled();
-
-      vi.useRealTimers();
+      expect(result).toBe('full result');
     });
   });
 });
