@@ -1,8 +1,8 @@
 ---
-description: Team Engineering Protocol v3.1 — DAG parallel execution + streaming reconciliation + shared file zone
+description: Team Engineering Protocol v3.2 — MCP 3중 검증 + 적극적 스킬/플러그인 활용 + DAG 병렬 실행
 ---
 
-[TEAM ENGINEERING PROTOCOL v3.1 ACTIVATED]
+[TEAM ENGINEERING PROTOCOL v3.2 ACTIVATED]
 
 $ARGUMENTS
 
@@ -68,13 +68,49 @@ Step 3 이후는 `Task(subagent_type="{agent-name}", team_name=..., name="{agent
 
 ---
 
-## Step 0: Session Setup
+## Step 0: Session Setup & Skill Discovery
 
-1. `find-skills`로 관련 스킬 검색 + 설치된 플러그인 확인
-2. **`.team/` 상태 디렉토리 생성** — 컨텍스트 압축에도 R# Registry, Ownership Matrix 등 핵심 상태를 보존:
-   ```bash
-   mkdir -p .team && grep -qxF '.team/' .gitignore 2>/dev/null || echo '.team/' >> .gitignore
-   ```
+### 0-1. Proactive Skill & Plugin Discovery (MANDATORY)
+
+사용자 요구사항을 분석하여 관련 도구를 **적극적으로** 탐색하고 활성화합니다:
+
+```
+Skill("find-skills", args="{사용자 요구사항의 핵심 도메인 키워드}")
+```
+
+**탐색 기준**:
+- 사용자 요구의 기술 도메인 (React, API, DB, Docker 등)
+- 작업 유형 (테스트, 빌드, 배포, 문서화 등)
+- 대상 프레임워크/라이브러리
+
+**활용 우선순위**:
+1. **이미 설치된 스킬/플러그인** — 즉시 활성화 (예: `postgres-best-practices`, `vercel-react-best-practices`, `ui-ux-pro-max`)
+2. **검색으로 발견된 스킬** — 유용하면 설치 후 활성화
+3. **MCP 도구** — `ai_team_analyze`, `codex_analyze`, `gemini_analyze`, `delegate_task` 등 전 단계에서 적극 활용
+4. **전문 sub-agent** — 도메인에 맞는 커스텀 에이전트 우선 배정
+
+**도메인별 자동 활성화 매핑**:
+
+| 도메인 신호 | 활성화 대상 |
+|------------|------------|
+| React/Next.js/UI | `frontend-ui-ux` 스킬, `vercel-react-best-practices` 플러그인, `ui-ux-pro-max` 플러그인, `designer` 에이전트 |
+| CSS/디자인 | `frontend-design` 스킬, `designer` 에이전트 |
+| DB/PostgreSQL | `postgres-best-practices` 플러그인 |
+| API/REST/GraphQL | `codex_analyze` MCP, `api-reviewer` 에이전트 |
+| 테스트 | `webapp-testing` 스킬, `test-engineer` 에이전트 |
+| Git/커밋 | `git-master` 스킬/에이전트 |
+| 브라우저 자동화 | `agent-browser` 스킬 |
+| 문서 작성 | `doc-coauthoring` 스킬, `writer` 에이전트 |
+| MCP 서버 | `mcp-builder` 스킬 |
+| 성능/보안 | `performance-reviewer`, `security-reviewer` 에이전트 |
+
+### 0-2. `.team/` 상태 디렉토리 생성
+
+컨텍스트 압축에도 R# Registry, Ownership Matrix 등 핵심 상태를 보존:
+
+```bash
+mkdir -p .team && grep -qxF '.team/' .gitignore 2>/dev/null || echo '.team/' >> .gitignore
+```
 
 ---
 
@@ -82,8 +118,8 @@ Step 3 이후는 `Task(subagent_type="{agent-name}", team_name=..., name="{agent
 
 > **⛔ 이 단계를 건너뛰거나 축약하면 PROTOCOL VIOLATION입니다.**
 > 사용자 입력은 깔끔한 요구사항 리스트일 수도 있고, 에러로그 500줄 + "고쳐줘"일 수도 있습니다.
-> 어떤 형태든 **실행 가능한 요구사항 리스트로 해석**한 뒤, **1회 검증 → 사용자 확인 → 확정**합니다.
-> 확정 후에는 요구사항 리스트만 참조합니다. 원문은 아카이브합니다.
+> 어떤 형태든 **최대한 자세하게 분석 → 리스트화 → MCP 3중 검증 → 자동 확정**합니다.
+> 사용자에게 묻지 않습니다. 확정 후에는 요구사항 리스트만 참조합니다. 원문은 아카이브합니다.
 
 ### 1-0. 원문 아카이브 (FIRST ACTION)
 
@@ -137,7 +173,13 @@ ORIGINAL_EOF
 - **`Task(subagent_type="analyst")`**: 원문 + 추출된 R# 리스트 전달. 누락된 요구 발굴, 요구 간 충돌 감지, 모호한 R# 구체화. 발견한 추가 요구는 `implicit` 유형으로 Registry에 추가
 - **`Task(subagent_type="explore")`**: 각 R#의 관련 파일/함수/패턴 조사, 수정 대상 파일 사전 식별, 기존 컨벤션 파악
 
-### 1-4. 원문 대조 검증 (1회, 이 Step에서만)
+### 1-4. MCP Cross-Verification (자동 검증 — 사용자 확인 대체)
+
+> **⛔ 사용자에게 요구사항 확인을 묻지 않습니다.** 대신 MCP 도구로 다각도 자동 검증합니다.
+
+R# 리스트 + 원문 + analyst/explore 결과를 **MCP 3중 검증**합니다:
+
+#### A. 원문 대조 검증 (Coverage Check)
 
 원문을 R# 리스트와 **1회** 대조하여 누락을 확인합니다:
 
@@ -146,9 +188,6 @@ ORIGINAL_EOF
 원문의 요구/의도를 순서대로 확인:
 - "대시보드에 실시간 차트를 추가하고" → R1 ✅
 - "차트는 최소 3종류..." → R2 ✅
-- "기존 API 엔드포인트는 유지하면서" → R3 ✅
-- "새로운 /analytics 엔드포인트를 만들어라" → R4 ✅
-- "다크모드도 지원해야 한다" → R5 ✅
 미커버 요구: 0개 ✅
 ```
 
@@ -158,32 +197,58 @@ ORIGINAL_EOF
 로그에서 식별된 에러 3건:
 - TypeError at auth.ts:42 → R1 ✅
 - ConnectionError at db.ts:108 → R2 ✅
-- Warning: deprecated API usage → R3 ✅ (implicit)
 미분석 에러: 0건 ✅
 ```
 
-**⛔ 미커버 요구 > 0 → R# 추가 후 재검증. Step 1-5 진입 불가.**
+**⛔ 미커버 요구 > 0 → R# 추가 후 재검증.**
 
-### 1-5. 사용자 확인 (확정 서명)
+#### B. `ai_team_analyze` MCP — 양면 검증
 
-R# 리스트를 사용자에게 제시하고 **확정**을 받습니다:
+Gemini (프론트엔드 관점) + Codex (백엔드 관점) 양쪽에서 R# 리스트의 완전성/실현가능성을 검증합니다:
 
 ```
-[요구사항 확인 — 아래 리스트로 작업을 진행합니다]
-
-| R# | 요구사항 | 유형 |
-|----|---------|------|
-| R1 | 대시보드에 실시간 차트 컴포넌트 추가 | explicit |
-| R2 | 차트 3종류 지원 (라인, 바, 파이) | explicit |
-| R3 | 기존 API 엔드포인트 하위 호환 유지 | explicit |
-| R4 | /analytics 엔드포인트 신규 생성 | explicit |
-| R5 | 다크모드 테마 지원 | explicit |
-| R6 | 차트 컴포넌트 다크모드 테마 반응 | implicit |
-
-빠지거나 잘못된 항목이 있으면 알려주세요.
+ai_team_analyze(
+  prompt: "아래 요구사항 리스트를 검증하라:
+    1. 누락된 요구사항이 있는지 (사용자 원문 대비)
+    2. 요구사항 간 충돌이 있는지
+    3. 기술적으로 실현 불가능한 항목이 있는지
+    4. implicit 요구 중 과도한 해석이 있는지
+    각 항목에 [OK] / [WARN] / [ADD] 판정",
+  context: "원문: {user-input.md 내용}\n\nR# 리스트: {R# 테이블}\n\nAnalyst 분석: {analyst 결과}\n\nExplore 결과: {explore 결과}"
+)
 ```
 
-**사용자 확인 = 확정 서명.** 이 시점 이후, 원문(`user-input.md`)은 아카이브 상태로 전환됩니다.
+MCP 검증 결과 반영:
+- **[ADD]** → 누락된 R#을 implicit로 추가
+- **[WARN]** → R# 설명 구체화 또는 근거 보강
+- **[OK]** → 확정
+
+#### C. `delegate_task` MCP — 도메인별 교차 검증 (조건부)
+
+UI 관련 R#이 있으면 `gemini_analyze`, API/인프라 R#이 있으면 `codex_analyze`로 해당 도메인의 실현가능성 재확인:
+
+```
+# UI R#이 있을 때
+gemini_analyze(prompt: "R#의 UI 요구사항이 현재 프론트엔드 구조에서 실현 가능한지 검증", context: ...)
+
+# API/Backend R#이 있을 때
+codex_analyze(prompt: "R#의 백엔드 요구사항이 현재 API 구조에서 실현 가능한지 검증", context: ...)
+```
+
+### 1-5. 요구사항 확정 (자동)
+
+3중 검증(Coverage + MCP 양면 + 도메인 교차) 결과를 반영하여 R# 리스트를 **자동 확정**합니다.
+
+```
+[요구사항 확정 — 3중 검증 완료, 아래 리스트로 작업 진행]
+
+| R# | 요구사항 | 유형 | 검증 |
+|----|---------|------|------|
+| R1 | ... | explicit | Coverage ✅, MCP ✅ |
+| R2 | ... | implicit | Coverage ✅, MCP [ADD] → 추가됨 |
+```
+
+사용자에게 묻지 않고 즉시 다음 단계로 진행합니다.
 
 ### 1-6. 확정 Registry 파일 저장
 
@@ -200,7 +265,7 @@ EOF
 **이후 모든 단계는 오직 `.team/requirements.md`만 참조합니다.**
 원문(`user-input.md`)은 아카이브 — 누락 의심 시에만 열람.
 
-**Output**: `.team/requirements.md` (확정 Registry, 유일한 기준). 이후 모든 단계에서 R# 번호로 참조.
+**Output**: `.team/requirements.md` (MCP 3중 검증 확정 Registry, 유일한 기준). 이후 모든 단계에서 R# 번호로 참조.
 
 ---
 
@@ -216,9 +281,22 @@ EOF
 - **Work Items by Layer** 분해: UI / Domain / Infra / Integration
 - 각 Work Item에 `Fulfills: R#, R#` 필드 필수
 
-### 2-2. `Task(subagent_type="researcher")` — 기술 조사 (필요 시)
+### 2-2. 기술 조사 & 도구 활성화 (필요 시)
 
+#### A. `Task(subagent_type="researcher")` — 외부 조사
 외부 라이브러리/API가 필요한 WI가 있으면 조사 위임. **Skip if**: 기존 패턴으로 해결 가능.
+
+#### B. 도메인별 플러그인/스킬 추가 활성화
+Step 0에서 발견한 도구 외에, WI 분석으로 새로 드러난 도메인에 맞는 도구를 추가 탐색:
+
+```
+# 예: WI 분석 결과 DB 마이그레이션이 필요 → 플러그인 확인
+Skill("find-skills", args="database migration")
+```
+
+**MCP 도구 활용 시점**:
+- WI 분해 시 기술적 불확실성 → `delegate_task` MCP로 Gemini/Codex 의견 수집
+- 프론트/백엔드 분리 불명확 → `ai_team_analyze` MCP로 양면 분석
 
 ### 2-3. Traceability Matrix (MANDATORY)
 
@@ -385,9 +463,17 @@ SHARED FILES (READ-ONLY):
 
 ## Step 5: Parallel Execution
 
-### Phase A — Proposal Collection (MCP)
+### Phase A — Proposal Collection & Tool Leverage (MCP)
 
 `ai_team_patch` MCP → Gemini (프론트) + Codex (백엔드) 제안 수집. **Skip if**: 단일 파일, 명확한 구현 경로.
+
+**적극적 MCP/Plugin 활용**:
+- 프론트엔드 WI → `gemini_patch` MCP로 컴포넌트 구현 제안 수집
+- 백엔드 WI → `codex_patch` MCP로 API/로직 구현 제안 수집
+- DB 관련 → `postgres-best-practices` 플러그인 (Supabase docs 참조)
+- React/Next.js → `vercel-react-best-practices` 플러그인
+- UI/UX → `ui-ux-pro-max` 플러그인으로 스타일/디자인 참조
+- 구현 완료 후 → `review_implementation` MCP로 품질 검증
 
 ### Phase B — DAG-Based Parallel Execution
 
