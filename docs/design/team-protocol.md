@@ -1,24 +1,26 @@
-# Team Engineering Protocol v3.1 — Multi-Agent Collaboration Framework
+# Team Engineering Protocol v3.2 — Multi-Agent Collaboration Framework
 
-**Version**: 3.1
+**Version**: 3.2
 **Status**: Active
-**Last Updated**: 2026-02-13
+**Last Updated**: 2026-02-17
 **Location**: `orchestration/commands/team.md` (symlinked to `~/.claude/commands/team.md`)
 
 ---
 
 ## Overview
 
-The Team Engineering Protocol v3.1 is Olympus's multi-agent orchestration framework for complex software development tasks. It coordinates 19 specialized AI agents (divide by role) across a structured 10-step workflow with DAG-based parallel execution, file ownership separation, and streaming reconciliation.
+The Team Engineering Protocol v3.2 is Olympus's multi-agent orchestration framework for complex software development tasks. It coordinates 19 specialized AI agents (divide by role) across a structured 10-step workflow with DAG-based parallel execution, file ownership separation, streaming reconciliation, and MCP-based automatic verification.
 
 ### Core Innovations
 
-1. **DAG-Based Parallel Execution** — Work Items (WI) execute in parallel based on dependency graph, not waves
-2. **Streaming Reconciliation (3-Tier)** — Per-WI validation → checkpoint builds → final reconciliation
-3. **Shared File Zone** — SHARED files (types, config, index) managed by leader, preventing conflicts
-4. **File Ownership Invariant** — At any moment, 1 file = max 1 teammate owner
-5. **Dynamic Scaling** — 1 WI = 1 Teammate; same role spawned multiple times if needed
-6. **Circuit Breaker** — Task metadata records `failCount` permanently; escalate to architect after 3 failures
+1. **MCP 3-Way Auto-Verification** — Coverage Check + `ai_team_analyze` + domain-specific MCP replaces user confirmation
+2. **Proactive Skill & Plugin Discovery** — `find-skills` mandatory with 10-domain auto-activation mapping
+3. **DAG-Based Parallel Execution** — Work Items (WI) execute in parallel based on dependency graph, not waves
+4. **Streaming Reconciliation (3-Tier)** — Per-WI validation → checkpoint builds → final reconciliation
+5. **Shared File Zone** — SHARED files (types, config, index) managed by leader, preventing conflicts
+6. **File Ownership Invariant** — At any moment, 1 file = max 1 teammate owner
+7. **Dynamic Scaling** — 1 WI = 1 Teammate; same role spawned multiple times if needed
+8. **Circuit Breaker** — Task metadata records `failCount` permanently; escalate to architect after 3 failures
 
 ### Activation
 
@@ -65,15 +67,31 @@ Olympus uses **19 custom agents** defined in `.claude/agents/` directory. Each h
 
 ## The 10-Step Workflow
 
-### Step 0: Session Setup
+### Step 0: Session Setup + Proactive Skill & Plugin Discovery
 
 **Actions**:
-1. Find related skills: `/find-skills` for extensions/plugins
-2. Create state directory:
+1. **Mandatory skill discovery**: `/find-skills` for extensions/plugins
+2. **Domain-to-Tool Activation** (auto-detect from task description):
+
+   | Domain | Auto-Activate |
+   |--------|--------------|
+   | Frontend/UI | `frontend-ui-ux`, `webapp-testing`, `ui-ux-pro-max` |
+   | Backend/API | `postgres-best-practices`, `codex_analyze` |
+   | React/Next.js | `vercel-react-best-practices`, `reactcomponents` |
+   | Testing | `webapp-testing`, `agent-browser` |
+   | Git/VCS | `git-master` |
+   | Documentation | `doc-coauthoring`, `docx` |
+   | Design System | `design-md`, `brand-guidelines` |
+   | Performance | `performance-reviewer` MCP |
+   | Security | `security-reviewer` MCP |
+   | Data/Spreadsheet | `xlsx`, `pdf` |
+
+3. **Activation Priority**: Installed skills > Discovered skills > MCP tools > Direct implementation
+4. Create state directory:
    ```bash
    mkdir -p .team && grep -qxF '.team/' .gitignore 2>/dev/null || echo '.team/' >> .gitignore
    ```
-3. Initialize requirement registry and ownership matrix (created in later steps)
+5. Initialize requirement registry and ownership matrix (created in later steps)
 
 ---
 
@@ -146,10 +164,11 @@ Task(subagent_type="explore")
   - Output: File mapping per R#
 ```
 
-#### 1-4. Coverage Check (Original Text vs R# List)
+#### 1-4. MCP 3-Way Cross-Verification (Replaces User Confirmation)
 
-Single-pass validation — mark each requirement from source text:
+Three independent verification layers ensure requirement completeness without user interruption:
 
+**A. Coverage Check** (Original Text vs R# List):
 ```
 [COVERAGE CHECK — Original vs R# List]
 Original requirements in order:
@@ -161,26 +180,32 @@ Original requirements in order:
 Uncovered requirements: 0 ✅
 ```
 
-**Failure rule**: If uncovered > 0, add WI and re-check. Cannot proceed to Step 1-5.
-
-#### 1-5. User Confirmation (Definitive Signature)
-
-Present R# list to user for approval:
-
+**B. `ai_team_analyze` MCP** (Gemini + Codex dual-perspective):
 ```
-[REQUIREMENT CONFIRMATION — Proceeding with these R#s]
+mcp__ai-agents__ai_team_analyze(
+  prompt: "Verify R# list completeness and correctness. Check for: missing requirements, conflicts, vague items, implicit dependencies."
+  context: "Original user input + R# extraction table"
+)
+```
+- Gemini: Frontend/UX perspective verification
+- Codex: Backend/architecture perspective verification
 
-| R# | Requirement | Type |
-|----|------------|------|
-| R1 | Add real-time chart component | explicit |
-| R2 | Support 3 chart types | explicit |
-...
-| R6 | Chart respects dark mode | implicit |
-
-Verify completeness and correctness. Reply "confirmed" to proceed.
+**C. Domain-Specific MCP** (based on task domain):
+```
+mcp__ai-agents__gemini_analyze(prompt: "Frontend requirement gaps?")   # if UI task
+mcp__ai-agents__codex_analyze(prompt: "Backend requirement gaps?")    # if API task
+mcp__ai-agents__delegate_task(task: "Verify requirement completeness")  # auto-detect domain
 ```
 
-**After confirmation**: Original input (`user-input.md`) becomes archived. All future steps reference only `.team/requirements.md`.
+**Failure rule**: If any verification layer finds gaps, add R# and re-run all 3 checks. Cannot proceed to Step 1-5.
+
+#### 1-5. Auto-Finalization (No User Prompt)
+
+After all 3 verification layers pass:
+- R# list is **auto-confirmed**
+- Original input (`user-input.md`) becomes archived
+- All future steps reference only `.team/requirements.md`
+- **No user confirmation step** — MCP verification replaces manual approval
 
 #### 1-6. Persist Confirmed Registry
 
@@ -210,16 +235,23 @@ Call `Task(subagent_type="planner")`:
 - Decompose into **Work Items by Layer**: UI / Domain / Infra / Integration
 - Each WI must include `Fulfills: R#, R#` field
 
-#### 2-2. Optional Research (if needed)
+#### 2-2. Tool Activation + Optional Research
 
-If WI requires external library/API research:
+**A. Activate domain-specific tools** from Step 0 discovery:
+```
+- find-skills results → activate relevant skills
+- MCP tools: gemini_analyze (frontend), codex_analyze (backend), delegate_task (auto-detect)
+- Plugins: postgres-best-practices (DB), ui-ux-pro-max (design), vercel-react-best-practices (React)
+```
+
+**B. If WI requires external library/API research**:
 ```
 Task(subagent_type="researcher")
   - Input: Each WI needing research
   - Output: Library options, docs, integration patterns
 ```
 
-Skip if existing patterns can solve the problem.
+Skip research if existing patterns can solve the problem.
 
 #### 2-3. Traceability Matrix (MANDATORY)
 
@@ -408,7 +440,7 @@ BOUNDARY:
 
 The core execution phase with streaming reconciliation.
 
-#### Phase A: Proposal Collection (Optional)
+#### Phase A: Proposal Collection + MCP Active Usage (Optional)
 
 If multiple implementation approaches exist:
 
@@ -417,6 +449,13 @@ ai_team_patch(
   prompt: "Propose implementation for [WI-1]. Consider both Gemini (frontend) and Codex (backend) approaches."
 )
 ```
+
+**Active MCP/Plugin Usage During Execution**:
+- `gemini_analyze` / `codex_analyze` — Domain-specific guidance per WI
+- `delegate_task` — Auto-route to appropriate specialist
+- `ai_team_analyze` — Cross-domain analysis for complex WIs
+- `review_implementation` — Mid-execution quality checks
+- Domain plugins (e.g., `postgres-best-practices` for DB WIs, `vercel-react-best-practices` for React WIs)
 
 Returns proposals from both specialists. Skip if implementation path is clear.
 
@@ -796,7 +835,7 @@ done
 
 ---
 
-## Example: Completing a Feature with Team Protocol v3.1
+## Example: Completing a Feature with Team Protocol v3.2
 
 ### Setup: User Request
 ```
@@ -889,22 +928,25 @@ Step 9: Finalization
 
 ---
 
-## Key Differences from v3.0
+## Key Differences from v3.0 / v3.1
 
-| Aspect | v3.0 | v3.1 |
-|--------|------|------|
-| **Parallel Execution** | Wave-based (W1, W2, W3) | DAG-based (WI-level blockedBy) |
-| **Shared Files** | All conflicts require serialization | SHARED zone → reduces conflicts |
-| **Reconciliation** | Single final validation | 3-Tier streaming (C-1/C-2/C-3) |
-| **Dynamic Scaling** | Fixed teammate count | 1 WI = 1 Teammate, spawn on-demand |
-| **File Ownership** | Implicit | Explicit matrix (ownership.json) |
-| **Memory Management** | workHistory = last 5 tasks | workHistory = last 50 tasks (synthesis) |
+| Aspect | v3.0 | v3.1 | v3.2 |
+|--------|------|------|------|
+| **Parallel Execution** | Wave-based (W1, W2, W3) | DAG-based (WI-level blockedBy) | DAG-based (same) |
+| **Shared Files** | All conflicts require serialization | SHARED zone → reduces conflicts | SHARED zone (same) |
+| **Reconciliation** | Single final validation | 3-Tier streaming (C-1/C-2/C-3) | 3-Tier streaming (same) |
+| **Dynamic Scaling** | Fixed teammate count | 1 WI = 1 Teammate, spawn on-demand | 1 WI = 1 Teammate (same) |
+| **File Ownership** | Implicit | Explicit matrix (ownership.json) | Explicit matrix (same) |
+| **Memory Management** | workHistory = last 5 tasks | workHistory = last 50 tasks (synthesis) | workHistory = last 50 (same) |
+| **Requirement Verification** | Manual user confirmation | Manual user confirmation | **MCP 3-Way Auto-Verification** |
+| **Skill Discovery** | Optional find-skills | Optional find-skills | **Mandatory + 10-domain auto-mapping** |
+| **MCP Usage** | Consensus only (Step 4) | Consensus + proposals (Step 4-5) | **Active throughout all steps** |
 
 ---
 
 ## References
 
-- **Command Implementation**: `orchestration/commands/team.md` (~555 lines)
+- **Command Implementation**: `orchestration/commands/team.md` (~620 lines)
 - **Agent Definitions**: `.claude/agents/*.md` (19 files, role-specific)
 - **Related Docs**:
   - `CLAUDE.md` — Project conventions
@@ -928,6 +970,6 @@ Step 9: Finalization
 
 ---
 
-**Last Reviewed**: 2026-02-13
+**Last Reviewed**: 2026-02-17
 **Status**: Active, Team Mode Required
 **Activation**: `/team <task_description>`

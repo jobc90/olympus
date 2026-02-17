@@ -308,13 +308,13 @@ CLI execution completes
 - `getAll()` — List active workers
 - `assignTask(id, task)` — Send task to worker
 - `reportTaskResult(taskId, result)` — Worker reports completion
-- `heartbeat(id)` — Worker heartbeat (15s check, 60s timeout)
+- `heartbeat(id)` — Worker heartbeat (diagnostic only, no auto-removal)
 
 **Worker Lifecycle**:
 ```
-Register → Heartbeat (every 15s) → Assign Task → Complete → Deregister
-                       │
-                    (60s timeout → auto-remove)
+Register → Heartbeat (diagnostic) → Assign Task → Complete → Deregister
+                                       │
+                              (no auto-removal; explicit unregister only)
 ```
 
 ### GeminiAdvisor (`gateway/src/gemini-advisor.ts`)
@@ -599,7 +599,7 @@ Config file: `~/.olympus/config.json`
 
 ### For Team Coordination (`/team` Protocol)
 
-1. **Read**: `~/.claude/commands/team.md` — The Team Engineering Protocol v3.1
+1. **Read**: `~/.claude/commands/team.md` — The Team Engineering Protocol v3.2
 2. **Understand**: 19 agents + file ownership + DAG execution
 3. **Implement**: `packages/cli/src/commands/team.ts` coordinates the protocol
 4. **Dashboard**: View team progress in OlympusMountain `Team Status` tab

@@ -167,8 +167,6 @@ WebSocket connections are established on the `GATEWAY_PATH` path. After authenti
 #### Server → Client (Worker Events)
 - `worker:task:assigned` — Task assigned to worker
 - `worker:task:completed` — Worker task completed
-- `worker:task:timeout` — Worker task timeout (partial result)
-- `worker:task:final_after_timeout` — Final completion after timeout
 
 #### Server → Client (Agent Events, legacy/hybrid mode)
 - `agent:progress` — Agent progress
@@ -202,13 +200,13 @@ WebSocket connections are established on the `GATEWAY_PATH` path. After authenti
 - **Core 3**: explore (Haiku), executor (Sonnet), writer (Haiku)
 - **On-Demand 16**: architect, analyst, planner, designer, researcher, code-reviewer, verifier, qa-tester, vision, test-engineer, build-fixer, git-master, api-reviewer, performance-reviewer, security-reviewer, style-reviewer
 
-### Team Engineering Protocol v3.1 (`/team` command — AgentTeam Benchmark)
-- **Step 0**: Session Setup (`.team/` state directory creation)
-- **Step 1**: Requirement Registry (ZERO LOSS — analyst + explore parallel, `.team/requirements.md` persistent storage)
+### Team Engineering Protocol v3.2 (`/team` command — MCP 3-Way Verification + Proactive Skills)
+- **Step 0**: Session Setup + **Proactive Skill & Plugin Discovery** (`find-skills` mandatory, 10-domain auto-activation mapping)
+- **Step 1**: Requirement Registry (ZERO LOSS — analyst + explore parallel, **MCP 3-Way Auto-Verification** replacing user confirmation, `.team/requirements.md` persistent storage)
 - **Step 2**: Work Decomposition + **File Ownership Analysis** (planner DAG, **Shared File Zone**, **File Ownership Matrix** → `.team/ownership.json`, **Dependency DAG** — WI-level blockedBy, architect Quality Gate)
 - **Step 3**: Team Creation (**1 WI = 1 Teammate** dynamic scaling, `{subagent_type}-{N}` naming, **OWNED + SHARED FILES + BOUNDARY** per WI)
 - **Step 4**: Consensus Protocol (codex_analyze MCP)
-- **Step 5**: **DAG-Based Parallel Execution** (ai_team_patch MCP, **all WIs without blockedBy start immediately**, **Streaming Reconciliation 3-Tier** — C-1 Per-WI lightweight verification + C-2 Checkpoint build + C-3 Final)
+- **Step 5**: **DAG-Based Parallel Execution** (ai_team_patch + domain-specific MCP active usage, **all WIs without blockedBy start immediately**, **Streaming Reconciliation 3-Tier** — C-1 Per-WI lightweight verification + C-2 Checkpoint build + C-3 Final)
 - **Step 6**: Multi-Reviewer Gate (code-reviewer + style-reviewer always, api/security/performance/vision conditional parallel)
 - **Step 7**: Spec Verification (verifier — `.team/requirements.md` based R# evidence verification)
 - **Step 8**: Evidence-Based QA (qa-tester)

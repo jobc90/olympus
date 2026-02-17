@@ -15,7 +15,7 @@
 | 2 | [Package Guide](architecture/package-guide.md) | All 10 packages: purpose, key files, exports, dependencies | 25 min |
 | 3 | [Gateway Internals](architecture/gateway-internals.md) | CliRunner, WorkerRegistry, GeminiAdvisor, API routes, WebSocket | 20 min |
 | 4 | [Agent System](design/agent-system.md) | 19 Custom Agents, activation policy, agent roles and rules | 15 min |
-| 5 | [Team Protocol](design/team-protocol.md) | Team Engineering Protocol v3.1, DAG execution, file ownership | 15 min |
+| 5 | [Team Protocol](design/team-protocol.md) | Team Engineering Protocol v3.2, DAG execution, file ownership, MCP verification | 15 min |
 | 6 | [WebSocket Protocol](spec/websocket-protocol.md) | Protocol v0.2.0, events, RPC methods, message format | 10 min |
 | 7 | [Setup Guide](operations/setup-guide.md) | Installation, build pipeline, CLI commands, troubleshooting | 10 min |
 | 8 | [Telegram Bot Guide](operations/telegram-bot-guide.md) | Bot commands, worker delegation, deployment | 10 min |
@@ -37,7 +37,7 @@ docs/
 │
 ├── design/                    ← Design decisions & agent system
 │   ├── agent-system.md        ← 19 Custom Agents & activation policy
-│   ├── team-protocol.md       ← Team Engineering Protocol v3.1
+│   ├── team-protocol.md       ← Team Engineering Protocol v3.2
 │   ├── CODEX_ORCHESTRATOR_DEVELOPMENT_PLAN.md  ← Codex orchestrator design
 │   └── DASHBOARD_REFACTORING_PLAN.md  ← Dashboard refactoring plan
 │

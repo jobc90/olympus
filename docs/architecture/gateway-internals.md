@@ -312,15 +312,14 @@ Tracks registered Claude CLI workers (started via `olympus start`), manages task
 2. Worker calls POST /api/workers/register
    → Returns workerId
    ↓
-3. Worker sends heartbeat every 15 seconds
+3. Worker sends heartbeat periodically (diagnostic only)
    → lastHeartbeat = now
    ↓
-4. Gateway checks heartbeat health every 15 seconds
-   → If lastHeartbeat > 60s ago: unregister
+4. No automatic health checks or auto-removal
+   → Workers persist until explicitly unregistered
    ↓
 5. Worker shuts down
-   → Calls DELETE /api/workers/:id
-   → Or gets auto-unregistered on heartbeat timeout
+   → Calls DELETE /api/workers/:id (explicit unregister only)
 ```
 
 ### Types
@@ -364,20 +363,9 @@ interface WorkerTaskRecord {
 | `/api/workers/tasks/:taskId` | GET | Query task status |
 | `/api/workers/tasks/:taskId/result` | POST | Report task completion (CliRunResult) |
 
-### Health Check
+### Health Check (Removed)
 
-```typescript
-private checkHeartbeats(): void {
-  const now = Date.now();
-  for (const worker of this.workers.values()) {
-    if (now - worker.lastHeartbeat > 60_000) {
-      // Worker dead for 60s → unregister
-      this.unregister(worker.id);
-    }
-  }
-}
-// Runs every 15 seconds
-```
+Heartbeat-based auto-removal has been removed. Workers are only removed via explicit `DELETE /api/workers/:id` calls. The `heartbeat()` method still updates `lastHeartbeat` for diagnostic purposes but does not trigger auto-removal.
 
 ### Task Lifecycle
 
@@ -1164,11 +1152,11 @@ if (timeout) {
 }
 ```
 
-### Worker Health & Auto-Recovery
+### Worker Health & Recovery
 
 ```typescript
-// Heartbeat fails → auto-unregister after 60s
-// Worker can re-register and resume
+// No auto-removal — workers persist until explicit unregister
+// Worker can re-register if needed after manual cleanup
 ```
 
 ### Codex Event Delivery
@@ -1311,7 +1299,7 @@ Worker completes task
 ### Test Coverage Areas
 
 - **CliRunner**: Output parsing (Claude JSON, Codex JSONL), timeout handling, concurrency limits
-- **WorkerRegistry**: Registration, heartbeat timeout, task lifecycle
+- **WorkerRegistry**: Registration, explicit unregister, task lifecycle
 - **GeminiAdvisor**: PTY lifecycle, prompt building, cache invalidation
 - **RPC Router**: Method registration, auth checks, error handling
 - **API**: Request/response serialization, 400/401/500 status codes

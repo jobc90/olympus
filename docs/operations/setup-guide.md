@@ -600,7 +600,7 @@ claude
 ### 4. Read Documentation
 - **API**: Check `packages/gateway/README.md` for endpoint details
 - **Architecture**: Read `docs/architecture/` for design patterns
-- **Team Protocol**: See `orchestration/commands/team.md` for v3.1 features
+- **Team Protocol**: See `orchestration/commands/team.md` for v3.2 features
 
 ---
 

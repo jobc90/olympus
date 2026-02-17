@@ -463,7 +463,7 @@ spawnCli(args, {
 - CliRunner concurrency limits
 - JSONL parsing (Codex output)
 - Session persistence
-- Worker heartbeat + timeout
+- Worker registration + explicit lifecycle
 - WebSocket message routing
 - API endpoint contracts
 
@@ -964,12 +964,10 @@ export class PtyWorker extends EventEmitter {
 
 ### PTY Worker Architecture (Key Feature)
 
-**4-Stage Completion Detection**:
+**Pattern-Based Completion Detection** (no time-based timeouts):
 
-1. **Prompt Pattern Match** (settle timer 5s) — Detects Claude CLI prompt
-2. **Inactivity Timeout** (30s no output) — User finished typing
-3. **Force Complete** (60s absolute timeout) — Safety limit
-4. **Absolute Timeout** (30min ceiling) — Process safety limit
+1. **Prompt Pattern Match** (settle timer 5s) — Detects Claude CLI prompt via IDLE_PROMPT_PATTERNS
+2. **Background Agent Detection** — 7 patterns with 30s cooldown suppress premature completion
 
 **Background Agent Detection** (7 patterns):
 - "Task completed"
