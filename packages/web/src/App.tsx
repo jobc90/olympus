@@ -31,6 +31,7 @@ import SettingsPanel from './components/settings/SettingsPanel';
 import { WorkerTaskBoard } from './components/WorkerTaskBoard';
 import { GatewayEventLog } from './components/GatewayEventLog';
 import CliSessionsPanel from './components/dashboard/CliSessionsPanel';
+import { WorkerLogPanel } from './components/dashboard/WorkerLogPanel';
 
 import type { WorkerConfig, WorkerDashboardState, CodexConfig, GeminiConfig, WorkerAvatar, WorkerBehavior } from './lib/types';
 import { DEFAULT_GEMINI } from './lib/config';
@@ -160,6 +161,9 @@ export default function App() {
     cliSessions,
     deleteCliSession,
     lastWorkerCompletion,
+    workerLogs,
+    selectedWorkerId,
+    setSelectedWorkerId,
   } = useOlympus(config);
 
   // Build WorkerConfig[] and WorkerDashboardState map for new components
@@ -294,6 +298,10 @@ export default function App() {
     }));
   }, [lastWorkerCompletion?.timestamp]);
 
+  const handleDetailClick = useCallback((workerId: string) => {
+    setSelectedWorkerId(selectedWorkerId === workerId ? null : workerId);
+  }, [selectedWorkerId, setSelectedWorkerId]);
+
   const handleChatClick = useCallback((workerId: string) => {
     const w = workerConfigs.find(w => w.id === workerId);
     setChatTarget(w ? { id: w.id, name: w.name, emoji: w.emoji, color: w.color } : { id: workerId, name: workerId });
@@ -384,6 +392,7 @@ export default function App() {
                     workers={workerConfigs}
                     workerStates={workerStates}
                     onChatClick={handleChatClick}
+                    onDetailClick={handleDetailClick}
                   />
                 </div>
 
@@ -487,6 +496,16 @@ export default function App() {
           )}
         </span>
       </footer>
+
+      {/* Worker Log Panel */}
+      {selectedWorkerId && (
+        <WorkerLogPanel
+          workerId={selectedWorkerId}
+          workerConfig={polledWorkerConfigs.find(w => w.id === selectedWorkerId)}
+          logs={workerLogs.get(selectedWorkerId) ?? []}
+          onClose={() => setSelectedWorkerId(null)}
+        />
+      )}
 
       {/* ChatWindow */}
       {chatTarget && (() => {

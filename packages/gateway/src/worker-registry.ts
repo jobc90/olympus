@@ -21,6 +21,7 @@ import type {
 export class WorkerRegistry extends EventEmitter {
   private workers = new Map<string, RegisteredWorker>();
   private tasks = new Map<string, WorkerTaskRecord>();
+  private staleCheckTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     super();
@@ -147,6 +148,18 @@ export class WorkerRegistry extends EventEmitter {
     this.markIdle(task.workerId);
     this.emit(wasTimeout ? 'task:final_after_timeout' : 'task:completed', task);
     this.saveTasksToFile();
+    this.pruneCompletedTasks();
+  }
+
+  private pruneCompletedTasks(): void {
+    const completed = Array.from(this.tasks.entries())
+      .filter(([, t]) => t.status === 'completed' || t.status === 'failed')
+      .sort((a, b) => (a[1].completedAt ?? 0) - (b[1].completedAt ?? 0));
+
+    while (completed.length > 200) {
+      const [taskId] = completed.shift()!;
+      this.tasks.delete(taskId);
+    }
   }
 
   getTask(taskId: string): WorkerTaskRecord | null {
@@ -190,8 +203,54 @@ export class WorkerRegistry extends EventEmitter {
     } catch { /* ignore read errors */ }
   }
 
+  startStaleCheck(intervalMs = 60_000): void {
+    this.stopStaleCheck();
+    this.staleCheckTimer = setInterval(() => {
+      const now = Date.now();
+      for (const worker of this.workers.values()) {
+        if (now - worker.lastHeartbeat > 90_000) {
+          worker.status = 'offline';
+          const failedTaskIds: string[] = [];
+          for (const [, t] of this.tasks) {
+            if (t.workerId === worker.id && t.status === 'running') {
+              t.status = 'failed';
+              t.completedAt = now;
+              failedTaskIds.push(t.taskId);
+            }
+          }
+          worker.currentTaskId = undefined;
+          worker.currentTaskPrompt = undefined;
+          if (failedTaskIds.length > 0) {
+            this.emit('worker:died', { workerId: worker.id, taskIds: failedTaskIds });
+          }
+        }
+      }
+      // Auto-unregister workers offline for more than 5 minutes
+      for (const [id, worker] of this.workers) {
+        if (worker.status === 'offline' && now - worker.lastHeartbeat > 300_000) {
+          this.workers.delete(id);
+          this.emit('worker:unregistered', { workerId: id, name: worker.name });
+        }
+      }
+      // Time-based cleanup: remove completed/failed tasks older than 1 hour
+      const ONE_HOUR = 60 * 60 * 1000;
+      for (const [taskId, t] of this.tasks) {
+        if ((t.status === 'completed' || t.status === 'failed') && t.completedAt && now - t.completedAt > ONE_HOUR) {
+          this.tasks.delete(taskId);
+        }
+      }
+    }, intervalMs);
+  }
+
+  stopStaleCheck(): void {
+    if (this.staleCheckTimer) {
+      clearInterval(this.staleCheckTimer);
+      this.staleCheckTimer = null;
+    }
+  }
+
   dispose(): void {
-    // no-op — retained for interface compatibility
+    this.stopStaleCheck();
   }
 
   private deduplicateName(baseName: string): string {

@@ -41,24 +41,6 @@ function createMockOrchestrator(): CodexOrchestratorLike {
         lastActivity: Date.now(),
       },
     ]),
-    getProjects: vi.fn(async () => [
-      {
-        name: 'test-project',
-        path: '/dev/test',
-        aliases: ['테스트'],
-        techStack: ['TypeScript'],
-      },
-    ]),
-    globalSearch: vi.fn(async (query: string) => [
-      {
-        projectName: 'test-project',
-        projectPath: '/dev/test',
-        matchType: 'task' as const,
-        content: `build ${query}`,
-        score: 2,
-        timestamp: Date.now(),
-      },
-    ]),
     shutdown: vi.fn(async () => {}),
     trackTask: vi.fn(),
     completeTask: vi.fn(),
@@ -172,10 +154,6 @@ describe('CodexAdapter', () => {
       expect(rpcRouter.has('codex.sessions')).toBe(true);
     });
 
-    it('should register codex.projects', () => {
-      expect(rpcRouter.has('codex.projects')).toBe(true);
-    });
-
     it('should register codex.search', () => {
       expect(rpcRouter.has('codex.search')).toBe(true);
     });
@@ -206,23 +184,10 @@ describe('CodexAdapter RPC handlers', () => {
     expect(sessions[0].name).toBe('olympus-test');
   });
 
-  it('codex.projects should return project list', async () => {
-    const projects = await mockOrchestrator.getProjects();
-    expect(projects).toHaveLength(1);
-    expect(projects[0].name).toBe('test-project');
-  });
-
-  it('codex.search should return search results', async () => {
-    const results = await mockOrchestrator.globalSearch('build');
-    expect(results).toHaveLength(1);
-    expect(results[0].content).toContain('build');
-  });
-
   it('should list all registered methods', () => {
     const methods = rpcRouter.listMethods();
     expect(methods).toContain('codex.route');
     expect(methods).toContain('codex.sessions');
-    expect(methods).toContain('codex.projects');
     expect(methods).toContain('codex.search');
     expect(methods).toContain('codex.status');
   });

@@ -5,7 +5,6 @@ import type {
   CodexSessionEventPayload,
   CodexStatusPayload,
   CodexSessionInfo,
-  CodexProjectInfo,
   CodexSearchResult,
 } from '@olympus-dev/protocol';
 import type { RpcRouter } from './rpc/handler.js';
@@ -156,16 +155,6 @@ export class CodexAdapter {
       }));
     });
 
-    rpcRouter.register('codex.projects', async () => {
-      const projects = await this.codex.getProjects();
-      return projects.map((p): CodexProjectInfo => ({
-        name: p.name,
-        path: p.path,
-        aliases: p.aliases,
-        techStack: p.techStack,
-      }));
-    });
-
     rpcRouter.register('codex.search', async (params) => {
       const { query, limit } = params as { query: string; limit?: number };
 
@@ -194,24 +183,15 @@ export class CodexAdapter {
         } catch { /* fallback below */ }
       }
 
-      const results = await this.codex.globalSearch(query, limit);
-      return results.map((r): CodexSearchResult => ({
-        projectName: r.projectName,
-        projectPath: r.projectPath,
-        matchType: r.matchType,
-        content: r.content,
-        score: r.score,
-        timestamp: r.timestamp,
-      }));
+      return [];
     });
 
     rpcRouter.register('codex.status', async () => {
       const sessions = this.codex.getSessions();
-      const projects = await this.codex.getProjects();
       return {
         initialized: this.codex.initialized,
         sessionCount: sessions.length,
-        projectCount: projects.length,
+        projectCount: 0,
       } satisfies CodexStatusPayload;
     });
 
@@ -264,20 +244,6 @@ export interface CodexOrchestratorLike {
     status: string;
     lastActivity: number;
   }>;
-  getProjects(): Promise<Array<{
-    name: string;
-    path: string;
-    aliases: string[];
-    techStack: string[];
-  }>>;
-  globalSearch(query: string, limit?: number): Promise<Array<{
-    projectName: string;
-    projectPath: string;
-    matchType: 'task' | 'pattern' | 'context' | 'instruction';
-    content: string;
-    score: number;
-    timestamp: number;
-  }>>;
   shutdown(): Promise<void>;
   trackTask(taskId: string, sessionId: string, projectPath: string, prompt: string, source: string): void;
   completeTask(taskId: string, success: boolean): void;

@@ -96,6 +96,19 @@ export interface WorkerConfigEntry {
   registeredName?: string;
 }
 
+export interface WorkerLogEntry {
+  taskId: string;
+  prompt: string;
+  status: 'running' | 'completed' | 'failed' | 'timeout';
+  summary?: string;
+  rawText?: string;
+  durationMs?: number;
+  cost?: number;
+  geminiReview?: { quality: string; summary: string; concerns: string[] };
+  startedAt: number;
+  completedAt?: number;
+}
+
 export interface ActivityEventEntry {
   id: string;
   type: string;
@@ -149,6 +162,8 @@ export interface OlympusState {
   activityEvents: ActivityEventEntry[];
   systemStats: SystemStatsEntry;
   usageData: StatuslineUsageData | null;
+  geminiAlerts: Array<{ id: string; severity: string; message: string; projectPath: string; timestamp: number }>;
+  geminiReviews: Array<{ taskId: string; quality: string; summary: string; concerns: string[]; reviewedAt: number }>;
   // Worker task completion events for ChatWindow
   lastWorkerCompletion: {
     workerId: string;
@@ -157,6 +172,9 @@ export interface OlympusState {
     success: boolean;
     timestamp: number;
   } | null;
+  // Worker log panel
+  workerLogs: Map<string, WorkerLogEntry[]>;
+  selectedWorkerId: string | null;
 }
 
 export interface UseOlympusOptions {
@@ -240,7 +258,11 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     })(),
     systemStats: { totalWorkers: 0, activeWorkers: 0, totalTokens: 0, failedTasks: 0 },
     usageData: null,
+    geminiAlerts: [],
+    geminiReviews: [],
     lastWorkerCompletion: null,
+    workerLogs: new Map(),
+    selectedWorkerId: null,
   });
 
   const { port, host, apiKey } = options;
@@ -440,26 +462,38 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     client.on('worker:task:assigned', (m) => {
       const payload = m.payload as { workerId: string; taskId: string; prompt?: string; workerName?: string };
       if (payload.workerId) {
-        setState((s) => ({
-          ...s,
-          workerBehaviors: { ...s.workerBehaviors, [payload.workerId]: 'working' },
-          workerTasks: [
-            ...s.workerTasks.filter(t => t.status !== 'active' || t.workerId !== payload.workerId),
-            {
-              taskId: payload.taskId,
-              workerId: payload.workerId,
-              workerName: payload.workerName ?? payload.workerId,
-              prompt: payload.prompt ?? '',
-              status: 'active' as const,
-              startedAt: Date.now(),
-            },
-          ],
-        }));
+        setState((s) => {
+          const workerLogs = new Map(s.workerLogs);
+          const entries = [...(workerLogs.get(payload.workerId) ?? [])];
+          entries.push({
+            taskId: payload.taskId,
+            prompt: payload.prompt ?? '',
+            status: 'running',
+            startedAt: Date.now(),
+          });
+          workerLogs.set(payload.workerId, entries.slice(-20));
+          return {
+            ...s,
+            workerBehaviors: { ...s.workerBehaviors, [payload.workerId]: 'working' },
+            workerTasks: [
+              ...s.workerTasks.filter(t => t.status !== 'active' || t.workerId !== payload.workerId),
+              {
+                taskId: payload.taskId,
+                workerId: payload.workerId,
+                workerName: payload.workerName ?? payload.workerId,
+                prompt: payload.prompt ?? '',
+                status: 'active' as const,
+                startedAt: Date.now(),
+              },
+            ],
+            workerLogs,
+          };
+        });
       }
     });
 
     client.on('worker:task:completed', (m) => {
-      const payload = m.payload as { workerId?: string; taskId: string; status?: string; summary?: string; workerName?: string; durationMs?: number; success?: boolean };
+      const payload = m.payload as { workerId?: string; taskId: string; status?: string; summary?: string; workerName?: string; durationMs?: number; success?: boolean; rawText?: string; cost?: number; geminiReview?: { quality: string; summary: string; concerns: string[]; reviewedAt?: number } };
       const wId = payload.workerId;
       if (wId) {
         setState((s) => {
@@ -473,6 +507,43 @@ export function useOlympus(options: UseOlympusOptions = {}) {
             durationMs: payload.durationMs ?? (Date.now() - completedTask.startedAt),
           };
           const success = payload.success ?? (payload.status === 'completed');
+          const geminiReviews = payload.geminiReview
+            ? [...s.geminiReviews.slice(-19), {
+                taskId: payload.taskId,
+                quality: payload.geminiReview.quality,
+                summary: payload.geminiReview.summary,
+                concerns: payload.geminiReview.concerns,
+                reviewedAt: payload.geminiReview.reviewedAt ?? Date.now(),
+              }]
+            : s.geminiReviews;
+
+          // Update workerLogs
+          const workerLogs = new Map(s.workerLogs);
+          const entries = [...(workerLogs.get(wId) ?? [])];
+          const logIdx = entries.findIndex(e => e.taskId === payload.taskId);
+          const logEntry: WorkerLogEntry = {
+            taskId: payload.taskId,
+            prompt: logIdx >= 0 ? entries[logIdx].prompt : completedTask.prompt ?? '',
+            status: success ? 'completed' : 'failed',
+            summary: payload.summary,
+            rawText: payload.rawText,
+            durationMs: payload.durationMs ?? (Date.now() - completedTask.startedAt),
+            cost: payload.cost,
+            geminiReview: payload.geminiReview ? {
+              quality: payload.geminiReview.quality,
+              summary: payload.geminiReview.summary,
+              concerns: payload.geminiReview.concerns,
+            } : undefined,
+            startedAt: logIdx >= 0 ? entries[logIdx].startedAt : completedTask.startedAt,
+            completedAt: Date.now(),
+          };
+          if (logIdx >= 0) {
+            entries[logIdx] = logEntry;
+          } else {
+            entries.push(logEntry);
+          }
+          workerLogs.set(wId, entries.slice(-20));
+
           return {
             ...s,
             workerBehaviors: {
@@ -490,6 +561,8 @@ export function useOlympus(options: UseOlympusOptions = {}) {
               success,
               timestamp: Date.now(),
             },
+            geminiReviews,
+            workerLogs,
           };
         });
       }
@@ -553,6 +626,75 @@ export function useOlympus(options: UseOlympusOptions = {}) {
         geminiCacheCount: payload.cacheSize ?? s.geminiCacheCount,
         geminiLastAnalyzed: payload.lastAnalyzedAt ?? s.geminiLastAnalyzed,
       }));
+    });
+
+    // Gemini alert events
+    client.on('gemini:alert', (m) => {
+      const alert = m.payload as { id: string; severity: string; message: string; projectPath: string; timestamp: number };
+      setState((s) => ({
+        ...s,
+        geminiAlerts: [...s.geminiAlerts.slice(-19), alert],
+      }));
+    });
+
+    // Gemini review → update workerLogs with review data
+    client.on('gemini:review', (m) => {
+      const payload = m.payload as { taskId: string; workerId?: string; quality: string; summary: string; concerns: string[] };
+      if (payload.workerId) {
+        setState((s) => {
+          const workerLogs = new Map(s.workerLogs);
+          const entries = [...(workerLogs.get(payload.workerId!) ?? [])];
+          const idx = entries.findIndex(e => e.taskId === payload.taskId);
+          if (idx >= 0) {
+            entries[idx] = {
+              ...entries[idx],
+              geminiReview: { quality: payload.quality, summary: payload.summary, concerns: payload.concerns },
+            };
+            workerLogs.set(payload.workerId!, entries);
+          }
+          return { ...s, workerLogs };
+        });
+      }
+    });
+
+    // Worker task summary update
+    client.on('worker:task:summary', (m) => {
+      const payload = m.payload as { taskId: string; workerId?: string; summary: string };
+      if (payload.workerId) {
+        setState((s) => {
+          const workerLogs = new Map(s.workerLogs);
+          const entries = [...(workerLogs.get(payload.workerId!) ?? [])];
+          const idx = entries.findIndex(e => e.taskId === payload.taskId);
+          if (idx >= 0) {
+            entries[idx] = { ...entries[idx], summary: payload.summary };
+            workerLogs.set(payload.workerId!, entries);
+          }
+          return { ...s, workerLogs };
+        });
+      }
+    });
+
+    // Worker task failed (zombie detection)
+    client.on('worker:task:failed', (m) => {
+      const payload = m.payload as { workerId: string; taskIds: string[] };
+      if (payload.workerId) {
+        setState((s) => {
+          const workerLogs = new Map(s.workerLogs);
+          const entries = [...(workerLogs.get(payload.workerId) ?? [])];
+          for (const taskId of payload.taskIds) {
+            const idx = entries.findIndex(e => e.taskId === taskId);
+            if (idx >= 0) {
+              entries[idx] = { ...entries[idx], status: 'failed', completedAt: Date.now() };
+            }
+          }
+          workerLogs.set(payload.workerId, entries);
+          return {
+            ...s,
+            workerBehaviors: { ...s.workerBehaviors, [payload.workerId]: 'error' },
+            workerLogs,
+          };
+        });
+      }
     });
 
     // V2 Worker events
@@ -872,7 +1014,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     pollUsage();
     pollCliSessions();
     pollWorkerTasks();
-    const interval = setInterval(() => { pollWorkers(); pollGemini(); pollUsage(); pollCliSessions(); }, 10_000);
+    const interval = setInterval(() => { pollWorkers(); pollGemini(); pollUsage(); pollCliSessions(); pollWorkerTasks(); }, 10_000);
     return () => clearInterval(interval);
   }, [apiKey, host, port]);
 
@@ -1081,6 +1223,10 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     return await res.json() as { type: string; response: string };
   }, [host, port, apiKey]);
 
+  const setSelectedWorkerId = useCallback((workerId: string | null) => {
+    setState(s => ({ ...s, selectedWorkerId: workerId }));
+  }, []);
+
   const deleteCliSession = useCallback(async (key: string): Promise<void> => {
     try {
       const res = await fetch(`http://${host}:${port}/api/cli/sessions/${encodeURIComponent(key)}`, {
@@ -1115,5 +1261,8 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     chatWithCodex,
     deleteCliSession,
     lastWorkerCompletion: state.lastWorkerCompletion,
+    workerLogs: state.workerLogs,
+    selectedWorkerId: state.selectedWorkerId,
+    setSelectedWorkerId,
   };
 }

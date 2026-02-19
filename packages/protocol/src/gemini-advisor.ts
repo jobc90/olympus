@@ -35,6 +35,31 @@ export interface GeminiAdvisorStatus {
   currentTask: string | null;
 }
 
+/** Post-task review result from Gemini */
+export interface GeminiReview {
+  quality: 'good' | 'warning' | 'critical';
+  summary: string;
+  concerns: string[];
+  reviewedAt: number;
+}
+
+/** Pre-task review recommendation from Gemini */
+export interface GeminiPreReview {
+  recommendation: string;
+  suggestedApproach: string;
+  risks: string[];
+  reviewedAt: number;
+}
+
+/** Proactive alert from Gemini analysis */
+export interface GeminiAlert {
+  id: string;
+  severity: 'info' | 'warning' | 'critical';
+  message: string;
+  projectPath: string;
+  timestamp: number;
+}
+
 /** Gemini 행동 (대시보드용) */
 export type GeminiBehavior =
   | 'idle'
@@ -42,7 +67,9 @@ export type GeminiBehavior =
   | 'analyzing'
   | 'advising'
   | 'refreshing'
-  | 'offline';
+  | 'offline'
+  | 'reviewing'
+  | 'alerting';
 
 /** Gemini Advisor 설정 */
 export interface GeminiAdvisorConfig {
@@ -52,6 +79,10 @@ export interface GeminiAdvisorConfig {
   analysisTimeoutMs: number;
   maxCacheAge: number;
   maxProjectAnalysisLength: number;
+  postTaskReviewEnabled: boolean;
+  preTaskReviewEnabled: boolean;
+  proactiveAlertEnabled: boolean;
+  reviewTimeoutMs: number;
 }
 
 export const DEFAULT_GEMINI_ADVISOR_CONFIG: GeminiAdvisorConfig = {
@@ -61,4 +92,8 @@ export const DEFAULT_GEMINI_ADVISOR_CONFIG: GeminiAdvisorConfig = {
   analysisTimeoutMs: 60_000,
   maxCacheAge: 600_000,
   maxProjectAnalysisLength: 4000,
+  postTaskReviewEnabled: true,
+  preTaskReviewEnabled: true,
+  proactiveAlertEnabled: true,
+  reviewTimeoutMs: 30_000,
 };

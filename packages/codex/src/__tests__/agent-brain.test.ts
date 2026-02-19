@@ -97,18 +97,4 @@ describe('AgentBrain', () => {
     });
   });
 
-  describe('enrichResponse', () => {
-    it('should return response unchanged (context enrichment disabled)', async () => {
-      const response = {
-        type: 'build' as const,
-        content: 'Build succeeded',
-        metadata: { projectName: 'console', sessionId: 'sess-1', duration: 3000 },
-        rawOutput: 'Build succeeded',
-      };
-
-      const enriched = await brain.enrichResponse(response, '/dev/console');
-      expect(enriched).toBe(response);
-      expect(enriched.agentInsight).toBeUndefined();
-    });
-  });
 });

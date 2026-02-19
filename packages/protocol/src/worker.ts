@@ -16,7 +16,7 @@ export interface RegisteredWorker {
   name: string;
   projectPath: string;
   pid: number;
-  status: 'idle' | 'busy';
+  status: 'idle' | 'busy' | 'offline';
   registeredAt: number;
   lastHeartbeat: number;
   currentTaskId?: string;

@@ -252,9 +252,14 @@ export function classifyError(
 
 class ConcurrencyLimiter {
   private running = 0;
-  private waitQueue: Array<() => void> = [];
+  private waitQueue: Array<{ resolve: () => void; reject: (err: Error) => void }> = [];
+  public maxConcurrent: number;
+  private maxQueueDepth: number;
 
-  constructor(private maxConcurrent: number) {}
+  constructor(maxConcurrent: number, maxQueueDepth = 50) {
+    this.maxConcurrent = maxConcurrent;
+    this.maxQueueDepth = maxQueueDepth;
+  }
 
   get activeCount(): number { return this.running; }
   get pendingCount(): number { return this.waitQueue.length; }
@@ -273,22 +278,31 @@ class ConcurrencyLimiter {
       this.running++;
       return Promise.resolve();
     }
-    return new Promise<void>(resolve => {
-      this.waitQueue.push(() => { this.running++; resolve(); });
+    if (this.waitQueue.length >= this.maxQueueDepth) {
+      return Promise.reject(new Error('Queue full'));
+    }
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const idx = this.waitQueue.findIndex(w => w.resolve === wrappedResolve);
+        if (idx >= 0) this.waitQueue.splice(idx, 1);
+        reject(new Error('Queue timeout'));
+      }, 120_000);
+      const wrappedResolve = () => { clearTimeout(timer); this.running++; resolve(); };
+      this.waitQueue.push({ resolve: wrappedResolve, reject });
     });
   }
 
   private release(): void {
     this.running--;
     const next = this.waitQueue.shift();
-    if (next) next();
+    if (next) next.resolve();
   }
 }
 
-let CLI_LIMITER = new ConcurrencyLimiter(5);
+const CLI_LIMITER = new ConcurrencyLimiter(5);
 
 export function setMaxConcurrentCli(max: number): void {
-  CLI_LIMITER = new ConcurrencyLimiter(max);
+  CLI_LIMITER.maxConcurrent = max;
 }
 
 // ──────────────────────────────────────────────

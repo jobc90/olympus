@@ -11,6 +11,9 @@ import type {
   GeminiAdvisorStatus,
   GeminiAdvisorConfig,
   GeminiBehavior,
+  GeminiReview,
+  GeminiPreReview,
+  GeminiAlert,
 } from '@olympus-dev/protocol';
 import { DEFAULT_GEMINI_ADVISOR_CONFIG } from '@olympus-dev/protocol';
 import { GeminiPty } from './gemini-pty.js';
@@ -18,10 +21,64 @@ import { GeminiPty } from './gemini-pty.js';
 /** Debounce timer map */
 const DEBOUNCE_MS = 10_000;
 
+interface QueueItem {
+  prompt: string;
+  priority: number; // 0=analysis, 1=review, 2=alert
+  timeoutMs: number;
+  resolve: (result: string | null) => void;
+}
+
+class GeminiPromptQueue {
+  private queue: QueueItem[] = [];
+  private processing = false;
+  private pty: GeminiPty | null = null;
+
+  setPty(pty: GeminiPty | null): void {
+    this.pty = pty;
+  }
+
+  async enqueue(prompt: string, priority: number, timeoutMs: number): Promise<string | null> {
+    return new Promise((resolve) => {
+      this.queue.push({ prompt, priority, timeoutMs, resolve });
+      // Sort by priority (lower = higher priority)
+      this.queue.sort((a, b) => a.priority - b.priority);
+      this.processNext();
+    });
+  }
+
+  private async processNext(): Promise<void> {
+    if (this.processing || this.queue.length === 0) return;
+    if (!this.pty?.isAlive()) {
+      // Drain queue with null
+      while (this.queue.length > 0) {
+        this.queue.shift()!.resolve(null);
+      }
+      return;
+    }
+
+    this.processing = true;
+    const item = this.queue.shift()!;
+
+    try {
+      const result = await Promise.race([
+        this.pty.sendPrompt(item.prompt, item.timeoutMs),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), item.timeoutMs)),
+      ]);
+      item.resolve(result);
+    } catch {
+      item.resolve(null);
+    } finally {
+      this.processing = false;
+      this.processNext();
+    }
+  }
+}
+
 export class GeminiAdvisor extends EventEmitter {
   private config: GeminiAdvisorConfig;
   private localContextManager: LocalContextStoreManager | null = null;
   private pty: GeminiPty | null = null;
+  private promptQueue = new GeminiPromptQueue();
   private projects: Array<{ name: string; path: string }> = [];
 
   // In-memory cache
@@ -60,6 +117,7 @@ export class GeminiAdvisor extends EventEmitter {
       this.setBehavior('offline');
       return;
     }
+    this.promptQueue.setPty(this.pty);
 
     this.running = true;
     this.setBehavior('idle');
@@ -94,6 +152,7 @@ export class GeminiAdvisor extends EventEmitter {
       await this.pty.stop();
       this.pty = null;
     }
+    this.promptQueue.setPty(null);
 
     this.setBehavior('offline');
   }
@@ -134,7 +193,10 @@ export class GeminiAdvisor extends EventEmitter {
     const prompt = this.buildAnalysisPrompt(projectPath, projectName, localContextStr, workerHistoryStr);
 
     try {
-      const response = await this.pty.sendPrompt(prompt, this.config.analysisTimeoutMs);
+      const response = await this.promptQueue.enqueue(prompt, 0, this.config.analysisTimeoutMs);
+      if (!response) {
+        throw new Error('Prompt queue returned null (timeout or offline)');
+      }
       const parsed = this.parseAnalysisResponse(response);
 
       const analysis: GeminiProjectAnalysis = {
@@ -148,6 +210,13 @@ export class GeminiAdvisor extends EventEmitter {
         workHistory: parsed.workHistory ?? '',
         analyzedAt: Date.now(),
       };
+
+      // Proactive alert detection
+      const previousAnalysis = this.projectCache.get(projectPath);
+      const alerts = this.detectAlerts(projectPath, analysis, previousAnalysis);
+      for (const alert of alerts) {
+        this.emit('alert', alert);
+      }
 
       this.projectCache.set(projectPath, analysis);
       this.emit('analysis:complete', analysis);
@@ -270,6 +339,152 @@ export class GeminiAdvisor extends EventEmitter {
 
   onWorkerComplete(projectPath: string): void {
     this.onProjectUpdate(projectPath);
+  }
+
+  // ── Active Advisor: Post-Task Review ──
+
+  async reviewWorkerResult(params: {
+    taskPrompt: string;
+    workerResult: string;
+    workerName: string;
+    projectPath: string;
+  }): Promise<GeminiReview | null> {
+    if (!this.config.postTaskReviewEnabled || !this.pty?.isAlive()) return null;
+
+    this.setBehavior('reviewing', `review:${params.workerName}`);
+    try {
+      const prompt = [
+        'Review this worker task result. Respond with JSON only.',
+        '',
+        `Worker: ${params.workerName}`,
+        `Task: ${params.taskPrompt.slice(0, 500)}`,
+        `Result: ${params.workerResult.slice(0, 2000)}`,
+        '',
+        'Evaluate: Did the result address the task? Any concerns?',
+        'JSON: {"quality":"good|warning|critical","summary":"...","concerns":["..."]}',
+      ].join('\n');
+
+      const response = await this.promptQueue.enqueue(prompt, 1, this.config.reviewTimeoutMs);
+      if (!response) return null;
+
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return null;
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      const review: GeminiReview = {
+        quality: ['good', 'warning', 'critical'].includes(parsed.quality) ? parsed.quality : 'good',
+        summary: typeof parsed.summary === 'string' ? parsed.summary : 'Review completed',
+        concerns: Array.isArray(parsed.concerns) ? parsed.concerns.filter((s: unknown) => typeof s === 'string') : [],
+        reviewedAt: Date.now(),
+      };
+
+      return review;
+    } catch {
+      return null;
+    } finally {
+      if (this.running) this.setBehavior('idle');
+    }
+  }
+
+  // ── Active Advisor: Pre-Task Review ──
+
+  async preReviewTask(params: {
+    taskPrompt: string;
+    workerName: string;
+    projectPath: string;
+  }): Promise<GeminiPreReview | null> {
+    if (!this.config.preTaskReviewEnabled || !this.pty?.isAlive()) return null;
+
+    this.setBehavior('reviewing', `pre-review:${params.workerName}`);
+    try {
+      const projectContext = this.buildProjectContext(params.projectPath, { maxLength: 1000 });
+
+      const prompt = [
+        'Pre-review this task assignment. Respond with JSON only.',
+        '',
+        `Worker: ${params.workerName}`,
+        `Task: ${params.taskPrompt.slice(0, 500)}`,
+        projectContext ? `Project Context: ${projectContext.slice(0, 500)}` : '',
+        '',
+        'Evaluate: Is this worker suitable? Any missing context? Suggest approach.',
+        'JSON: {"recommendation":"...","suggestedApproach":"...","risks":["..."]}',
+      ].join('\n');
+
+      const response = await this.promptQueue.enqueue(prompt, 1, Math.min(this.config.reviewTimeoutMs, 15_000));
+      if (!response) return null;
+
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return null;
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      const preReview: GeminiPreReview = {
+        recommendation: typeof parsed.recommendation === 'string' ? parsed.recommendation : '',
+        suggestedApproach: typeof parsed.suggestedApproach === 'string' ? parsed.suggestedApproach : '',
+        risks: Array.isArray(parsed.risks) ? parsed.risks.filter((s: unknown) => typeof s === 'string') : [],
+        reviewedAt: Date.now(),
+      };
+
+      return preReview;
+    } catch {
+      return null;
+    } finally {
+      if (this.running) this.setBehavior('idle');
+    }
+  }
+
+  // ── Active Advisor: Proactive Alerts ──
+
+  detectAlerts(projectPath: string, newAnalysis: GeminiProjectAnalysis, previousAnalysis?: GeminiProjectAnalysis): GeminiAlert[] {
+    if (!this.config.proactiveAlertEnabled) return [];
+
+    const normalize = (s: string): string =>
+      s.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+
+    const alerts: GeminiAlert[] = [];
+    const now = Date.now();
+
+    // Detect new recommendations (not in previous)
+    if (previousAnalysis) {
+      const newRecs = newAnalysis.recommendations.filter(
+        r => !previousAnalysis.recommendations.some(p => normalize(p) === normalize(r))
+      );
+      for (const rec of newRecs) {
+        alerts.push({
+          id: `alert-${now}-${Math.random().toString(36).slice(2, 8)}`,
+          severity: 'info',
+          message: `New recommendation: ${rec}`,
+          projectPath,
+          timestamp: now,
+        });
+      }
+
+      // Detect activeContext change
+      if (newAnalysis.activeContext !== previousAnalysis.activeContext && newAnalysis.activeContext) {
+        alerts.push({
+          id: `alert-${now}-${Math.random().toString(36).slice(2, 8)}`,
+          severity: 'info',
+          message: `Context changed: ${newAnalysis.activeContext}`,
+          projectPath,
+          timestamp: now,
+        });
+      }
+    }
+
+    // Detect failure surge in workHistory
+    if (newAnalysis.workHistory) {
+      const failCount = (newAnalysis.workHistory.match(/\b(?:fail|failed|error|unsuccessful)\b/gi) || []).length;
+      if (failCount >= 3) {
+        alerts.push({
+          id: `alert-${now}-${Math.random().toString(36).slice(2, 8)}`,
+          severity: 'warning',
+          message: `High failure rate detected: ${failCount} failures in recent work history`,
+          projectPath,
+          timestamp: now,
+        });
+      }
+    }
+
+    return alerts;
   }
 
   // ── Status ──

@@ -8,11 +8,11 @@ import { runParallel, GeminiExecutor, TaskStore, ContextStore, ContextService, e
 import type { CreateTaskInput, UpdateTaskInput, CreateContextInput, UpdateContextInput, ContextScope, CreateMergeInput, ReportUpstreamInput } from '@olympus-dev/protocol';
 import type { CodexAdapter } from './codex-adapter.js';
 import type { GeminiAdvisor } from './gemini-advisor.js';
+import { filterForApi, filterStreamChunk } from './response-filter.js';
 
-/** Strip ANSI escape sequences from text */
+/** Strip ANSI escape sequences from text (delegates to response-filter pipeline) */
 function stripAnsi(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07)/g, '');
+  return filterStreamChunk(text).text;
 }
 
 export interface ApiHandlerOptions {
@@ -216,6 +216,10 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     // /api/workers/tasks (list all)
     if (parts[2] === 'tasks' && !parts[3]) {
       return { path: '/api/workers/tasks', query };
+    }
+    // /api/workers/tasks/:taskId/progress — worker progress report
+    if (parts[2] === 'tasks' && parts[3] && parts[4] === 'progress') {
+      return { path: '/api/workers/tasks/:id/progress', id: parts[3], query };
     }
     // /api/workers/tasks/:taskId — worker task status query
     if (parts[2] === 'tasks' && parts[3]) {
@@ -437,7 +441,7 @@ ${body.message}`;
           sendJson(res, 503, { error: 'Worker registry not available' });
           return;
         }
-        const body = await parseBody<{ prompt: string; provider?: string; dangerouslySkipPermissions?: boolean }>(req);
+        const body = await parseBody<{ prompt: string; provider?: string; dangerouslySkipPermissions?: boolean; chatId?: number }>(req);
         if (!body.prompt) {
           sendJson(res, 400, { error: 'prompt is required' });
           return;
@@ -477,7 +481,7 @@ ${body.message}`;
         }
 
         // 1. Create task in WorkerRegistry (worker → busy)
-        const task = workerRegistry.createTask(worker.id, enrichedPrompt);
+        const task = workerRegistry.createTask(worker.id, enrichedPrompt, body.chatId);
 
         // 2. Broadcast worker:task:assigned → Worker receives and executes CLI directly
         onWorkerEvent?.('worker:task:assigned', {
@@ -491,6 +495,29 @@ ${body.message}`;
         });
 
         sendJson(res, 202, { taskId: task.taskId, status: 'running', workerName: worker.name });
+
+        // Fire-and-forget pre-review
+        if (geminiAdvisor && worker.projectPath) {
+          geminiAdvisor.preReviewTask({
+            taskPrompt: enrichedPrompt,
+            workerName: worker.name,
+            projectPath: worker.projectPath,
+          }).then(review => {
+            if (review) onWorkerEvent?.('gemini:pre-review', { taskId: task.taskId, review });
+          }).catch(() => {});
+        }
+        return;
+      }
+
+      // POST /api/workers/tasks/:taskId/progress — Worker reports intermediate progress
+      if (path === '/api/workers/tasks/:id/progress' && method === 'POST' && id) {
+        const body = await parseBody<{ text: string; timestamp?: number }>(req);
+        onWorkerEvent?.('worker:output', {
+          taskId: id,
+          text: body.text,
+          timestamp: body.timestamp ?? Date.now(),
+        });
+        sendJson(res, 200, { ok: true });
         return;
       }
 
@@ -504,6 +531,10 @@ ${body.message}`;
         const task = workerRegistry.getTask(id);
         if (!task) {
           sendJson(res, 404, { error: 'Task not found' });
+          return;
+        }
+        if (task.status !== 'running' && task.status !== 'timeout') {
+          sendJson(res, 409, { error: 'Task already completed', status: task.status });
           return;
         }
 
@@ -554,25 +585,9 @@ ${body.message}`;
           workerRegistry.completeTask(id, result);
           onCliComplete?.(result);
 
-          // Codex summarization → then broadcast (user accepts delay)
-          const rawText = stripAnsi((result.text ?? '').slice(0, 4000));
-          let summary = rawText.slice(0, 2000);
-          try {
-            const { runCli } = await import('./cli-runner.js');
-            const summarizeResult = await runCli({
-              prompt: `Summarize the following work result from "${task.workerName}" concisely. Key outcomes only, no greetings or extra explanations. Respond in Korean.\n\n---\n${rawText}`,
-              provider: 'codex',
-              model: 'gpt-5.3-codex',
-              dangerouslySkipPermissions: true,
-              timeoutMs: 30_000,
-            });
-            if (summarizeResult.success && summarizeResult.text) {
-              summary = summarizeResult.text;
-            }
-          } catch (err) {
-            console.error('[api] Codex summarization failed:', (err as Error).message);
-          }
+          const rawText = stripAnsi((result.text ?? '').slice(0, 4000)).slice(0, 2000);
 
+          // Broadcast immediately with rawText
           onWorkerEvent?.('worker:task:final_after_timeout', {
             taskId: id,
             workerId: task.workerId,
@@ -580,10 +595,45 @@ ${body.message}`;
             success: body.success,
             durationMs: body.durationMs,
             chatId: task.chatId,
-            summary,
+            summary: rawText,
           });
 
-          // Background: LocalContextStore + Gemini refresh (don't block response)
+          sendJson(res, 200, { ok: true });
+
+          // Background: Codex summarization
+          (async () => {
+            try {
+              const { runCli } = await import('./cli-runner.js');
+              const summarizeResult = await runCli({
+                prompt: `Summarize the following work result from "${task.workerName}" concisely. Key outcomes only, no greetings or extra explanations. Respond in Korean.\n\n---\n${rawText}`,
+                provider: 'codex',
+                model: 'gpt-5.3-codex',
+                dangerouslySkipPermissions: true,
+                timeoutMs: 30_000,
+              });
+              if (summarizeResult.success && summarizeResult.text) {
+                onWorkerEvent?.('worker:task:summary', { taskId: id, workerId: task.workerId, workerName: task.workerName, chatId: task.chatId, summary: summarizeResult.text });
+              }
+            } catch { /* summarization failed — rawText already delivered */ }
+          })().catch(() => {});
+
+          // Background: Gemini post-review
+          if (geminiAdvisor && task) {
+            (async () => {
+              try {
+                const taskWorker = workerRegistry?.getAll().find(w => w.id === task.workerId);
+                const review = await geminiAdvisor.reviewWorkerResult({
+                  taskPrompt: task.prompt.slice(0, 500),
+                  workerResult: rawText,
+                  workerName: task.workerName,
+                  projectPath: taskWorker?.projectPath ?? process.cwd(),
+                });
+                if (review) onWorkerEvent?.('gemini:review', { taskId: id, workerId: task.workerId, workerName: task.workerName, chatId: task.chatId, quality: review.quality, summary: review.summary, concerns: review.concerns });
+              } catch { /* review failed */ }
+            })().catch(() => {});
+          }
+
+          // Background: LocalContextStore + Gemini refresh
           (async () => {
             if (localContextManager && task) {
               try {
@@ -617,7 +667,6 @@ ${body.message}`;
               } catch { /* save failure — silent */ }
             }
 
-            // Trigger Gemini incremental refresh (reads LocalContextStore)
             if (geminiAdvisor) {
               const taskWorker = workerRegistry?.getAll().find(w => w.id === task.workerId);
               if (taskWorker?.projectPath) {
@@ -626,7 +675,6 @@ ${body.message}`;
             }
           })().catch(() => {});
 
-          sendJson(res, 200, { ok: true });
           return;
         }
 
@@ -634,25 +682,9 @@ ${body.message}`;
         workerRegistry.completeTask(id, result);
         onCliComplete?.(result);
 
-        // Codex summarization → then broadcast (user accepts delay)
-        const rawText = stripAnsi((result.text ?? '').slice(0, 4000));
-        let summary = rawText.slice(0, 2000);
-        try {
-          const { runCli } = await import('./cli-runner.js');
-          const summarizeResult = await runCli({
-            prompt: `Summarize the following work result from "${task.workerName}" concisely. Key outcomes only, no greetings or extra explanations. Respond in Korean.\n\n---\n${rawText}`,
-            provider: 'codex',
-            model: 'gpt-5.3-codex',
-            dangerouslySkipPermissions: true,
-            timeoutMs: 30_000,
-          });
-          if (summarizeResult.success && summarizeResult.text) {
-            summary = summarizeResult.text;
-          }
-        } catch (err) {
-          console.error('[api] Codex summarization failed:', (err as Error).message);
-        }
+        const rawText = stripAnsi((result.text ?? '').slice(0, 4000)).slice(0, 2000);
 
+        // Broadcast immediately with rawText
         onWorkerEvent?.('worker:task:completed', {
           taskId: id,
           workerId: task.workerId,
@@ -660,10 +692,45 @@ ${body.message}`;
           success: body.success,
           durationMs: body.durationMs,
           chatId: task.chatId,
-          summary,
+          summary: rawText,
         });
 
-        // Background: LocalContextStore + Gemini refresh (don't block response)
+        sendJson(res, 200, { ok: true });
+
+        // Background: Codex summarization
+        (async () => {
+          try {
+            const { runCli } = await import('./cli-runner.js');
+            const summarizeResult = await runCli({
+              prompt: `Summarize the following work result from "${task.workerName}" concisely. Key outcomes only, no greetings or extra explanations. Respond in Korean.\n\n---\n${rawText}`,
+              provider: 'codex',
+              model: 'gpt-5.3-codex',
+              dangerouslySkipPermissions: true,
+              timeoutMs: 30_000,
+            });
+            if (summarizeResult.success && summarizeResult.text) {
+              onWorkerEvent?.('worker:task:summary', { taskId: id, workerId: task.workerId, workerName: task.workerName, chatId: task.chatId, summary: summarizeResult.text });
+            }
+          } catch { /* summarization failed — rawText already delivered */ }
+        })().catch(() => {});
+
+        // Background: Gemini post-review
+        if (geminiAdvisor && task) {
+          (async () => {
+            try {
+              const taskWorker = workerRegistry?.getAll().find(w => w.id === task.workerId);
+              const review = await geminiAdvisor.reviewWorkerResult({
+                taskPrompt: task.prompt.slice(0, 500),
+                workerResult: rawText,
+                workerName: task.workerName,
+                projectPath: taskWorker?.projectPath ?? process.cwd(),
+              });
+              if (review) onWorkerEvent?.('gemini:review', { taskId: id, workerId: task.workerId, workerName: task.workerName, chatId: task.chatId, quality: review.quality, summary: review.summary, concerns: review.concerns });
+            } catch { /* review failed */ }
+          })().catch(() => {});
+        }
+
+        // Background: LocalContextStore + Gemini refresh
         (async () => {
           if (localContextManager && task) {
             try {
@@ -697,7 +764,6 @@ ${body.message}`;
             } catch { /* save failure — silent */ }
           }
 
-          // Trigger Gemini incremental refresh (reads LocalContextStore)
           if (geminiAdvisor) {
             const taskWorker = workerRegistry?.getAll().find(w => w.id === task.workerId);
             if (taskWorker?.projectPath) {
@@ -705,8 +771,6 @@ ${body.message}`;
             }
           }
         })().catch(() => {});
-
-        sendJson(res, 200, { ok: true });
         return;
       }
 
@@ -897,6 +961,16 @@ Only after execution tasks, report briefly:
 - No excessive report-style language
 - Structure only when necessary
 
+## Briefing Capability
+
+When the user asks about project status, issues, or "특이사항":
+- Summarize worker states (idle/busy/offline counts)
+- Report recent task results (last 5 successes/failures)
+- Share any Gemini Advisor recommendations or alerts
+- Be proactive about mentioning concerns
+
+Use the project context provided below to give informed answers.
+
 ## Current State
 - Worker sessions: ${workers.length > 0 ? workers.length + ' active' : 'none (need olympus start)'}
 ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextStr}${geminiContextStr}`;
@@ -921,38 +995,17 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextS
               chatId: body.chatId,
             });
 
-            // Inform Codex of delegation to generate response
-            try {
-              const { runCli } = await import('./cli-runner.js');
-              const delegationPrompt = `### SYSTEM\n${systemPrompt}\n\n### USER\nThe user requested the following task for @${worker.name} worker, and the task has been assigned: "${taskPrompt.trim()}"\nWorker project: ${worker.projectPath}\nBriefly inform the user that the task has started.`;
-              const result = await runCli({
-                prompt: delegationPrompt,
-                provider: 'codex',
-                model: 'gpt-5.3-codex',
-                dangerouslySkipPermissions: true,
-                timeoutMs: 30_000,
-              });
-              sendJson(res, 200, { type: 'delegation', taskId: task.taskId, response: result.success ? result.text : `@${worker.name}에 작업을 할당했습니다.` });
-            } catch {
-              sendJson(res, 200, { type: 'delegation', taskId: task.taskId, response: `@${worker.name}에 작업을 할당했습니다.` });
-            }
+            sendJson(res, 200, {
+              type: 'delegation',
+              taskId: task.taskId,
+              response: `✅ ${worker.name}에게 작업을 전달했습니다: "${taskPrompt.trim().slice(0, 50)}..."`,
+            });
             return;
           } else if (worker && worker.status === 'busy') {
-            // Worker busy — inform Codex of the situation
-            try {
-              const { runCli } = await import('./cli-runner.js');
-              const busyPrompt = `### SYSTEM\n${systemPrompt}\n\n### USER\nThe user requested a task for @${worker.name} worker, but the worker is currently busy with another task.\nCurrent task: ${worker.currentTaskPrompt ?? 'unknown'}\nPlease inform the user of the situation.`;
-              const result = await runCli({
-                prompt: busyPrompt,
-                provider: 'codex',
-                model: 'gpt-5.3-codex',
-                dangerouslySkipPermissions: true,
-                timeoutMs: 30_000,
-              });
-              sendJson(res, 200, { type: 'chat', response: result.success ? result.text : `@${worker.name} 워커가 현재 작업 중입니다.` });
-            } catch {
-              sendJson(res, 200, { type: 'chat', response: `@${worker.name} 워커가 현재 작업 중입니다.` });
-            }
+            sendJson(res, 200, {
+              type: 'chat',
+              response: `⏳ ${worker.name}은(는) 현재 작업 중입니다. 잠시 후 다시 시도해 주세요.`,
+            });
             return;
           }
           // worker not found — fall through to normal Codex chat
@@ -972,7 +1025,7 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextS
           if (!result.success) {
             console.error('[codex/chat] runCli failed:', JSON.stringify(result.error), 'text:', result.text?.slice(0, 200));
             const errorMsg = result.text || (result.error as any)?.message || '죄송합니다. Codex 실행에 실패했습니다.';
-            sendJson(res, 200, { type: 'chat', response: errorMsg });
+            sendJson(res, 500, { type: 'chat', error: errorMsg });
             return;
           }
 
@@ -1049,7 +1102,10 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextS
           dangerouslySkipPermissions: body.dangerouslySkipPermissions,
           allowedTools: body.allowedTools,
           onStream: onCliStream
-            ? (chunk) => onCliStream({ sessionKey, chunk, timestamp: Date.now() })
+            ? (chunk: string) => {
+                const filtered = filterStreamChunk(chunk);
+                onCliStream({ sessionKey, chunk: filtered.text, timestamp: Date.now() });
+              }
             : undefined,
         };
 
@@ -1134,7 +1190,12 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextS
         }
 
         onCliComplete?.(result);
-        sendJson(res, 200, { result });
+
+        // Apply response filter to CLI result
+        const filteredResult = result.success && result.text
+          ? { ...result, text: filterForApi(result.text).text }
+          : result;
+        sendJson(res, 200, { result: filteredResult });
         return;
       }
 
@@ -1163,7 +1224,10 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextS
           dangerouslySkipPermissions: body.dangerouslySkipPermissions as boolean | undefined,
           allowedTools: body.allowedTools as string[] | undefined,
           onStream: onCliStream
-            ? (chunk) => onCliStream({ sessionKey: asyncSessionKey, chunk, timestamp: Date.now() })
+            ? (chunk: string) => {
+                const filtered = filterStreamChunk(chunk);
+                onCliStream({ sessionKey: asyncSessionKey, chunk: filtered.text, timestamp: Date.now() });
+              }
             : undefined,
         };
 
@@ -1180,7 +1244,9 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextS
 
         // Background execution
         runCli(params).then(result => {
-          asyncTasks.set(taskId, { status: 'completed', result, startedAt: asyncTasks.get(taskId)!.startedAt });
+          const existing = asyncTasks.get(taskId);
+          if (!existing) return;
+          asyncTasks.set(taskId, { status: 'completed', result, startedAt: existing.startedAt });
 
           if (result.sessionId && body.sessionKey && cliSessionStore) {
             cliSessionStore.save({
@@ -1213,11 +1279,18 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextS
 
           onCliComplete?.(result);
         }).catch(err => {
-          asyncTasks.set(taskId, { status: 'failed', error: (err as Error).message, startedAt: asyncTasks.get(taskId)!.startedAt });
+          const existing = asyncTasks.get(taskId);
+          if (!existing) return;
+          asyncTasks.set(taskId, { status: 'failed', error: (err as Error).message, startedAt: existing.startedAt });
         });
 
-        // Auto-cleanup after 1 hour
-        setTimeout(() => asyncTasks.delete(taskId), 3_600_000);
+        // Auto-cleanup after 1 hour (only if not still running)
+        setTimeout(() => {
+          const task = asyncTasks.get(taskId);
+          if (task && task.status !== 'running') {
+            asyncTasks.delete(taskId);
+          }
+        }, 3_600_000);
 
         sendJson(res, 202, { taskId, status: 'running' });
         return;

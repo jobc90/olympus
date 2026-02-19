@@ -241,7 +241,15 @@ export class Gateway {
       this.geminiAdvisor.on('analysis:complete', (analysis: unknown) => {
         this.broadcastToAll('gemini:analysis', analysis);
       });
+      this.geminiAdvisor.on('alert', (alert: unknown) => {
+        this.broadcastToAll('gemini:alert', alert);
+      });
     }
+
+    // Wire worker:died event from WorkerRegistry
+    this.workerRegistry.on('worker:died', (payload: { workerId: string; taskIds: string[] }) => {
+      this.broadcastToAll('worker:task:failed', payload);
+    });
 
     // Usage monitor — polls statusline sidecar JSON
     this.usageMonitor = new UsageMonitor();
@@ -259,6 +267,9 @@ export class Gateway {
     await this.cliSessionStore.initialize().catch((err) => {
       console.warn(`[Gateway] CLI session store init failed (operating without persistence): ${(err as Error).message}`);
     });
+
+    // Start zombie worker detection
+    this.workerRegistry.startStaleCheck();
 
     // Start usage monitor
     if (this.usageMonitor) {
@@ -359,6 +370,9 @@ export class Gateway {
     if (this.usageMonitor) {
       this.usageMonitor.stop();
     }
+
+    // Stop zombie worker detection
+    this.workerRegistry.stopStaleCheck();
 
     // Close stores last (may have pending writes)
     if (this.memoryStore) this.memoryStore.close();

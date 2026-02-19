@@ -104,19 +104,32 @@ export class GeminiPty extends EventEmitter {
       if (this.restartCount < MAX_RESTARTS) {
         this.restartCount++;
         setTimeout(() => this.startPty().catch(() => {}), 2000);
+      } else {
+        // Recovery: retry every 5 minutes even after MAX_RESTARTS
+        setTimeout(() => {
+          this.restartCount = 0;
+          this.startPty().catch(() => {});
+        }, 300_000);
       }
     });
 
     // Wait for Gemini CLI initialization to settle
     // (MCP servers, skills, credentials loading takes 5-10s)
-    await new Promise<void>((resolve) => {
-      const check = setInterval(() => {
-        if (lastInitDataAt > 0 && Date.now() - lastInitDataAt >= INIT_SETTLE_MS) {
-          clearInterval(check);
-          this.ready = true;
-          resolve();
-        }
-      }, 500);
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        const check = setInterval(() => {
+          if (lastInitDataAt > 0 && Date.now() - lastInitDataAt >= INIT_SETTLE_MS) {
+            clearInterval(check);
+            this.ready = true;
+            resolve();
+          }
+        }, 500);
+      }),
+      new Promise<void>((_, reject) => setTimeout(() => reject(new Error('GeminiPty init timeout (30s)')), 30_000)),
+    ]).catch((err) => {
+      console.warn(`[GeminiPty] Init timeout: ${(err as Error).message}`);
+      // Mark as ready anyway — may work despite slow init
+      this.ready = true;
     });
   }
 
@@ -136,6 +149,7 @@ export class GeminiPty extends EventEmitter {
         resolve(stripAnsi(this.buffer).trim());
         this.pending = null;
         this.buffer = '';
+        this.restartCount = 0; // Reset on successful response
       }
     }, SETTLE_MS);
   }

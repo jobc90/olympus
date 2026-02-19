@@ -15,7 +15,6 @@ import { createMessage, type WsMessage, type RpcRequestPayload } from '@olympus-
 function createFullOrchestrator(): CodexOrchestratorLike & {
   emit: (event: string, ...args: unknown[]) => void;
   _sessions: Array<{ id: string; name: string; projectPath: string; status: string; lastActivity: number }>;
-  _projects: Array<{ name: string; path: string; aliases: string[]; techStack: string[] }>;
 } {
   const listeners: Map<string, Array<(...args: unknown[]) => void>> = new Map();
 
@@ -24,15 +23,9 @@ function createFullOrchestrator(): CodexOrchestratorLike & {
     { id: 'sess-beta', name: 'beta-project', projectPath: '/dev/beta', status: 'busy', lastActivity: Date.now() - 5000 },
   ];
 
-  const projects = [
-    { name: 'alpha', path: '/dev/alpha', aliases: ['알파', 'a'], techStack: ['TypeScript', 'React'] },
-    { name: 'beta', path: '/dev/beta', aliases: ['베타', 'b'], techStack: ['Python', 'FastAPI'] },
-  ];
-
   return {
     initialized: true,
     _sessions: sessions,
-    _projects: projects,
 
     on(event: string, listener: (...args: unknown[]) => void) {
       if (!listeners.has(event)) listeners.set(event, []);
@@ -66,16 +59,6 @@ function createFullOrchestrator(): CodexOrchestratorLike & {
     })),
 
     getSessions: vi.fn(() => sessions),
-
-    getProjects: vi.fn(async () => projects),
-
-    globalSearch: vi.fn(async (query: string, limit?: number) => {
-      const results = [
-        { projectName: 'alpha', projectPath: '/dev/alpha', matchType: 'task' as const, content: `build ${query}`, score: 3, timestamp: Date.now() - 60000 },
-        { projectName: 'beta', projectPath: '/dev/beta', matchType: 'pattern' as const, content: `test ${query}`, score: 2, timestamp: Date.now() - 120000 },
-      ];
-      return limit ? results.slice(0, limit) : results;
-    }),
 
     shutdown: vi.fn(async () => {}),
 
@@ -184,41 +167,10 @@ describe('Codex Integration: Adapter + RPC Pipeline', () => {
     });
   });
 
-  describe('codex.projects RPC', () => {
-    it('should return all projects with tech stacks', async () => {
-      const result = await invokeRpc(rpcRouter, 'codex.projects') as Array<{
-        name: string;
-        path: string;
-        aliases: string[];
-        techStack: string[];
-      }>;
-
-      expect(result).toHaveLength(2);
-      expect(result[0].name).toBe('alpha');
-      expect(result[0].techStack).toContain('TypeScript');
-      expect(result[1].aliases).toContain('베타');
-    });
-  });
-
-  describe('codex.search RPC', () => {
-    it('should search across projects', async () => {
-      const result = await invokeRpc(rpcRouter, 'codex.search', { query: 'deploy' }) as Array<{
-        projectName: string;
-        matchType: string;
-        content: string;
-        score: number;
-      }>;
-
-      expect(result).toHaveLength(2);
-      expect(result[0].content).toContain('deploy');
-      expect(result[0].matchType).toBe('task');
-      expect(result[1].matchType).toBe('pattern');
-    });
-
-    it('should respect limit parameter', async () => {
-      const result = await invokeRpc(rpcRouter, 'codex.search', { query: 'build', limit: 1 }) as Array<unknown>;
-
-      expect(result).toHaveLength(1);
+  describe('codex.search RPC (with no localContextManager)', () => {
+    it('should return empty array when no localContextManager', async () => {
+      const result = await invokeRpc(rpcRouter, 'codex.search', { query: 'deploy' }) as Array<unknown>;
+      expect(result).toEqual([]);
     });
   });
 
@@ -232,7 +184,7 @@ describe('Codex Integration: Adapter + RPC Pipeline', () => {
 
       expect(result.initialized).toBe(true);
       expect(result.sessionCount).toBe(2);
-      expect(result.projectCount).toBe(2);
+      expect(result.projectCount).toBe(0);
     });
   });
 

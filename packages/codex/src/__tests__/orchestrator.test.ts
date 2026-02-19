@@ -30,7 +30,6 @@ vi.mock('../session-manager.js', () => ({
     })),
     sendToSession: vi.fn(async () => true),
     closeSession: vi.fn(() => true),
-    discoverExistingSessions: vi.fn(async () => []),
     shutdown: vi.fn(),
   })),
 }));
@@ -100,22 +99,6 @@ describe('CodexOrchestrator', () => {
     it('should return session list', () => {
       const sessions = orchestrator.getSessions();
       expect(Array.isArray(sessions)).toBe(true);
-    });
-  });
-
-  describe('getProjects', () => {
-    it('should return empty array (deprecated)', async () => {
-      await orchestrator.initialize();
-      const projects = await orchestrator.getProjects();
-      expect(projects).toEqual([]);
-    });
-  });
-
-  describe('globalSearch', () => {
-    it('should return empty array (deprecated)', async () => {
-      await orchestrator.initialize();
-      const results = await orchestrator.globalSearch('build');
-      expect(results).toEqual([]);
     });
   });
 

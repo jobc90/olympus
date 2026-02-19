@@ -74,7 +74,6 @@ vi.mock('../session-manager.js', () => ({
       mockSessions.push(session);
       return session;
     }),
-    discoverExistingSessions: vi.fn(async () => []),
     shutdown: vi.fn(),
   })),
 }));
@@ -219,16 +218,6 @@ describe('Codex E2E: Full Pipeline', () => {
       expect(sessions).toHaveLength(2);
       expect(sessions[0].id).toBe('sess-alpha');
       expect(sessions[1].id).toBe('sess-beta');
-    });
-
-    it('should return empty projects (deprecated)', async () => {
-      const projects = await orchestrator.getProjects();
-      expect(projects).toEqual([]);
-    });
-
-    it('should return empty search results (deprecated)', async () => {
-      const results = await orchestrator.globalSearch('deploy');
-      expect(results).toEqual([]);
     });
 
     it('should create new session', async () => {

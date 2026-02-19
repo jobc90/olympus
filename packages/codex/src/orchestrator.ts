@@ -7,8 +7,6 @@ import type {
   CodexProcessResult,
   CodexOrchestratorConfig,
   ManagedSession,
-  ProjectMetadata,
-  GlobalSearchResult,
   ActiveCliTask,
   InputSource,
 } from './types.js';
@@ -56,9 +54,6 @@ export class CodexOrchestrator extends EventEmitter {
    */
   async initialize(): Promise<void> {
     if (this._initialized) return;
-
-    // Discover existing sessions
-    await this.sessionManager.discoverExistingSessions();
 
     this._initialized = true;
   }
@@ -146,20 +141,6 @@ export class CodexOrchestrator extends EventEmitter {
    */
   closeSession(sessionId: string): boolean {
     return this.sessionManager.closeSession(sessionId);
-  }
-
-  /**
-   * List projects (deprecated — use Gateway /api/local-context API)
-   */
-  async getProjects(): Promise<ProjectMetadata[]> {
-    return [];
-  }
-
-  /**
-   * Global search (deprecated — use Gateway /api/local-context API)
-   */
-  async globalSearch(_query: string, _limit?: number): Promise<GlobalSearchResult[]> {
-    return [];
   }
 
   // ── Task Tracking ──

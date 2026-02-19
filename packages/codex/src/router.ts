@@ -68,19 +68,7 @@ export class Router {
       };
     }
 
-    // Step 4: Project keyword matching
-    const keywordMatch = await this.matchProjectKeyword(input.text);
-    if (keywordMatch) {
-      return {
-        type: 'SESSION_FORWARD',
-        targetSessions: [keywordMatch.sessionId],
-        processedInput: input.text,
-        confidence: keywordMatch.confidence,
-        reason: `Keyword "${keywordMatch.keyword}" → ${keywordMatch.projectName}`,
-      };
-    }
-
-    // Step 5: Most recent active session
+    // Step 4: Most recent active session
     const lastSession = this.lastActiveSession.get(input.source);
     if (lastSession && this.sessionManager.getSession(lastSession)) {
       return {
@@ -139,17 +127,6 @@ export class Router {
       /all\s+projects?\s+(build|test|lint)/i,
     ];
     return patterns.some(p => p.test(text));
-  }
-
-  private async matchProjectKeyword(_text: string): Promise<{
-    sessionId: string;
-    projectName: string;
-    keyword: string;
-    confidence: number;
-  } | null> {
-    // Project keyword matching disabled — ContextManager removed
-    // Gateway /api/local-context API provides context search
-    return null;
   }
 
   private resolveSessionByName(name: string): ManagedSession | undefined {

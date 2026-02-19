@@ -10,6 +10,9 @@ import {
 } from '@olympus-dev/protocol';
 import type { CliRunResult } from '@olympus-dev/protocol';
 import { classifyError, structuredLog } from './error-utils.js';
+import { TelegramSecurity } from './security.js';
+import { DraftStreamManager } from './draft-stream.js';
+import type { CliStreamChunk } from '@olympus-dev/protocol';
 
 // Configuration
 interface BotConfig {
@@ -59,6 +62,14 @@ function splitLongMessage(text: string, maxLen = 4000): string[] {
   return chunks;
 }
 
+/** UTF-8 safe text truncation (handles surrogate pairs correctly) */
+function safeSlice(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  const chars = Array.from(text);
+  if (chars.length <= maxLength) return text;
+  return chars.slice(0, maxLength).join('');
+}
+
 class OlympusBot {
   private bot: Telegraf;
   private config: BotConfig;
@@ -83,18 +94,59 @@ class OlympusBot {
   // Pending RPC calls (requestId -> resolve/reject)
   private pendingRpc = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   private static readonly RPC_TIMEOUT_MS = 30000;
+  // Security module (3-layer: DM/Group/Command)
+  private security: TelegramSecurity;
+  // Draft streaming manager (real-time editMessageText updates)
+  private draftManager = new DraftStreamManager();
+  // Session key → chatId mapping for stream routing
+  private streamChatMap = new Map<string, number>(); // sessionKey → chatId
+  // WI-4.4: Track delivered task IDs to prevent duplicate result messages
+  private deliveredTasks = new Set<string>();
+  // Periodic cleanup timer for deliveredTasks (prevent unbounded growth)
+  private deliveredTasksCleanupTimer: NodeJS.Timeout | null = null;
+  // WI-4.5: Timestamp of last seen worker task for catch-up after reconnect
+  private lastSeenTaskTimestamp = Date.now();
 
   constructor(config: BotConfig) {
     this.config = config;
     this.bot = new Telegraf(config.telegramToken, { handlerTimeout: 1_800_000 });  // 30분
+    this.security = new TelegramSecurity(TelegramSecurity.fromEnv());
     this.setupCommands();
   }
 
-  private isAllowed(ctx: Context): boolean {
+  private async isAllowed(ctx: Context): Promise<boolean> {
     const userId = ctx.from?.id;
     if (!userId) return false;
-    if (this.config.allowedUsers.length === 0) return true; // No restriction
-    return this.config.allowedUsers.includes(userId);
+    const chatId = ctx.chat?.id ?? 0;
+    const chatType = (ctx.chat?.type ?? 'private') as 'private' | 'group' | 'supergroup' | 'channel';
+
+    // WI-4.1: Extract actual command from message text
+    const msg = (ctx as any).message;
+    const command = msg?.text?.startsWith('/') ? msg.text.split(/\s/)[0].slice(1).split('@')[0] : undefined;
+
+    const botMentioned = this.isBotMentioned(ctx);
+
+    // WI-4.2: Detect admin status in group/supergroup chats
+    let isAdmin = false;
+    if (chatType === 'group' || chatType === 'supergroup') {
+      try {
+        const member = await ctx.telegram.getChatMember(chatId, userId);
+        isAdmin = ['creator', 'administrator'].includes(member.status);
+      } catch { /* ignore */ }
+    }
+
+    const decision = this.security.authorize({ userId, chatId, chatType, command, isAdmin, botMentioned });
+    return decision.allowed;
+  }
+
+  private isBotMentioned(ctx: Context): boolean {
+    const msg = (ctx as any).message;
+    if (!msg?.entities || !msg?.text) return false;
+    const botUsername = this.bot.botInfo?.username;
+    if (!botUsername) return false;
+    return msg.entities.some((e: any) =>
+      e.type === 'mention' && msg.text.slice(e.offset, e.offset + e.length) === `@${botUsername}`
+    );
   }
 
   private setupCommands() {
@@ -104,7 +156,7 @@ class OlympusBot {
       const updateType = ctx.updateType;
       structuredLog('info', 'telegram-bot', 'update_received', { userId, updateType });
 
-      if (!this.isAllowed(ctx)) {
+      if (!(await this.isAllowed(ctx))) {
         structuredLog('warn', 'telegram-bot', 'unauthorized_access', { userId });
         await ctx.reply('⛔ 접근 권한이 없습니다. ALLOWED_USERS에 등록되지 않았습니다.');
         return;
@@ -1076,7 +1128,7 @@ class OlympusBot {
   }
 
   /**
-   * Forward a prompt to Claude CLI via /api/cli/run and send the result.
+   * Forward a prompt to Claude CLI via async API + polling.
    * Shared by both orchestrator mode and direct mode handlers.
    */
   private async forwardToCli(
@@ -1085,39 +1137,77 @@ class OlympusBot {
     sessionKey: string,
     prefix?: string,
   ): Promise<void> {
-    const response = await fetch(`${this.config.gatewayUrl}/api/cli/run`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify({
-        prompt,
-        sessionKey,
-        provider: 'claude',
-        dangerouslySkipPermissions: true,
-      }),
-      signal: AbortSignal.timeout(600_000),
-    });
+    // Register DraftStream for real-time Telegram message streaming via editMessageText
+    this.streamChatMap.set(sessionKey, ctx.chat.id);
+    const draft = this.draftManager.create(this.bot.telegram, ctx.chat.id, sessionKey);
 
-    if (!response.ok) {
-      const error = await response.json() as { message: string };
-      throw new Error(error.message);
+    try {
+      // Step 1: Start async CLI execution
+      const startRes = await fetch(`${this.config.gatewayUrl}/api/cli/run/async`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({
+          prompt,
+          sessionKey,
+          provider: 'claude',
+          dangerouslySkipPermissions: true,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+
+      if (!startRes.ok) {
+        const error = await startRes.json() as { message: string };
+        await draft.cancel(error.message);
+        this.draftManager.remove(sessionKey);
+        this.streamChatMap.delete(sessionKey);
+        throw new Error(error.message);
+      }
+
+      const { taskId } = await startRes.json() as { taskId: string };
+
+      // Track this task for duplicate prevention (WI-4.4)
+      this.deliveredTasks.add(taskId);
+
+      // Step 2: Poll for completion
+      const result = await this.pollTaskStatus(taskId);
+
+      // Flush any remaining streamed content
+      await this.draftManager.handleComplete(sessionKey);
+      this.streamChatMap.delete(sessionKey);
+
+      if (!result) {
+        await this.safeReply(ctx, '⏰ 응답 시간 초과 (30분)', undefined);
+        return;
+      }
+
+      if (!result.success) {
+        await this.safeReply(ctx, `❌ ${result.error?.type}: ${result.error?.message}`, undefined);
+        return;
+      }
+
+      const footer = result.usage
+        ? `\n\n📊 ${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4)} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
+        : '';
+
+      const draftState = draft.getState();
+      // If DraftStream sent real-time updates, just append footer
+      if (draftState.messageId) {
+        if (footer.trim()) {
+          await this.bot.telegram.sendMessage(ctx.chat.id, footer.trim());
+        }
+      } else {
+        // No streaming received — fallback to full message send
+        const text = prefix ? `${prefix}\n\n${result.text}${footer}` : `${result.text}${footer}`;
+        await this.sendLongMessage(ctx.chat.id, text);
+      }
+    } catch (err) {
+      this.draftManager.remove(sessionKey);
+      this.streamChatMap.delete(sessionKey);
+      throw err;
     }
-
-    const { result } = await response.json() as { result: CliRunResult };
-
-    if (!result.success) {
-      await this.safeReply(ctx, `❌ ${result.error?.type}: ${result.error?.message}`, undefined);
-      return;
-    }
-
-    const footer = result.usage
-      ? `\n\n📊 ${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4)} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
-      : '';
-
-    const text = prefix ? `${prefix}\n\n${result.text}${footer}` : `${result.text}${footer}`;
-    await this.sendLongMessage(ctx.chat.id, text);
   }
 
   /**
@@ -1252,15 +1342,13 @@ class OlympusBot {
   }
 
   /**
-   * Poll async task status until completion.
+   * Poll async task status until completion (sleep-last pattern: check first, sleep after).
    */
   private async pollTaskStatus(taskId: string): Promise<CliRunResult | null> {
     const maxPolls = 180;
     const pollInterval = 10_000;
 
     for (let i = 0; i < maxPolls; i++) {
-      await new Promise(r => setTimeout(r, pollInterval));
-
       try {
         const res = await fetch(
           `${this.config.gatewayUrl}/api/cli/run/${taskId}/status`,
@@ -1270,29 +1358,32 @@ class OlympusBot {
           },
         );
 
-        if (!res.ok) continue;
+        if (res.ok) {
+          const data = await res.json() as { status: string; result?: CliRunResult; error?: string };
 
-        const data = await res.json() as { status: string; result?: CliRunResult; error?: string };
-
-        if (data.status === 'completed' && data.result) {
-          return data.result;
-        }
-        if (data.status === 'failed') {
-          return {
-            success: false,
-            text: '',
-            sessionId: '',
-            model: '',
-            usage: { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
-            cost: 0,
-            durationMs: 0,
-            numTurns: 0,
-            error: { type: 'unknown', message: data.error ?? 'Task failed' },
-          };
+          if (data.status === 'completed' && data.result) {
+            return data.result;
+          }
+          if (data.status === 'failed') {
+            return {
+              success: false,
+              text: '',
+              sessionId: '',
+              model: '',
+              usage: { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
+              cost: 0,
+              durationMs: 0,
+              numTurns: 0,
+              error: { type: 'unknown', message: data.error ?? 'Task failed' },
+            };
+          }
         }
       } catch {
         // Network error -> continue polling
       }
+
+      // Sleep after check (sleep-last pattern)
+      await new Promise(r => setTimeout(r, pollInterval));
     }
 
     return null;
@@ -1444,6 +1535,9 @@ class OlympusBot {
       for (const chatId of chatIds) {
         this.syncSessionsFromGateway(chatId).catch(() => {});
       }
+
+      // WI-4.5: Catch up on worker tasks completed during disconnection
+      this.catchUpMissedWorkerTasks().catch(() => {});
     });
 
     this.ws.on('message', (data) => {
@@ -1523,6 +1617,29 @@ class OlympusBot {
       return;
     }
 
+    // Handle CLI stream chunks — route to DraftStream for real-time Telegram updates
+    if (msg.type === 'cli:stream') {
+      const chunk = msg.payload as { sessionKey: string; chunk: string };
+      if (chunk.sessionKey && this.streamChatMap.has(chunk.sessionKey)) {
+        this.draftManager.handleStreamChunk(chunk.sessionKey, chunk.chunk).catch(err => {
+          structuredLog('error', 'telegram-bot', 'draft_stream_error', { error: (err as Error).message });
+        });
+      }
+      return;
+    }
+
+    // Handle CLI complete — flush DraftStream
+    if (msg.type === 'cli:complete') {
+      const completePayload = msg.payload as { sessionKey?: string };
+      if (completePayload.sessionKey && this.streamChatMap.has(completePayload.sessionKey)) {
+        this.draftManager.handleComplete(completePayload.sessionKey).catch(err => {
+          structuredLog('error', 'telegram-bot', 'draft_complete_error', { error: (err as Error).message });
+        });
+        this.streamChatMap.delete(completePayload.sessionKey);
+      }
+      return;
+    }
+
     // Handle worker task:completed — Codex가 요약한 결과를 텔레그램에 전달
     if (msg.type === 'worker:task:completed') {
       const taskPayload = msg.payload as {
@@ -1532,16 +1649,47 @@ class OlympusBot {
         summary?: string;
         success: boolean;
         durationMs?: number;
+        geminiReview?: { quality: string; summary: string; concerns: string[] };
       };
+
+      // WI-4.5: Update last seen task timestamp for catch-up
+      this.lastSeenTaskTimestamp = Date.now();
+
+      // WI-4.4: Skip if already delivered via forwardToCli polling
+      if (this.deliveredTasks.has(taskPayload.taskId)) {
+        this.deliveredTasks.delete(taskPayload.taskId);
+        return;
+      }
 
       if (taskPayload.chatId) {
         const durationSec = Math.round((taskPayload.durationMs ?? 0) / 1000);
         const icon = taskPayload.success ? '✅' : '❌';
         const summaryText = taskPayload.summary ?? (taskPayload.success ? '작업 완료' : '작업 실패');
-        const text = `[${taskPayload.workerName}] ${icon} 완료 (${durationSec}초)\n\n${summaryText}`;
+        let text = `[${taskPayload.workerName}] ${icon} 완료 (${durationSec}초)\n\n${summaryText}`;
+
+        // Append Gemini review badge if available
+        if (taskPayload.geminiReview) {
+          const qualityIcon = taskPayload.geminiReview.quality === 'critical' ? '🔴' : taskPayload.geminiReview.quality === 'warning' ? '🟡' : '🟢';
+          text += `\n\n${qualityIcon} Gemini 검토: ${taskPayload.geminiReview.summary}`;
+          if (taskPayload.geminiReview.concerns.length > 0) {
+            text += `\n⚠️ ${taskPayload.geminiReview.concerns.join('\n⚠️ ')}`;
+          }
+        }
+
         this.sendLongMessage(taskPayload.chatId, text).catch((err) => {
           structuredLog('error', 'telegram-bot', 'task_completed_send_failed', { error: (err as Error).message });
         });
+      }
+      return;
+    }
+
+    // Handle worker task:failed — zombie worker died
+    if (msg.type === 'worker:task:failed') {
+      const failPayload = msg.payload as { workerId: string; taskIds: string[] };
+      this.lastSeenTaskTimestamp = Date.now();
+      const adminChatId = this.config.allowedUsers[0];
+      if (adminChatId) {
+        this.sendLongMessage(adminChatId, `⚠️ 워커 오프라인: ${failPayload.workerId}\n실패 작업: ${failPayload.taskIds.length}개`).catch(() => {});
       }
       return;
     }
@@ -1587,6 +1735,46 @@ class OlympusBot {
         this.sendLongMessage(taskPayload.chatId, text).catch((err) => {
           structuredLog('error', 'telegram-bot', 'task_final_send_failed', { error: (err as Error).message });
         });
+      }
+      return;
+    }
+
+    // Handle gemini:alert — Proactive alert from Gemini Advisor
+    if (msg.type === 'gemini:alert') {
+      const alert = msg.payload as { id: string; severity: string; message: string; projectPath: string; timestamp: number };
+      const severityIcon = alert.severity === 'critical' ? '🔴' : alert.severity === 'warning' ? '🟡' : 'ℹ️';
+      const text = `${severityIcon} [Gemini Alert] ${alert.message}\n📁 ${alert.projectPath}`;
+
+      // Broadcast to first allowed user (admin)
+      const adminChatId = this.config.allowedUsers[0];
+      if (adminChatId) {
+        this.sendLongMessage(adminChatId, text).catch(() => {});
+      }
+      return;
+    }
+
+    // WI-4.6: Handle gemini:review — Post-task quality review from Gemini Advisor
+    if (msg.type === 'gemini:review') {
+      const review = msg.payload as { taskId: string; workerName: string; chatId?: number; quality: string; summary: string; concerns: string[] };
+      const chatId = review.chatId ?? this.config.allowedUsers[0];
+      if (chatId) {
+        const qualityIcon = review.quality === 'critical' ? '🔴' : review.quality === 'warning' ? '🟡' : '🟢';
+        let text = `${qualityIcon} [Gemini Review] ${review.workerName}\n${review.summary}`;
+        if (review.concerns.length > 0) {
+          text += `\n⚠️ ${review.concerns.join('\n⚠️ ')}`;
+        }
+        this.sendLongMessage(chatId, text).catch(() => {});
+      }
+      return;
+    }
+
+    // WI-4.6: Handle worker:task:summary — Append/update summary to existing task message
+    if (msg.type === 'worker:task:summary') {
+      const summaryPayload = msg.payload as { taskId: string; workerName: string; chatId?: number; summary: string };
+      const chatId = summaryPayload.chatId ?? this.config.allowedUsers[0];
+      if (chatId) {
+        const text = `📝 [${summaryPayload.workerName}] 작업 요약\n\n${summaryPayload.summary}`;
+        this.sendLongMessage(chatId, text).catch(() => {});
       }
       return;
     }
@@ -1690,14 +1878,14 @@ class OlympusBot {
         const a = payload as AgentPayload;
         const content = a.content ?? '';
         // Agent results: show brief summary only
-        const summary = content.length > 200 ? content.slice(0, 200) + '...' : content;
+        const summary = content.length > 200 ? safeSlice(content, 200) + '...' : content;
         this.enqueueSessionMessage(sessionId, chatId, `✅ *${a.agentId}* 완료\n\n${summary}`);
         break;
       }
 
       case 'agent:error': {
         const a = payload as AgentPayload;
-        this.enqueueSessionMessage(sessionId, chatId, `❌ ${a.agentId} 오류: ${(a.error ?? '').slice(0, 200)}`);
+        this.enqueueSessionMessage(sessionId, chatId, `❌ ${a.agentId} 오류: ${safeSlice(a.error ?? '', 200)}`);
         break;
       }
 
@@ -1709,7 +1897,7 @@ class OlympusBot {
       case 'log': {
         const l = payload as LogPayload;
         if (l.level === 'error') {
-          this.enqueueSessionMessage(sessionId, chatId, `⚠️ ${l.message.slice(0, 300)}`);
+          this.enqueueSessionMessage(sessionId, chatId, `⚠️ ${safeSlice(l.message, 300)}`);
         }
         break;
       }
@@ -1735,6 +1923,11 @@ class OlympusBot {
 
     // Connect to Gateway WebSocket
     this.connectWebSocket();
+
+    // Periodic cleanup of deliveredTasks set (every 30 minutes)
+    this.deliveredTasksCleanupTimer = setInterval(() => {
+      this.deliveredTasks.clear();
+    }, 30 * 60_000);
 
     // Start Telegram bot
     console.log('Starting Olympus Telegram Bot...');
@@ -1793,6 +1986,7 @@ class OlympusBot {
     console.log(`\nReceived ${signal}, shutting down...`);
     this.stopPing();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.deliveredTasksCleanupTimer) clearInterval(this.deliveredTasksCleanupTimer);
     // Reject all pending RPC calls
     for (const [id, pending] of this.pendingRpc) {
       clearTimeout(pending.timer);
@@ -1828,6 +2022,34 @@ class OlympusBot {
         }
       }
     }, this.syncThrottleMs);
+  }
+
+  /**
+   * WI-4.5: Catch up on missed worker task completions after WebSocket reconnect.
+   */
+  private async catchUpMissedWorkerTasks(): Promise<void> {
+    try {
+      const res = await fetch(`${this.config.gatewayUrl}/api/workers/tasks`, {
+        headers: { Authorization: `Bearer ${this.config.apiKey}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) return;
+
+      const { tasks } = await res.json() as { tasks: Array<{ taskId: string; workerName: string; status: string; completedAt?: number; chatId?: number; result?: { success: boolean; text?: string } }> };
+
+      for (const task of tasks) {
+        if (!task.completedAt || !task.chatId) continue;
+        if (task.completedAt <= this.lastSeenTaskTimestamp) continue;
+        if (this.deliveredTasks.has(task.taskId)) continue;
+        if (task.status !== 'completed' && task.status !== 'failed') continue;
+
+        const icon = task.result?.success ? '✅' : '❌';
+        const text = `[${task.workerName}] ${icon} 완료 (재접속 중 수신)\n\n${safeSlice(task.result?.text ?? '', 2000)}`;
+        await this.sendLongMessage(task.chatId, text).catch(() => {});
+      }
+
+      this.lastSeenTaskTimestamp = Date.now();
+    } catch { /* ignore */ }
   }
 
   private async syncSessionsFromGateway(chatId: number): Promise<void> {

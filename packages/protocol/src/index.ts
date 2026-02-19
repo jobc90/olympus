@@ -203,8 +203,42 @@ export type {
 export { DEFAULT_LOCAL_CONTEXT_CONFIG } from './local-context.js';
 
 // Gemini Advisor types
-export type { GeminiProjectAnalysis, GeminiRootAnalysis, GeminiAdvisorStatus, GeminiBehavior, GeminiAdvisorConfig } from './gemini-advisor.js';
+export type { GeminiProjectAnalysis, GeminiRootAnalysis, GeminiAdvisorStatus, GeminiBehavior, GeminiAdvisorConfig, GeminiReview, GeminiPreReview, GeminiAlert } from './gemini-advisor.js';
 export { DEFAULT_GEMINI_ADVISOR_CONFIG } from './gemini-advisor.js';
 
 // Usage types
 export type { StatuslineUsageData } from './usage.js';
+
+// Draft Stream types (Telegram real-time streaming)
+export type {
+  DraftStreamConfig,
+  DraftStreamState,
+  DraftStreamEvent,
+} from './draft-stream.js';
+
+export { DEFAULT_DRAFT_STREAM_CONFIG } from './draft-stream.js';
+
+// Response Filter types (5-stage pipeline)
+export type {
+  FilterStage,
+  FilterClientType,
+  ResponseFilterConfig,
+  FilterResult,
+} from './response-filter.js';
+
+export {
+  DEFAULT_FILTER_CONFIG,
+  TELEGRAM_FILTER_CONFIG,
+  STREAMING_FILTER_CONFIG,
+} from './response-filter.js';
+
+// Telegram Security types (3-layer model)
+export type {
+  DmPolicy,
+  GroupPolicy,
+  CommandPermission,
+  TelegramSecurityConfig,
+  SecurityDecision,
+} from './telegram-security.js';
+
+export { DEFAULT_SECURITY_CONFIG as DEFAULT_TELEGRAM_SECURITY_CONFIG } from './telegram-security.js';

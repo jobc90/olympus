@@ -2,7 +2,6 @@ import type { CodexSessionManager } from './session-manager.js';
 import type {
   InputSource,
   Intent,
-  ProcessedResponse,
 } from './types.js';
 
 /**
@@ -36,7 +35,7 @@ export class AgentBrain {
 
     // 2. Work history query
     if (this.isHistoryQuery(input)) {
-      const answer = await this.answerHistoryQuery(input);
+      const answer = '작업 이력은 Gateway API를 통해 제공됩니다.';
       return { type: 'ANSWER_FROM_CONTEXT', answer, confidence: 0.85 };
     }
 
@@ -48,7 +47,7 @@ export class AgentBrain {
 
     // 4. Cross-project query
     if (this.isCrossProjectQuery(input)) {
-      const answer = await this.crossProjectReasoning(input);
+      const answer = '크로스 프로젝트 검색은 Gateway API를 통해 제공됩니다.';
       return { type: 'ANSWER_FROM_CONTEXT', answer, confidence: 0.7 };
     }
 
@@ -56,21 +55,9 @@ export class AgentBrain {
     return {
       type: 'FORWARD_TO_CLAUDE',
       sessionId: currentSessionId,
-      enrichedInput: await this.enrichInput(input, currentSessionId),
+      enrichedInput: input,
       confidence: 0.5,
     };
-  }
-
-  /**
-   * Enrich response — add Codex insights to Claude response
-   */
-  async enrichResponse(
-    response: ProcessedResponse,
-    _projectPath: string,
-  ): Promise<ProcessedResponse> {
-    // Context enrichment disabled — ContextManager removed
-    // Gateway /api/local-context API provides context
-    return response;
   }
 
   // ── Pattern matching ──
@@ -109,16 +96,6 @@ export class AgentBrain {
     return /(?:두.*프로젝트|양쪽|비교|호환|cross.*project|compare)/i.test(input);
   }
 
-  /**
-   * Enrich input — inject context before forwarding to Claude
-   */
-  private async enrichInput(input: string, _sessionId?: string): Promise<string> {
-    return input;
-  }
-
-  private async answerHistoryQuery(_query: string): Promise<string> {
-    return '작업 이력은 Gateway API를 통해 제공됩니다.';
-  }
 
   private async generateStatusReport(): Promise<string> {
     const sessions = this.sessionManager.listSessions();
@@ -143,7 +120,4 @@ export class AgentBrain {
     return lines.join('\n');
   }
 
-  private async crossProjectReasoning(_question: string): Promise<string> {
-    return '크로스 프로젝트 검색은 Gateway API를 통해 제공됩니다.';
-  }
 }

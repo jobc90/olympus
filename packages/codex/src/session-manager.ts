@@ -55,10 +55,6 @@ export class CodexSessionManager extends EventEmitter {
     return session;
   }
 
-  async discoverExistingSessions(): Promise<ManagedSession[]> {
-    return [];
-  }
-
   async sendToSession(sessionId: string, input: string): Promise<boolean> {
     const session = this.sessions.get(sessionId);
     if (!session || session.status === 'closed' || session.status === 'error') {
