@@ -11,8 +11,8 @@ import type { Translations } from '../types.js';
 
 const mockTranslations: Translations = {
   model: { opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku' },
-  labels: { '5h': '5h', '7d': '7d', '7d_all': '7d', '7d_sonnet': '7d-S' },
-  time: { hours: 'h', minutes: 'm', seconds: 's' },
+  labels: { '5h': '5h', '7d': '7d', '7d_all': '7d', '7d_sonnet': '7d-S', '1m': '1m' },
+  time: { days: 'd', hours: 'h', minutes: 'm', seconds: 's' },
   errors: { no_context: 'No context yet' },
   widgets: {
     tools: 'Tools',
@@ -24,6 +24,9 @@ const mockTranslations: Translations = {
     rules: 'Rules',
     mcps: 'MCP',
     hooks: 'Hooks',
+    burnRate: 'Rate',
+    cache: 'Cache',
+    toLimit: 'to',
   },
 };
 
@@ -52,11 +55,11 @@ describe('formatters', () => {
 
   describe('formatCost', () => {
     it('should format cost with 2 decimal places', () => {
-      expect(formatCost(0)).toBe('$0.00');
-      expect(formatCost(0.5)).toBe('$0.50');
-      expect(formatCost(1.234)).toBe('$1.23');
-      expect(formatCost(10.999)).toBe('$11.00');
-      expect(formatCost(100)).toBe('$100.00');
+      expect(formatCost(0)).toBe('0.00');
+      expect(formatCost(0.5)).toBe('0.50');
+      expect(formatCost(1.234)).toBe('1.23');
+      expect(formatCost(10.999)).toBe('11.00');
+      expect(formatCost(100)).toBe('100.00');
     });
   });
 

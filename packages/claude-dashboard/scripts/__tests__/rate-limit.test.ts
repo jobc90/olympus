@@ -9,8 +9,8 @@ import type { WidgetContext, UsageLimits, Translations, Config, StdinInput } fro
 // Mock translations
 const mockTranslations: Translations = {
   model: { opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku' },
-  labels: { '5h': '5h', '7d': '7d', '7d_all': '7d', '7d_sonnet': '7d-S' },
-  time: { hours: 'h', minutes: 'm', seconds: 's' },
+  labels: { '5h': '5h', '7d': '7d', '7d_all': '7d', '7d_sonnet': '7d-S', '1m': '1m' },
+  time: { days: 'd', hours: 'h', minutes: 'm', seconds: 's' },
   errors: { no_context: 'No context yet' },
   widgets: {
     tools: 'Tools',
@@ -22,6 +22,9 @@ const mockTranslations: Translations = {
     rules: 'Rules',
     mcps: 'MCP',
     hooks: 'Hooks',
+    burnRate: 'Rate',
+    cache: 'Cache',
+    toLimit: 'to',
   },
 };
 
@@ -29,7 +32,6 @@ const mockTranslations: Translations = {
 const mockConfig: Config = {
   language: 'en',
   plan: 'max',
-  displayMode: 'compact',
   cache: { ttlSeconds: 60 },
 };
 

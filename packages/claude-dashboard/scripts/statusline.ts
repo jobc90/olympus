@@ -45,7 +45,7 @@ async function readStdin(): Promise<StdinInput | null> {
 }
 
 /**
- * Load user configuration with mtime-based cache and migration support
+ * Load user configuration with mtime-based cache
  */
 async function loadConfig(): Promise<Config> {
   try {
@@ -61,16 +61,10 @@ async function loadConfig(): Promise<Config> {
     const content = await readFile(CONFIG_PATH, 'utf-8');
     const userConfig = JSON.parse(content);
 
-    // Migrate old config format (add displayMode if missing)
     const config: Config = {
       ...DEFAULT_CONFIG,
       ...userConfig,
     };
-
-    // Ensure displayMode exists (backward compatibility)
-    if (!config.displayMode) {
-      config.displayMode = 'compact';
-    }
 
     // Cache result
     configCache = { config, mtime };

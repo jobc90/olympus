@@ -58,7 +58,6 @@ describe('i18n', () => {
       const config: Config = {
         language: 'en',
         plan: 'max',
-        displayMode: 'compact',
         cache: { ttlSeconds: 60 },
       };
       const t = getTranslations(config);
@@ -70,7 +69,6 @@ describe('i18n', () => {
       const config: Config = {
         language: 'ko',
         plan: 'max',
-        displayMode: 'compact',
         cache: { ttlSeconds: 60 },
       };
       const t = getTranslations(config);
@@ -83,7 +81,6 @@ describe('i18n', () => {
       const config: Config = {
         language: 'auto',
         plan: 'max',
-        displayMode: 'compact',
         cache: { ttlSeconds: 60 },
       };
       const t = getTranslations(config);

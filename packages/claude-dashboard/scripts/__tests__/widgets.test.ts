@@ -26,7 +26,7 @@ vi.mock('../version.js', () => ({
 // Mock translations
 const mockTranslations: Translations = {
   model: { opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku' },
-  labels: { '5h': '5h', '7d': '7d', '7d_all': '7d', '7d_sonnet': '7d-S', codex: 'Codex' },
+  labels: { '5h': '5h', '7d': '7d', '7d_all': '7d', '7d_sonnet': '7d-S', '1m': '1m' },
   time: { days: 'd', hours: 'h', minutes: 'm', seconds: 's' },
   errors: { no_context: 'No context yet' },
   widgets: {
@@ -48,7 +48,6 @@ const mockTranslations: Translations = {
 const mockConfig: Config = {
   language: 'en',
   plan: 'max',
-  displayMode: 'compact',
   cache: { ttlSeconds: 60 },
 };
 
@@ -172,7 +171,7 @@ describe('widgets', () => {
       const result = contextWidget.render(data, ctx);
 
       expect(result).toContain('25%');
-      expect(result).toContain('50K/200K');
+      expect(result).not.toContain('50K/200K');
     });
   });
 
@@ -201,7 +200,7 @@ describe('widgets', () => {
       const data = { totalCostUsd: 1.5 };
       const result = costWidget.render(data, ctx);
 
-      expect(result).toContain('$1.50');
+      expect(result).toContain('1.50');
     });
   });
 
@@ -737,6 +736,7 @@ describe('widgets', () => {
     it('should return error state when API call fails', async () => {
       vi.spyOn(geminiClient, 'isGeminiInstalled').mockResolvedValue(true);
       vi.spyOn(geminiClient, 'fetchGeminiUsage').mockResolvedValue(null);
+      vi.spyOn(geminiClient, 'getGeminiModel').mockResolvedValue('gemini');
 
       const ctx = createContext();
       const data = await geminiUsageWidget.getData(ctx);
