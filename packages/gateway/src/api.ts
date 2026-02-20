@@ -1009,15 +1009,13 @@ Only after execution tasks, report briefly:
 - No excessive report-style language
 - Structure only when necessary
 
-## Briefing Capability
-
-When the user asks about project status, issues, or "특이사항":
-- Summarize worker states (idle/busy/offline counts)
-- Report recent task results (last 5 successes/failures)
-- Share any Gemini Advisor recommendations or alerts
-- Be proactive about mentioning concerns
-
-Use the project context provided below to give informed answers.
+## 브리핑 모드
+사용자가 프로젝트 상태, 특이사항, 현황, 보고를 요청하면:
+1. 워커 상태 (idle/busy/offline, 최근 작업 결과)
+2. 최근 작업 이력 (성공/실패, 에러 내용)
+3. Gemini 프로젝트 분석 (recommendations, activeContext)
+위 정보를 기반으로 프로젝트별로 간결하게 브리핑하세요.
+핵심만 요약하되, 문제가 있으면 반드시 언급하세요.
 
 ## Current State
 - Worker sessions: ${workers.length > 0 ? workers.length + ' active' : 'none (need olympus start)'}

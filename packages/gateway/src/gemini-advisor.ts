@@ -451,7 +451,7 @@ export class GeminiAdvisor extends EventEmitter {
       for (const rec of newRecs) {
         alerts.push({
           id: `alert-${now}-${Math.random().toString(36).slice(2, 8)}`,
-          severity: 'info',
+          severity: 'warning',
           message: `New recommendation: ${rec}`,
           projectPath,
           timestamp: now,
@@ -462,7 +462,7 @@ export class GeminiAdvisor extends EventEmitter {
       if (newAnalysis.activeContext !== previousAnalysis.activeContext && newAnalysis.activeContext) {
         alerts.push({
           id: `alert-${now}-${Math.random().toString(36).slice(2, 8)}`,
-          severity: 'info',
+          severity: 'warning',
           message: `Context changed: ${newAnalysis.activeContext}`,
           projectPath,
           timestamp: now,
@@ -473,7 +473,15 @@ export class GeminiAdvisor extends EventEmitter {
     // Detect failure surge in workHistory
     if (newAnalysis.workHistory) {
       const failCount = (newAnalysis.workHistory.match(/\b(?:fail|failed|error|unsuccessful)\b/gi) || []).length;
-      if (failCount >= 3) {
+      if (failCount >= 5) {
+        alerts.push({
+          id: `alert-${now}-${Math.random().toString(36).slice(2, 8)}`,
+          severity: 'critical',
+          message: `Critical failure rate detected: ${failCount} failures in recent work history`,
+          projectPath,
+          timestamp: now,
+        });
+      } else if (failCount >= 3) {
         alerts.push({
           id: `alert-${now}-${Math.random().toString(36).slice(2, 8)}`,
           severity: 'warning',
