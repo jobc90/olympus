@@ -11,8 +11,87 @@ import {
 import type { CliRunResult } from '@olympus-dev/protocol';
 import { classifyError, structuredLog } from './error-utils.js';
 import { TelegramSecurity } from './security.js';
-import { DraftStreamManager } from './draft-stream.js';
-import type { CliStreamChunk } from '@olympus-dev/protocol';
+import { DraftStream, DraftStreamManager } from './draft-stream.js';
+import type { CliStreamChunk, FilterResult, FilterStage } from '@olympus-dev/protocol';
+import { TELEGRAM_FILTER_CONFIG } from '@olympus-dev/protocol';
+
+// --- Lightweight Telegram filter (mirrors gateway/response-filter.ts) ---
+const ANSI_RE = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)?|\([A-Z0-9]|[NO].)/g;
+
+const SYSTEM_MARKER_PATTERNS = [
+  /^⏺\s*/,
+  /HEARTBEAT(?:_OK)?/,
+  /^\[(?:SYSTEM|DEBUG|INTERNAL)\]/i,
+  /^(?:Compiling|Building|Bundling)\.\.\./i,
+  /^\s*\[\d+\/\d+\]\s+/,
+];
+
+const TUI_ARTIFACT_PATTERNS = [
+  /^[✢✳✶✻✽·\s]+$/,
+  /^\(thinking\)\s*$/i,
+  /Flowing…?\s*$/,
+  /^\([\dm\s]+s?\s*[·•]\s*↓/,
+  /^[-─═]{3,}\s*$/,
+  /^\s*\d+\s*[│|]\s*$/,
+];
+
+function filterForTelegram(text: string): FilterResult {
+  const originalLength = text.length;
+  const stagesApplied: FilterStage[] = [];
+  const removedMarkers: string[] = [];
+  let result = text;
+
+  for (const stage of TELEGRAM_FILTER_CONFIG.enabledStages) {
+    const before = result;
+    switch (stage) {
+      case 'ansi_strip':
+        result = result.replace(ANSI_RE, '');
+        break;
+      case 'marker_removal': {
+        const lines = result.split('\n');
+        const filtered = lines.filter(line => {
+          const trimmed = line.trim();
+          if (!trimmed) return true;
+          for (const pat of SYSTEM_MARKER_PATTERNS) {
+            if (pat.test(trimmed)) { removedMarkers.push(trimmed.slice(0, 50)); return false; }
+          }
+          return true;
+        });
+        // Collapse excessive blank lines
+        result = filtered.join('\n').replace(/(\n\s*){3,}/g, '\n\n');
+        break;
+      }
+      case 'tui_artifact': {
+        const lines = result.split('\n');
+        result = lines.filter(line => {
+          for (const pat of TUI_ARTIFACT_PATTERNS) {
+            if (pat.test(line)) { removedMarkers.push(`[TUI] ${line.trim().slice(0, 30)}`); return false; }
+          }
+          return true;
+        }).join('\n');
+        break;
+      }
+      case 'truncation': {
+        const maxLen = TELEGRAM_FILTER_CONFIG.telegramMaxLength;
+        if (maxLen > 0 && result.length > maxLen) {
+          let cutPoint = maxLen;
+          const lineEnd = result.lastIndexOf('\n', cutPoint);
+          if (lineEnd > cutPoint * 0.8) cutPoint = lineEnd;
+          result = result.slice(0, cutPoint).trimEnd() + '\n\n... (truncated)';
+        }
+        break;
+      }
+      case 'markdown_format': {
+        const backtickCount = (result.match(/```/g) || []).length;
+        if (backtickCount % 2 !== 0) result += '\n```';
+        break;
+      }
+    }
+    if (result !== before) stagesApplied.push(stage);
+  }
+
+  return { text: result, originalLength, truncated: result.length < originalLength && TELEGRAM_FILTER_CONFIG.enabledStages.includes('truncation'), stagesApplied, removedMarkers };
+}
 
 // Configuration
 interface BotConfig {
@@ -1128,8 +1207,9 @@ class OlympusBot {
   }
 
   /**
-   * Forward a prompt to Claude CLI via async API + polling.
-   * Shared by both orchestrator mode and direct mode handlers.
+   * Forward a prompt to Claude CLI via async API.
+   * R2: Non-blocking — starts async task, returns immediately after initial message,
+   * then polls for completion in the background.
    */
   private async forwardToCli(
     ctx: Context & { chat: { id: number } },
@@ -1141,37 +1221,54 @@ class OlympusBot {
     this.streamChatMap.set(sessionKey, ctx.chat.id);
     const draft = this.draftManager.create(this.bot.telegram, ctx.chat.id, sessionKey);
 
+    // Step 1: Start async CLI execution
+    const startRes = await fetch(`${this.config.gatewayUrl}/api/cli/run/async`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.config.apiKey}`,
+      },
+      body: JSON.stringify({
+        prompt,
+        sessionKey,
+        provider: 'claude',
+        dangerouslySkipPermissions: true,
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!startRes.ok) {
+      const error = await startRes.json() as { message: string };
+      await draft.cancel(error.message);
+      this.draftManager.remove(sessionKey);
+      this.streamChatMap.delete(sessionKey);
+      throw new Error(error.message);
+    }
+
+    const { taskId } = await startRes.json() as { taskId: string };
+
+    // Track this task for duplicate prevention (WI-4.4)
+    this.deliveredTasks.add(taskId);
+
+    // Step 2: Fire-and-forget background polling + result delivery
+    // Handler returns immediately — DraftStream handles real-time streaming via cli:stream events
+    this.pollAndDeliverResult(ctx.chat.id, taskId, sessionKey, draft, prefix).catch(err => {
+      structuredLog('error', 'telegram-bot', 'poll_deliver_error', { taskId, error: (err as Error).message });
+    });
+  }
+
+  /**
+   * Background polling: wait for CLI task completion, then deliver final result.
+   * Called fire-and-forget from forwardToCli.
+   */
+  private async pollAndDeliverResult(
+    chatId: number,
+    taskId: string,
+    sessionKey: string,
+    draft: DraftStream,
+    prefix?: string,
+  ): Promise<void> {
     try {
-      // Step 1: Start async CLI execution
-      const startRes = await fetch(`${this.config.gatewayUrl}/api/cli/run/async`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.config.apiKey}`,
-        },
-        body: JSON.stringify({
-          prompt,
-          sessionKey,
-          provider: 'claude',
-          dangerouslySkipPermissions: true,
-        }),
-        signal: AbortSignal.timeout(30_000),
-      });
-
-      if (!startRes.ok) {
-        const error = await startRes.json() as { message: string };
-        await draft.cancel(error.message);
-        this.draftManager.remove(sessionKey);
-        this.streamChatMap.delete(sessionKey);
-        throw new Error(error.message);
-      }
-
-      const { taskId } = await startRes.json() as { taskId: string };
-
-      // Track this task for duplicate prevention (WI-4.4)
-      this.deliveredTasks.add(taskId);
-
-      // Step 2: Poll for completion
       const result = await this.pollTaskStatus(taskId);
 
       // Flush any remaining streamed content
@@ -1179,12 +1276,12 @@ class OlympusBot {
       this.streamChatMap.delete(sessionKey);
 
       if (!result) {
-        await this.safeReply(ctx, '⏰ 응답 시간 초과 (30분)', undefined);
+        await this.bot.telegram.sendMessage(chatId, '⏰ 응답 시간 초과 (30분)');
         return;
       }
 
       if (!result.success) {
-        await this.safeReply(ctx, `❌ ${result.error?.type}: ${result.error?.message}`, undefined);
+        await this.bot.telegram.sendMessage(chatId, `❌ ${result.error?.type}: ${result.error?.message}`);
         return;
       }
 
@@ -1196,17 +1293,17 @@ class OlympusBot {
       // If DraftStream sent real-time updates, just append footer
       if (draftState.messageId) {
         if (footer.trim()) {
-          await this.bot.telegram.sendMessage(ctx.chat.id, footer.trim());
+          await this.bot.telegram.sendMessage(chatId, footer.trim());
         }
       } else {
         // No streaming received — fallback to full message send
         const text = prefix ? `${prefix}\n\n${result.text}${footer}` : `${result.text}${footer}`;
-        await this.sendLongMessage(ctx.chat.id, text);
+        await this.sendLongMessage(chatId, text);
       }
     } catch (err) {
       this.draftManager.remove(sessionKey);
       this.streamChatMap.delete(sessionKey);
-      throw err;
+      structuredLog('error', 'telegram-bot', 'poll_deliver_error', { taskId, error: (err as Error).message });
     }
   }
 
@@ -1421,6 +1518,10 @@ class OlympusBot {
    * Each part includes the session prefix for multi-session clarity.
    */
   private async sendLongMessage(chatId: number, text: string, sessionPrefix?: string): Promise<void> {
+    // R3: Apply Telegram response filter before sending
+    const filtered = filterForTelegram(text);
+    text = filtered.text;
+
     if (text.length <= TELEGRAM_MSG_LIMIT) {
       await this.bot.telegram.sendMessage(chatId, text);
       return;
@@ -1647,6 +1748,7 @@ class OlympusBot {
         workerName: string;
         chatId?: number;
         summary?: string;
+        filteredText?: string;
         success: boolean;
         durationMs?: number;
         geminiReview?: { quality: string; summary: string; concerns: string[] };
@@ -1664,7 +1766,8 @@ class OlympusBot {
       if (taskPayload.chatId) {
         const durationSec = Math.round((taskPayload.durationMs ?? 0) / 1000);
         const icon = taskPayload.success ? '✅' : '❌';
-        const summaryText = taskPayload.summary ?? (taskPayload.success ? '작업 완료' : '작업 실패');
+        // R5: Prefer filteredText (pre-filtered by gateway) over raw summary
+        const summaryText = taskPayload.filteredText ?? taskPayload.summary ?? (taskPayload.success ? '작업 완료' : '작업 실패');
         let text = `[${taskPayload.workerName}] ${icon} 완료 (${durationSec}초)\n\n${summaryText}`;
 
         // Append Gemini review badge if available

@@ -1,7 +1,54 @@
 import type { Telegram } from 'telegraf';
 import type { DraftStreamConfig, DraftStreamState } from '@olympus-dev/protocol';
-import { DEFAULT_DRAFT_STREAM_CONFIG } from '@olympus-dev/protocol';
+import { DEFAULT_DRAFT_STREAM_CONFIG, STREAMING_FILTER_CONFIG } from '@olympus-dev/protocol';
+import type { FilterResult, FilterStage } from '@olympus-dev/protocol';
 import { structuredLog } from './error-utils.js';
+
+// --- Lightweight stream chunk filter (mirrors gateway/response-filter.ts) ---
+const ANSI_RE = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)?|\([A-Z0-9]|[NO].)/g;
+
+const SYSTEM_MARKER_PATTERNS = [
+  /^⏺\s*/,
+  /HEARTBEAT(?:_OK)?/,
+  /^\[(?:SYSTEM|DEBUG|INTERNAL)\]/i,
+  /^(?:Compiling|Building|Bundling)\.\.\./i,
+  /^\s*\[\d+\/\d+\]\s+/,
+];
+
+function filterStreamChunk(text: string): FilterResult {
+  const originalLength = text.length;
+  const stagesApplied: FilterStage[] = [];
+  const removedMarkers: string[] = [];
+  let result = text;
+
+  for (const stage of STREAMING_FILTER_CONFIG.enabledStages) {
+    const before = result;
+    switch (stage) {
+      case 'ansi_strip':
+        result = result.replace(ANSI_RE, '');
+        break;
+      case 'marker_removal': {
+        const lines = result.split('\n');
+        const filtered = lines.filter(line => {
+          const trimmed = line.trim();
+          if (!trimmed) return true;
+          for (const pattern of SYSTEM_MARKER_PATTERNS) {
+            if (pattern.test(trimmed)) {
+              removedMarkers.push(trimmed.slice(0, 50));
+              return false;
+            }
+          }
+          return true;
+        });
+        result = filtered.join('\n');
+        break;
+      }
+    }
+    if (result !== before) stagesApplied.push(stage);
+  }
+
+  return { text: result, originalLength, truncated: false, stagesApplied, removedMarkers };
+}
 
 /**
  * DraftStream — Real-time Telegram message streaming via editMessageText.
@@ -40,7 +87,8 @@ export class DraftStream {
   async append(chunk: string): Promise<void> {
     if (this.state.isComplete) return;
 
-    this.state.buffer += chunk;
+    const filtered = filterStreamChunk(chunk);
+    this.state.buffer += filtered.text;
 
     // First send: wait until minimum chars accumulated
     if (!this.state.messageId) {

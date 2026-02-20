@@ -8,7 +8,7 @@ import { runParallel, GeminiExecutor, TaskStore, ContextStore, ContextService, e
 import type { CreateTaskInput, UpdateTaskInput, CreateContextInput, UpdateContextInput, ContextScope, CreateMergeInput, ReportUpstreamInput } from '@olympus-dev/protocol';
 import type { CodexAdapter } from './codex-adapter.js';
 import type { GeminiAdvisor } from './gemini-advisor.js';
-import { filterForApi, filterStreamChunk } from './response-filter.js';
+import { filterForApi, filterForTelegram, filterStreamChunk } from './response-filter.js';
 
 /** Strip ANSI escape sequences from text (delegates to response-filter pipeline) */
 function stripAnsi(text: string): string {
@@ -607,6 +607,7 @@ ${body.message}`;
           if (summary.length > 2000) {
             summary = summary.slice(0, 2000);
           }
+          const filteredTimeout = filterForTelegram(result.text ?? '');
 
           onWorkerEvent?.('worker:task:timeout', {
             taskId: id,
@@ -616,6 +617,7 @@ ${body.message}`;
             durationMs: body.durationMs,
             chatId: task.chatId,
             summary,
+            filteredText: filteredTimeout.text,
           });
 
           sendJson(res, 200, { ok: true, status: 'timeout_monitoring' });
@@ -628,6 +630,7 @@ ${body.message}`;
           onCliComplete?.(result);
 
           const rawText = stripAnsi((result.text ?? '').slice(0, 4000)).slice(0, 2000);
+          const filteredFinal = filterForTelegram(result.text ?? '');
 
           // Broadcast immediately with rawText
           onWorkerEvent?.('worker:task:final_after_timeout', {
@@ -638,6 +641,7 @@ ${body.message}`;
             durationMs: body.durationMs,
             chatId: task.chatId,
             summary: rawText,
+            filteredText: filteredFinal.text,
           });
 
           sendJson(res, 200, { ok: true });
@@ -725,6 +729,7 @@ ${body.message}`;
         onCliComplete?.(result);
 
         const rawText = stripAnsi((result.text ?? '').slice(0, 4000)).slice(0, 2000);
+        const filteredResult = filterForTelegram(result.text ?? '');
 
         // Broadcast immediately with rawText
         onWorkerEvent?.('worker:task:completed', {
@@ -735,6 +740,7 @@ ${body.message}`;
           durationMs: body.durationMs,
           chatId: task.chatId,
           summary: rawText,
+          filteredText: filteredResult.text,
         });
 
         sendJson(res, 200, { ok: true });
