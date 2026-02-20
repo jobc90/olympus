@@ -56,10 +56,14 @@ export class WorkerRegistry extends EventEmitter {
     const worker = this.workers.get(id);
     if (!worker) return false;
     worker.lastHeartbeat = Date.now();
+    this.reconcileWorkerState(worker);
     return true;
   }
 
   getAll(): RegisteredWorker[] {
+    for (const worker of this.workers.values()) {
+      this.reconcileWorkerState(worker);
+    }
     return Array.from(this.workers.values());
   }
 
@@ -261,6 +265,24 @@ export class WorkerRegistry extends EventEmitter {
     let n = 2;
     while (names.has(`${baseName.toLowerCase()}-${n}`)) n++;
     return `${baseName}-${n}`;
+  }
+
+  private reconcileWorkerState(worker: RegisteredWorker): void {
+    if (worker.status !== 'busy') return;
+
+    // Busy worker without a task is invalid state; recover to idle.
+    if (!worker.currentTaskId) {
+      worker.status = 'idle';
+      worker.currentTaskPrompt = undefined;
+      return;
+    }
+
+    const task = this.tasks.get(worker.currentTaskId);
+    if (task && task.status !== 'running' && task.status !== 'timeout') {
+      worker.status = 'idle';
+      worker.currentTaskId = undefined;
+      worker.currentTaskPrompt = undefined;
+    }
   }
 
 }

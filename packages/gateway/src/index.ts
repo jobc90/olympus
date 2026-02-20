@@ -35,3 +35,9 @@ export { CliSessionStore } from './cli-session-store.js';
 export { WorkerRegistry } from './worker-registry.js';
 export { GeminiAdvisor } from './gemini-advisor.js';
 export { GeminiPty } from './gemini-pty.js';
+export {
+  resolveWorkspaceRoot,
+  listWorkspaceProjects,
+  isProjectDirectory,
+  type WorkspaceProject,
+} from './workspace-root.js';

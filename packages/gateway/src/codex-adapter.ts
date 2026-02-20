@@ -33,6 +33,7 @@ export class CodexAdapter {
   private localContextManager: LocalContextStoreManager | null;
   private geminiAdvisor: GeminiAdvisor | null;
   private workerRegistry: WorkerRegistry | null;
+  private workspaceRoot: string;
 
   constructor(
     codex: CodexOrchestratorLike,
@@ -44,6 +45,7 @@ export class CodexAdapter {
     this.localContextManager = localContextManager ?? null;
     this.geminiAdvisor = geminiAdvisor ?? null;
     this.workerRegistry = null;
+    this.workspaceRoot = process.cwd();
 
     // Codex events → Gateway broadcast
     this.codex.on('session:screen', (...args: unknown[]) => {
@@ -109,6 +111,13 @@ export class CodexAdapter {
   }
 
   /**
+   * Set workspace root used for root-level context queries.
+   */
+  setWorkspaceRoot(workspaceRoot: string): void {
+    this.workspaceRoot = workspaceRoot;
+  }
+
+  /**
    * Handle user input — main entry called by Gateway
    */
   async handleInput(input: {
@@ -152,7 +161,7 @@ export class CodexAdapter {
     const sessions = this.codex.getSessions();
     let projectCount = 0;
     try {
-      const rootStore = await this.localContextManager?.getRootStore(process.cwd());
+      const rootStore = await this.localContextManager?.getRootStore(this.workspaceRoot);
       projectCount = rootStore?.getAllProjects()?.length ?? 0;
       this.cachedProjectCount = projectCount;
     } catch { /* fallback to 0 */ }
@@ -203,7 +212,7 @@ export class CodexAdapter {
       // Use localContextManager if available, fallback to (deprecated) codex.globalSearch
       if (this.localContextManager) {
         try {
-          const rootStore = await this.localContextManager.getRootStore(process.cwd());
+          const rootStore = await this.localContextManager.getRootStore(this.workspaceRoot);
           const projects = rootStore.getAllProjects();
           const queryLower = query.toLowerCase();
           const matched = projects

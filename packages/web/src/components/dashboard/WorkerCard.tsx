@@ -117,18 +117,24 @@ export function WorkerCard({ worker, state, onChatClick, onDetailClick }: Worker
           Last: {relativeTime}
         </span>
         <div className="flex items-center gap-2">
+          {onChatClick && (
+            <button
+              className="text-[10px] font-mono px-2 py-0.5 rounded border hover:bg-white/10 transition-colors"
+              style={{ color: 'var(--text-primary)', borderColor: 'var(--border)' }}
+              onClick={(e) => { e.stopPropagation(); onChatClick(worker.id); }}
+            >
+              Chat
+            </button>
+          )}
           {onDetailClick && (
             <button
-              className="text-[10px] font-mono opacity-0 group-hover:opacity-80 transition-opacity hover:underline"
-              style={{ color: info.neonColor }}
+              className="text-[10px] font-mono px-2 py-0.5 rounded border hover:bg-white/10 transition-colors"
+              style={{ color: info.neonColor, borderColor: `${info.neonColor}66` }}
               onClick={(e) => { e.stopPropagation(); onDetailClick(worker.id); }}
             >
               Logs
             </button>
           )}
-          <span className="text-[10px] font-mono opacity-0 group-hover:opacity-60 transition-opacity" style={{ color: 'var(--text-secondary)' }}>
-            Click to chat
-          </span>
         </div>
       </div>
     </div>

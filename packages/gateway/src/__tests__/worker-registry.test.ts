@@ -104,6 +104,21 @@ describe('WorkerRegistry', () => {
     it('returns false for unknown worker', () => {
       expect(registry.heartbeat('nope')).toBe(false);
     });
+
+    it('self-heals busy worker without task id to idle on heartbeat', () => {
+      const worker = registry.register({ projectPath: '/p', pid: 1 });
+      registry.markBusy(worker.id, 'task-1', 'do something');
+
+      const mutable = registry.getAll()[0];
+      mutable.currentTaskId = undefined;
+      mutable.currentTaskPrompt = undefined;
+
+      registry.heartbeat(worker.id);
+
+      const healed = registry.getAll()[0];
+      expect(healed.status).toBe('idle');
+      expect(healed.currentTaskId).toBeUndefined();
+    });
   });
 
   // ── no heartbeat auto-removal ──
@@ -223,6 +238,22 @@ describe('WorkerRegistry', () => {
 
       const completed = registry.getTask(task.taskId);
       expect(completed?.status).toBe('failed');
+    });
+
+    it('self-heals stale busy state when current task is already completed', () => {
+      const worker = registry.register({ projectPath: '/p', pid: 1 });
+      const task = registry.createTask(worker.id, 'fix bug');
+      registry.completeTask(task.taskId, makeResult(true));
+
+      const mutable = registry.getAll()[0];
+      mutable.status = 'busy';
+      mutable.currentTaskId = task.taskId;
+      mutable.currentTaskPrompt = 'stale prompt';
+
+      const healed = registry.getAll()[0];
+      expect(healed.status).toBe('idle');
+      expect(healed.currentTaskId).toBeUndefined();
+      expect(healed.currentTaskPrompt).toBeUndefined();
     });
   });
 

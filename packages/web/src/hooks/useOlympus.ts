@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { OlympusClient } from '@olympus-dev/client';
 import { DEFAULT_GATEWAY_PORT, DEFAULT_GATEWAY_HOST } from '@olympus-dev/protocol';
+import { behaviorToOlympusMountainState } from '../lib/state-mapper';
+import type { WorkerBehavior, WorkerDashboardState } from '../lib/types';
 import type {
   PhasePayload,
   TaskPayload,
@@ -125,6 +127,13 @@ export interface SystemStatsEntry {
   failedTasks: number;
 }
 
+export interface SyncStatusEntry {
+  lastPollAt: number | null;
+  lastWsEventAt: number | null;
+  pollFailureCount: number;
+  lastPollError: string | null;
+}
+
 export interface OlympusState {
   connected: boolean;
   phase: PhasePayload | null;
@@ -154,6 +163,7 @@ export interface OlympusState {
   // Olympus Mountain dashboard extensions
   workerConfigs: WorkerConfigEntry[];
   workerBehaviors: Record<string, string>;
+  workerDashboardStates: Record<string, WorkerDashboardState>;
   codexBehavior: string;
   geminiBehavior: string;
   geminiCurrentTask: string | null;
@@ -176,8 +186,10 @@ export interface OlympusState {
   } | null;
   // Worker task assignment events for ChatWindow (R2)
   lastWorkerAssignment: {
+    taskId: string;
     workerId: string;
     workerName: string;
+    prompt: string;
     summary: string;
     timestamp: number;
   } | null;
@@ -191,6 +203,7 @@ export interface OlympusState {
   // Worker log panel
   workerLogs: Map<string, WorkerLogEntry[]>;
   selectedWorkerId: string | null;
+  syncStatus: SyncStatusEntry;
 }
 
 export interface UseOlympusOptions {
@@ -206,6 +219,12 @@ export interface UseOlympusOptions {
 const WORKER_COLORS = ['#4FC3F7', '#FF7043', '#66BB6A', '#AB47BC', '#FFCA28', '#EF5350'];
 const WORKER_AVATARS = ['athena', 'poseidon', 'ares', 'apollo', 'artemis', 'hermes', 'hephaestus', 'dionysus', 'demeter', 'aphrodite', 'hades', 'persephone', 'prometheus', 'helios', 'nike', 'pan', 'hecate', 'iris', 'heracles'];
 const ACTIVE_BEHAVIORS = new Set(['working', 'thinking', 'reviewing', 'deploying', 'analyzing', 'collaborating', 'chatting']);
+const WORKER_BEHAVIOR_VALUES: WorkerBehavior[] = [
+  'working', 'idle', 'thinking', 'completed', 'error', 'offline',
+  'chatting', 'reviewing', 'deploying', 'resting', 'collaborating',
+  'starting', 'supervising', 'directing', 'analyzing', 'meeting',
+];
+const WORKER_BEHAVIOR_SET = new Set<WorkerBehavior>(WORKER_BEHAVIOR_VALUES);
 
 function simpleHash(str: string): number {
   let hash = 0;
@@ -226,6 +245,39 @@ function registeredWorkerToConfig(w: RegisteredWorker, _index: number): WorkerCo
     projectPath: w.projectPath,
     registeredName: w.name,
   };
+}
+
+function asWorkerBehavior(input: string | undefined): WorkerBehavior {
+  if (input && WORKER_BEHAVIOR_SET.has(input as WorkerBehavior)) return input as WorkerBehavior;
+  return 'idle';
+}
+
+function createDashboardState(behavior: WorkerBehavior, now = Date.now()): WorkerDashboardState {
+  return {
+    behavior,
+    olympusMountainState: behaviorToOlympusMountainState(behavior),
+    currentTask: null,
+    taskHistory: [],
+    tokenUsage: [],
+    totalTokens: 0,
+    totalTasks: 0,
+    lastActivity: now,
+    sessionLog: [],
+    uptime: 0,
+  };
+}
+
+function pushSessionLog(logs: string[], line: string, max = 10): string[] {
+  if (!line.trim()) return logs;
+  if (logs[logs.length - 1] === line) return logs;
+  return [...logs, line].slice(-max);
+}
+
+function sessionKeyMatchesWorker(sessionKey: string, workerId: string, workerName?: string): boolean {
+  const key = sessionKey.toLowerCase();
+  if (key.includes(workerId.toLowerCase())) return true;
+  if (workerName && key.includes(workerName.toLowerCase())) return true;
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -261,6 +313,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     // Olympus Mountain extensions
     workerConfigs: [],
     workerBehaviors: {},
+    workerDashboardStates: {},
     codexBehavior: 'supervising',
     geminiBehavior: 'offline',
     geminiCurrentTask: null,
@@ -282,6 +335,12 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     lastWorkerFailure: null,
     workerLogs: new Map(),
     selectedWorkerId: null,
+    syncStatus: {
+      lastPollAt: null,
+      lastWsEventAt: null,
+      pollFailureCount: 0,
+      lastPollError: null,
+    },
   });
 
   const { port, host, apiKey } = options;
@@ -311,7 +370,15 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     clientRef.current = client;
 
     client.on('connected', () => {
-      setState((s) => ({ ...s, connected: true, error: null }));
+      setState((s) => ({
+        ...s,
+        connected: true,
+        error: null,
+        syncStatus: {
+          ...s.syncStatus,
+          lastWsEventAt: Date.now(),
+        },
+      }));
     });
 
     client.onRunsList((runs: RunStatus[]) => {
@@ -383,7 +450,14 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     });
 
     client.onLog((l: LogPayload) => {
-      setState((s) => ({ ...s, logs: [...s.logs.slice(-99), l] }));
+      setState((s) => ({
+        ...s,
+        logs: [...s.logs.slice(-99), l],
+        syncStatus: {
+          ...s.syncStatus,
+          lastWsEventAt: Date.now(),
+        },
+      }));
     });
 
     client.onSessionOutput((p) => {
@@ -478,23 +552,199 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       }));
     });
 
+    // Unified worker status lifecycle event from Gateway
+    client.on('worker:status', (m) => {
+      const payload = m.payload as {
+        workerId?: string;
+        behavior?: string;
+        lastActivityAt?: number;
+        activeTaskId?: string | null;
+        activeTaskPrompt?: string | null;
+      };
+      if (!payload.workerId) return;
+      const workerId = payload.workerId;
+      const behavior = asWorkerBehavior(payload.behavior);
+      const eventTs = payload.lastActivityAt ?? Date.now();
+
+      setState((s) => {
+        const existing = s.workerDashboardStates[workerId] ?? createDashboardState(behavior, eventTs);
+        if (eventTs < existing.lastActivity) {
+          return {
+            ...s,
+            syncStatus: {
+              ...s.syncStatus,
+              lastWsEventAt: Date.now(),
+            },
+          };
+        }
+
+        const nextCurrentTask = payload.activeTaskId
+          ? {
+              id: payload.activeTaskId,
+              title: payload.activeTaskPrompt?.trim() || existing.currentTask?.title || '작업 진행 중',
+              status: 'active' as const,
+              startedAt: existing.currentTask?.id === payload.activeTaskId ? existing.currentTask.startedAt : eventTs,
+            }
+          : null;
+
+        const workerTasks = payload.activeTaskId && !s.workerTasks.some(t => t.taskId === payload.activeTaskId)
+          ? [
+              {
+                taskId: payload.activeTaskId,
+                workerId,
+                workerName: s.workerConfigs.find(cfg => cfg.id === workerId)?.registeredName ?? workerId,
+                prompt: payload.activeTaskPrompt ?? '',
+                status: 'active' as const,
+                startedAt: eventTs,
+              },
+              ...s.workerTasks,
+            ].slice(0, 50)
+          : s.workerTasks;
+
+        return {
+          ...s,
+          workerBehaviors: {
+            ...s.workerBehaviors,
+            [workerId]: behavior,
+          },
+          workerDashboardStates: {
+            ...s.workerDashboardStates,
+            [workerId]: {
+              ...existing,
+              behavior,
+              olympusMountainState: behaviorToOlympusMountainState(behavior),
+              currentTask: nextCurrentTask,
+              lastActivity: eventTs,
+              sessionLog: payload.activeTaskPrompt
+                ? pushSessionLog(existing.sessionLog, payload.activeTaskPrompt)
+                : existing.sessionLog,
+            },
+          },
+          workerTasks,
+          syncStatus: {
+            ...s.syncStatus,
+            lastWsEventAt: Date.now(),
+          },
+        };
+      });
+
+      if (behavior === 'completed' || behavior === 'error') {
+        setTimeout(() => {
+          setState((s) => {
+            const current = s.workerBehaviors[workerId];
+            if (current !== behavior) return s;
+            const dashboard = s.workerDashboardStates[workerId];
+            return {
+              ...s,
+              workerBehaviors: {
+                ...s.workerBehaviors,
+                [workerId]: 'idle',
+              },
+              workerDashboardStates: dashboard
+                ? {
+                    ...s.workerDashboardStates,
+                    [workerId]: {
+                      ...dashboard,
+                      behavior: 'idle',
+                      olympusMountainState: behaviorToOlympusMountainState('idle'),
+                    },
+                  }
+                : s.workerDashboardStates,
+            };
+          });
+        }, 3000);
+      }
+    });
+
+    // Unified activity stream from Gateway (Console + Monitor + Telegram parity)
+    client.on('activity:event', (m) => {
+      const payload = m.payload as {
+        id?: string;
+        type?: string;
+        workerName?: string;
+        workerId?: string;
+        message?: string;
+        timestamp?: number;
+        severity?: string;
+      };
+      const message = payload.message;
+      if (!message) return;
+      const now = Date.now();
+      const id = payload.id ?? crypto.randomUUID();
+      const colorBySeverity = payload.severity === 'error'
+        ? '#FF6B6B'
+        : payload.severity === 'warn'
+          ? '#FFCA28'
+          : undefined;
+
+      setState((s) => {
+        if (s.activityEvents.some(evt => evt.id === id)) {
+          return {
+            ...s,
+            syncStatus: {
+              ...s.syncStatus,
+              lastWsEventAt: now,
+            },
+          };
+        }
+        return {
+          ...s,
+          activityEvents: [
+            ...s.activityEvents,
+            {
+              id,
+              type: payload.type ?? 'event',
+              agentName: payload.workerName ?? payload.workerId ?? 'system',
+              message,
+              timestamp: payload.timestamp ?? now,
+              color: colorBySeverity,
+            },
+          ].slice(-50),
+          syncStatus: {
+            ...s.syncStatus,
+            lastWsEventAt: now,
+          },
+        };
+      });
+    });
+
     // Worker task events (즉시 행동 반영)
     client.on('worker:task:assigned', (m) => {
       const payload = m.payload as { workerId: string; taskId: string; prompt?: string; workerName?: string };
       if (payload.workerId) {
         setState((s) => {
+          const now = Date.now();
           const workerLogs = new Map(s.workerLogs);
           const entries = [...(workerLogs.get(payload.workerId) ?? [])];
           entries.push({
             taskId: payload.taskId,
             prompt: payload.prompt ?? '',
             status: 'running',
-            startedAt: Date.now(),
+            startedAt: now,
           });
           workerLogs.set(payload.workerId, entries.slice(-20));
+
+          const existingDashboard = s.workerDashboardStates[payload.workerId] ?? createDashboardState('working', now);
+          const nextDashboard: WorkerDashboardState = {
+            ...existingDashboard,
+            behavior: 'working',
+            olympusMountainState: behaviorToOlympusMountainState('working'),
+            currentTask: {
+              id: payload.taskId,
+              title: payload.prompt?.trim() || '작업 진행 중',
+              status: 'active',
+              startedAt: now,
+            },
+            lastActivity: now,
+            sessionLog: payload.prompt ? pushSessionLog(existingDashboard.sessionLog, payload.prompt) : existingDashboard.sessionLog,
+          };
           return {
             ...s,
             workerBehaviors: { ...s.workerBehaviors, [payload.workerId]: 'working' },
+            workerDashboardStates: {
+              ...s.workerDashboardStates,
+              [payload.workerId]: nextDashboard,
+            },
             workerTasks: [
               ...s.workerTasks.filter(t => t.status !== 'active' || t.workerId !== payload.workerId),
               {
@@ -503,18 +753,27 @@ export function useOlympus(options: UseOlympusOptions = {}) {
                 workerName: payload.workerName ?? payload.workerId,
                 prompt: payload.prompt ?? '',
                 status: 'active' as const,
-                startedAt: Date.now(),
+                startedAt: now,
               },
             ],
             workerLogs,
             lastWorkerAssignment: {
+              taskId: payload.taskId,
               workerId: payload.workerId,
               workerName: payload.workerName ?? payload.workerId,
+              prompt: payload.prompt ?? '',
               summary: payload.prompt ? `Started: ${payload.prompt.slice(0, 50)}...` : 'Started task',
-              timestamp: Date.now(),
+              timestamp: now,
+            },
+            syncStatus: {
+              ...s.syncStatus,
+              lastWsEventAt: now,
             },
           };
         });
+
+        // Keep polling state in sync with event-driven status updates
+        pollWorkersRef.current?.();
       }
     });
 
@@ -523,16 +782,17 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       const wId = payload.workerId;
       if (wId) {
         setState((s) => {
+          const now = Date.now();
+          const success = payload.success ?? (payload.status === 'completed');
           const completedTask = s.workerTasks.find(t => t.taskId === payload.taskId) ??
-            { taskId: payload.taskId, workerId: wId, workerName: payload.workerName ?? wId, prompt: '', startedAt: Date.now() };
+            { taskId: payload.taskId, workerId: wId, workerName: payload.workerName ?? wId, prompt: '', startedAt: now };
           const newTask: WorkerTaskEntry = {
             ...completedTask,
-            status: payload.status === 'completed' ? 'completed' : 'failed',
-            completedAt: Date.now(),
+            status: success ? 'completed' : 'failed',
+            completedAt: now,
             summary: payload.summary,
-            durationMs: payload.durationMs ?? (Date.now() - completedTask.startedAt),
+            durationMs: payload.durationMs ?? (now - completedTask.startedAt),
           };
-          const success = payload.success ?? (payload.status === 'completed');
           const geminiReviews = payload.geminiReview
             ? [...s.geminiReviews.slice(-19), {
                 taskId: payload.taskId,
@@ -553,7 +813,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
             status: success ? 'completed' : 'failed',
             summary: payload.summary,
             rawText: payload.rawText,
-            durationMs: payload.durationMs ?? (Date.now() - completedTask.startedAt),
+            durationMs: payload.durationMs ?? (now - completedTask.startedAt),
             cost: payload.cost,
             geminiReview: payload.geminiReview ? {
               quality: payload.geminiReview.quality,
@@ -561,7 +821,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
               concerns: payload.geminiReview.concerns,
             } : undefined,
             startedAt: logIdx >= 0 ? entries[logIdx].startedAt : completedTask.startedAt,
-            completedAt: Date.now(),
+            completedAt: now,
           };
           if (logIdx >= 0) {
             entries[logIdx] = logEntry;
@@ -570,11 +830,41 @@ export function useOlympus(options: UseOlympusOptions = {}) {
           }
           workerLogs.set(wId, entries.slice(-20));
 
+          const completionBehavior: WorkerBehavior = success ? 'completed' : 'error';
+          const existingDashboard = s.workerDashboardStates[wId] ?? createDashboardState(completionBehavior, now);
+          const taskHistoryStatus: 'completed' | 'failed' = success ? 'completed' : 'failed';
+          const nextTaskHistory = [
+            {
+              id: payload.taskId,
+              title: completedTask.prompt || payload.summary || (success ? '작업 완료' : '작업 실패'),
+              status: taskHistoryStatus,
+              startedAt: completedTask.startedAt,
+              completedAt: now,
+            },
+            ...existingDashboard.taskHistory,
+          ].slice(0, 30);
+          const nextDashboard: WorkerDashboardState = {
+            ...existingDashboard,
+            behavior: completionBehavior,
+            olympusMountainState: behaviorToOlympusMountainState(completionBehavior),
+            currentTask: null,
+            taskHistory: nextTaskHistory,
+            totalTasks: existingDashboard.totalTasks + 1,
+            lastActivity: now,
+            sessionLog: payload.summary
+              ? pushSessionLog(existingDashboard.sessionLog, payload.summary)
+              : existingDashboard.sessionLog,
+          };
+
           return {
             ...s,
             workerBehaviors: {
               ...s.workerBehaviors,
               [wId]: success ? 'completed' : 'error',
+            },
+            workerDashboardStates: {
+              ...s.workerDashboardStates,
+              [wId]: nextDashboard,
             },
             workerTasks: [
               newTask,
@@ -585,22 +875,40 @@ export function useOlympus(options: UseOlympusOptions = {}) {
               workerName: payload.workerName ?? wId,
               summary: payload.summary ?? (success ? '작업 완료' : '작업 실패'),
               success,
-              timestamp: Date.now(),
+              timestamp: now,
             },
             geminiReviews,
             workerLogs,
+            syncStatus: {
+              ...s.syncStatus,
+              lastWsEventAt: now,
+            },
           };
         });
 
         // Auto-reset behavior to idle after 3 seconds
         setTimeout(() => {
-          setState((s) => ({
-            ...s,
-            workerBehaviors: {
-              ...s.workerBehaviors,
-              [wId]: 'idle',
-            },
-          }));
+          setState((s) => {
+            const currentBehavior = s.workerBehaviors[wId];
+            if (currentBehavior !== 'completed' && currentBehavior !== 'error') return s;
+            return {
+              ...s,
+              workerBehaviors: {
+                ...s.workerBehaviors,
+                [wId]: 'idle',
+              },
+              workerDashboardStates: s.workerDashboardStates[wId]
+                ? {
+                    ...s.workerDashboardStates,
+                    [wId]: {
+                      ...s.workerDashboardStates[wId],
+                      behavior: 'idle',
+                      olympusMountainState: behaviorToOlympusMountainState('idle'),
+                    },
+                  }
+                : s.workerDashboardStates,
+            };
+          });
         }, 3000);
 
         // Immediately refresh worker list
@@ -613,22 +921,43 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       const payload = m.payload as { workerId?: string; taskId: string; workerName?: string };
       // 타임아웃 모니터링: 워커는 여전히 busy → behavior 유지
       if (payload.workerId) {
-        setState((s) => ({
-          ...s,
-          workerTasks: s.workerTasks.map(t =>
-            t.taskId === payload.taskId ? { ...t, status: 'timeout' as const } : t
-          ),
-          activityEvents: [
-            ...s.activityEvents,
-            {
-              id: crypto.randomUUID(),
-              type: 'timeout',
-              agentName: payload.workerName ?? payload.workerId ?? 'unknown',
-              message: '30분 타임아웃 — 모니터링 중',
-              timestamp: Date.now(),
+        setState((s) => {
+          const now = Date.now();
+          const existingDashboard = s.workerDashboardStates[payload.workerId!] ?? createDashboardState('thinking', now);
+          return {
+            ...s,
+            workerTasks: s.workerTasks.map(t =>
+              t.taskId === payload.taskId ? { ...t, status: 'timeout' as const } : t
+            ),
+            workerBehaviors: {
+              ...s.workerBehaviors,
+              [payload.workerId!]: 'thinking',
             },
-          ].slice(-50),
-        }));
+            workerDashboardStates: {
+              ...s.workerDashboardStates,
+              [payload.workerId!]: {
+                ...existingDashboard,
+                behavior: 'thinking',
+                olympusMountainState: behaviorToOlympusMountainState('thinking'),
+                lastActivity: now,
+              },
+            },
+            activityEvents: [
+              ...s.activityEvents,
+              {
+                id: crypto.randomUUID(),
+                type: 'timeout',
+                agentName: payload.workerName ?? payload.workerId ?? 'unknown',
+                message: '30분 타임아웃 — 모니터링 중',
+                timestamp: now,
+              },
+            ].slice(-50),
+            syncStatus: {
+              ...s.syncStatus,
+              lastWsEventAt: now,
+            },
+          };
+        });
       }
     });
 
@@ -636,23 +965,70 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       const payload = m.payload as { workerId?: string; taskId: string; status?: string; workerName?: string; success?: boolean };
       const wId = payload.workerId;
       if (wId) {
-        setState((s) => ({
-          ...s,
-          workerBehaviors: {
-            ...s.workerBehaviors,
-            [wId]: payload.success ? 'completed' : 'error',
-          },
-          activityEvents: [
-            ...s.activityEvents,
-            {
-              id: crypto.randomUUID(),
-              type: 'final_after_timeout',
-              agentName: payload.workerName ?? wId,
-              message: payload.success ? '타임아웃 후 최종 완료' : '타임아웃 후 실패',
-              timestamp: Date.now(),
+        setState((s) => {
+          const now = Date.now();
+          const finalBehavior: WorkerBehavior = payload.success ? 'completed' : 'error';
+          const existingDashboard = s.workerDashboardStates[wId] ?? createDashboardState(finalBehavior, now);
+          return {
+            ...s,
+            workerBehaviors: {
+              ...s.workerBehaviors,
+              [wId]: finalBehavior,
             },
-          ].slice(-50),
-        }));
+            workerDashboardStates: {
+              ...s.workerDashboardStates,
+              [wId]: {
+                ...existingDashboard,
+                behavior: finalBehavior,
+                olympusMountainState: behaviorToOlympusMountainState(finalBehavior),
+                currentTask: null,
+                totalTasks: existingDashboard.totalTasks + 1,
+                lastActivity: now,
+              },
+            },
+            activityEvents: [
+              ...s.activityEvents,
+              {
+                id: crypto.randomUUID(),
+                type: 'final_after_timeout',
+                agentName: payload.workerName ?? wId,
+                message: payload.success ? '타임아웃 후 최종 완료' : '타임아웃 후 실패',
+                timestamp: now,
+              },
+            ].slice(-50),
+            syncStatus: {
+              ...s.syncStatus,
+              lastWsEventAt: now,
+            },
+          };
+        });
+
+        // Auto-reset behavior to idle after finalization
+        setTimeout(() => {
+          setState((s) => {
+            const currentBehavior = s.workerBehaviors[wId];
+            if (currentBehavior !== 'completed' && currentBehavior !== 'error') return s;
+            return {
+              ...s,
+              workerBehaviors: {
+                ...s.workerBehaviors,
+                [wId]: 'idle',
+              },
+              workerDashboardStates: s.workerDashboardStates[wId]
+                ? {
+                    ...s.workerDashboardStates,
+                    [wId]: {
+                      ...s.workerDashboardStates[wId],
+                      behavior: 'idle',
+                      olympusMountainState: behaviorToOlympusMountainState('idle'),
+                    },
+                  }
+                : s.workerDashboardStates,
+            };
+          });
+        }, 3000);
+
+        pollWorkersRef.current?.();
       }
     });
 
@@ -712,15 +1088,33 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     client.on('worker:task:summary', (m) => {
       const payload = m.payload as { taskId: string; workerId?: string; summary: string };
       if (payload.workerId) {
+        const workerId = payload.workerId;
         setState((s) => {
+          const now = Date.now();
           const workerLogs = new Map(s.workerLogs);
-          const entries = [...(workerLogs.get(payload.workerId!) ?? [])];
+          const entries = [...(workerLogs.get(workerId) ?? [])];
           const idx = entries.findIndex(e => e.taskId === payload.taskId);
           if (idx >= 0) {
             entries[idx] = { ...entries[idx], summary: payload.summary };
-            workerLogs.set(payload.workerId!, entries);
+            workerLogs.set(workerId, entries);
           }
-          return { ...s, workerLogs };
+          const existingDashboard = s.workerDashboardStates[workerId] ?? createDashboardState('idle', now);
+          return {
+            ...s,
+            workerLogs,
+            workerDashboardStates: {
+              ...s.workerDashboardStates,
+              [workerId]: {
+                ...existingDashboard,
+                sessionLog: pushSessionLog(existingDashboard.sessionLog, payload.summary),
+                lastActivity: now,
+              },
+            },
+            syncStatus: {
+              ...s.syncStatus,
+              lastWsEventAt: now,
+            },
+          };
         });
       }
     });
@@ -730,27 +1124,45 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       const payload = m.payload as { workerId: string; taskIds: string[] };
       if (payload.workerId) {
         setState((s) => {
+          const now = Date.now();
           const workerLogs = new Map(s.workerLogs);
           const entries = [...(workerLogs.get(payload.workerId) ?? [])];
           for (const taskId of payload.taskIds) {
             const idx = entries.findIndex(e => e.taskId === taskId);
             if (idx >= 0) {
-              entries[idx] = { ...entries[idx], status: 'failed', completedAt: Date.now() };
+              entries[idx] = { ...entries[idx], status: 'failed', completedAt: now };
             }
           }
           workerLogs.set(payload.workerId, entries);
+          const existingDashboard = s.workerDashboardStates[payload.workerId] ?? createDashboardState('error', now);
           return {
             ...s,
             workerBehaviors: { ...s.workerBehaviors, [payload.workerId]: 'error' },
+            workerDashboardStates: {
+              ...s.workerDashboardStates,
+              [payload.workerId]: {
+                ...existingDashboard,
+                behavior: 'error',
+                olympusMountainState: behaviorToOlympusMountainState('error'),
+                currentTask: null,
+                lastActivity: now,
+              },
+            },
             workerLogs,
             lastWorkerFailure: {
               workerId: payload.workerId,
               workerName: payload.workerId,
               summary: `Worker offline (failed ${payload.taskIds.length} tasks)`,
-              timestamp: Date.now(),
+              timestamp: now,
+            },
+            syncStatus: {
+              ...s.syncStatus,
+              lastWsEventAt: now,
             },
           };
         });
+
+        pollWorkersRef.current?.();
       }
     });
 
@@ -778,6 +1190,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     client.on('cli:stream', (m) => {
       const payload = m.payload as { sessionKey: string; chunk: string };
       setState((s) => {
+        const now = Date.now();
         const streams = new Map(s.cliStreams);
         const existing = streams.get(payload.sessionKey);
         if (existing) {
@@ -786,18 +1199,33 @@ export function useOlympus(options: UseOlympusOptions = {}) {
         } else {
           streams.set(payload.sessionKey, { sessionKey: payload.sessionKey, chunks: [payload.chunk], startedAt: Date.now(), active: true });
         }
-        return { ...s, cliStreams: streams };
+        return {
+          ...s,
+          cliStreams: streams,
+          syncStatus: {
+            ...s.syncStatus,
+            lastWsEventAt: now,
+          },
+        };
       });
     });
 
     // Usage data updates
     client.on('usage:update', (m) => {
       const data = m.payload as StatuslineUsageData;
-      setState((s) => ({ ...s, usageData: data }));
+      setState((s) => ({
+        ...s,
+        usageData: data,
+        syncStatus: {
+          ...s.syncStatus,
+          lastWsEventAt: Date.now(),
+        },
+      }));
     });
 
     client.onCliComplete((result: CliRunResult) => {
       setState((s) => {
+        const now = Date.now();
         const item: CliHistoryItem = {
           sessionKey: result.sessionId,
           prompt: '',
@@ -805,7 +1233,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
           usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
           cost: result.cost,
           durationMs: result.durationMs,
-          timestamp: Date.now(),
+          timestamp: now,
         };
         // Mark active stream as inactive (sessionKey != result.sessionId)
         const streams = new Map(s.cliStreams);
@@ -814,11 +1242,41 @@ export function useOlympus(options: UseOlympusOptions = {}) {
             streams.set(key, { ...stream, active: false });
           }
         }
+
+        const matchingWorker = s.workerConfigs.find(cfg =>
+          sessionKeyMatchesWorker(item.sessionKey, cfg.id, cfg.registeredName),
+        );
+        const workerDashboardStates = { ...s.workerDashboardStates };
+        if (matchingWorker) {
+          const existingDashboard = workerDashboardStates[matchingWorker.id] ?? createDashboardState('idle', now);
+          const totalDelta = result.usage.inputTokens + result.usage.outputTokens;
+          workerDashboardStates[matchingWorker.id] = {
+            ...existingDashboard,
+            tokenUsage: [
+              ...existingDashboard.tokenUsage.slice(-49),
+              {
+                timestamp: now,
+                input: result.usage.inputTokens,
+                output: result.usage.outputTokens,
+                total: totalDelta,
+              },
+            ],
+            totalTokens: existingDashboard.totalTokens + totalDelta,
+            lastActivity: now,
+            sessionLog: pushSessionLog(existingDashboard.sessionLog, `${result.model} · ${totalDelta} tokens`),
+          };
+        }
+
         return {
           ...s,
           cliHistory: [item, ...s.cliHistory].slice(0, 100),
           cliStreams: streams,
+          workerDashboardStates,
           logs: [...s.logs.slice(-99), { level: 'info', message: `[cli:complete] $${result.cost.toFixed(4)} / ${result.usage.inputTokens + result.usage.outputTokens} tokens` }],
+          syncStatus: {
+            ...s.syncStatus,
+            lastWsEventAt: now,
+          },
         };
       });
     });
@@ -840,6 +1298,10 @@ export function useOlympus(options: UseOlympusOptions = {}) {
         ...s,
         error: `${e.code}: ${e.message}`,
         logs: [...s.logs.slice(-99), { level: 'error', message: `${e.code}: ${e.message}` }],
+        syncStatus: {
+          ...s.syncStatus,
+          lastWsEventAt: Date.now(),
+        },
       }));
     });
 
@@ -856,16 +1318,32 @@ export function useOlympus(options: UseOlympusOptions = {}) {
   useEffect(() => {
     if (!apiKey || !host || !port) return;
 
+    const markPollFailure = (reason: string) => {
+      setState((s) => ({
+        ...s,
+        syncStatus: {
+          ...s.syncStatus,
+          pollFailureCount: s.syncStatus.pollFailureCount + 1,
+          lastPollError: reason,
+        },
+      }));
+    };
+
     const pollWorkers = async () => {
       try {
         const res = await fetch(`http://${host}:${port}/api/workers`, {
+          cache: 'no-store',
           headers: apiKey ? { 'x-api-key': apiKey } : {},
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          markPollFailure(`/api/workers ${res.status}`);
+          return;
+        }
         const data = await res.json() as { workers: RegisteredWorker[] };
         const registeredWorkers = data.workers ?? [];
 
         setState((s) => {
+          const now = Date.now();
           // Convert to workerConfigs
           const workerConfigs = registeredWorkers.map((w, i) => registeredWorkerToConfig(w, i));
 
@@ -874,10 +1352,12 @@ export function useOlympus(options: UseOlympusOptions = {}) {
           for (const w of registeredWorkers) {
             // Check CLI stream activity
             const hasActiveStream = Array.from(s.cliStreams.values()).some(
-              stream => stream.active && stream.sessionKey.includes(w.id),
+              stream => stream.active && sessionKeyMatchesWorker(stream.sessionKey, w.id, w.name),
             );
 
-            if (w.status === 'failed' as string) {
+            if (w.status === 'offline') {
+              workerBehaviors[w.id] = 'offline';
+            } else if (w.status === 'failed' as string) {
               workerBehaviors[w.id] = 'error';
             } else if (hasActiveStream) {
               workerBehaviors[w.id] = 'working';
@@ -888,13 +1368,13 @@ export function useOlympus(options: UseOlympusOptions = {}) {
             } else {
               // Check if recently completed (within last 30s via cliHistory)
               const recentComplete = s.cliHistory.find(
-                h => h.sessionKey.includes(w.id) && (Date.now() - h.timestamp) < 30000,
+                h => sessionKeyMatchesWorker(h.sessionKey, w.id, w.name) && (now - h.timestamp) < 30000,
               );
               if (recentComplete) {
                 workerBehaviors[w.id] = 'completed';
               } else {
                 // Check idle duration
-                const idleDuration = Date.now() - w.lastHeartbeat;
+                const idleDuration = now - w.lastHeartbeat;
                 if (idleDuration > 60000 && w.lastHeartbeat > 0) {
                   workerBehaviors[w.id] = 'offline';
                 } else {
@@ -950,18 +1430,48 @@ export function useOlympus(options: UseOlympusOptions = {}) {
             return task;
           });
 
+          const workerDashboardStates: Record<string, WorkerDashboardState> = {};
+          for (const worker of registeredWorkers) {
+            const behavior = asWorkerBehavior(workerBehaviors[worker.id]);
+            const previous = s.workerDashboardStates[worker.id] ?? createDashboardState(behavior, now);
+            const activeTask = enrichedTasks.find(t => t.workerId === worker.id && t.status === 'active');
+            const nextCurrentTask = activeTask
+              ? {
+                  id: activeTask.taskId,
+                  title: activeTask.prompt || '작업 진행 중',
+                  status: 'active' as const,
+                  startedAt: activeTask.startedAt,
+                }
+              : null;
+            const hasTaskChanged = (previous.currentTask?.id ?? null) !== (nextCurrentTask?.id ?? null);
+            const hasBehaviorChanged = previous.behavior !== behavior;
+            const nextLastActivity = hasTaskChanged || hasBehaviorChanged
+              ? now
+              : Math.max(previous.lastActivity, worker.lastHeartbeat || 0);
+
+            workerDashboardStates[worker.id] = {
+              ...previous,
+              behavior,
+              olympusMountainState: behaviorToOlympusMountainState(behavior),
+              currentTask: nextCurrentTask,
+              lastActivity: nextLastActivity,
+              uptime: Math.max(0, Math.floor((now - worker.registeredAt) / 1000)),
+              sessionLog: worker.currentTaskPrompt
+                ? pushSessionLog(previous.sessionLog, worker.currentTaskPrompt)
+                : previous.sessionLog,
+            };
+          }
+
           // System stats
-          const totalTokens = s.cliHistory.reduce(
-            (sum, h) => sum + (h.usage?.inputTokens || 0) + (h.usage?.outputTokens || 0), 0,
-          );
-          const failedTasks = s.cliHistory.filter(
-            h => !h.cost && h.text?.includes('error'),
-          ).length;
+          const totalTokens = Object.values(workerDashboardStates)
+            .reduce((sum, workerState) => sum + workerState.totalTokens, 0);
+          const failedTasks = enrichedTasks.filter(t => t.status === 'failed').length;
 
           return {
             ...s,
             workerConfigs,
             workerBehaviors,
+            workerDashboardStates,
             codexBehavior,
             workerTasks: enrichedTasks,
             activityEvents: newEvents.slice(-50),
@@ -971,19 +1481,28 @@ export function useOlympus(options: UseOlympusOptions = {}) {
               totalTokens,
               failedTasks,
             },
+            syncStatus: {
+              ...s.syncStatus,
+              lastPollAt: now,
+              lastPollError: null,
+            },
           };
         });
-      } catch {
-        // Silently fail polling
+      } catch (err) {
+        markPollFailure((err as Error).message);
       }
     };
 
     const pollGemini = async () => {
       try {
         const res = await fetch(`http://${host}:${port}/api/gemini-advisor/status`, {
+          cache: 'no-store',
           headers: apiKey ? { 'x-api-key': apiKey } : {},
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          markPollFailure(`/api/gemini-advisor/status ${res.status}`);
+          return;
+        }
         const data = await res.json() as {
           running?: boolean;
           behavior?: string;
@@ -997,46 +1516,79 @@ export function useOlympus(options: UseOlympusOptions = {}) {
           geminiCurrentTask: data.currentTask ?? s.geminiCurrentTask,
           geminiCacheCount: data.cacheSize ?? s.geminiCacheCount,
           geminiLastAnalyzed: data.lastAnalyzedAt ?? s.geminiLastAnalyzed,
+          syncStatus: {
+            ...s.syncStatus,
+            lastPollAt: Date.now(),
+            lastPollError: null,
+          },
         }));
-      } catch {
-        // Silently fail
+      } catch (err) {
+        markPollFailure((err as Error).message);
       }
     };
 
     const pollUsage = async () => {
       try {
         const res = await fetch(`http://${host}:${port}/api/usage`, {
+          cache: 'no-store',
           headers: apiKey ? { 'x-api-key': apiKey } : {},
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          markPollFailure(`/api/usage ${res.status}`);
+          return;
+        }
         const data = await res.json() as StatuslineUsageData;
         if (data && data.timestamp) {
-          setState((s) => ({ ...s, usageData: data }));
+          setState((s) => ({
+            ...s,
+            usageData: data,
+            syncStatus: {
+              ...s.syncStatus,
+              lastPollAt: Date.now(),
+              lastPollError: null,
+            },
+          }));
         }
-      } catch {
-        // Silently fail
+      } catch (err) {
+        markPollFailure((err as Error).message);
       }
     };
 
     const pollCliSessions = async () => {
       try {
         const res = await fetch(`http://${host}:${port}/api/cli/sessions?limit=20`, {
+          cache: 'no-store',
           headers: apiKey ? { 'x-api-key': apiKey } : {},
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          markPollFailure(`/api/cli/sessions ${res.status}`);
+          return;
+        }
         const data = await res.json() as { sessions: CliSessionRecord[] };
-        setState((s) => ({ ...s, cliSessions: data.sessions ?? [] }));
-      } catch {
-        // Silently fail
+        setState((s) => ({
+          ...s,
+          cliSessions: data.sessions ?? [],
+          syncStatus: {
+            ...s.syncStatus,
+            lastPollAt: Date.now(),
+            lastPollError: null,
+          },
+        }));
+      } catch (err) {
+        markPollFailure((err as Error).message);
       }
     };
 
     const pollWorkerTasks = async () => {
       try {
         const res = await fetch(`http://${host}:${port}/api/workers/tasks`, {
+          cache: 'no-store',
           headers: apiKey ? { 'x-api-key': apiKey } : {},
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          markPollFailure(`/api/workers/tasks ${res.status}`);
+          return;
+        }
         const data = await res.json();
         if (data.tasks && Array.isArray(data.tasks)) {
           setState((s) => {
@@ -1057,12 +1609,29 @@ export function useOlympus(options: UseOlympusOptions = {}) {
                 summary: t.result?.text?.slice(0, 200),
                 durationMs: t.completedAt ? t.completedAt - t.startedAt : undefined,
               }));
-            if (newTasks.length === 0) return s;
-            return { ...s, workerTasks: [...newTasks, ...s.workerTasks].slice(0, 50) };
+            if (newTasks.length === 0) {
+              return {
+                ...s,
+                syncStatus: {
+                  ...s.syncStatus,
+                  lastPollAt: Date.now(),
+                  lastPollError: null,
+                },
+              };
+            }
+            return {
+              ...s,
+              workerTasks: [...newTasks, ...s.workerTasks].slice(0, 50),
+              syncStatus: {
+                ...s.syncStatus,
+                lastPollAt: Date.now(),
+                lastPollError: null,
+              },
+            };
           });
         }
-      } catch {
-        // Silently fail
+      } catch (err) {
+        markPollFailure((err as Error).message);
       }
     };
 

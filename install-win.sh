@@ -43,7 +43,7 @@ done
 # 로고
 echo ""
 echo -e "${MAGENTA}================================================================${NC}"
-echo -e "${MAGENTA}  Olympus v0.5.1 + AIOS v5.3 — Windows Installer${NC}"
+echo -e "${MAGENTA}  Olympus v1.0.0 + AIOS v5.3 — Windows Installer${NC}"
 echo -e "${MAGENTA}================================================================${NC}"
 echo ""
 

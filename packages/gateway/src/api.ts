@@ -69,6 +69,7 @@ export interface ApiHandlerOptions {
   onCliStream?: (chunk: import('@olympus-dev/protocol').CliStreamChunk) => void;
   onWorkerEvent?: (eventType: string, payload: unknown) => void;
   localContextManager?: LocalContextStoreManager;
+  workspaceRoot?: string;
 }
 
 /**
@@ -111,7 +112,12 @@ async function parseBody<T>(req: IncomingMessage): Promise<T> {
  * Send JSON response
  */
 function sendJson(res: ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0',
+  });
   res.end(JSON.stringify(data));
 }
 
@@ -322,7 +328,25 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
  * Create HTTP API request handler
  */
 export function createApiHandler(options: ApiHandlerOptions) {
-  const { runManager, sessionManager, cliSessionStore, memoryStore, codexAdapter, geminiAdvisor, workerRegistry, server, onRunCreated, onSessionEvent, onContextEvent, onSessionsChanged, onCliComplete, onCliStream, onWorkerEvent, localContextManager } = options;
+  const {
+    runManager,
+    sessionManager,
+    cliSessionStore,
+    memoryStore,
+    codexAdapter,
+    geminiAdvisor,
+    workerRegistry,
+    server,
+    onRunCreated,
+    onSessionEvent,
+    onContextEvent,
+    onSessionsChanged,
+    onCliComplete,
+    onCliStream,
+    onWorkerEvent,
+    localContextManager,
+  } = options;
+  const workspaceRoot = options.workspaceRoot ?? process.cwd();
 
   // Async CLI task store (in-memory, 1-hour TTL)
   const asyncTasks = new Map<string, { status: 'running' | 'completed' | 'failed'; result?: import('@olympus-dev/protocol').CliRunResult; error?: string; startedAt: number }>();
@@ -379,7 +403,7 @@ export function createApiHandler(options: ApiHandlerOptions) {
         }
         if (!projectContext && localContextManager) {
           try {
-            const rootStore = await localContextManager.getRootStore(process.cwd());
+            const rootStore = await localContextManager.getRootStore(workspaceRoot);
             const projects = rootStore.getAllProjects();
             if (projects.length > 0) {
               projectContext = '\n\n## Project Status\n' + projects.map(p =>
@@ -664,7 +688,7 @@ ${body.message}`;
                   taskPrompt: task.prompt.slice(0, 500),
                   workerResult: rawText,
                   workerName: task.workerName,
-                  projectPath: taskWorker?.projectPath ?? process.cwd(),
+                  projectPath: taskWorker?.projectPath ?? workspaceRoot,
                 });
                 if (review) onWorkerEvent?.('gemini:review', { taskId: id, workerId: task.workerId, workerName: task.workerName, chatId: task.chatId, quality: review.quality, summary: review.summary, concerns: review.concerns });
               } catch { /* review failed */ }
@@ -677,7 +701,7 @@ ${body.message}`;
               try {
                 const worker = workerRegistry?.getAll().find(w => w.id === task.workerId);
                 const extracted = extractContext(result, task.prompt);
-                const projectPath = worker?.projectPath ?? process.cwd();
+                const projectPath = worker?.projectPath ?? workspaceRoot;
                 const store = await localContextManager.getProjectStore(projectPath);
                 store.saveWorkerContext({
                   id: randomUUID(),
@@ -701,7 +725,7 @@ ${body.message}`;
                   createdAt: new Date().toISOString(),
                 });
                 store.updateProjectContext();
-                await localContextManager.propagateToRoot(projectPath, process.cwd());
+                await localContextManager.propagateToRoot(projectPath, workspaceRoot);
               } catch { /* save failure — silent */ }
             }
 
@@ -763,7 +787,7 @@ ${body.message}`;
                 taskPrompt: task.prompt.slice(0, 500),
                 workerResult: rawText,
                 workerName: task.workerName,
-                projectPath: taskWorker?.projectPath ?? process.cwd(),
+                projectPath: taskWorker?.projectPath ?? workspaceRoot,
               });
               if (review) onWorkerEvent?.('gemini:review', { taskId: id, workerId: task.workerId, workerName: task.workerName, chatId: task.chatId, quality: review.quality, summary: review.summary, concerns: review.concerns });
             } catch { /* review failed */ }
@@ -776,7 +800,7 @@ ${body.message}`;
             try {
               const worker = workerRegistry?.getAll().find(w => w.id === task.workerId);
               const extracted = extractContext(result, task.prompt);
-              const projectPath = worker?.projectPath ?? process.cwd();
+              const projectPath = worker?.projectPath ?? workspaceRoot;
               const store = await localContextManager.getProjectStore(projectPath);
               store.saveWorkerContext({
                 id: randomUUID(),
@@ -800,7 +824,7 @@ ${body.message}`;
                 createdAt: new Date().toISOString(),
               });
               store.updateProjectContext();
-              await localContextManager.propagateToRoot(projectPath, process.cwd());
+              await localContextManager.propagateToRoot(projectPath, workspaceRoot);
             } catch { /* save failure — silent */ }
           }
 
@@ -867,7 +891,7 @@ ${body.message}`;
         let projectContextStr = '';
         if (localContextManager) {
           try {
-            const rootStore = await localContextManager.getRootStore(process.cwd());
+            const rootStore = await localContextManager.getRootStore(workspaceRoot);
             const projects = rootStore.getAllProjects();
             if (projects.length > 0) {
               const lines = projects.map(p => {
@@ -1243,7 +1267,7 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${workerRegistry 
               createdAt: new Date().toISOString(),
             });
             store.updateProjectContext();
-            await localContextManager.propagateToRoot(body.workspaceDir, process.cwd());
+            await localContextManager.propagateToRoot(body.workspaceDir, workspaceRoot);
           } catch { /* save failure — response still OK */ }
         }
 
@@ -1963,7 +1987,7 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${workerRegistry 
           return;
         }
         try {
-          const rootStore = await localContextManager.getRootStore(process.cwd());
+          const rootStore = await localContextManager.getRootStore(workspaceRoot);
           const projects = rootStore.getAllProjects();
           sendJson(res, 200, { projects });
         } catch (e) {

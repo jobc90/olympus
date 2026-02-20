@@ -35,8 +35,25 @@ function removeSystemMarkers(text: string, removedMarkers: string[]): string {
 const TUI_ARTIFACT_PATTERNS = [
   /^[✢✳✶✻✽·\s]+$/,           // Spinner-only lines
   /^\(thinking\)\s*$/i,         // Thinking state
+  /\(thinking\)/i,              // Inline thinking indicator
   /Flowing…?\s*$/,              // Flowing animation
+  /Forming…?\s*$/i,             // Forming animation
+  /Deliberating…?\s*$/i,        // Deliberating animation
+  /Topsy-turvying…?\s*$/i,      // Topsy-turvying animation
   /^\([\dm\s]+s?\s*[·•]\s*↓/,  // Thinking duration
+  /^\(\d+s?\s*[·•]\s*timeout\s+\d+m\)\s*$/i, // "(2s · timeout 2m)"
+  /ctrl\+o\s*to\s*expand/i,     // Expand hint
+  /shift\+tab\s*to\s*cycle/i,   // Mode cycle hint
+  /bypass\s*permissions?\s*on/i, // Permission mode status
+  /↓\s*[\d.]+k?\s*tokens?/i,    // token speed/usage line
+  /\d+K?\/\d+K?\s*tokens?/i,    // token ratio line
+  /[│|].*gemini.*preview/i,     // Gemini model status bar
+  /[│|].*gpt-[\w.-]+/i,         // model status bar
+  /🤖\s*(?:Opus|Sonnet|Haiku)/i, // model badge
+  /[█▓▒░]{2,}\s*\d+%/,          // progress bar + percentage
+  /^\s*[A-Za-z]\s*$/,           // fragmented single-letter lines
+  /^\s*\d{1,5}\s*$/,            // fragmented numeric lines
+  /^[✢✳✶✻✽·]?\s*[A-Za-z][A-Za-z-]{2,24}…(?:\s*\(thinking\))?$/i, // one-word ellipsis animation
   /^[-─═]{3,}\s*$/,            // Horizontal dividers
   /^\s*\d+\s*[│|]\s*$/,       // Table borders (empty)
 ];

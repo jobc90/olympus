@@ -79,6 +79,43 @@ describe('filterResponse', () => {
       expect(result.text).toContain('Content');
       expect(result.text).toContain('Footer');
     });
+
+    it('should remove inline thinking fragments and spinner animations', () => {
+      const input = [
+        '✳ Deliberating… (thinking)',
+        'D(thinking)',
+        'e(thinking)',
+        '✶(thinking)',
+        'Real completion line',
+      ].join('\n');
+      const result = filterResponse(input, DEFAULT_FILTER_CONFIG);
+      expect(result.text).toContain('Real completion line');
+      expect(result.text).not.toContain('(thinking)');
+      expect(result.text).not.toContain('Deliberating');
+    });
+
+    it('should remove status bar artifacts from PTY output', () => {
+      const input = [
+        '🤖 Opus │ ███░░░░░░░ 29%',
+        '📁olympus (main*) │ 🔷 gpt-5.3-codex',
+        '⏵⏵bypasspermissionson (shift+tabtocycle)',
+        '47K/200K tokens',
+        'Final answer: 작업이 완료되었습니다.',
+      ].join('\n');
+      const result = filterResponse(input, DEFAULT_FILTER_CONFIG);
+      expect(result.text).toContain('Final answer: 작업이 완료되었습니다.');
+      expect(result.text).not.toContain('gpt-5.3-codex');
+      expect(result.text).not.toContain('bypasspermissionson');
+      expect(result.text).not.toContain('47K/200K tokens');
+    });
+
+    it('should remove timeout banner style artifacts', () => {
+      const input = '(2s · timeout 2m)\nForming…\nResult line';
+      const result = filterResponse(input, DEFAULT_FILTER_CONFIG);
+      expect(result.text).toContain('Result line');
+      expect(result.text).not.toContain('timeout 2m');
+      expect(result.text).not.toContain('Forming');
+    });
   });
 
   describe('truncation stage', () => {

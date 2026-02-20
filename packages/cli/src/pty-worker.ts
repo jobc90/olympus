@@ -69,6 +69,10 @@ interface ProcessingState {
   hasBackgroundAgents: boolean;
   /** 마지막으로 백그라운드 에이전트 출력이 감지된 시각 */
   lastAgentActivityAt: number;
+  /** 마지막 출력 수신 시각 (idle prompt false-positive 억제) */
+  lastOutputAt: number;
+  /** 출력 정적 상태 재검사 타이머 (출력 멈춤 시 완료 감지 보강) */
+  completionRecheckTimer: ReturnType<typeof setTimeout> | null;
 }
 
 // ──────────────────────────────────────────────
@@ -92,6 +96,9 @@ const SUBMIT_DELAY_MS = 150;
 
 /** Double Ctrl+C 감지 시간 (ms) */
 const DOUBLE_CTRLC_MS = 1000;
+
+/** 출력이 멈춘 뒤 완료 재검사 지연 */
+const QUIET_RECHECK_MS = 2_500;
 
 // ──────────────────────────────────────────────
 // Prompt / Completion patterns
@@ -206,6 +213,90 @@ export function detectCompletionPattern(cleanText: string): boolean {
   return COMPLETION_PATTERNS.some(p => p.test(lastChunk));
 }
 
+/** thinking/animation 출력이 아직 진행 중인지 감지 */
+export function hasOngoingThinkingActivity(cleanText: string): boolean {
+  const lastChunk = cleanText.slice(-3000);
+  return /(\(thinking\)|Flowing|Forming|Deliberating|Topsy-turvying|Stewing|Brewing|Reasoning|Pondering|Mulling)/i.test(lastChunk);
+}
+
+/** 완료 판정용 유휴 프롬프트 감지 (ready 판정보다 더 보수적) */
+export function detectIdlePromptForCompletion(cleanText: string): boolean {
+  const lastChunk = cleanText.slice(-6000);
+  const lines = lastChunk.split('\n').map((line) => line.trim());
+  const recentWindow = lines.slice(-12).join('\n');
+  if (hasOngoingThinkingActivity(recentWindow)) return false;
+
+  const tailLines = lines.slice(-80);
+  // Keep this strict to avoid false positives from command examples in model output.
+  // Completion fallback is handled by quiet recheck timer + broader idle detection.
+  const promptOnlyPattern = /^(?:claude\s*)?[>❯$]\s*$/i;
+  return tailLines.some((line) => promptOnlyPattern.test(line));
+}
+
+/** 완료 재검사 타이머 실행 */
+function scheduleCompletionRecheck(state: ProcessingState, checkFn: () => void): void {
+  if (state.completionRecheckTimer) {
+    clearTimeout(state.completionRecheckTimer);
+  }
+  state.completionRecheckTimer = setTimeout(() => {
+    checkFn();
+  }, QUIET_RECHECK_MS);
+}
+
+/** 완료 재검사 타이머 정리 */
+function clearCompletionRecheck(state: ProcessingState): void {
+  if (state.completionRecheckTimer) {
+    clearTimeout(state.completionRecheckTimer);
+    state.completionRecheckTimer = null;
+  }
+}
+
+/** 완화된 idle 프롬프트 감지 (조용한 상태에서 보조 판정용) */
+function detectRelaxedIdlePrompt(cleanText: string): boolean {
+  const lastChunk = cleanText.slice(-5000);
+  const lines = lastChunk.split('\n').map((line) => line.trim()).slice(-120);
+  const recentWindow = lines.slice(-16).join('\n');
+  if (hasOngoingThinkingActivity(recentWindow)) return false;
+
+  // Strict prompt line OR known idle hints shown when input is ready
+  const strictPrompt = lines.some((line) => /^(?:claude\s*)?[>❯$]\s*$/i.test(line));
+  if (strictPrompt) return true;
+
+  return lines.some((line) => /(ctrl\+g to edit|Enter your message|Type a message|What would you like to do)/i.test(line));
+}
+
+export function detectIdlePromptWithRelaxedFallback(cleanText: string): boolean {
+  return detectIdlePromptForCompletion(cleanText) || detectRelaxedIdlePrompt(cleanText);
+}
+
+/** data 이벤트 없이 출력이 멈춘 경우 완료 상태 재검사 */
+function shouldRunQuietRecheck(state: ProcessingState): boolean {
+  return Date.now() - state.lastOutputAt >= QUIET_RECHECK_MS;
+}
+
+function hasTableLayout(text: string): boolean {
+  if (!text) return false;
+  if (/[┌┬┐├┼┤└┴┘│]/.test(text)) return true;
+  const lines = text.split('\n');
+  let pipeLikeLines = 0;
+  for (const line of lines) {
+    if (/\|/.test(line)) pipeLikeLines++;
+    if (pipeLikeLines >= 3) return true;
+  }
+  return false;
+}
+
+export function shouldForceCompletionOnQuiet(
+  cleanText: string,
+  submittedAt: number,
+  lastOutputAt: number,
+  now: number,
+): boolean {
+  if (now - submittedAt < MIN_EXECUTION_MS) return false;
+  if (now - lastOutputAt < QUIET_RECHECK_MS) return false;
+  return detectIdlePromptWithRelaxedFallback(cleanText) || detectCompletionPattern(cleanText);
+}
+
 /** TUI 크롬 라인인지 판별 (standalone) */
 export function isTuiChromeLine(line: string): boolean {
   const trimmed = line.trim();
@@ -278,7 +369,10 @@ export function extractResultFromBuffer(buffer: string, prompt: string): string 
   }
 
   // 커서 이동에 의한 과다 공백 정리
-  result = result.replace(/ {4,}/g, ' ');
+  // Keep alignment if output includes table-like layout.
+  if (!hasTableLayout(result)) {
+    result = result.replace(/ {4,}/g, ' ');
+  }
   result = result.replace(/\n{3,}/g, '\n\n');
 
   // 깨진 텍스트 감지 (짧은 단어 비율이 너무 높으면, 한국어 제외)
@@ -356,6 +450,7 @@ export class PtyWorker {
 
       if (this.state.phase === 'processing' && this.state.submitted) {
         this.state.buffer += data;
+        this.state.lastOutputAt = Date.now();
 
         // 백그라운드 에이전트 활동 감지
         if (hasBackgroundAgentActivity(data)) {
@@ -369,6 +464,7 @@ export class PtyWorker {
         }
 
         this.checkCompletion();
+        this.armCompletionRecheck();
       }
 
       if (!this.ready) {
@@ -509,6 +605,8 @@ export class PtyWorker {
         submittedAt: 0,
         hasBackgroundAgents: false,
         lastAgentActivityAt: 0,
+        lastOutputAt: startTime,
+        completionRecheckTimer: null,
       };
 
       // 1단계: 프롬프트 텍스트 입력
@@ -520,6 +618,7 @@ export class PtyWorker {
           this.pty.write('\r');
           (this.state as ProcessingState).submitted = true;
           (this.state as ProcessingState).submittedAt = Date.now();
+          this.armCompletionRecheck();
         }
       }, SUBMIT_DELAY_MS);
     });
@@ -597,11 +696,26 @@ export class PtyWorker {
 
     const clean = stripAnsi(this.state.buffer);
 
-    // Check BOTH idle prompt patterns AND completion text patterns
-    const hasIdlePrompt = this.detectIdlePrompt(clean);
+    // Check strict idle prompt patterns first, then allow quiet fallback.
+    const hasIdlePrompt = detectIdlePromptForCompletion(clean);
     const hasCompletionText = detectCompletionPattern(clean);
+    const forceByQuiet = shouldForceCompletionOnQuiet(
+      clean,
+      this.state.submittedAt,
+      this.state.lastOutputAt,
+      now,
+    );
 
-    if (hasIdlePrompt || hasCompletionText) {
+    // Idle prompt만으로 완료 판단할 때는 출력이 잠잠해질 때까지 대기.
+    if (hasIdlePrompt && !hasCompletionText && !forceByQuiet && now - this.state.lastOutputAt < 2_000) {
+      if (this.state.settleTimer) {
+        clearTimeout(this.state.settleTimer);
+        this.state.settleTimer = null;
+      }
+      return;
+    }
+
+    if (hasIdlePrompt || hasCompletionText || forceByQuiet) {
       if (!this.state.settleTimer) {
         this.state.settleTimer = setTimeout(() => {
           this.completeTask();
@@ -654,6 +768,21 @@ export class PtyWorker {
     if (this.state.phase !== 'processing') return;
 
     if (this.state.settleTimer) clearTimeout(this.state.settleTimer);
+    clearCompletionRecheck(this.state);
+  }
+
+  private armCompletionRecheck(): void {
+    if (this.state.phase !== 'processing') return;
+    const recheck = () => {
+      if (this.state.phase !== 'processing') return;
+      if (!shouldRunQuietRecheck(this.state)) return;
+      this.checkCompletion();
+      // Keep checking while output is quiet until task is completed.
+      if (this.state.phase === 'processing' && !this.state.settleTimer) {
+        scheduleCompletionRecheck(this.state, recheck);
+      }
+    };
+    scheduleCompletionRecheck(this.state, recheck);
   }
 
   // ──────────────────────────────────────

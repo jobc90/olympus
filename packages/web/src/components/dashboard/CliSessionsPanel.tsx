@@ -8,6 +8,7 @@ import type { CliSessionRecord } from '@olympus-dev/protocol';
 interface CliSessionsPanelProps {
   sessions: CliSessionRecord[];
   onDelete?: (key: string) => void;
+  onReuse?: (session: CliSessionRecord) => void;
 }
 
 function formatTokens(tokens: number): string {
@@ -22,7 +23,7 @@ function formatRelativeTime(ts: number): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-export default function CliSessionsPanel({ sessions, onDelete }: CliSessionsPanelProps) {
+export default function CliSessionsPanel({ sessions, onDelete, onReuse }: CliSessionsPanelProps) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const handleToggle = (key: string) => {
@@ -110,6 +111,30 @@ export default function CliSessionsPanel({ sessions, onDelete }: CliSessionsPane
                   </div>
                   <div>
                     <span className="opacity-70">Last prompt:</span> {session.lastPrompt.slice(0, 100)}{session.lastPrompt.length > 100 ? '...' : ''}
+                  </div>
+                  <div className="pt-1 flex items-center gap-2">
+                    {onReuse && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onReuse(session);
+                        }}
+                        className="px-2 py-0.5 rounded border text-[10px] hover:opacity-80 transition-opacity"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+                      >
+                        Reuse
+                      </button>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(session.key).catch(() => {});
+                      }}
+                      className="px-2 py-0.5 rounded border text-[10px] hover:opacity-80 transition-opacity"
+                      style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+                    >
+                      Copy Key
+                    </button>
                   </div>
                 </div>
               )}

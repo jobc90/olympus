@@ -3,7 +3,11 @@ import {
   IDLE_PROMPT_PATTERNS,
   COMPLETION_PATTERNS,
   detectIdlePrompt,
+  detectIdlePromptForCompletion,
+  detectIdlePromptWithRelaxedFallback,
   detectCompletionPattern,
+  hasOngoingThinkingActivity,
+  shouldForceCompletionOnQuiet,
   extractResultFromBuffer,
   isTuiChromeLine,
   isTuiArtifactLine,
@@ -18,6 +22,78 @@ describe('IDLE_PROMPT_PATTERNS', () => {
   it('패턴 배열이 존재하며 비어있지 않음', () => {
     expect(IDLE_PROMPT_PATTERNS).toBeDefined();
     expect(IDLE_PROMPT_PATTERNS.length).toBeGreaterThan(0);
+  });
+});
+
+describe('detectIdlePromptForCompletion', () => {
+  it('순수 프롬프트 라인이 있으면 true', () => {
+    expect(detectIdlePromptForCompletion('작업 완료\n>')).toBe(true);
+    expect(detectIdlePromptForCompletion('done\n❯ ')).toBe(true);
+  });
+
+  it('thinking 출력이 남아 있으면 false', () => {
+    const text = [
+      '✳ Deliberating… (thinking)',
+      'D(thinking)',
+      '>',
+    ].join('\n');
+    expect(detectIdlePromptForCompletion(text)).toBe(false);
+  });
+
+  it('status 힌트만 있을 때 false', () => {
+    expect(detectIdlePromptForCompletion('ctrl+g to edit\nshift+tab to cycle')).toBe(false);
+  });
+
+  it('이전 thinking 출력이 있어도 최근 구간이 idle이면 true', () => {
+    const lines = [
+      '✳ Deliberating… (thinking)',
+      ...Array.from({ length: 40 }, () => '중간 출력 라인'),
+      '❯ ',
+    ];
+    expect(detectIdlePromptForCompletion(lines.join('\n'))).toBe(true);
+  });
+});
+
+describe('quiet completion fallback', () => {
+  it('strict prompt가 없어도 조용한 idle 힌트가 있으면 force 완료 가능', () => {
+    const text = [
+      '작업 결과 요약',
+      'ctrl+g to edit',
+      'shift+tab to cycle',
+    ].join('\n');
+    const now = Date.now();
+    expect(shouldForceCompletionOnQuiet(text, now - 30_000, now - 5_000, now)).toBe(true);
+  });
+
+  it('최근 thinking 활동이 있으면 force 완료하지 않음', () => {
+    const text = [
+      '작업 결과 요약',
+      'ctrl+g to edit',
+      'Forming…',
+    ].join('\n');
+    const now = Date.now();
+    expect(shouldForceCompletionOnQuiet(text, now - 30_000, now - 5_000, now)).toBe(false);
+  });
+
+  it('보조 idle 감지는 detectIdlePromptWithRelaxedFallback로 확인 가능', () => {
+    const text = [
+      'final text',
+      'Enter your message',
+    ].join('\n');
+    expect(detectIdlePromptWithRelaxedFallback(text)).toBe(true);
+  });
+});
+
+describe('hasOngoingThinkingActivity', () => {
+  it('thinking/animation 키워드를 감지', () => {
+    expect(hasOngoingThinkingActivity('Forming…')).toBe(true);
+    expect(hasOngoingThinkingActivity('Topsy-turvying… (thinking)')).toBe(true);
+    expect(hasOngoingThinkingActivity('Deliberating…')).toBe(true);
+  });
+
+  it('일반 응답 텍스트는 false', () => {
+    expect(hasOngoingThinkingActivity('작업을 완료했습니다.')).toBe(false);
+    expect(hasOngoingThinkingActivity('Here is the final answer.')).toBe(false);
   });
 });
 

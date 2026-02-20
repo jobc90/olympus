@@ -1,13 +1,13 @@
 # Olympus Setup Guide
 
-**Installation and Development Workflow for Olympus v0.5.1**
+**Installation and Development Workflow for Olympus v1.0.0**
 
 ---
 
 ## Prerequisites
 
 ### Required
-- **Node.js**: v18+ (ES2022+ target)
+- **Node.js**: v22+ (권장)
   - Download: https://nodejs.org/
   - Verify: `node --version`
 - **pnpm**: v10+
@@ -28,7 +28,7 @@
 - **Build Tools** (for native modules):
   - **macOS**: `xcode-select --install` (Xcode Command Line Tools)
   - **Linux**: `sudo apt install build-essential python3`
-  - **Windows**: Not currently supported (contributions welcome)
+  - **Windows**: Visual Studio Build Tools + Python 3 (install-win/install.ps1 지원)
 
 ---
 
@@ -52,7 +52,7 @@ This installs all workspace packages and their dependencies using pnpm's link-ba
 pnpm build
 ```
 
-This builds all 9 packages in dependency order (resolved by Turbo):
+This builds all 10 packages in dependency order (resolved by Turbo):
 1. `protocol` (0 dependencies)
 2. `core` (← protocol)
 3. `client` (← protocol)
@@ -69,30 +69,43 @@ This builds all 9 packages in dependency order (resolved by Turbo):
 - No TypeScript errors
 - Output in `dist/` directory for each package
 
-### 4. Create Global CLI Symlink
+### 4. Register CLI Command (Manual, Optional)
 
-The `install.sh` script handles this automatically, but if installing manually:
+Installer scripts handle this automatically. If manual linking is needed:
 
 ```bash
+# macOS / Linux
 NPM_BIN_DIR="$(npm prefix -g)/bin"
 ln -sf "$PWD/packages/cli/dist/index.js" "$NPM_BIN_DIR/olympus"
 ```
 
-**Why symlink?** `npm link` fails on this project. Direct symlink is more reliable.
+```bash
+# Windows (PowerShell or Git Bash)
+cd packages/cli && npm link
+```
 
-### 5. Run install.sh (Recommended)
+### 5. Run Installer Scripts (Recommended)
 
 For a fully configured setup with MCP servers, plugins, and skills:
 
 ```bash
-# Global mode (all projects get Team Engineering Protocol support)
-./install.sh
-
-# Or local mode (just this project)
+# macOS / Linux
+./install.sh --global
 ./install.sh --local
+./install.sh --global --with-claude-md
+```
 
-# With ~/.claude/CLAUDE.md managed block
-./install.sh --with-claude-md
+```bash
+# Windows (Git Bash)
+./install-win.sh --global
+./install-win.sh --local
+```
+
+```powershell
+# Windows (PowerShell)
+.\install.ps1 -Mode global
+.\install.ps1 -Mode local
+.\install.ps1 -Mode global -WithClaudeMd
 ```
 
 The installer will:
@@ -101,7 +114,7 @@ The installer will:
 - Install/update CLI tools (Claude, Olympus, Gemini, Codex)
 - Set up MCP servers (ai-agents, openapi, stitch)
 - Install plugins and skills
-- Create `.mcp.json` (local mode) or symlinks (global mode)
+- Create `.mcp.json` (local mode) and global config/symlink/copy deployment per OS
 - Generate `.claude/settings.json`
 - Configure Gemini 3 with preview features
 
@@ -491,7 +504,7 @@ This is set server-side before serving `index.html`.
 
 | Issue | Solution |
 |-------|----------|
-| `npm link` fails | Use `install.sh` (creates direct symlink instead) |
+| `npm link` fails (macOS/Linux) | Use `./install.sh --global` (installer handles direct symlink path). |
 | `pnpm install` slow on first run | Normal for monorepo setup. Use `pnpm install --frozen-lockfile` for CI. |
 | `node-pty` build fails | Install Xcode CLI (`xcode-select --install`) or build-essential (`apt install build-essential python3`) |
 | `better-sqlite3` build fails | Native module. Verify Python 3 is installed. |
@@ -509,7 +522,7 @@ This is set server-side before serving `index.html`.
 
 | Issue | Solution |
 |-------|----------|
-| CLI permission denied | Run `chmod +x packages/cli/dist/index.js` or use `install.sh --local` |
+| CLI permission denied (macOS/Linux) | Run `chmod +x packages/cli/dist/index.js` or reinstall via `./install.sh --local`. |
 | Gateway API key error | Set `GATEWAY_API_KEY` or check `olympus config` |
 | Dashboard CORS error | Verify Gateway running on port 8200. Check firewall. Restart Gateway. |
 | WebSocket connection fails | Ensure Gateway is running. Check port 8200 is not blocked. |
@@ -519,7 +532,7 @@ This is set server-side before serving `index.html`.
 
 | Issue | Solution |
 |-------|----------|
-| `olympus command not found` | Run `./install.sh` to create symlink. Verify `$PATH` includes npm bin directory. |
+| `olympus command not found` | macOS/Linux: rerun `./install.sh --global`.<br/>Windows: run `cd packages/cli && npm link`. |
 | PTY mode crashes | Use `olympus start-trust` to skip permissions. Check node-pty native module is built. |
 | "spawn helper" permission error | `ensureSpawnHelperPermissions()` auto-fixes. If not, run `chmod +x orchestration/spawn-helper/*`. |
 | Claude CLI not found | Install: `npm install -g @anthropic-ai/claude-code` |
@@ -562,8 +575,10 @@ olympus/
 ├── docs/
 │   ├── operations/        # Setup guides, operational docs
 │   ├── architecture/      # Design docs, patterns
-│   └── api/               # API documentation
-├── install.sh             # Main installer (1090 lines)
+│   └── spec/              # API/Protocol specification
+├── install.sh             # Main installer (macOS/Linux)
+├── install-win.sh         # Installer (Windows Git Bash)
+├── install.ps1            # Installer (Windows PowerShell)
 ├── turbo.json             # Build pipeline
 ├── pnpm-workspace.yaml    # Workspace config
 └── package.json           # Monorepo manifest
@@ -626,8 +641,10 @@ pnpm --filter gateway test:watch
 pnpm --filter web dev
 
 # Installation
-./install.sh          # Interactive (global or local)
-./install.sh --local  # Project-only setup
+./install.sh --global      # macOS/Linux global setup
+./install.sh --local       # macOS/Linux local setup
+./install-win.sh --global  # Windows (Git Bash)
+.\install.ps1 -Mode global # Windows (PowerShell)
 ```
 
 ### Ports
@@ -656,7 +673,7 @@ pnpm --filter web dev
 
 ### Documentation
 - **Architecture**: `docs/architecture/`
-- **API Reference**: `docs/api/`
+- **API Reference**: `docs/spec/V2_API_REFERENCE.md`
 - **Operations**: `docs/operations/`
 - **Memory**: `~/.claude/projects/.../memory/MEMORY.md` (project-specific context)
 
@@ -685,8 +702,8 @@ pnpm --filter @olympus-dev/gateway test -- --coverage
 
 ## Version Information
 
-- **Olympus**: v0.5.1
-- **Node.js**: v18+ (ES2022)
+- **Olympus**: v1.0.0
+- **Node.js**: v22+ (권장)
 - **pnpm**: v10+
 - **TypeScript**: ^5.8.0
 - **Turbo**: ^2.5.0
@@ -695,5 +712,5 @@ pnpm --filter @olympus-dev/gateway test -- --coverage
 
 ---
 
-**Last Updated**: February 16, 2026
+**Last Updated**: February 20, 2026
 **Maintainer**: Olympus Team

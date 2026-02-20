@@ -38,6 +38,7 @@ import { WorkerRegistry } from './worker-registry.js';
 import { LocalContextStoreManager, extractContext } from '@olympus-dev/core';
 import type { GeminiAdvisor } from './gemini-advisor.js';
 import { UsageMonitor } from './usage-monitor.js';
+import { deriveWorkerEvents } from './worker-events.js';
 
 export interface GatewayOptions {
   port?: number;
@@ -45,6 +46,7 @@ export interface GatewayOptions {
   maxConcurrentRuns?: number;
   codexAdapter?: CodexAdapter;
   geminiAdvisor?: GeminiAdvisor;
+  workspaceRoot?: string;
   /** Server mode: legacy (full agent/worker), hybrid (both), codex (slim — no agent/worker) */
   mode?: 'legacy' | 'hybrid' | 'codex';
 }
@@ -77,17 +79,21 @@ export class Gateway {
   private localContextManager: LocalContextStoreManager;
   private usageMonitor: UsageMonitor | null = null;
   private lastGreeting: { type: string; text: string; timestamp: number } | null = null;
+  private startupBriefingTimer: ReturnType<typeof setTimeout> | null = null;
+  private briefingInProgress = false;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private sessionCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private startTime = Date.now();
   private port: number;
   private host: string;
   private mode: 'legacy' | 'hybrid' | 'codex';
+  private workspaceRoot: string;
 
   constructor(options: GatewayOptions = {}) {
     this.port = options.port ?? DEFAULT_GATEWAY_PORT;
     this.host = options.host ?? DEFAULT_GATEWAY_HOST;
     this.mode = options.mode ?? 'legacy';
+    this.workspaceRoot = options.workspaceRoot ?? process.cwd();
 
     // Initialize RunManager with event forwarding
     this.runManager = new RunManager({
@@ -98,6 +104,7 @@ export class Gateway {
     // Initialize SessionManager with event forwarding
     this.sessionManager = new SessionManager({
       onSessionEvent: (sessionId, event) => this.broadcastSessionEvent(sessionId, event),
+      workspaceRoot: this.workspaceRoot,
     });
 
     // Initialize CLI Session Store (모드 불문 — CLI Runner는 항상 사용 가능)
@@ -230,6 +237,7 @@ export class Gateway {
       this.codexAdapter.setBroadcast((eventType, payload) => this.broadcastToAll(eventType, payload));
       this.codexAdapter.setLocalContextManager(this.localContextManager);
       this.codexAdapter.setWorkerRegistry(this.workerRegistry);
+      this.codexAdapter.setWorkspaceRoot(this.workspaceRoot);
       this.codexAdapter.registerRpcMethods(this.rpcRouter);
     }
 
@@ -249,17 +257,20 @@ export class Gateway {
       });
       // Generate and broadcast Codex briefing after initial analysis completes
       this.geminiAdvisor.once('initial-analysis:complete', () => {
-        this.generateCodexBriefing().catch(() => {});
+        this.generateCodexBriefingOnce().catch(() => {});
       });
     }
 
     // Wire worker:died event from WorkerRegistry
     this.workerRegistry.on('worker:died', (payload: { workerId: string; taskIds: string[] }) => {
-      this.broadcastToAll('worker:task:failed', payload);
+      this.broadcastWorkerEvent('worker:task:failed', payload);
     });
 
     // Usage monitor — polls statusline sidecar JSON
     this.usageMonitor = new UsageMonitor();
+
+    // Always send one startup briefing, even if Gemini analysis fails/offline.
+    this.scheduleStartupBriefing();
   }
 
   async start(): Promise<{ port: number; host: string; apiKey: string }> {
@@ -300,6 +311,7 @@ export class Gateway {
         geminiAdvisor: this.geminiAdvisor ?? undefined,
         workerRegistry: this.workerRegistry,
         localContextManager: this.localContextManager,
+        workspaceRoot: this.workspaceRoot,
         server: this,
         onRunCreated: () => this.broadcastRunsList(),
         onSessionEvent: (sessionId, event) => this.broadcastSessionEvent(sessionId, event),
@@ -307,7 +319,7 @@ export class Gateway {
         onSessionsChanged: () => this.broadcastSessionsList(),
         onCliComplete: (result) => this.broadcastToAll('cli:complete', result),
         onCliStream: (chunk) => this.broadcastToAll('cli:stream', chunk),
-        onWorkerEvent: (eventType, payload) => this.broadcastToAll(eventType, payload),
+        onWorkerEvent: (eventType, payload) => this.broadcastWorkerEvent(eventType, payload),
       });
 
       this.httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -349,6 +361,10 @@ export class Gateway {
     // L5: Graceful shutdown — stop accepting new work, drain existing
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.sessionCleanupTimer) clearInterval(this.sessionCleanupTimer);
+    if (this.startupBriefingTimer) {
+      clearTimeout(this.startupBriefingTimer);
+      this.startupBriefingTimer = null;
+    }
 
     // Cancel all active runs
     this.runManager.cancelAllRuns();
@@ -745,6 +761,30 @@ export class Gateway {
    * Generate a Codex briefing from Gemini analysis, worker status, and project context.
    * Attempts Codex CLI for natural Korean greeting; falls back to template on failure.
    */
+  private scheduleStartupBriefing(): void {
+    const geminiRunning = this.geminiAdvisor?.getStatus()?.running ?? false;
+    // Fast startup greeting: don't wait too long for Gemini initial scan.
+    // If analysis is late/offline, send best-effort briefing first.
+    const maxWaitMs = geminiRunning ? 5_000 : 1_000;
+    this.startupBriefingTimer = setTimeout(() => {
+      this.generateCodexBriefingOnce().catch(() => {});
+    }, maxWaitMs);
+  }
+
+  private async generateCodexBriefingOnce(): Promise<void> {
+    if (this.lastGreeting || this.briefingInProgress) return;
+    if (this.startupBriefingTimer) {
+      clearTimeout(this.startupBriefingTimer);
+      this.startupBriefingTimer = null;
+    }
+    this.briefingInProgress = true;
+    try {
+      await this.generateCodexBriefing();
+    } finally {
+      this.briefingInProgress = false;
+    }
+  }
+
   private async generateCodexBriefing(): Promise<void> {
     // Collect context pieces
     const geminiContext = this.geminiAdvisor?.buildCodexContext?.() ?? '';
@@ -755,7 +795,7 @@ export class Gateway {
 
     let projectSummary = '';
     try {
-      const rootStore = await this.localContextManager.getRootStore(process.cwd());
+      const rootStore = await this.localContextManager.getRootStore(this.workspaceRoot);
       const projects = rootStore.getAllProjects();
       if (projects.length > 0) {
         projectSummary = projects
@@ -792,7 +832,7 @@ export class Gateway {
         provider: 'codex',
         model: 'gpt-5.3-codex',
         dangerouslySkipPermissions: true,
-        timeoutMs: 60_000,
+        timeoutMs: 8_000,
       });
 
       if (result.success && result.text) {
@@ -860,6 +900,14 @@ export class Gateway {
           console.warn(`[Gateway] Broadcast to ${clientId} failed: ${(err as Error).message}`);
         }
       }
+    }
+  }
+
+  private broadcastWorkerEvent(eventType: string, payload: unknown): void {
+    this.broadcastToAll(eventType, payload);
+    const derived = deriveWorkerEvents(eventType, payload);
+    for (const item of derived) {
+      this.broadcastToAll(item.type, item.payload);
     }
   }
 

@@ -41,6 +41,12 @@ docs/
 │   ├── CODEX_ORCHESTRATOR_DEVELOPMENT_PLAN.md  ← Codex orchestrator design
 │   └── DASHBOARD_REFACTORING_PLAN.md  ← Dashboard refactoring plan
 │
+├── tracks/                    ← Feature-track execution records
+│   └── console-monitor/
+│       ├── README.md
+│       ├── COMPLETED_2026-02-20.md
+│       └── NEXT_STEPS_2026-02-20.md
+│
 ├── spec/                      ← Technical specifications & contracts
 │   ├── websocket-protocol.md  ← WebSocket protocol v0.2.0
 │   ├── V2_CONTRACT.md         ← V2 type contracts & interfaces
@@ -84,6 +90,7 @@ docs/
 1. [Package Guide](architecture/package-guide.md) — Focus on `web`, `client`, `tui` sections
 2. [WebSocket Protocol](spec/websocket-protocol.md) — Events consumed by the dashboard
 3. [Gateway Internals](architecture/gateway-internals.md) — API endpoints for data
+4. [Console/Monitor Track](tracks/console-monitor/README.md) — 개선 이력/완료 보고/후속 백로그
 
 ### Agent System Developer
 1. [Agent System](design/agent-system.md) — Agent types, activation policy, rules

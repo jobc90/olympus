@@ -1,5 +1,65 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
+import { existsSync, readdirSync } from 'node:fs';
+import { basename, dirname, join, resolve as resolvePath } from 'node:path';
+
+const PROJECT_MARKERS = ['.git', 'package.json', 'pnpm-workspace.yaml'] as const;
+const SKIP_DIRS = new Set(['node_modules', '.git', '.idea', '.vscode', '.next', 'dist', 'build', '.turbo', '.cache', 'coverage']);
+
+function isProjectDirectory(dirPath: string): boolean {
+  return PROJECT_MARKERS.some((marker) => existsSync(join(dirPath, marker)));
+}
+
+function resolveWorkspaceRootForServer(cwd: string): string {
+  const envRoot = process.env.OLYMPUS_WORKSPACE_ROOT;
+  if (envRoot) {
+    const resolved = resolvePath(envRoot);
+    if (existsSync(resolved)) return resolved;
+  }
+
+  const resolvedCwd = resolvePath(cwd);
+  const looksLikeOlympus = existsSync(join(resolvedCwd, 'pnpm-workspace.yaml'))
+    && existsSync(join(resolvedCwd, 'packages'))
+    && existsSync(join(resolvedCwd, 'AGENTS.md'));
+
+  if (looksLikeOlympus || basename(resolvedCwd).toLowerCase() === 'olympus') {
+    const parent = dirname(resolvedCwd);
+    try {
+      const siblings = readdirSync(parent, { withFileTypes: true, encoding: 'utf8' })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .filter((name) => !name.startsWith('.') && name !== basename(resolvedCwd));
+      const hasSiblingProject = siblings.some((name) => isProjectDirectory(join(parent, name)));
+      if (hasSiblingProject) return parent;
+    } catch {
+      // Fall through
+    }
+  }
+
+  return resolvedCwd;
+}
+
+function listWorkspaceProjectsForServer(workspaceRoot: string): Array<{ name: string; path: string }> {
+  let entries: Array<import('node:fs').Dirent>;
+  try {
+    entries = readdirSync(workspaceRoot, { withFileTypes: true, encoding: 'utf8' });
+  } catch {
+    return [];
+  }
+
+  const projects: Array<{ name: string; path: string }> = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('.')) continue;
+    if (SKIP_DIRS.has(entry.name)) continue;
+    const projectPath = join(workspaceRoot, entry.name);
+    if (!isProjectDirectory(projectPath)) continue;
+    projects.push({ name: entry.name, path: projectPath });
+  }
+
+  projects.sort((a, b) => a.name.localeCompare(b.name));
+  return projects;
+}
 
 export const serverCommand = new Command('server')
   .description('Manage Olympus server components');
@@ -16,9 +76,13 @@ serverCommand
   .option('--skip-update', 'Skip CLI update check (default: true)', true)
   .option('--update-tools', 'Force CLI tools update on start')
   .option('--mode <mode>', 'Server mode: legacy | hybrid | codex', 'codex')
+  .option('-w, --workspace <path>', 'Workspace root path (default: auto-detect)')
   .action(async (opts) => {
     const { loadConfig, isTelegramConfigured } = await import('@olympus-dev/gateway');
     const config = loadConfig();
+    const workspaceRoot = opts.workspace
+      ? resolvePath(String(opts.workspace))
+      : resolveWorkspaceRootForServer(process.cwd());
 
     // Validate mode
     const validModes = ['legacy', 'hybrid', 'codex'];
@@ -35,6 +99,8 @@ serverCommand
       console.log(chalk.magenta(`  Mode: ${mode.toUpperCase()}`));
       console.log();
     }
+    console.log(chalk.gray(`  Workspace: ${workspaceRoot}`));
+    console.log();
 
     // Update CLI tools only when explicitly requested
     if (opts.updateTools) {
@@ -60,15 +126,22 @@ serverCommand
     // Initialize Codex Orchestrator if hybrid or codex mode
     let codexAdapter: Awaited<ReturnType<typeof initCodexAdapter>> | null = null;
     if (mode === 'hybrid' || mode === 'codex') {
-      codexAdapter = await initCodexAdapter(config);
+      codexAdapter = await initCodexAdapter(workspaceRoot);
     }
 
     // Initialize Gemini Advisor (optional, graceful degradation)
-    const geminiAdvisor = await initGeminiAdvisor();
+    const geminiAdvisor = await initGeminiAdvisor(workspaceRoot);
 
     // Start Gateway
     if (startGateway) {
-      gateway = await startGatewayServer(opts.port, config, codexAdapter ?? undefined, mode, geminiAdvisor ?? undefined);
+      gateway = await startGatewayServer(
+        opts.port,
+        config,
+        codexAdapter ?? undefined,
+        mode,
+        geminiAdvisor ?? undefined,
+        workspaceRoot,
+      );
     }
 
     // Start Dashboard
@@ -90,27 +163,15 @@ serverCommand
     // Seed Context OS workspace
     try {
       const { ContextStore } = await import('@olympus-dev/core');
-      const fs = await import('node:fs');
-      const path = await import('node:path');
       const store = ContextStore.getInstance();
-      const workspacePath = process.cwd();
-      store.seedWorkspace(workspacePath);
+      store.seedWorkspace(workspaceRoot);
 
-      // Seed direct child directories as project contexts for top-level visibility.
-      const entries = fs.readdirSync(workspacePath, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        if (entry.name.startsWith('.')) continue;
-        const projectPath = path.join(workspacePath, entry.name);
-        const hasProjectMarker =
-          fs.existsSync(path.join(projectPath, '.git')) ||
-          fs.existsSync(path.join(projectPath, 'package.json')) ||
-          fs.existsSync(path.join(projectPath, 'pnpm-workspace.yaml'));
-        if (!hasProjectMarker) continue;
-        store.seedProject(workspacePath, projectPath);
+      const projects = listWorkspaceProjectsForServer(workspaceRoot);
+      for (const project of projects) {
+        store.seedProject(workspaceRoot, project.path);
       }
 
-      console.log(chalk.green(`  ✓ Context OS workspace seeded: ${workspacePath}`));
+      console.log(chalk.green(`  ✓ Context OS workspace seeded: ${workspaceRoot}`));
     } catch {
       // Non-critical, continue
     }
@@ -288,7 +349,14 @@ function maskApiKey(key: string): string {
   return '****';
 }
 
-async function startGatewayServer(port: string, config: { gatewayHost: string; apiKey: string }, codexAdapter?: unknown, mode?: string, geminiAdvisor?: unknown) {
+async function startGatewayServer(
+  port: string,
+  config: { gatewayHost: string; apiKey: string },
+  codexAdapter?: unknown,
+  mode?: string,
+  geminiAdvisor?: unknown,
+  workspaceRoot?: string,
+) {
   const { Gateway } = await import('@olympus-dev/gateway');
 
   const gatewayOpts: Record<string, unknown> = {
@@ -303,6 +371,9 @@ async function startGatewayServer(port: string, config: { gatewayHost: string; a
   }
   if (mode) {
     gatewayOpts.mode = mode;
+  }
+  if (workspaceRoot) {
+    gatewayOpts.workspaceRoot = workspaceRoot;
   }
 
   const gateway = new Gateway(gatewayOpts as never);
@@ -471,31 +542,22 @@ async function startTelegramBot(config: { telegram?: { token: string; allowedUse
 /**
  * Initialize Codex Orchestrator and create adapter for Gateway integration
  */
-async function initCodexAdapter(config: { gatewayHost: string; gatewayPort: number; apiKey: string }) {
+async function initCodexAdapter(
+  workspaceRoot: string,
+) {
   try {
     const { CodexOrchestrator } = await import('@olympus-dev/codex');
     const { CodexAdapter } = await import('@olympus-dev/gateway');
-    const path = await import('node:path');
-    const fs = await import('node:fs');
 
     console.log(chalk.cyan('🧠 Codex Orchestrator 시작 중...'));
 
-    // Scan for projects in current directory
-    const workspacePath = process.cwd();
+    // Scan for projects in workspace root
+    const discoveredProjects = listWorkspaceProjectsForServer(workspaceRoot);
     const projects: Array<{ name: string; path: string; aliases: string[]; techStack: string[] }> = [];
-
-    const entries = fs.readdirSync(workspacePath, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-      const projectPath = path.join(workspacePath, entry.name);
-      const hasProjectMarker =
-        fs.existsSync(path.join(projectPath, '.git')) ||
-        fs.existsSync(path.join(projectPath, 'package.json'));
-      if (!hasProjectMarker) continue;
-
+    for (const project of discoveredProjects) {
       projects.push({
-        name: entry.name,
-        path: projectPath,
+        name: project.name,
+        path: project.path,
         aliases: [],
         techStack: [],
       });
@@ -532,11 +594,9 @@ async function initCodexAdapter(config: { gatewayHost: string; gatewayPort: numb
 /**
  * Initialize Gemini Advisor (optional — graceful degradation if gemini CLI not available)
  */
-async function initGeminiAdvisor() {
+async function initGeminiAdvisor(workspaceRoot: string) {
   try {
     const { execSync } = await import('child_process');
-    const fs = await import('node:fs');
-    const path = await import('node:path');
 
     // gemini CLI 존재 확인
     try {
@@ -548,24 +608,15 @@ async function initGeminiAdvisor() {
     }
 
     const { GeminiAdvisor } = await import('@olympus-dev/gateway');
-
-    // 프로젝트 스캔
-    const workspacePath = process.cwd();
-    const projects: Array<{ name: string; path: string }> = [];
-
-    const entries = fs.readdirSync(workspacePath, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-      const projectPath = path.join(workspacePath, entry.name);
-      const hasProjectMarker =
-        fs.existsSync(path.join(projectPath, '.git')) ||
-        fs.existsSync(path.join(projectPath, 'package.json'));
-      if (!hasProjectMarker) continue;
-      projects.push({ name: entry.name, path: projectPath });
-    }
+    const projects = listWorkspaceProjectsForServer(workspaceRoot);
 
     const advisor = new GeminiAdvisor();
     await advisor.initialize(projects);
+    const status = advisor.getStatus();
+    if (!status.running || !status.ptyAlive) {
+      console.log(chalk.yellow('  ⚠ Gemini Advisor 시작 실패: Gemini PTY가 활성화되지 않았습니다.'));
+      return null;
+    }
 
     console.log(chalk.green(`  ✓ Gemini Advisor 초기화 완료 (프로젝트 ${projects.length}개)`));
     return advisor;

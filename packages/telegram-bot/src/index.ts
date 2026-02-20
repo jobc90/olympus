@@ -29,8 +29,25 @@ const SYSTEM_MARKER_PATTERNS = [
 const TUI_ARTIFACT_PATTERNS = [
   /^[✢✳✶✻✽·\s]+$/,
   /^\(thinking\)\s*$/i,
+  /\(thinking\)/i,
   /Flowing…?\s*$/,
+  /Forming…?\s*$/i,
+  /Deliberating…?\s*$/i,
+  /Topsy-turvying…?\s*$/i,
   /^\([\dm\s]+s?\s*[·•]\s*↓/,
+  /^\(\d+s?\s*[·•]\s*timeout\s+\d+m\)\s*$/i,
+  /ctrl\+o\s*to\s*expand/i,
+  /shift\+tab\s*to\s*cycle/i,
+  /bypass\s*permissions?\s*on/i,
+  /↓\s*[\d.]+k?\s*tokens?/i,
+  /\d+K?\/\d+K?\s*tokens?/i,
+  /[│|].*gemini.*preview/i,
+  /[│|].*gpt-[\w.-]+/i,
+  /🤖\s*(?:Opus|Sonnet|Haiku)/i,
+  /[█▓▒░]{2,}\s*\d+%/,
+  /^\s*[A-Za-z]\s*$/,
+  /^\s*\d{1,5}\s*$/,
+  /^[✢✳✶✻✽·]?\s*[A-Za-z][A-Za-z-]{2,24}…(?:\s*\(thinking\))?$/i,
   /^[-─═]{3,}\s*$/,
   /^\s*\d+\s*[│|]\s*$/,
 ];
@@ -150,6 +167,20 @@ function safeSlice(text: string, maxLength: number): string {
 }
 
 class OlympusBot {
+  private static readonly COMMAND_MENU = [
+    { command: 'start', description: '환영 메시지와 빠른 시작' },
+    { command: 'help', description: '명령어 전체 도움말' },
+    { command: 'workers', description: '워커 목록 및 빠른 지시' },
+    { command: 'sessions', description: '세션 상태/전환 가이드' },
+    { command: 'use', description: '세션/모드 전환' },
+    { command: 'close', description: '세션 종료' },
+    { command: 'last', description: '현재 세션 마지막 출력' },
+    { command: 'health', description: 'Gateway/WS 상태 확인' },
+    { command: 'codex', description: 'Codex 오케스트레이터 질의' },
+    { command: 'team', description: 'Team Engineering 실행' },
+    { command: 'tasks', description: '활성 작업 목록' },
+  ] as const;
+
   private bot: Telegraf;
   private config: BotConfig;
   private ws: WebSocket | null = null;
@@ -228,6 +259,148 @@ class OlympusBot {
     );
   }
 
+  private async fetchWorkersForStart(): Promise<Array<{ name: string; status: string; projectPath: string }>> {
+    try {
+      const res = await fetch(`${this.config.gatewayUrl}/api/workers`, {
+        headers: { Authorization: `Bearer ${this.config.apiKey}` },
+      });
+      if (!res.ok) return [];
+      const data = await res.json() as { workers: Array<{ name: string; status: string; projectPath: string }> };
+      return data.workers ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  private buildStartMessage(workers: Array<{ name: string; status: string; projectPath: string }>): string {
+    const exampleWorker = workers.length > 0 ? workers[0].name : 'olympus';
+
+    let msg = `⚡ *Olympus*\n\n`;
+    msg += `텔레그램에서 워커를 바로 지시하고, 세션 상태를 확인할 수 있습니다.\n\n`;
+
+    if (workers.length > 0) {
+      msg += `*활성 워커* (${workers.length}개)\n`;
+      for (const w of workers) {
+        const icon = w.status === 'idle' ? '🟢' : w.status === 'busy' ? '🔴' : '⚫';
+        const shortPath = w.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
+        msg += `${icon} \`@${w.name}\` — \`${shortPath}\`\n`;
+      }
+      msg += '\n';
+    }
+
+    msg += `*사용법*\n`;
+    msg += `워커에게 지시 → \`@워커이름 작업내용\`\n`;
+    msg += `일반 대화 → 그냥 메시지 입력\n\n`;
+
+    msg += `*예시*\n`;
+    msg += `\`@${exampleWorker} 현재 브랜치 상태 알려줘\`\n`;
+    msg += `\`@${exampleWorker} 테스트 돌려줘\`\n\n`;
+
+    msg += `*명령어*\n`;
+    msg += `/help — 전체 명령어 안내\n`;
+    msg += `/workers — 워커 목록 + 빠른 지시\n`;
+    msg += `/sessions — 세션 상태/전환\n`;
+    msg += `/health — 시스템 상태\n\n`;
+
+    if (workers.length > 0) {
+      msg += `💡 팁: \`@워커이름\` 뒤에 작업 내용을 입력하면 해당 워커가 바로 실행합니다.`;
+    }
+
+    return msg;
+  }
+
+  private buildHelpMessage(
+    chatId: number,
+    workers: Array<{ name: string; status: string; projectPath: string }>,
+  ): string {
+    const mode = this.directMode.get(chatId) ? '🔗 직접 모드' : '🤖 오케스트레이터 모드';
+    const currentSession = this.getActiveSessionName(chatId)?.replace(/^olympus-/, '') ?? '없음';
+    const mySessionCount = this.chatSessions.get(chatId)?.size ?? 0;
+    const exampleWorker = workers[0]?.name ?? 'olympus';
+
+    let msg = `📘 *Olympus 명령어 가이드*\n\n`;
+    msg += `*현재 상태*\n`;
+    msg += `모드: ${mode}\n`;
+    msg += `현재 세션: ${currentSession}\n`;
+    msg += `내 연결 세션: ${mySessionCount}개\n`;
+    msg += `활성 워커: ${workers.length}개\n\n`;
+
+    msg += `*추천 시작 순서*\n`;
+    msg += `1. \`/workers\` 로 워커 확인\n`;
+    msg += `2. \`@${exampleWorker} 상황파악하고 보고해\` 실행\n`;
+    msg += `3. \`/sessions\` 로 세션 상태 확인\n\n`;
+
+    msg += `*전체 명령어*\n`;
+    for (const cmd of OlympusBot.COMMAND_MENU) {
+      msg += `/${cmd.command} — ${cmd.description}\n`;
+    }
+
+    msg += `\n*빠른 예시*\n`;
+    msg += `\`@${exampleWorker} 빌드하고 테스트 돌려줘\`\n`;
+    msg += `\`/use main\` (오케스트레이터 복귀)\n`;
+    msg += `\`/use ${exampleWorker}\` (직접 모드 전환)\n`;
+
+    return msg;
+  }
+
+  private async sendStartGuide(chatId: number): Promise<void> {
+    const workers = await this.fetchWorkersForStart();
+    const msg = this.buildStartMessage(workers);
+    try {
+      await this.bot.telegram.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
+    } catch {
+      await this.bot.telegram.sendMessage(chatId, msg);
+    }
+  }
+
+  private async sendHelpGuide(chatId: number): Promise<void> {
+    const workers = await this.fetchWorkersForStart();
+    const msg = this.buildHelpMessage(chatId, workers);
+    try {
+      await this.bot.telegram.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
+    } catch {
+      await this.bot.telegram.sendMessage(chatId, msg);
+    }
+  }
+
+  private buildUnknownCommandMessage(text: string): string {
+    const command = text.slice(1).split(/\s+/)[0].split('@')[0].toLowerCase();
+    const suggestions: string[] = [];
+
+    if (command.startsWith('w')) suggestions.push('/workers');
+    if (command.startsWith('s')) suggestions.push('/sessions');
+    if (command.startsWith('u')) suggestions.push('/use');
+    if (command.startsWith('h')) suggestions.push('/help');
+    if (command.startsWith('c')) suggestions.push('/codex');
+
+    for (const fallback of ['/help', '/workers', '/sessions']) {
+      if (!suggestions.includes(fallback)) suggestions.push(fallback);
+      if (suggestions.length >= 3) break;
+    }
+
+    const known = OlympusBot.COMMAND_MENU.map(cmd => `/${cmd.command}`).join(', ');
+    return (
+      `❓ 알 수 없는 명령어: \`${text.split(/\s+/)[0]}\`\n\n` +
+      `추천 명령어: ${suggestions.map(v => `\`${v}\``).join(', ')}\n\n` +
+      `전체 목록: ${known}`
+    );
+  }
+
+  private async registerBotCommands(): Promise<void> {
+    try {
+      await this.bot.telegram.setMyCommands(
+        OlympusBot.COMMAND_MENU.map(cmd => ({ command: cmd.command, description: cmd.description })),
+      );
+      structuredLog('info', 'telegram-bot', 'commands_registered', {
+        count: OlympusBot.COMMAND_MENU.length,
+      });
+    } catch (err) {
+      structuredLog('warn', 'telegram-bot', 'commands_register_failed', {
+        error: (err as Error).message,
+      });
+    }
+  }
+
   private setupCommands() {
     // Auth middleware
     this.bot.use(async (ctx, next) => {
@@ -271,50 +444,12 @@ class OlympusBot {
 
     // /start - Welcome message
     this.bot.command('start', async (ctx) => {
-      // Fetch workers to show quick-start examples
-      let workers: Array<{ name: string; status: string; projectPath: string }> = [];
-      try {
-        const res = await fetch(`${this.config.gatewayUrl}/api/workers`, {
-          headers: { Authorization: `Bearer ${this.config.apiKey}` },
-        });
-        const data = await res.json() as { workers: Array<{ name: string; status: string; projectPath: string }> };
-        workers = data.workers;
-      } catch {
-        // ignore - show generic example
-      }
+      await this.sendStartGuide(ctx.chat.id);
+    });
 
-      const exampleWorker = workers.length > 0 ? workers[0].name : 'olympus';
-
-      let msg = `⚡ *Olympus*\n\n`;
-
-      // Show available workers in compact format
-      if (workers.length > 0) {
-        msg += `*활성 워커* (${workers.length}개)\n`;
-        for (const w of workers) {
-          const icon = w.status === 'idle' ? '🟢' : w.status === 'busy' ? '🔴' : '⚫';
-          const shortPath = w.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
-          msg += `${icon} \`@${w.name}\` — \`${shortPath}\`\n`;
-        }
-        msg += '\n';
-      }
-
-      msg += `*사용법*\n`;
-      msg += `워커에게 지시 → \`@워커이름 작업내용\`\n`;
-      msg += `일반 대화 → 그냥 메시지 입력\n\n`;
-
-      msg += `*예시*\n`;
-      msg += `\`@${exampleWorker} 현재 브랜치 상태 알려줘\`\n`;
-      msg += `\`@${exampleWorker} 테스트 돌려줘\`\n\n`;
-
-      msg += `*명령어*\n`;
-      msg += `/workers — 워커 목록 + 빠른 지시\n`;
-      msg += `/health — 시스템 상태\n\n`;
-
-      if (workers.length > 0) {
-        msg += `💡 팁: \`@워커이름\` 뒤에 작업 내용을 입력하면 해당 워커가 바로 실행합니다.`;
-      }
-
-      await ctx.reply(msg, { parse_mode: 'Markdown' });
+    // /help - Full command guide
+    this.bot.command('help', async (ctx) => {
+      await this.sendHelpGuide(ctx.chat.id);
     });
 
     // /health - Check gateway health
@@ -370,7 +505,14 @@ class OlympusBot {
         const currentName = this.getActiveSessionName(ctx.chat.id);
         const currentDisplayName = currentName?.replace(/^olympus-/, '');
         const myChatId = ctx.chat.id;
-        let msg = '';
+        const modeLabel = this.directMode.get(myChatId) ? '🔗 직접 모드' : '🤖 오케스트레이터 모드';
+        const myConnectedSessions = this.chatSessions.get(myChatId)?.size ?? 0;
+
+        let msg = `🧭 *세션 요약*\n`;
+        msg += `모드: ${modeLabel}\n`;
+        msg += `현재 세션: ${currentDisplayName ?? '없음'}\n`;
+        msg += `내 연결 세션: ${myConnectedSessions}개\n`;
+        msg += `전체 활성 세션: ${activeSessions.length}개\n\n`;
 
         // Active registered sessions (all, not just this chat)
         // Show current active session prominently at the top
@@ -508,9 +650,11 @@ class OlympusBot {
       const nameInput = ctx.message.text.replace(/^\/use\s*/, '').trim();
 
       if (!nameInput) {
-        const mode = this.directMode.get(ctx.chat.id) ? '🔗 직접' : '🤖 오케스트레이터';
+        const mode = this.directMode.get(ctx.chat.id) ? '🔗 직접 모드' : '🤖 오케스트레이터 모드';
+        const currentSession = this.getActiveSessionName(ctx.chat.id)?.replace(/^olympus-/, '') ?? '없음';
         await ctx.reply(
-          `현재 모드: ${mode}\n\n` +
+          `현재 모드: ${mode}\n` +
+          `현재 세션: ${currentSession}\n\n` +
           `사용법:\n` +
           `• \`/use main\` — 오케스트레이터 모드\n` +
           `• \`/use direct <세션>\` — 직접 모드\n` +
@@ -852,8 +996,13 @@ class OlympusBot {
         }
 
         msg += `${'─'.repeat(25)}\n`;
-        msg += `💡 *사용법*: \`@워커이름 작업내용\`\n\n`;
-        msg += `예시: \`@${workers[0].name} 빌드하고 테스트 돌려줘\``;
+        msg += `💡 *사용법*: \`@워커이름 작업내용\`\n`;
+        msg += `🧭 모드 전환: \`/use <세션>\`, \`/use main\`\n\n`;
+        msg += `*빠른 템플릿*\n`;
+        for (const worker of workers.slice(0, 3)) {
+          msg += `• \`@${worker.name} 상황파악하고 오늘 우선순위 3개 정리해줘\`\n`;
+        }
+        msg += `• \`@${workers[0].name} 빌드하고 테스트 돌려줘\``;
 
         await ctx.reply(msg, { parse_mode: 'Markdown' });
       } catch (err) {
@@ -867,7 +1016,7 @@ class OlympusBot {
 
       // Unknown commands
       if (text.startsWith('/')) {
-        await ctx.reply('알 수 없는 명령어입니다. /start 로 도움말을 확인하세요.');
+        await this.safeReply(ctx, this.buildUnknownCommandMessage(text), 'Markdown');
         return;
       }
 
@@ -1520,13 +1669,45 @@ class OlympusBot {
    * Send a long message to Telegram, splitting into multiple parts if needed.
    * Each part includes the session prefix for multi-session clarity.
    */
+  private isTableLikeText(text: string): boolean {
+    if (/[┌┬┐├┼┤└┴┘│]/.test(text)) return true;
+    const lines = text.split('\n');
+    let pipeLike = 0;
+    for (const line of lines) {
+      if (/\|/.test(line)) pipeLike++;
+      if (pipeLike >= 3) return true;
+    }
+    return false;
+  }
+
+  private escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  private async sendMessageChunk(chatId: number, text: string, usePre: boolean): Promise<void> {
+    if (!usePre) {
+      await this.bot.telegram.sendMessage(chatId, text);
+      return;
+    }
+    const wrapped = `<pre>${this.escapeHtml(text)}</pre>`;
+    try {
+      await this.bot.telegram.sendMessage(chatId, wrapped, { parse_mode: 'HTML' });
+    } catch {
+      await this.bot.telegram.sendMessage(chatId, text);
+    }
+  }
+
   private async sendLongMessage(chatId: number, text: string, sessionPrefix?: string): Promise<void> {
     // R3: Apply Telegram response filter before sending
     const filtered = filterForTelegram(text);
     text = filtered.text;
+    const usePre = this.isTableLikeText(text);
 
     if (text.length <= TELEGRAM_MSG_LIMIT) {
-      await this.bot.telegram.sendMessage(chatId, text);
+      await this.sendMessageChunk(chatId, text, usePre);
       return;
     }
 
@@ -1538,7 +1719,7 @@ class OlympusBot {
     for (const line of lines) {
       if (chunk.length + line.length + 1 > TELEGRAM_MSG_LIMIT) {
         if (chunk) {
-          await this.bot.telegram.sendMessage(chatId, chunk.trimEnd());
+          await this.sendMessageChunk(chatId, chunk.trimEnd(), usePre);
           partNum++;
           chunk = '';
           // Add prefix to continuation parts
@@ -1549,7 +1730,7 @@ class OlympusBot {
         // Single line exceeds limit - force split
         if (line.length > TELEGRAM_MSG_LIMIT) {
           for (let i = 0; i < line.length; i += TELEGRAM_MSG_LIMIT) {
-            await this.bot.telegram.sendMessage(chatId, line.slice(i, i + TELEGRAM_MSG_LIMIT));
+            await this.sendMessageChunk(chatId, line.slice(i, i + TELEGRAM_MSG_LIMIT), usePre);
             partNum++;
           }
           continue;
@@ -1558,7 +1739,7 @@ class OlympusBot {
       chunk += (chunk ? '\n' : '') + line;
     }
     if (chunk.trim()) {
-      await this.bot.telegram.sendMessage(chatId, chunk.trimEnd());
+      await this.sendMessageChunk(chatId, chunk.trimEnd(), usePre);
     }
   }
 
@@ -2107,10 +2288,17 @@ class OlympusBot {
         allowedUsers: this.config.allowedUsers,
       });
 
+      await this.registerBotCommands();
+
       // Sync sessions from Gateway for all allowed users + known chats
       const chatIds = new Set([...this.config.allowedUsers, ...this.chatSessions.keys()]);
       for (const chatId of chatIds) {
         await this.syncSessionsFromGateway(chatId);
+      }
+
+      // Auto-run /start equivalent after bot startup (for allowed users).
+      for (const chatId of this.config.allowedUsers) {
+        await this.sendStartGuide(chatId).catch(() => {});
       }
 
       // Graceful shutdown
@@ -2190,7 +2378,8 @@ class OlympusBot {
         if (task.status !== 'completed' && task.status !== 'failed') continue;
 
         const icon = task.result?.success ? '✅' : '❌';
-        const text = `[${task.workerName}] ${icon} 완료 (재접속 중 수신)\n\n${safeSlice(task.result?.text ?? '', 2000)}`;
+        const filtered = filterForTelegram(task.result?.text ?? '');
+        const text = `[${task.workerName}] ${icon} 완료 (재접속 중 수신)\n\n${safeSlice(filtered.text, 2000)}`;
         await this.sendLongMessage(task.chatId, text).catch(() => {});
       }
 

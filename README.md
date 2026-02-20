@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/mascot.png" alt="Olympus Mascot" width="200"/>
-</p>
-
 <h1 align="center">Olympus</h1>
 
 <p align="center">
@@ -11,7 +7,7 @@
 
 <p align="center">
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"/></a>
-  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-18%2B-green.svg" alt="Node.js"/></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-22%2B-green.svg" alt="Node.js"/></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.8-blue.svg" alt="TypeScript"/></a>
 </p>
 
@@ -30,6 +26,7 @@
 - [Why Olympus?](#-why-olympus)
 - [Claude CLI vs Olympus](#-claude-cli-vs-olympus)
 - [Quick Start](#-quick-start)
+- [대시보드 스크린샷](#-대시보드-스크린샷)
 - [핵심 기능](#-핵심-기능)
 - [사용법](#-사용법)
 - [Worker 시스템](#-worker-시스템)
@@ -38,6 +35,15 @@
 - [Architecture](#-architecture)
 - [Development](#-development)
 - [Troubleshooting](#-troubleshooting)
+
+---
+
+## 🖼️ 대시보드 스크린샷
+
+<p align="center">
+  <img src="docs/image/dashboard.png" alt="Olympus Dashboard Console Tab" width="48%" />
+  <img src="docs/image/monitor.png" alt="Olympus Dashboard Monitor Tab" width="48%" />
+</p>
 
 ---
 
@@ -421,7 +427,7 @@ ls .claude/agents/
 
 ## 🏗️ Architecture
 
-### 패키지 구조 (9개)
+### 패키지 구조 (10개)
 
 ```
 protocol → core → gateway ──→ cli
@@ -480,7 +486,7 @@ protocol → core → gateway ──→ cli
 
 ### Prerequisites
 
-- **Node.js 18+** (CI: Node 20/22)
+- **Node.js 22+** (권장)
 - **pnpm** (`npm i -g pnpm`)
 - **Claude CLI** (`npm i -g @anthropic-ai/claude-code`)
 - **빌드 도구** (node-pty 네이티브 모듈):

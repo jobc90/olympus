@@ -32,6 +32,7 @@ export interface SessionManagerOptions {
   dataDir?: string;
   sessionTimeout?: number; // ms, <= 0 means no timeout (default: no timeout)
   onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
+  workspaceRoot?: string;
 }
 
 export type SessionEvent =
@@ -122,7 +123,7 @@ export class SessionManager {
     // Default behavior: no idle timeout. Set a positive value to enable timeout cleanup.
     this.sessionTimeout = options.sessionTimeout ?? 0;
     this.onSessionEvent = options.onSessionEvent;
-    this.workspaceRoot = process.cwd();
+    this.workspaceRoot = options.workspaceRoot ?? process.cwd();
   }
 
   /**

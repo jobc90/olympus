@@ -70,7 +70,7 @@ $OrchestrationDir = Join-Path $ScriptDir "orchestration"
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Magenta
-Write-Host "        Olympus - Claude CLI Enhanced Platform v0.5.1" -ForegroundColor Magenta
+Write-Host "        Olympus - Claude CLI Enhanced Platform v1.0.0" -ForegroundColor Magenta
 Write-Host "        Multi-AI Orchestration Protocol v5.3 (Windows)" -ForegroundColor Magenta
 Write-Host "================================================================" -ForegroundColor Magenta
 Write-Host ""

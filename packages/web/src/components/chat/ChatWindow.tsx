@@ -176,10 +176,10 @@ export default function ChatWindow({
               key={msg.id}
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div
-                className="max-w-[80%] rounded-2xl px-4 py-2 text-sm"
-                style={
-                  msg.role === 'user'
+                <div
+                  className="max-w-[80%] rounded-2xl px-4 py-2 text-sm"
+                  style={
+                    msg.role === 'user'
                     ? {
                         background: 'var(--accent-primary)',
                         color: '#fff',
@@ -190,10 +190,18 @@ export default function ChatWindow({
                         color: 'var(--text-primary)',
                         borderBottomLeftRadius: '0.375rem',
                         border: '1px solid var(--border)',
-                      }
+                    }
                 }
               >
-                <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+                <div
+                  style={{
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontFamily: `ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace`,
+                  }}
+                >
+                  {msg.content}
+                </div>
                 <div
                   className="text-[10px] mt-1"
                   style={{

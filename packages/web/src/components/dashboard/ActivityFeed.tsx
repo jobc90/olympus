@@ -2,7 +2,7 @@
 // ActivityFeed — Real-time activity event list
 // ============================================================================
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 interface ActivityEvent {
   id: string;
@@ -46,12 +46,37 @@ function formatRelativeTime(ts: number): string {
 export default function ActivityFeed({ events, maxHeight = 400 }: ActivityFeedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAtTopRef = useRef(true);
+  const [typeFilter, setTypeFilter] = useState<'all' | 'state' | 'task' | 'error'>('all');
+  const [query, setQuery] = useState('');
+
+  const filteredEvents = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return events.filter(event => {
+      const byType =
+        typeFilter === 'all' ? true :
+        typeFilter === 'state' ? event.type === 'state_change' :
+        typeFilter === 'task' ? (
+          event.type.includes('task') ||
+          event.type === 'timeout' ||
+          event.type === 'final_after_timeout' ||
+          event.type === 'completed'
+        ) :
+        (
+          event.type === 'error' ||
+          event.type === 'task_fail' ||
+          /fail|error|timeout/i.test(event.message)
+        );
+      if (!byType) return false;
+      if (!q) return true;
+      return event.agentName.toLowerCase().includes(q) || event.message.toLowerCase().includes(q);
+    });
+  }, [events, query, typeFilter]);
 
   useEffect(() => {
     if (scrollRef.current && isAtTopRef.current) {
       scrollRef.current.scrollTop = 0;
     }
-  }, [events.length]);
+  }, [filteredEvents.length]);
 
   return (
     <div>
@@ -59,6 +84,29 @@ export default function ActivityFeed({ events, maxHeight = 400 }: ActivityFeedPr
         <span>{'\u{1F4E1}'}</span>
         <span>Activity Feed</span>
       </h2>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        {(['all', 'state', 'task', 'error'] as const).map(filter => (
+          <button
+            key={filter}
+            onClick={() => setTypeFilter(filter)}
+            className="px-2 py-1 rounded text-[10px] font-mono border transition-colors"
+            style={{
+              borderColor: typeFilter === filter ? 'var(--accent-primary)' : 'var(--border)',
+              color: typeFilter === filter ? 'var(--accent-primary)' : 'var(--text-secondary)',
+              backgroundColor: typeFilter === filter ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)' : 'transparent',
+            }}
+          >
+            {filter.toUpperCase()}
+          </button>
+        ))}
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="agent/message filter"
+          className="ml-auto rounded px-2 py-1 text-[10px] font-mono border"
+          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)' }}
+        />
+      </div>
       <div
         ref={scrollRef}
         className="rounded-xl overflow-y-auto space-y-1 p-3"
@@ -73,7 +121,7 @@ export default function ActivityFeed({ events, maxHeight = 400 }: ActivityFeedPr
           }
         }}
       >
-        {events.length === 0 && (
+        {filteredEvents.length === 0 && (
           <div className="text-center py-8">
             <span className="text-2xl block mb-2">{'\u{1F4E1}'}</span>
             <p className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
@@ -81,7 +129,7 @@ export default function ActivityFeed({ events, maxHeight = 400 }: ActivityFeedPr
             </p>
           </div>
         )}
-        {events.map(event => {
+        {filteredEvents.map(event => {
           const style = EVENT_STYLES[event.type] ?? DEFAULT_STYLE;
           return (
             <div

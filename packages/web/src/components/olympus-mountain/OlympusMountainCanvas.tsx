@@ -2,8 +2,9 @@
 // OlympusMountainCanvas — Main canvas rendering the full Olympus Mountain scene
 // ============================================================================
 
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, type MouseEvent } from 'react';
 import type { WorkerConfig, CodexConfig, GeminiConfig, WorkerAvatar, CodexAvatar, GeminiAvatar } from '../../lib/types';
+import { gridToScreen } from '../../engine/isometric';
 import {
   renderFrame,
   type OlympusMountainState,
@@ -66,6 +67,8 @@ interface OlympusMountainCanvasProps {
   className?: string;
   scale?: number;
   connected?: boolean;
+  onWorkerClick?: (workerId: string) => void;
+  onPerformanceUpdate?: (metrics: { fps: number; frameTimeMs: number }) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,11 +86,18 @@ export function OlympusMountainCanvas({
   className = '',
   scale = 1,
   connected = false,
+  onWorkerClick,
+  onPerformanceUpdate,
 }: OlympusMountainCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
+  const perfWindowRef = useRef<{ startedAt: number; frames: number; frameTimeSum: number }>({
+    startedAt: 0,
+    frames: 0,
+    frameTimeSum: 0,
+  });
 
   // Container-based responsive sizing
   const [containerWidth, setContainerWidth] = useState(0);
@@ -121,11 +131,12 @@ export function OlympusMountainCanvas({
 
   // Store latest props in refs to avoid stale closures in the render loop
   const propsRef = useRef({
-    olympusMountainState, workers, codexConfig, geminiConfig, connected, onTick, width, height, scale, dpr,
+    olympusMountainState, workers, codexConfig, geminiConfig, connected, onTick, width, height, scale, dpr, onWorkerClick,
+    onPerformanceUpdate,
   });
   useEffect(() => {
     propsRef.current = {
-      olympusMountainState, workers, codexConfig, geminiConfig, connected, onTick, width, height, scale, dpr,
+      olympusMountainState, workers, codexConfig, geminiConfig, connected, onTick, width, height, scale, dpr, onWorkerClick, onPerformanceUpdate,
     };
   });
 
@@ -142,10 +153,12 @@ export function OlympusMountainCanvas({
         height: h,
         scale: sc,
         dpr: deviceDpr,
+        onPerformanceUpdate: perfUpdate,
       } = propsRef.current;
 
       // 30 fps cap
-      if (timestamp - lastTimeRef.current >= 1000 / 30) {
+      const frameDelta = timestamp - lastTimeRef.current;
+      if (frameDelta >= 1000 / 30) {
         lastTimeRef.current = timestamp;
         ot();
 
@@ -196,6 +209,28 @@ export function OlympusMountainCanvas({
         });
 
         ctx.restore();
+
+        if (perfUpdate) {
+          const perf = perfWindowRef.current;
+          if (perf.startedAt === 0) {
+            perf.startedAt = timestamp;
+          }
+          perf.frames += 1;
+          perf.frameTimeSum += frameDelta;
+
+          const elapsed = timestamp - perf.startedAt;
+          if (elapsed >= 1000) {
+            const fps = perf.frames > 0 ? (perf.frames * 1000) / elapsed : 0;
+            const frameTimeMs = perf.frames > 0 ? perf.frameTimeSum / perf.frames : 0;
+            perfUpdate({
+              fps: Number(fps.toFixed(1)),
+              frameTimeMs: Number(frameTimeMs.toFixed(1)),
+            });
+            perf.startedAt = timestamp;
+            perf.frames = 0;
+            perf.frameTimeSum = 0;
+          }
+        }
       }
 
       animRef.current = requestAnimationFrame(render);
@@ -209,12 +244,39 @@ export function OlympusMountainCanvas({
     };
   }, []);
 
+  const handleCanvasClick = useCallback((e: MouseEvent<HTMLCanvasElement>) => {
+    const { onWorkerClick: clickHandler, olympusMountainState: stateSnapshot } = propsRef.current;
+    if (!clickHandler || stateSnapshot.workers.length === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const x = (e.clientX - rect.left) * (width / rect.width);
+    const y = (e.clientY - rect.top) * (height / rect.height);
+
+    let closestWorkerId: string | null = null;
+    let minDistance = Number.POSITIVE_INFINITY;
+    for (const worker of stateSnapshot.workers) {
+      const screen = gridToScreen(worker.pos);
+      const dx = x - screen.x;
+      const dy = y - screen.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestWorkerId = worker.id;
+      }
+    }
+
+    if (closestWorkerId && minDistance <= 36) {
+      clickHandler(closestWorkerId);
+    }
+  }, [height, width]);
+
   return (
     <div ref={containerRef} className={`w-full ${className}`}>
       <canvas
         ref={canvasRef}
         width={canvasPixelWidth}
         height={canvasPixelHeight}
+        onClick={handleCanvasClick}
         className="rounded-xl"
         style={{
           width: '100%',
