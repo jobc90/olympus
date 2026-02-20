@@ -236,6 +236,7 @@ export class Gateway {
     if (options.geminiAdvisor) {
       this.geminiAdvisor = options.geminiAdvisor;
       this.geminiAdvisor.setLocalContextManager(this.localContextManager);
+      this.geminiAdvisor.startAnalysis(); // Analysis starts AFTER context store is ready
       this.geminiAdvisor.on('status', (status: unknown) => {
         this.broadcastToAll('gemini:status', status);
       });
@@ -244,6 +245,19 @@ export class Gateway {
       });
       this.geminiAdvisor.on('alert', (alert: unknown) => {
         this.broadcastToAll('gemini:alert', alert);
+      });
+      // Broadcast Codex greeting after initial analysis completes
+      this.geminiAdvisor.once('initial-analysis:complete', () => {
+        try {
+          const briefing = this.geminiAdvisor!.buildCodexContext?.();
+          if (briefing) {
+            this.broadcastToAll('codex:greeting', {
+              type: 'briefing',
+              text: briefing,
+              timestamp: Date.now(),
+            });
+          }
+        } catch { /* ignore */ }
       });
     }
 

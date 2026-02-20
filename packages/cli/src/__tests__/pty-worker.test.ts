@@ -49,8 +49,8 @@ describe('detectIdlePrompt', () => {
     expect(detectIdlePrompt('some output\n❯ ')).toBe(true);
   });
 
-  it('"$" 프롬프트는 감지하지 않음 (오탐 방지)', () => {
-    expect(detectIdlePrompt('some output\n$ ')).toBe(false);
+  it('"$" 프롬프트 감지 (relaxed — no ^ anchor)', () => {
+    expect(detectIdlePrompt('some output\n$ ')).toBe(true);
   });
 
   it('"Enter your message" 감지', () => {
@@ -75,21 +75,20 @@ describe('detectIdlePrompt', () => {
     expect(detectIdlePrompt('bypass permissions off')).toBe(false);
   });
 
-  it('마지막 2000자만 검사', () => {
-    // multiline ^>\s*$/m은 줄 시작의 ">"만 감지 (단일 라인 중간의 ">" 무시)
-    const longText = 'x'.repeat(2500) + '\n>\n';
+  it('마지막 5000자만 검사', () => {
+    const longText = 'x'.repeat(5500) + '\n>\n';
     expect(detectIdlePrompt(longText)).toBe(true);
 
-    // 프롬프트가 2000자 밖에 있으면 감지 못함
-    const farPrompt = '>\n' + 'x'.repeat(2500);
+    // 프롬프트가 5000자 밖에 있으면 감지 못함
+    const farPrompt = '>\n' + 'x'.repeat(5500);
     expect(detectIdlePrompt(farPrompt)).toBe(false);
   });
 
   it('프롬프트 뒤에 개행이 있어도 감지 (multiline)', () => {
     expect(detectIdlePrompt('some output\n> \n')).toBe(true);
     expect(detectIdlePrompt('some output\n❯ \n')).toBe(true);
-    // "$" 프롬프트는 더 이상 감지하지 않음 (오탐 방지)
-    expect(detectIdlePrompt('some output\n$ \n')).toBe(false);
+    // "$" 프롬프트도 감지 (relaxed patterns)
+    expect(detectIdlePrompt('some output\n$ \n')).toBe(true);
   });
 
   it('줄 시작에 ">"만 있는 경우 감지 (multiline)', () => {
@@ -102,6 +101,36 @@ describe('detectIdlePrompt', () => {
     const tuiChrome = '🤖 Opus │ ██░░░░│ 50%\n'.repeat(80); // ~1800자
     const withPrompt = tuiChrome + '> ';
     expect(detectIdlePrompt(withPrompt)).toBe(true);
+  });
+
+  it('"$" 프롬프트 감지 (relaxed)', () => {
+    expect(detectIdlePrompt('some output\n$ ')).toBe(true);
+  });
+
+  it('Ink TUI box-drawing "╭─" 감지', () => {
+    expect(detectIdlePrompt('╭─ some text')).toBe(true);
+  });
+
+  it('Ink TUI box-drawing "╰─" 감지', () => {
+    expect(detectIdlePrompt('╰─ bottom border')).toBe(true);
+  });
+
+  it('줄 시작이 아닌 ">" 도 감지 (no ^ anchor)', () => {
+    expect(detectIdlePrompt('status bar text > ')).toBe(true);
+  });
+
+  it('token count indicator 감지', () => {
+    expect(detectIdlePrompt('1234 tokens remaining')).toBe(true);
+  });
+
+  it('cost indicator 감지', () => {
+    expect(detectIdlePrompt('cost: $0.05')).toBe(true);
+  });
+
+  it('"claude" or "claude code" at end of line 감지', () => {
+    expect(detectIdlePrompt('some output\nclaude')).toBe(true);
+    expect(detectIdlePrompt('some output\nclaude code')).toBe(true);
+    expect(detectIdlePrompt('some output\nClaude Code')).toBe(true);
   });
 });
 

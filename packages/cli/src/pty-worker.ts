@@ -99,13 +99,23 @@ const DOUBLE_CTRLC_MS = 1000;
  * Claude Code v2.x Ink TUI의 실제 출력 기반.
  */
 export const IDLE_PROMPT_PATTERNS = [
-  /ctrl\+g to edit/i,           // Claude CLI v2.x 유휴 상태 표시
-  /shift\+tab to cycle/i,      // 권한 모드 표시 (유휴 시 보임)
-  /^>\s*$/m,                    // 줄 시작에 ">"만 있는 경우
-  /^❯\s*$/m,                    // 줄 시작에 "❯"만 있는 경우
+  // Claude Code TUI hints (v2.x)
+  /ctrl\+g to edit/i,
+  /shift\+tab to cycle/i,
   /Enter your message/i,
   /Type a message/i,
   /What would you like to do/i,
+  // Shell-style prompts (relaxed — no ^ anchor, TUI may embed mid-line)
+  />\s*$/m,
+  /❯\s*$/m,
+  /\$\s*$/m,
+  // Ink TUI box-drawing borders (Claude Code renders these)
+  /╭─/,
+  /╰─/,
+  // v2.1.38+ status line indicators (appear when CLI is idle/ready)
+  /\d+\s*tokens?\s*remaining/i,
+  /cost:\s*\$/i,
+  /claude(?:\s+code)?\s*$/im,
 ];
 
 /** Claude가 작업 완료 후 출력하는 텍스트 패턴 */
@@ -177,7 +187,7 @@ export function hasBackgroundAgentActivity(data: string): boolean {
 
 /** 유휴 프롬프트 감지 (standalone) */
 export function detectIdlePrompt(cleanText: string): boolean {
-  const lastChunk = cleanText.slice(-2000);
+  const lastChunk = cleanText.slice(-5000);
   return IDLE_PROMPT_PATTERNS.some(p => p.test(lastChunk));
 }
 
@@ -353,6 +363,9 @@ export class PtyWorker {
 
       if (!this.ready) {
         const clean = stripAnsi(this.idleBuffer);
+        if (process.env.OLYMPUS_PTY_DEBUG) {
+          process.stderr.write(`[PTY-DEBUG] Init buffer (last 500): ${clean.slice(-500)}\n`);
+        }
         if (this.detectIdlePrompt(clean)) {
           this.ready = true;
           this.readyResolve?.();
@@ -602,7 +615,7 @@ export class PtyWorker {
   // ──────────────────────────────────────
 
   private detectIdlePrompt(cleanText: string): boolean {
-    const lastChunk = cleanText.slice(-2000);
+    const lastChunk = cleanText.slice(-5000);
     return IDLE_PROMPT_PATTERNS.some(p => p.test(lastChunk));
   }
 

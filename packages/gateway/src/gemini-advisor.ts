@@ -119,13 +119,22 @@ export class GeminiAdvisor extends EventEmitter {
 
     this.running = true;
     this.setBehavior('idle');
+  }
 
-    // Start async background analysis
-    this.analyzeAllProjects().catch((err) => {
-      console.warn(`[GeminiAdvisor] Initial analysis failed: ${(err as Error).message}`);
+  /**
+   * Start analysis cycle — call AFTER LocalContextStore is connected.
+   * Separate from initialize() to avoid race condition.
+   */
+  startAnalysis(): void {
+    if (!this.running) return;
+
+    this.analyzeAllProjects().then(() => {
+      this.emit('initial-analysis:complete');
+      console.log('[GeminiAdvisor] Initial analysis complete');
+    }).catch((err) => {
+      console.warn('[GeminiAdvisor] Initial analysis failed:', (err as Error).message);
     });
 
-    // Periodic refresh
     this.startPeriodicRefresh();
   }
 

@@ -164,6 +164,8 @@ export interface OlympusState {
   usageData: StatuslineUsageData | null;
   geminiAlerts: Array<{ id: string; severity: string; message: string; projectPath: string; timestamp: number }>;
   geminiReviews: Array<{ taskId: string; quality: string; summary: string; concerns: string[]; reviewedAt: number }>;
+  // Codex greeting from Gemini initial analysis
+  codexGreeting: string | null;
   // Worker task completion events for ChatWindow
   lastWorkerCompletion: {
     workerId: string;
@@ -260,6 +262,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     usageData: null,
     geminiAlerts: [],
     geminiReviews: [],
+    codexGreeting: null,
     lastWorkerCompletion: null,
     workerLogs: new Map(),
     selectedWorkerId: null,
@@ -268,6 +271,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
   const { port, host, apiKey } = options;
   const prevBehaviorsRef = useRef<Record<string, string>>({});
   const connectTimeRef = useRef<number>(Date.now());
+  const pollWorkersRef = useRef<(() => Promise<void>) | null>(null);
 
   // =========================================================================
   // Main connection effect (existing)
@@ -565,6 +569,20 @@ export function useOlympus(options: UseOlympusOptions = {}) {
             workerLogs,
           };
         });
+
+        // Auto-reset behavior to idle after 3 seconds
+        setTimeout(() => {
+          setState((s) => ({
+            ...s,
+            workerBehaviors: {
+              ...s.workerBehaviors,
+              [wId]: 'idle',
+            },
+          }));
+        }, 3000);
+
+        // Immediately refresh worker list
+        pollWorkersRef.current?.();
       }
     });
 
@@ -614,6 +632,15 @@ export function useOlympus(options: UseOlympusOptions = {}) {
           ].slice(-50),
         }));
       }
+    });
+
+    // Codex greeting from Gemini initial analysis
+    client.on('codex:greeting', (m) => {
+      const payload = m.payload as { text: string; timestamp: number };
+      setState((s) => ({
+        ...s,
+        codexGreeting: payload.text,
+      }));
     });
 
     // Gemini advisor status events
@@ -1009,13 +1036,17 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       }
     };
 
+    pollWorkersRef.current = pollWorkers;
     pollWorkers();
     pollGemini();
     pollUsage();
     pollCliSessions();
     pollWorkerTasks();
     const interval = setInterval(() => { pollWorkers(); pollGemini(); pollUsage(); pollCliSessions(); pollWorkerTasks(); }, 10_000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      pollWorkersRef.current = null;
+    };
   }, [apiKey, host, port]);
 
   // =========================================================================

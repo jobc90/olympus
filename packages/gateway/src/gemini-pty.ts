@@ -47,6 +47,7 @@ export class GeminiPty extends EventEmitter {
       this.nodePtyModule = await (Function('return import("node-pty")')() as Promise<unknown>);
       this.usePty = true;
     } catch {
+      console.warn('[GeminiPty] node-pty unavailable, using spawn fallback');
       this.usePty = false;
     }
 
@@ -219,6 +220,7 @@ export class GeminiPty extends EventEmitter {
   private sendPromptSpawn(prompt: string): Promise<string> {
     return new Promise((resolve, reject) => {
       let stdout = '';
+      let stderrBuf = '';
 
       // -p '' enables headless mode; actual prompt comes from stdin
       const gemini: ChildProcess = spawn('gemini', [
@@ -232,9 +234,15 @@ export class GeminiPty extends EventEmitter {
       gemini.stdout?.on('data', (data: Buffer) => {
         stdout += data.toString();
       });
-      // stderr is ignored (contains startup noise: MCP loading, skill conflicts, etc.)
+
+      gemini.stderr?.on('data', (data: Buffer) => {
+        stderrBuf += data.toString();
+      });
 
       gemini.on('close', () => {
+        if (stderrBuf.trim()) {
+          console.warn('[GeminiPty] Gemini CLI stderr:', stderrBuf.slice(0, 500));
+        }
         resolve(stripAnsi(stdout).trim());
       });
 

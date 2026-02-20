@@ -186,7 +186,9 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
         success,
         text: success ? '작업이 완료되었습니다.' : `CLI 종료 코드: ${code}`,
         durationMs,
-      }).catch(() => {});
+      }).catch((err: Error) => {
+        process.stderr.write(`[worker] 결과 보고 실패: ${err.message}\n`);
+      });
 
       printStatus('idle');
     });
