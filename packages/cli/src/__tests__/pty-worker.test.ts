@@ -49,7 +49,7 @@ describe('detectIdlePrompt', () => {
     expect(detectIdlePrompt('some output\n❯ ')).toBe(true);
   });
 
-  it('"$" 프롬프트 감지 (relaxed — no ^ anchor)', () => {
+  it('"$" 프롬프트 감지 (strict — ^ anchor)', () => {
     expect(detectIdlePrompt('some output\n$ ')).toBe(true);
   });
 
@@ -87,7 +87,7 @@ describe('detectIdlePrompt', () => {
   it('프롬프트 뒤에 개행이 있어도 감지 (multiline)', () => {
     expect(detectIdlePrompt('some output\n> \n')).toBe(true);
     expect(detectIdlePrompt('some output\n❯ \n')).toBe(true);
-    // "$" 프롬프트도 감지 (relaxed patterns)
+    // "$" 프롬프트도 감지 (strict — line-start anchor)
     expect(detectIdlePrompt('some output\n$ \n')).toBe(true);
   });
 
@@ -103,10 +103,6 @@ describe('detectIdlePrompt', () => {
     expect(detectIdlePrompt(withPrompt)).toBe(true);
   });
 
-  it('"$" 프롬프트 감지 (relaxed)', () => {
-    expect(detectIdlePrompt('some output\n$ ')).toBe(true);
-  });
-
   it('Ink TUI box-drawing "╭─" 감지', () => {
     expect(detectIdlePrompt('╭─ some text')).toBe(true);
   });
@@ -115,22 +111,16 @@ describe('detectIdlePrompt', () => {
     expect(detectIdlePrompt('╰─ bottom border')).toBe(true);
   });
 
-  it('줄 시작이 아닌 ">" 도 감지 (no ^ anchor)', () => {
-    expect(detectIdlePrompt('status bar text > ')).toBe(true);
+  it('줄 시작이 아닌 ">" 는 감지하지 않음 (strict ^ anchor)', () => {
+    expect(detectIdlePrompt('status bar text > ')).toBe(false);
   });
 
-  it('token count indicator 감지', () => {
-    expect(detectIdlePrompt('1234 tokens remaining')).toBe(true);
+  it('token count indicator 는 더 이상 감지하지 않음', () => {
+    expect(detectIdlePrompt('1234 tokens remaining')).toBe(false);
   });
 
-  it('cost indicator 감지', () => {
-    expect(detectIdlePrompt('cost: $0.05')).toBe(true);
-  });
-
-  it('"claude" or "claude code" at end of line 감지', () => {
-    expect(detectIdlePrompt('some output\nclaude')).toBe(true);
-    expect(detectIdlePrompt('some output\nclaude code')).toBe(true);
-    expect(detectIdlePrompt('some output\nClaude Code')).toBe(true);
+  it('cost indicator 는 더 이상 감지하지 않음', () => {
+    expect(detectIdlePrompt('cost: $0.05')).toBe(false);
   });
 });
 
@@ -379,9 +369,8 @@ describe('isTuiArtifactLine', () => {
     expect(isTuiArtifactLine('12345')).toBe(true);
   });
 
-  it('123 → false (3자리는 통과)', () => {
-    // 3자리 숫자는 P2-1에 해당하지 않으며, <=3자 영문 프래그먼트 규칙도 숫자는 제외
-    expect(isTuiArtifactLine('123')).toBe(false);
+  it('123 → true (1-3자 프래그먼트 규칙에 해당)', () => {
+    expect(isTuiArtifactLine('123')).toBe(true);
   });
 
   // TUI 크롬도 아티팩트로 간주
@@ -399,16 +388,46 @@ describe('isTuiArtifactLine', () => {
   });
 
   // 짧은 영문 프래그먼트
-  it('1자 이하 프래그먼트 → true, 2자 이상은 보존', () => {
+  it('1-3자 영문 프래그먼트 → true (TUI 잔여)', () => {
     expect(isTuiArtifactLine('x')).toBe(true);
-    // 2자 이상은 유효한 응답일 수 있으므로 보존
-    expect(isTuiArtifactLine('ab')).toBe(false);
-    expect(isTuiArtifactLine('no')).toBe(false);
-    expect(isTuiArtifactLine('ok')).toBe(false);
+    expect(isTuiArtifactLine('ab')).toBe(true);
+    expect(isTuiArtifactLine('Can')).toBe(true);
+    expect(isTuiArtifactLine('ae')).toBe(true);
+    expect(isTuiArtifactLine('ei')).toBe(true);
+    // 4자 이상은 보존
+    expect(isTuiArtifactLine('Done')).toBe(false);
+    expect(isTuiArtifactLine('okay')).toBe(false);
   });
 
   it('짧은 한국어는 보존 → false', () => {
     expect(isTuiArtifactLine('안녕')).toBe(false);
+  });
+
+  // Status bar fragments (new patterns)
+  it('Gemini model in status bar → true', () => {
+    expect(isTuiArtifactLine('gemini-3-flash-preview│ 1% (21시간46분)')).toBe(true);
+  });
+
+  it('Progress bar characters → true', () => {
+    expect(isTuiArtifactLine('███29%')).toBe(true);
+    expect(isTuiArtifactLine('██░░░░░')).toBe(true);
+  });
+
+  it('Status bar separator with percentage → true', () => {
+    expect(isTuiArtifactLine('│ 1%')).toBe(true);
+  });
+
+  it('inline (thinking) → true', () => {
+    expect(isTuiArtifactLine('g(thinking)')).toBe(true);
+    expect(isTuiArtifactLine('hg(thinking)')).toBe(true);
+  });
+
+  it('Flowing... (dots) → true', () => {
+    expect(isTuiArtifactLine('Flowing...')).toBe(true);
+  });
+
+  it('time + ctrl hint → true', () => {
+    expect(isTuiArtifactLine('2s (ctrl+o to expand)')).toBe(true);
   });
 
   // 실제 응답은 보존
@@ -416,6 +435,8 @@ describe('isTuiArtifactLine', () => {
     expect(isTuiArtifactLine('이것은 Claude의 응답입니다.')).toBe(false);
     expect(isTuiArtifactLine('Here is the answer to your question.')).toBe(false);
     expect(isTuiArtifactLine('파일을 수정했습니다.')).toBe(false);
+    expect(isTuiArtifactLine('프로젝트 구조를 분석한 결과입니다.')).toBe(false);
+    expect(isTuiArtifactLine('This is a real response from Claude')).toBe(false);
   });
 });
 

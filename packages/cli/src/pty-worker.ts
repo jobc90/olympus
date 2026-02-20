@@ -75,8 +75,8 @@ interface ProcessingState {
 // Constants
 // ──────────────────────────────────────────────
 
-/** 프롬프트 감지 후 추가 대기 (5초) */
-const SETTLE_MS = 5_000;
+/** 프롬프트 감지 후 추가 대기 (10초) */
+const SETTLE_MS = 10_000;
 
 /** 최소 실행 시간: 이 시간 이전에는 완료 감지하지 않음 (10초) */
 const MIN_EXECUTION_MS = 10_000;
@@ -105,17 +105,13 @@ export const IDLE_PROMPT_PATTERNS = [
   /Enter your message/i,
   /Type a message/i,
   /What would you like to do/i,
-  // Shell-style prompts (relaxed — no ^ anchor, TUI may embed mid-line)
-  />\s*$/m,
-  /❯\s*$/m,
-  /\$\s*$/m,
-  // Ink TUI box-drawing borders (Claude Code renders these)
+  // Shell-style prompts — STRICT: must be at start of line on own line
+  /^>\s*$/m,
+  /^❯\s*$/m,
+  /^\$\s*$/m,
+  // Ink TUI box-drawing borders (Claude Code renders these when idle)
   /╭─/,
   /╰─/,
-  // v2.1.38+ status line indicators (appear when CLI is idle/ready)
-  /\d+\s*tokens?\s*remaining/i,
-  /cost:\s*\$/i,
-  /claude(?:\s+code)?\s*$/im,
 ];
 
 /** Claude가 작업 완료 후 출력하는 텍스트 패턴 */
@@ -146,6 +142,12 @@ const TUI_CHROME_PATTERNS = [
   /bypass\s*permissions?\s*on/i,         // 권한 모드 텍스트
   /↓[\d.]+k?\s*tokens?/i,               // 영어 토큰 표시 (↓2.4ktokens)
   /\d+K?\/\d+K?\s*(?:tokens|tok)/i,     // 토큰 비율 표시 (47K/200K tokens)
+  /gemini.*preview/i,                    // Gemini model in status bar
+  /claude.*opus|claude.*sonnet|claude.*haiku/i,  // Claude model in status bar
+  /█+[░▓]*/,                            // Progress bar characters
+  /\d+시간\d*분/,                       // Korean time display
+  /│\s*\d+%/,                           // Status bar separator with percentage
+  /ctrl\+o\s*to\s*expand/i,            // TUI expand hint
 ];
 
 /** TUI 아티팩트 (스피너, thinking, Flowing 등) — 결과에서 필터링 */
@@ -161,6 +163,10 @@ const TUI_ARTIFACT_PATTERNS = [
   /Flowing…?\s*$/,                        // 스트리밍 애니메이션
   /^[✢✳✶✻✽·].*Flowing/,                 // 스피너 + Flowing
   /\]0;/,                                 // 터미널 타이틀 잔여
+  /^\w{1,3}$/,                            // 1-3 char fragments like "Can", "ae"
+  /\(thinking\)/i,                        // Any thinking indicator
+  /Flowing\.\.\./i,                       // Streaming indicator
+  /^\d{1,2}s\s*\(ctrl/,                  // "2s (ctrl+o to expand)"
 ];
 
 /** 백그라운드 에이전트 활동 감지 패턴 */
@@ -581,9 +587,17 @@ export class PtyWorker {
     const result = this.extractResult();
     const durationMs = Date.now() - this.state.startTime;
 
-    // 결과 품질 검증: 백그라운드 에이전트가 있었는데 결과가 너무 짧으면 재대기
+    // 결과 품질 검증: 결과가 너무 짧고 실행 시간이 30초 미만이면 재대기
+    if (result.length < 20 && durationMs < 30_000) {
+      if (this.state.settleTimer) {
+        clearTimeout(this.state.settleTimer);
+        this.state.settleTimer = null;
+      }
+      return;
+    }
+
+    // 추가: 백그라운드 에이전트가 있었는데 결과가 50자 미만이면 재대기
     if (this.state.hasBackgroundAgents && result.length < 50) {
-      // 결과가 빈약하면 settle 타이머 초기화하고 추가 대기
       if (this.state.settleTimer) {
         clearTimeout(this.state.settleTimer);
         this.state.settleTimer = null;

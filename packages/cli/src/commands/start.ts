@@ -146,13 +146,14 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
     const args: string[] = [];
 
     if (task.provider === 'codex') {
-      args.push('exec');
+      args.push('exec', '--json');
       if (forceTrust || task.dangerouslySkipPermissions) {
         args.push('--dangerously-bypass-approvals-and-sandbox');
       }
       args.push(task.prompt);
     } else {
-      args.push(task.prompt);
+      args.push('-p', task.prompt);
+      args.push('--output-format', 'json');
       if (forceTrust || task.dangerouslySkipPermissions) {
         args.push('--dangerously-skip-permissions');
       }
@@ -165,10 +166,17 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
     const startTime = Date.now();
 
     const proc = spawn(cliCommand, args, {
-      stdio: 'inherit',
+      stdio: ['pipe', 'pipe', 'inherit'],
       cwd: task.projectPath,
     });
     activeProc = proc;
+
+    let stdoutBuf = '';
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      stdoutBuf += text;
+      process.stdout.write(text);
+    });
 
     proc.on('close', (code) => {
       activeProc = null;
@@ -176,6 +184,22 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
       const success = code === 0;
 
       console.log(chalk.gray('\n' + '─'.repeat(60)));
+
+      let resultText = '';
+      if (success && stdoutBuf.trim()) {
+        try {
+          const parsed = JSON.parse(stdoutBuf.trim());
+          resultText = parsed.result || parsed.text || parsed.content || '';
+          if (!resultText && typeof parsed === 'string') resultText = parsed;
+        } catch {
+          // Not JSON (Codex JSONL or plain text) — use raw
+          resultText = stdoutBuf.trim();
+        }
+      }
+      if (!resultText) {
+        resultText = success ? '(출력 없음)' : `CLI 종료 코드: ${code}`;
+      }
+
       if (success) {
         console.log(chalk.green(`✅ 작업 완료 (${Math.round(durationMs / 1000)}초)`));
       } else {
@@ -184,7 +208,7 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
 
       reportResult(task.taskId, {
         success,
-        text: success ? '작업이 완료되었습니다.' : `CLI 종료 코드: ${code}`,
+        text: resultText.slice(0, 50000),
         durationMs,
       }).catch((err: Error) => {
         process.stderr.write(`[worker] 결과 보고 실패: ${err.message}\n`);
