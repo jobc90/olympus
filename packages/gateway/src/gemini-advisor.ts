@@ -7,7 +7,6 @@ import { EventEmitter } from 'node:events';
 import type { LocalContextStoreManager } from '@olympus-dev/core';
 import type {
   GeminiProjectAnalysis,
-  GeminiRootAnalysis,
   GeminiAdvisorStatus,
   GeminiAdvisorConfig,
   GeminiBehavior,
@@ -83,7 +82,6 @@ export class GeminiAdvisor extends EventEmitter {
 
   // In-memory cache
   private projectCache = new Map<string, GeminiProjectAnalysis>();
-  private rootCache: GeminiRootAnalysis | null = null;
   private behavior: GeminiBehavior = 'offline';
   private currentTask: string | null = null;
 
@@ -265,10 +263,6 @@ export class GeminiAdvisor extends EventEmitter {
 
   getCachedAnalysis(projectPath: string): GeminiProjectAnalysis | null {
     return this.projectCache.get(projectPath) ?? null;
-  }
-
-  getCachedRootAnalysis(): GeminiRootAnalysis | null {
-    return this.rootCache;
   }
 
   getAllCachedAnalyses(): GeminiProjectAnalysis[] {

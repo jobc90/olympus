@@ -33,6 +33,7 @@ export class GeminiPty extends EventEmitter {
   private restartCount = 0;
   private usePty = false;
   private nodePtyModule: unknown = null;
+  private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(model?: string) {
     super();
@@ -106,7 +107,8 @@ export class GeminiPty extends EventEmitter {
         setTimeout(() => this.startPty().catch(() => {}), 2000);
       } else {
         // Recovery: retry every 5 minutes even after MAX_RESTARTS
-        setTimeout(() => {
+        this.recoveryTimer = setTimeout(() => {
+          this.recoveryTimer = null;
           this.restartCount = 0;
           this.startPty().catch(() => {});
         }, 300_000);
@@ -157,6 +159,11 @@ export class GeminiPty extends EventEmitter {
   async stop(): Promise<void> {
     this.alive = false;
     this.ready = false;
+
+    if (this.recoveryTimer) {
+      clearTimeout(this.recoveryTimer);
+      this.recoveryTimer = null;
+    }
 
     // pending 요청 reject
     if (this.pending) {

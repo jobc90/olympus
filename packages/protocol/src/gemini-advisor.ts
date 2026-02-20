@@ -16,14 +16,6 @@ export interface GeminiProjectAnalysis {
   analyzedAt: number;
 }
 
-/** 루트 통합 분석 */
-export interface GeminiRootAnalysis {
-  projects: GeminiProjectAnalysis[];
-  crossProjectNotes: string[];
-  overallSummary: string;
-  analyzedAt: number;
-}
-
 /** Gemini Advisor 상태 */
 export interface GeminiAdvisorStatus {
   running: boolean;

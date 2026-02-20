@@ -1350,13 +1350,21 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${workerRegistry 
           asyncTasks.set(taskId, { status: 'failed', error: (err as Error).message, startedAt: existing.startedAt });
         });
 
-        // Auto-cleanup after 1 hour (only if not still running)
+        // Auto-cleanup after 1 hour (completed/failed)
         setTimeout(() => {
           const task = asyncTasks.get(taskId);
           if (task && task.status !== 'running') {
             asyncTasks.delete(taskId);
           }
         }, 3_600_000);
+
+        // Clean stuck running tasks after 2 hours
+        setTimeout(() => {
+          const task = asyncTasks.get(taskId);
+          if (task && task.status === 'running') {
+            asyncTasks.delete(taskId);
+          }
+        }, 7_200_000);
 
         sendJson(res, 202, { taskId, status: 'running' });
         return;
