@@ -1,7 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { basename, join } from 'node:path';
-import { homedir } from 'node:os';
+import { basename } from 'node:path';
 import type { ManagedSession, SessionManagerConfig, SessionStatus } from './types.js';
 import { SESSION_CONSTANTS } from './types.js';
 
@@ -45,7 +44,6 @@ export class CodexSessionManager extends EventEmitter {
       projectPath,
       status: 'ready',
       lastActivity: Date.now(),
-      contextDbPath: join(homedir(), '.olympus', 'projects', basename(projectPath), 'memory.db'),
       commandQueue: [],
       createdAt: Date.now(),
     };

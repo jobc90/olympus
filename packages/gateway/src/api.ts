@@ -15,6 +15,48 @@ function stripAnsi(text: string): string {
   return filterStreamChunk(text).text;
 }
 
+/** Build worker status section for Codex system prompt (R1) */
+function buildWorkerStatusSection(
+  workerRegistry: import('./worker-registry.js').WorkerRegistry,
+  statusOnly = false,
+): string {
+  const workers = workerRegistry.getAll();
+  if (workers.length === 0) return '';
+
+  if (statusOnly) {
+    const lines = workers.map(w => `- **@${w.name}**: ${w.status}`);
+    return `\n\n## 현재 워커 상태\n${lines.join('\n')}`;
+  }
+
+  const allTasks = workerRegistry.getAllTaskRecords();
+  const tasksByWorker = new Map<string, typeof allTasks>();
+  for (const t of allTasks) {
+    const list = tasksByWorker.get(t.workerId) ?? [];
+    list.push(t);
+    tasksByWorker.set(t.workerId, list);
+  }
+
+  const lines: string[] = [];
+  for (const w of workers) {
+    let line = `- **@${w.name}**: ${w.status}`;
+    if (w.status === 'busy' && w.currentTaskPrompt) {
+      line += ` — 현재: "${w.currentTaskPrompt.slice(0, 60)}"`;
+    }
+    const workerTasks = tasksByWorker.get(w.id) ?? [];
+    const lastCompleted = workerTasks.find(t => t.status === 'completed' || t.status === 'failed');
+    if (lastCompleted) {
+      const dur = lastCompleted.completedAt
+        ? `${Math.round((lastCompleted.completedAt - lastCompleted.startedAt) / 1000)}s`
+        : '?';
+      const ok = lastCompleted.status === 'completed' ? '✅' : '❌';
+      line += ` | 최근: ${ok} "${lastCompleted.prompt.slice(0, 40)}" (${dur})`;
+    }
+    lines.push(line);
+  }
+
+  return `\n\n## 현재 워커 상태\n${lines.join('\n')}`;
+}
+
 export interface ApiHandlerOptions {
   runManager: RunManager;
   sessionManager: SessionManager;
@@ -973,7 +1015,15 @@ Use the project context provided below to give informed answers.
 
 ## Current State
 - Worker sessions: ${workers.length > 0 ? workers.length + ' active' : 'none (need olympus start)'}
-${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextStr}${geminiContextStr}`;
+${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${workerRegistry ? buildWorkerStatusSection(workerRegistry) : ''}${projectContextStr}${geminiContextStr}`;
+
+        // Guard: if system prompt exceeds 15000 chars, rebuild with status-only worker section
+        let finalSystemPrompt = systemPrompt;
+        if (finalSystemPrompt.length > 15000 && workerRegistry) {
+          const statusOnlySection = buildWorkerStatusSection(workerRegistry, true);
+          const fullSection = buildWorkerStatusSection(workerRegistry);
+          finalSystemPrompt = finalSystemPrompt.replace(fullSection, statusOnlySection);
+        }
 
         // @mention detection → worker delegation
         const mentionMatch = body.message.match(/^@(\S+)\s+([\s\S]+)/);
@@ -981,7 +1031,7 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextS
           const [, workerName, taskPrompt] = mentionMatch;
           const worker = workers.find(w => w.name === workerName);
 
-          if (worker && worker.status !== 'busy') {
+          if (worker && worker.status === 'idle') {
             // Assign task to worker
             const task = workerRegistry.createTask(worker.id, taskPrompt.trim(), body.chatId);
             onWorkerEvent?.('worker:task:assigned', {
@@ -1007,13 +1057,25 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${projectContextS
               response: `⏳ ${worker.name}은(는) 현재 작업 중입니다. 잠시 후 다시 시도해 주세요.`,
             });
             return;
+          } else if (worker && worker.status === 'offline') {
+            sendJson(res, 200, {
+              type: 'error',
+              response: `⚠️ ${worker.name}은(는) 현재 오프라인입니다. 워커를 재시작해 주세요.`,
+            });
+            return;
+          } else {
+            // R6: worker not found
+            sendJson(res, 200, {
+              type: 'error',
+              response: `❌ 워커 "${workerName}"을(를) 찾을 수 없습니다. /workers 명령으로 등록된 워커를 확인하세요.`,
+            });
+            return;
           }
-          // worker not found — fall through to normal Codex chat
         }
 
         try {
           const { runCli } = await import('./cli-runner.js');
-          const combinedPrompt = `### SYSTEM\n${systemPrompt}\n\n### USER\n${body.message}`;
+          const combinedPrompt = `### SYSTEM\n${finalSystemPrompt}\n\n### USER\n${body.message}`;
           const result = await runCli({
             prompt: combinedPrompt,
             provider: 'codex',

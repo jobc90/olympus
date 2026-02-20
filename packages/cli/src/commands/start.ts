@@ -59,8 +59,17 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
         if (shutdownFn) shutdownFn('Ctrl+C');
       },
     });
-    await ptyWorker.start();
+    // Timeout: if PTY can't detect idle prompt within 30s, fall back to spawn mode
+    await Promise.race([
+      ptyWorker.start(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('PTY init timeout (30s) — Claude CLI idle prompt not detected')), 30_000),
+      ),
+    ]);
   } catch (err) {
+    if (ptyWorker) {
+      ptyWorker.destroy();
+    }
     ptyWorker = null;
     logBrief(chalk.yellow(`  PTY 불가: ${(err as Error).message}`));
     logBrief(chalk.gray('  spawn 모드로 실행합니다.'));

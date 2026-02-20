@@ -21,7 +21,6 @@ const mockSessions: ManagedSession[] = [
 
     status: 'ready',
     lastActivity: Date.now(),
-    contextDbPath: '/tmp/alpha.db',
     commandQueue: [],
     createdAt: Date.now() - 60000,
   },
@@ -32,7 +31,6 @@ const mockSessions: ManagedSession[] = [
 
     status: 'ready',
     lastActivity: Date.now() - 5000,
-    contextDbPath: '/tmp/beta.db',
     commandQueue: [],
     createdAt: Date.now() - 120000,
   },
@@ -67,7 +65,6 @@ vi.mock('../session-manager.js', () => ({
 
         status: 'ready',
         lastActivity: Date.now(),
-        contextDbPath: '/tmp/new.db',
         commandQueue: [],
         createdAt: Date.now(),
       };

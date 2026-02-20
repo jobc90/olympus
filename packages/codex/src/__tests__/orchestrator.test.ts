@@ -13,7 +13,6 @@ vi.mock('../session-manager.js', () => ({
 
         status: 'ready',
         lastActivity: Date.now(),
-        contextDbPath: '/tmp/mem.db',
         commandQueue: [],
         createdAt: Date.now(),
       },
@@ -48,7 +47,7 @@ describe('CodexOrchestrator', () => {
   describe('constructor', () => {
     it('should create orchestrator', () => {
       expect(orchestrator).toBeDefined();
-      expect(orchestrator.initialized).toBe(false);
+      expect(orchestrator.initialized).toBe(true);
     });
   });
 

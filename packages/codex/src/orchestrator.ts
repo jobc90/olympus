@@ -28,7 +28,7 @@ export class CodexOrchestrator extends EventEmitter {
   private router: Router;
   private sessionManager: CodexSessionManager;
   private agentBrain: AgentBrain;
-  private _initialized = false;
+  private _initialized = true;
   private activeTasks = new Map<string, ActiveCliTask>();
 
   constructor(private config: CodexOrchestratorConfig = {}) {
@@ -53,9 +53,7 @@ export class CodexOrchestrator extends EventEmitter {
    * Initialize — register projects
    */
   async initialize(): Promise<void> {
-    if (this._initialized) return;
-
-    this._initialized = true;
+    // no-op: initialized by default
   }
 
   /**

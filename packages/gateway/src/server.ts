@@ -228,6 +228,7 @@ export class Gateway {
       this.codexAdapter = options.codexAdapter;
       this.codexAdapter.setBroadcast((eventType, payload) => this.broadcastToAll(eventType, payload));
       this.codexAdapter.setLocalContextManager(this.localContextManager);
+      this.codexAdapter.setWorkerRegistry(this.workerRegistry);
       this.codexAdapter.registerRpcMethods(this.rpcRouter);
     }
 

@@ -12,7 +12,6 @@ function createMockSessionManager(): CodexSessionManager {
 
       status: 'ready',
       lastActivity: Date.now(),
-      contextDbPath: '/tmp/memory.db',
       commandQueue: [],
       createdAt: Date.now(),
     },
@@ -23,7 +22,6 @@ function createMockSessionManager(): CodexSessionManager {
 
       status: 'ready',
       lastActivity: Date.now(),
-      contextDbPath: '/tmp/memory.db',
       commandQueue: [],
       createdAt: Date.now(),
     },

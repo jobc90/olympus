@@ -10,7 +10,6 @@ function createMockSessionManager(): CodexSessionManager {
       projectPath: '/dev/console',
       status: 'ready' as const,
       lastActivity: Date.now(),
-      contextDbPath: '/tmp/memory.db',
       commandQueue: [] as string[],
       createdAt: Date.now(),
     },
@@ -61,15 +60,14 @@ describe('AgentBrain', () => {
       expect(result.action).toBe('create');
     });
 
-    it('should detect history query (Korean)', async () => {
+    it('should forward history query to Claude (Korean)', async () => {
       const result = await brain.analyzeIntent('어제 뭐 했지?', 'telegram');
-      expect(result.type).toBe('ANSWER_FROM_CONTEXT');
-      expect(result.answer).toContain('Gateway API');
+      expect(result.type).toBe('FORWARD_TO_CLAUDE');
     });
 
-    it('should detect history query (English)', async () => {
+    it('should forward history query to Claude (English)', async () => {
       const result = await brain.analyzeIntent('what did we work on recently?', 'dashboard');
-      expect(result.type).toBe('ANSWER_FROM_CONTEXT');
+      expect(result.type).toBe('FORWARD_TO_CLAUDE');
     });
 
     it('should detect status query', async () => {
@@ -78,10 +76,9 @@ describe('AgentBrain', () => {
       expect(result.answer).toContain('프로젝트 현황');
     });
 
-    it('should detect cross-project query', async () => {
+    it('should forward cross-project query to Claude', async () => {
       const result = await brain.analyzeIntent('두 프로젝트 비교해줘', 'telegram');
-      expect(result.type).toBe('ANSWER_FROM_CONTEXT');
-      expect(result.answer).toContain('Gateway API');
+      expect(result.type).toBe('FORWARD_TO_CLAUDE');
     });
 
     it('should default to FORWARD_TO_CLAUDE', async () => {

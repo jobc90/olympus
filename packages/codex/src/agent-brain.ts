@@ -11,10 +11,8 @@ import type {
  *
  * Decision priority:
  * 1. Session management commands (/sessions, /use, /close, /new)
- * 2. Work history queries
- * 3. Project status queries
- * 4. Cross-project queries
- * 5. Default: forward to Claude + context enrichment
+ * 2. Project status queries
+ * 3. Default: forward to Claude + context enrichment
  */
 export class AgentBrain {
   constructor(
@@ -33,25 +31,13 @@ export class AgentBrain {
     const sessionCmd = this.parseSessionCommand(input);
     if (sessionCmd) return sessionCmd;
 
-    // 2. Work history query
-    if (this.isHistoryQuery(input)) {
-      const answer = '작업 이력은 Gateway API를 통해 제공됩니다.';
-      return { type: 'ANSWER_FROM_CONTEXT', answer, confidence: 0.85 };
-    }
-
-    // 3. Project status
+    // 2. Project status
     if (this.isStatusQuery(input)) {
       const answer = await this.generateStatusReport();
       return { type: 'ANSWER_FROM_CONTEXT', answer, confidence: 0.9 };
     }
 
-    // 4. Cross-project query
-    if (this.isCrossProjectQuery(input)) {
-      const answer = '크로스 프로젝트 검색은 Gateway API를 통해 제공됩니다.';
-      return { type: 'ANSWER_FROM_CONTEXT', answer, confidence: 0.7 };
-    }
-
-    // 5. Default: forward to Claude
+    // 3. Default: forward to Claude
     return {
       type: 'FORWARD_TO_CLAUDE',
       sessionId: currentSessionId,
@@ -80,24 +66,12 @@ export class AgentBrain {
     return null;
   }
 
-  private isHistoryQuery(input: string): boolean {
-    const patterns = [
-      /(?:어제|오늘|최근|이전에?).*(?:뭐\s*했|작업|히스토리|이력)/,
-      /(?:what|recent|history|yesterday).*(?:did|work|task)/i,
-    ];
-    return patterns.some(p => p.test(input));
-  }
-
   private isStatusQuery(input: string): boolean {
     return /(?:진행|현황|상태|뭐.*하고|status|progress|what.*working)/i.test(input);
   }
 
-  private isCrossProjectQuery(input: string): boolean {
-    return /(?:두.*프로젝트|양쪽|비교|호환|cross.*project|compare)/i.test(input);
-  }
 
-
-  private async generateStatusReport(): Promise<string> {
+  async generateStatusReport(workerSnapshot?: Array<{ name: string; status: string; currentTaskPrompt?: string }>): Promise<string> {
     const sessions = this.sessionManager.listSessions();
     const lines: string[] = ['📊 프로젝트 현황:\n'];
 
@@ -115,6 +89,17 @@ export class AgentBrain {
 
     if (sessions.length === 0) {
       lines.push('활성 세션 없음. `/new {프로젝트경로}`로 생성하세요.');
+    }
+
+    if (workerSnapshot && workerSnapshot.length > 0) {
+      lines.push('\n👷 워커 현황:\n');
+      for (const worker of workerSnapshot) {
+        const icon = statusIcons[worker.status] ?? '❓';
+        lines.push(`${icon} **${worker.name}** — ${worker.status}`);
+        if (worker.currentTaskPrompt) {
+          lines.push(`  └ ${worker.currentTaskPrompt}`);
+        }
+      }
     }
 
     return lines.join('\n');

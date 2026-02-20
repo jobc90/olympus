@@ -36,7 +36,6 @@ export interface ManagedSession {
   status: SessionStatus;
   lastActivity: number;
   currentTask?: string;
-  contextDbPath: string;
   commandQueue: string[];
   createdAt: number;
 }

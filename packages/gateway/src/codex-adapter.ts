@@ -10,6 +10,7 @@ import type {
 import type { RpcRouter } from './rpc/handler.js';
 import type { LocalContextStoreManager } from '@olympus-dev/core';
 import type { GeminiAdvisor } from './gemini-advisor.js';
+import type { WorkerRegistry } from './worker-registry.js';
 
 /**
  * CodexAdapter — Gateway ↔ Codex Orchestrator adapter
@@ -31,6 +32,7 @@ export class CodexAdapter {
 
   private localContextManager: LocalContextStoreManager | null;
   private geminiAdvisor: GeminiAdvisor | null;
+  private workerRegistry: WorkerRegistry | null;
 
   constructor(
     codex: CodexOrchestratorLike,
@@ -41,6 +43,7 @@ export class CodexAdapter {
     this.codex = codex;
     this.localContextManager = localContextManager ?? null;
     this.geminiAdvisor = geminiAdvisor ?? null;
+    this.workerRegistry = null;
 
     // Codex events → Gateway broadcast
     this.codex.on('session:screen', (...args: unknown[]) => {
@@ -99,6 +102,13 @@ export class CodexAdapter {
   }
 
   /**
+   * Set WorkerRegistry — injected after Gateway initialization
+   */
+  setWorkerRegistry(registry: WorkerRegistry): void {
+    this.workerRegistry = registry;
+  }
+
+  /**
    * Handle user input — main entry called by Gateway
    */
   async handleInput(input: {
@@ -124,16 +134,48 @@ export class CodexAdapter {
   }
 
   /**
-   * Get Codex status
+   * Get Codex status (sync — projectCount from cache or 0)
    */
   getStatus(): CodexStatusPayload {
     const sessions = this.codex.getSessions();
     return {
       initialized: this.codex.initialized,
       sessionCount: sessions.length,
-      projectCount: 0, // Will be populated on async call
+      projectCount: this.cachedProjectCount,
     };
   }
+
+  /**
+   * Get full Codex status with async project count + worker snapshot
+   */
+  async getFullStatus(): Promise<CodexStatusPayload & { workers?: Array<{ id: string; name: string; status: string; projectPath: string }> }> {
+    const sessions = this.codex.getSessions();
+    let projectCount = 0;
+    try {
+      const rootStore = await this.localContextManager?.getRootStore(process.cwd());
+      projectCount = rootStore?.getAllProjects()?.length ?? 0;
+      this.cachedProjectCount = projectCount;
+    } catch { /* fallback to 0 */ }
+
+    const result: CodexStatusPayload & { workers?: Array<{ id: string; name: string; status: string; projectPath: string }> } = {
+      initialized: this.codex.initialized,
+      sessionCount: sessions.length,
+      projectCount,
+    };
+
+    if (this.workerRegistry) {
+      result.workers = this.workerRegistry.getAll().map(w => ({
+        id: w.id,
+        name: w.name,
+        status: w.status,
+        projectPath: w.projectPath,
+      }));
+    }
+
+    return result;
+  }
+
+  private cachedProjectCount = 0;
 
   /**
    * Register RPC methods — add Codex methods to RpcRouter
@@ -187,12 +229,7 @@ export class CodexAdapter {
     });
 
     rpcRouter.register('codex.status', async () => {
-      const sessions = this.codex.getSessions();
-      return {
-        initialized: this.codex.initialized,
-        sessionCount: sessions.length,
-        projectCount: 0,
-      } satisfies CodexStatusPayload;
+      return this.getFullStatus();
     });
 
     rpcRouter.register('codex.activeTasks', async () => {
