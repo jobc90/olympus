@@ -895,8 +895,11 @@ class OlympusBot {
           throw new Error(`Codex chat failed: ${chatRes.status}`);
         }
 
-        const data = await chatRes.json() as { type: string; response: string; taskId?: string };
-        await this.sendLongMessage(ctx.chat.id, data.response);
+        const data = await chatRes.json() as { type: string; response?: string; taskId?: string };
+        // Skip delegation responses — WebSocket worker:task:assigned handles the notification
+        if (data.type !== 'delegation' && data.response) {
+          await this.sendLongMessage(ctx.chat.id, data.response);
+        }
       } catch (err) {
         structuredLog('warn', 'telegram-bot', 'codex_chat_fallback', { error: (err as Error).message });
         try {
@@ -1741,6 +1744,30 @@ class OlympusBot {
       return;
     }
 
+    // Handle worker task:assigned — 작업 시작 알림 (R1, R3)
+    if (msg.type === 'worker:task:assigned') {
+      const taskPayload = msg.payload as {
+        taskId: string;
+        workerName: string;
+        chatId?: number;
+        prompt?: string;
+      };
+
+      // R3: Fallback to admin if no chatId
+      const targetChatId = taskPayload.chatId ?? this.config.allowedUsers[0];
+
+      if (targetChatId) {
+        const promptText = taskPayload.prompt
+          ? `\n> ${safeSlice(taskPayload.prompt, 100)}${taskPayload.prompt.length > 100 ? '...' : ''}`
+          : '';
+        const text = `🔄 [${taskPayload.workerName}] 작업 시작${promptText}`;
+
+        this.sendLongMessage(targetChatId, text).catch((err) => {
+          structuredLog('error', 'telegram-bot', 'task_assigned_send_failed', { error: (err as Error).message });
+        });
+      }
+    }
+
     // Handle worker task:completed — Codex가 요약한 결과를 텔레그램에 전달
     if (msg.type === 'worker:task:completed') {
       const taskPayload = msg.payload as {
@@ -1763,7 +1790,8 @@ class OlympusBot {
         return;
       }
 
-      if (taskPayload.chatId) {
+      const targetChatId = taskPayload.chatId ?? this.config.allowedUsers[0];
+      if (targetChatId) {
         const durationSec = Math.round((taskPayload.durationMs ?? 0) / 1000);
         const icon = taskPayload.success ? '✅' : '❌';
         // R5: Prefer filteredText (pre-filtered by gateway) over raw summary
@@ -1779,7 +1807,7 @@ class OlympusBot {
           }
         }
 
-        this.sendLongMessage(taskPayload.chatId, text).catch((err) => {
+        this.sendLongMessage(targetChatId, text).catch((err) => {
           structuredLog('error', 'telegram-bot', 'task_completed_send_failed', { error: (err as Error).message });
         });
       }
@@ -1808,11 +1836,12 @@ class OlympusBot {
         durationMs?: number;
       };
 
-      if (taskPayload.chatId) {
+      const targetChatId = taskPayload.chatId ?? this.config.allowedUsers[0];
+      if (targetChatId) {
         const durationMin = Math.round((taskPayload.durationMs ?? 0) / 60000);
         const summaryText = taskPayload.summary ?? '(결과 추출 중)';
         const text = `[${taskPayload.workerName}] ⏰ ${durationMin}분 타임아웃 — 계속 모니터링 중\n\n중간 결과:\n${summaryText}\n\n_실제 완료 시 최종 결과가 전송됩니다._`;
-        this.sendLongMessage(taskPayload.chatId, text).catch((err) => {
+        this.sendLongMessage(targetChatId, text).catch((err) => {
           structuredLog('error', 'telegram-bot', 'task_timeout_send_failed', { error: (err as Error).message });
         });
       }
@@ -1830,14 +1859,28 @@ class OlympusBot {
         durationMs?: number;
       };
 
-      if (taskPayload.chatId) {
+      const targetChatId = taskPayload.chatId ?? this.config.allowedUsers[0];
+      if (targetChatId) {
         const durationMin = Math.round((taskPayload.durationMs ?? 0) / 60000);
         const icon = taskPayload.success ? '✅' : '❌';
         const summaryText = taskPayload.summary ?? (taskPayload.success ? '작업 완료' : '작업 실패');
         const text = `[${taskPayload.workerName}] ${icon} 최종 완료 (${durationMin}분)\n\n${summaryText}`;
-        this.sendLongMessage(taskPayload.chatId, text).catch((err) => {
+        this.sendLongMessage(targetChatId, text).catch((err) => {
           structuredLog('error', 'telegram-bot', 'task_final_send_failed', { error: (err as Error).message });
         });
+      }
+      return;
+    }
+
+    // Handle codex:greeting — proactive startup briefing from Codex
+    if (msg.type === 'codex:greeting') {
+      const greetingPayload = msg.payload as { type: string; text: string; timestamp: number };
+      if (greetingPayload.text) {
+        const targetChatId = this.config.allowedUsers[0];
+        if (targetChatId) {
+          this.sendLongMessage(targetChatId, `🏛️ **Olympus 브리핑**\n\n${greetingPayload.text}`)
+            .catch((err: Error) => console.warn('[TelegramBot] Failed to send greeting:', err.message));
+        }
       }
       return;
     }

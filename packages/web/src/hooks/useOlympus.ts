@@ -165,13 +165,27 @@ export interface OlympusState {
   geminiAlerts: Array<{ id: string; severity: string; message: string; projectPath: string; timestamp: number }>;
   geminiReviews: Array<{ taskId: string; quality: string; summary: string; concerns: string[]; reviewedAt: number }>;
   // Codex greeting from Gemini initial analysis
-  codexGreeting: string | null;
+  codexGreeting: { text: string; timestamp: number } | null;
   // Worker task completion events for ChatWindow
   lastWorkerCompletion: {
     workerId: string;
     workerName: string;
     summary: string;
     success: boolean;
+    timestamp: number;
+  } | null;
+  // Worker task assignment events for ChatWindow (R2)
+  lastWorkerAssignment: {
+    workerId: string;
+    workerName: string;
+    summary: string;
+    timestamp: number;
+  } | null;
+  // Worker task failure events for ChatWindow (R2)
+  lastWorkerFailure: {
+    workerId: string;
+    workerName: string;
+    summary: string;
     timestamp: number;
   } | null;
   // Worker log panel
@@ -264,6 +278,8 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     geminiReviews: [],
     codexGreeting: null,
     lastWorkerCompletion: null,
+    lastWorkerAssignment: null,
+    lastWorkerFailure: null,
     workerLogs: new Map(),
     selectedWorkerId: null,
   });
@@ -491,6 +507,12 @@ export function useOlympus(options: UseOlympusOptions = {}) {
               },
             ],
             workerLogs,
+            lastWorkerAssignment: {
+              workerId: payload.workerId,
+              workerName: payload.workerName ?? payload.workerId,
+              summary: payload.prompt ? `Started: ${payload.prompt.slice(0, 50)}...` : 'Started task',
+              timestamp: Date.now(),
+            },
           };
         });
       }
@@ -636,11 +658,13 @@ export function useOlympus(options: UseOlympusOptions = {}) {
 
     // Codex greeting from Gemini initial analysis
     client.on('codex:greeting', (m) => {
-      const payload = m.payload as { text: string; timestamp: number };
-      setState((s) => ({
-        ...s,
-        codexGreeting: payload.text,
-      }));
+      const payload = m.payload as { type: string; text: string; timestamp: number };
+      if (payload?.text) {
+        setState((s) => ({
+          ...s,
+          codexGreeting: { text: payload.text, timestamp: payload.timestamp || Date.now() },
+        }));
+      }
     });
 
     // Gemini advisor status events
@@ -719,6 +743,12 @@ export function useOlympus(options: UseOlympusOptions = {}) {
             ...s,
             workerBehaviors: { ...s.workerBehaviors, [payload.workerId]: 'error' },
             workerLogs,
+            lastWorkerFailure: {
+              workerId: payload.workerId,
+              workerName: payload.workerId,
+              summary: `Worker offline (failed ${payload.taskIds.length} tasks)`,
+              timestamp: Date.now(),
+            },
           };
         });
       }
@@ -1292,6 +1322,8 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     chatWithCodex,
     deleteCliSession,
     lastWorkerCompletion: state.lastWorkerCompletion,
+    lastWorkerAssignment: state.lastWorkerAssignment,
+    lastWorkerFailure: state.lastWorkerFailure,
     workerLogs: state.workerLogs,
     selectedWorkerId: state.selectedWorkerId,
     setSelectedWorkerId,

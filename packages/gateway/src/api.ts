@@ -10,11 +10,6 @@ import type { CodexAdapter } from './codex-adapter.js';
 import type { GeminiAdvisor } from './gemini-advisor.js';
 import { filterForApi, filterForTelegram, filterStreamChunk } from './response-filter.js';
 
-/** Strip ANSI escape sequences from text (delegates to response-filter pipeline) */
-function stripAnsi(text: string): string {
-  return filterStreamChunk(text).text;
-}
-
 /** Build worker status section for Codex system prompt (R1) */
 function buildWorkerStatusSection(
   workerRegistry: import('./worker-registry.js').WorkerRegistry,
@@ -603,11 +598,8 @@ ${body.message}`;
           workerRegistry.timeoutTask(id, result);
 
           // Codex summary (brief — partial result)
-          let summary = stripAnsi(result.text ?? '');
-          if (summary.length > 2000) {
-            summary = summary.slice(0, 2000);
-          }
           const filteredTimeout = filterForTelegram(result.text ?? '');
+          const summary = filteredTimeout.text.slice(0, 2000);
 
           onWorkerEvent?.('worker:task:timeout', {
             taskId: id,
@@ -629,8 +621,8 @@ ${body.message}`;
           workerRegistry.completeTask(id, result);
           onCliComplete?.(result);
 
-          const rawText = stripAnsi((result.text ?? '').slice(0, 4000)).slice(0, 2000);
           const filteredFinal = filterForTelegram(result.text ?? '');
+          const rawText = filteredFinal.text.slice(0, 2000);
 
           // Broadcast immediately with rawText
           onWorkerEvent?.('worker:task:final_after_timeout', {
@@ -728,8 +720,8 @@ ${body.message}`;
         workerRegistry.completeTask(id, result);
         onCliComplete?.(result);
 
-        const rawText = stripAnsi((result.text ?? '').slice(0, 4000)).slice(0, 2000);
         const filteredResult = filterForTelegram(result.text ?? '');
+        const rawText = filteredResult.text.slice(0, 2000);
 
         // Broadcast immediately with rawText
         onWorkerEvent?.('worker:task:completed', {

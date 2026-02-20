@@ -1,10 +1,9 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { resolve, basename } from 'path';
-import { spawn, type ChildProcess } from 'child_process';
 import WebSocket from 'ws';
 import { createMessage, GATEWAY_PATH } from '@olympus-dev/protocol';
-import type { PtyWorker as PtyWorkerType, TaskResult, TimeoutAwareResult } from '../pty-worker.js';
+import type { PtyWorker as PtyWorkerType } from '../pty-worker.js';
 
 interface TaskPayload {
   taskId: string;
@@ -31,7 +30,7 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
   const gatewayUrl = config.gatewayUrl || `http://${config.gatewayHost}:${config.gatewayPort}`;
   const apiKey = config.apiKey;
 
-  logBrief(chalk.gray('⚡ Olympus Worker'));
+  logBrief(chalk.gray('⚡ Olympus Worker (PTY mode)'));
 
   // 2. Check gateway health
   try {
@@ -43,8 +42,8 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
     process.exit(1);
   }
 
-  // 3. PtyWorker 로드 시도
-  let ptyWorker: PtyWorkerType | null = null;
+  // 3. PtyWorker 시작 (PTY 전용 — spawn 폴백 없음)
+  let ptyWorker: PtyWorkerType;
 
   // shutdown 함수를 먼저 선언 (onExit에서 참조)
   let shutdownFn: ((signal: string) => Promise<void>) | null = null;
@@ -59,20 +58,23 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
         if (shutdownFn) shutdownFn('Ctrl+C');
       },
     });
-    // Timeout: if PTY can't detect idle prompt within 30s, fall back to spawn mode
+    // Claude CLI v2.x + MCP servers can take 30-60s to fully initialize
+    // PtyWorker has 15s time-based fallback; 120s is the absolute maximum
     await Promise.race([
       ptyWorker.start(),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('PTY init timeout (30s) — Claude CLI idle prompt not detected')), 30_000),
+        setTimeout(() => reject(new Error('PTY init timeout (120s) — Claude CLI not ready')), 120_000),
       ),
     ]);
   } catch (err) {
-    if (ptyWorker) {
-      ptyWorker.destroy();
-    }
-    ptyWorker = null;
-    logBrief(chalk.yellow(`  PTY 불가: ${(err as Error).message}`));
-    logBrief(chalk.gray('  spawn 모드로 실행합니다.'));
+    logBrief(chalk.red(`\n  ❌ PTY 시작 실패: ${(err as Error).message}`));
+    logBrief(chalk.gray(''));
+    logBrief(chalk.gray('  해결 방법:'));
+    logBrief(chalk.gray('  1. claude 명령어가 설치되어 있는지 확인: which claude'));
+    logBrief(chalk.gray('  2. node-pty가 설치되어 있는지 확인: ls node_modules/node-pty'));
+    logBrief(chalk.gray('  3. Claude CLI를 직접 실행해 정상 동작하는지 확인: claude'));
+    logBrief(chalk.gray(''));
+    process.exit(1);
   }
 
   // 4. Register worker
@@ -87,10 +89,10 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
     const data = await regRes.json() as { worker: { id: string; name: string } };
     workerId = data.worker.id;
     workerName = data.worker.name;
-    logBrief(chalk.gray(`  Worker: ${workerName} (${ptyWorker ? 'PTY' : 'Spawn'})`));
+    logBrief(chalk.gray(`  Worker: ${workerName} (PTY)`));
   } catch (err) {
     logBrief(chalk.red(`  워커 등록 실패: ${(err as Error).message}`));
-    if (ptyWorker) ptyWorker.destroy();
+    ptyWorker.destroy();
     process.exit(1);
   }
 
@@ -116,11 +118,11 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
     });
   }
 
-  // ─── PTY 모드: 작업 처리 ───
+  // ─── PTY 작업 처리 ───
 
-  async function handleTaskPty(task: TaskPayload): Promise<void> {
+  async function handleTask(task: TaskPayload): Promise<void> {
     try {
-      const { result } = await ptyWorker!.executeTaskWithTimeout(task.prompt);
+      const { result } = await ptyWorker.executeTaskWithTimeout(task.prompt);
 
       await reportResult(task.taskId, {
         success: result.success,
@@ -135,98 +137,6 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
         durationMs: 0,
       });
     }
-  }
-
-  // ─── Spawn 폴백 모드: 작업 처리 ───
-
-  let activeProc: ChildProcess | null = null;
-
-  function executeTaskSpawn(task: TaskPayload): void {
-    const cliCommand = task.provider === 'codex' ? 'codex' : 'claude';
-    const args: string[] = [];
-
-    if (task.provider === 'codex') {
-      args.push('exec', '--json');
-      if (forceTrust || task.dangerouslySkipPermissions) {
-        args.push('--dangerously-bypass-approvals-and-sandbox');
-      }
-      args.push(task.prompt);
-    } else {
-      args.push('-p', task.prompt);
-      args.push('--output-format', 'json');
-      if (forceTrust || task.dangerouslySkipPermissions) {
-        args.push('--dangerously-skip-permissions');
-      }
-    }
-
-    console.log(chalk.blue(`\n📋 작업 시작 (Spawn): "${task.prompt.slice(0, 80)}${task.prompt.length > 80 ? '...' : ''}"`));
-    console.log(chalk.gray(`   provider: ${cliCommand} | project: ${task.projectPath}`));
-    console.log(chalk.gray('─'.repeat(60) + '\n'));
-
-    const startTime = Date.now();
-
-    const proc = spawn(cliCommand, args, {
-      stdio: ['pipe', 'pipe', 'inherit'],
-      cwd: task.projectPath,
-    });
-    activeProc = proc;
-
-    let stdoutBuf = '';
-    proc.stdout?.on('data', (chunk: Buffer) => {
-      const text = chunk.toString();
-      stdoutBuf += text;
-      process.stdout.write(text);
-    });
-
-    proc.on('close', (code) => {
-      activeProc = null;
-      const durationMs = Date.now() - startTime;
-      const success = code === 0;
-
-      console.log(chalk.gray('\n' + '─'.repeat(60)));
-
-      let resultText = '';
-      if (success && stdoutBuf.trim()) {
-        try {
-          const parsed = JSON.parse(stdoutBuf.trim());
-          resultText = parsed.result || parsed.text || parsed.content || '';
-          if (!resultText && typeof parsed === 'string') resultText = parsed;
-        } catch {
-          // Not JSON (Codex JSONL or plain text) — use raw
-          resultText = stdoutBuf.trim();
-        }
-      }
-      if (!resultText) {
-        resultText = success ? '(출력 없음)' : `CLI 종료 코드: ${code}`;
-      }
-
-      if (success) {
-        console.log(chalk.green(`✅ 작업 완료 (${Math.round(durationMs / 1000)}초)`));
-      } else {
-        console.log(chalk.red(`❌ 작업 실패 (exit: ${code})`));
-      }
-
-      reportResult(task.taskId, {
-        success,
-        text: resultText.slice(0, 50000),
-        durationMs,
-      }).catch((err: Error) => {
-        process.stderr.write(`[worker] 결과 보고 실패: ${err.message}\n`);
-      });
-
-      printStatus('idle');
-    });
-
-    proc.on('error', (err) => {
-      activeProc = null;
-      console.log(chalk.red(`❌ CLI 실행 실패: ${err.message}`));
-      reportResult(task.taskId, {
-        success: false,
-        error: err.message,
-        durationMs: Date.now() - startTime,
-      }).catch(() => {});
-      printStatus('idle');
-    });
   }
 
   // 6. Connect WebSocket with proper authentication
@@ -250,21 +160,13 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
         }
 
         if (msg.type === 'worker:task:assigned' && msg.payload?.workerId === workerId) {
-          if (ptyWorker?.isProcessing) {
+          if (ptyWorker.isProcessing) {
             process.stderr.write(chalk.yellow('⚠ 이미 작업 진행 중\n'));
-            return;
-          }
-          if (activeProc) {
-            console.log(chalk.yellow('\n⚠ 이미 작업 진행 중입니다.'));
             return;
           }
 
           const task = msg.payload as TaskPayload;
-          if (ptyWorker) {
-            handleTaskPty(task);
-          } else {
-            executeTaskSpawn(task);
-          }
+          handleTask(task);
         }
       } catch { /* ignore parse errors */ }
     });
@@ -276,28 +178,13 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
 
   connectWs();
 
-  // 7. Print status (Spawn 모드만 — PTY 모드는 TUI가 자체 표시)
-  function printStatus(status: 'idle' | 'busy') {
-    if (status === 'idle' && !ptyWorker) {
-      console.log(chalk.green(`\n  ${workerName} — ready`));
-      console.log(chalk.gray('  Waiting for tasks... (Ctrl+C to exit)\n'));
-    }
-  }
-
-  printStatus('idle');
-
-  // 8. Graceful shutdown
+  // 7. Graceful shutdown
   async function shutdown(signal: string) {
     logBrief('');
     logBrief(chalk.gray('Shutting down...'));
     clearInterval(heartbeatInterval);
 
-    if (ptyWorker) {
-      ptyWorker.destroy();
-    }
-    if (activeProc) {
-      activeProc.kill('SIGTERM');
-    }
+    ptyWorker.destroy();
 
     ws?.close();
     try {
@@ -319,13 +206,13 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
 }
 
 export const startCommand = new Command('start')
-  .description('Start Olympus Worker daemon (register with Gateway, wait for tasks)')
+  .description('Start Olympus Worker daemon (PTY mode — Claude CLI TUI visible)')
   .option('-p, --project <path>', 'Project directory path', process.cwd())
   .option('-n, --name <name>', 'Worker name (default: directory name)')
   .action((opts) => startWorker(opts, false));
 
 export const startTrustCommand = new Command('start-trust')
-  .description('Start Olympus Worker in trust mode')
+  .description('Start Olympus Worker in trust mode (PTY — Claude CLI TUI visible)')
   .option('-p, --project <path>', 'Project directory path', process.cwd())
   .option('-n, --name <name>', 'Worker name (default: directory name)')
   .action((opts) => startWorker(opts, true));

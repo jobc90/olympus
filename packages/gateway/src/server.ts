@@ -76,6 +76,7 @@ export class Gateway {
   private workerRegistry: WorkerRegistry;
   private localContextManager: LocalContextStoreManager;
   private usageMonitor: UsageMonitor | null = null;
+  private lastGreeting: { type: string; text: string; timestamp: number } | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private sessionCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private startTime = Date.now();
@@ -246,18 +247,9 @@ export class Gateway {
       this.geminiAdvisor.on('alert', (alert: unknown) => {
         this.broadcastToAll('gemini:alert', alert);
       });
-      // Broadcast Codex greeting after initial analysis completes
+      // Generate and broadcast Codex briefing after initial analysis completes
       this.geminiAdvisor.once('initial-analysis:complete', () => {
-        try {
-          const briefing = this.geminiAdvisor!.buildCodexContext?.();
-          if (briefing) {
-            this.broadcastToAll('codex:greeting', {
-              type: 'briefing',
-              text: briefing,
-              timestamp: Date.now(),
-            });
-          }
-        } catch { /* ignore */ }
+        this.generateCodexBriefing().catch(() => {});
       });
     }
 
@@ -650,6 +642,11 @@ export class Gateway {
       this.send(ws, createMessage('gemini:status', this.geminiAdvisor.getStatus()));
     }
 
+    // Send last Codex greeting to late-connecting clients
+    if (this.lastGreeting) {
+      this.send(ws, createMessage('codex:greeting', this.lastGreeting));
+    }
+
     // Send current usage data
     if (this.usageMonitor) {
       const usageData = this.usageMonitor.getData();
@@ -742,6 +739,80 @@ export class Gateway {
         client.ws.send(raw);
       }
     }
+  }
+
+  /**
+   * Generate a Codex briefing from Gemini analysis, worker status, and project context.
+   * Attempts Codex CLI for natural Korean greeting; falls back to template on failure.
+   */
+  private async generateCodexBriefing(): Promise<void> {
+    // Collect context pieces
+    const geminiContext = this.geminiAdvisor?.buildCodexContext?.() ?? '';
+    const workers = this.workerRegistry.getAll();
+    const workerLines = workers.length > 0
+      ? workers.map(w => `- ${w.name}: ${w.status} (project: ${w.projectPath})`).join('\n')
+      : '- No workers registered';
+
+    let projectSummary = '';
+    try {
+      const rootStore = await this.localContextManager.getRootStore(process.cwd());
+      const projects = rootStore.getAllProjects();
+      if (projects.length > 0) {
+        projectSummary = projects
+          .slice(0, 10)
+          .map(p => `- ${p.projectName}: ${p.summary ?? 'no summary'}`)
+          .join('\n');
+      }
+    } catch { /* LocalContextStore may not be initialized */ }
+
+    // Try Codex CLI for natural briefing
+    try {
+      const { runCli } = await import('./cli-runner.js');
+      const combinedPrompt = [
+        '### SYSTEM',
+        'You are Olympus Codex. Generate a brief Korean startup greeting for the user.',
+        'Include: project status overview, worker status, key issues/recommendations.',
+        'Be concise, friendly, use Korean. No more than 300 words.',
+        '',
+        '### CONTEXT',
+        geminiContext || '(No Gemini analysis available)',
+        '',
+        '## Worker Status',
+        workerLines,
+        '',
+        '## Project Summary',
+        projectSummary || '(No project data available)',
+        '',
+        '### INSTRUCTION',
+        '위 정보를 바탕으로 사용자에게 인사하면서 전체 상황을 브리핑하세요.',
+      ].join('\n');
+
+      const result = await runCli({
+        prompt: combinedPrompt,
+        provider: 'codex',
+        model: 'gpt-5.3-codex',
+        dangerouslySkipPermissions: true,
+        timeoutMs: 60_000,
+      });
+
+      if (result.success && result.text) {
+        this.lastGreeting = { type: 'briefing', text: result.text, timestamp: Date.now() };
+        this.broadcastToAll('codex:greeting', this.lastGreeting);
+        return;
+      }
+    } catch { /* Codex CLI failed, fall back to template */ }
+
+    // Template fallback
+    const lines: string[] = ['🏛️ Olympus 시작 브리핑', ''];
+    if (projectSummary) {
+      lines.push('📊 프로젝트 현황:', projectSummary, '');
+    }
+    lines.push('👷 워커 현황:', workerLines, '');
+    if (geminiContext) {
+      lines.push('💡 Gemini 분석:', geminiContext.slice(0, 500), '');
+    }
+    this.lastGreeting = { type: 'briefing', text: lines.join('\n'), timestamp: Date.now() };
+    this.broadcastToAll('codex:greeting', this.lastGreeting);
   }
 
   /**

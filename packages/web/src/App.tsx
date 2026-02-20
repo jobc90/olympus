@@ -161,9 +161,12 @@ export default function App() {
     cliSessions,
     deleteCliSession,
     lastWorkerCompletion,
+    lastWorkerAssignment,
+    lastWorkerFailure,
     workerLogs,
     selectedWorkerId,
     setSelectedWorkerId,
+    codexGreeting,
   } = useOlympus(config);
 
   // Build WorkerConfig[] and WorkerDashboardState map for new components
@@ -297,6 +300,63 @@ export default function App() {
       [workerId]: [...(prev[workerId] || []), agentMsg],
     }));
   }, [lastWorkerCompletion?.timestamp]);
+
+  // Worker task assignment → ChatWindow message (R2)
+  useEffect(() => {
+    if (!lastWorkerAssignment) return;
+
+    const { workerId, workerName, summary } = lastWorkerAssignment;
+    const content = `🔄 ${summary}`;
+
+    const agentMsg = {
+      id: crypto.randomUUID(),
+      role: 'agent' as const,
+      content,
+      timestamp: lastWorkerAssignment.timestamp,
+    };
+
+    setChatMessages(prev => ({
+      ...prev,
+      [workerId]: [...(prev[workerId] || []), agentMsg],
+    }));
+  }, [lastWorkerAssignment?.timestamp]);
+
+  // Worker task failure → ChatWindow message (R2)
+  useEffect(() => {
+    if (!lastWorkerFailure) return;
+
+    const { workerId, summary } = lastWorkerFailure;
+    const content = `⚠️ ${summary}`;
+
+    const agentMsg = {
+      id: crypto.randomUUID(),
+      role: 'agent' as const,
+      content,
+      timestamp: lastWorkerFailure.timestamp,
+    };
+
+    setChatMessages(prev => ({
+      ...prev,
+      [workerId]: [...(prev[workerId] || []), agentMsg],
+    }));
+  }, [lastWorkerFailure?.timestamp]);
+
+  // Codex greeting → ChatWindow message for Zeus
+  useEffect(() => {
+    if (!codexGreeting) return;
+
+    const agentMsg = {
+      id: crypto.randomUUID(),
+      role: 'agent' as const,
+      content: `🏛️ Olympus 브리핑\n\n${codexGreeting.text}`,
+      timestamp: codexGreeting.timestamp,
+    };
+
+    setChatMessages(prev => ({
+      ...prev,
+      codex: [...(prev['codex'] || []), agentMsg],
+    }));
+  }, [codexGreeting?.timestamp]);
 
   const handleDetailClick = useCallback((workerId: string) => {
     setSelectedWorkerId(selectedWorkerId === workerId ? null : workerId);

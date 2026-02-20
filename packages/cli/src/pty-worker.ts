@@ -84,6 +84,9 @@ const MIN_EXECUTION_MS = 10_000;
 /** 백그라운드 에이전트 활동 후 완료 감지 유예 시간 */
 const AGENT_COOLDOWN_MS = 30_000;
 
+/** 시간 기반 init fallback: 첫 데이터 수신 후 이 시간 경과 시 ready로 전환 */
+const TIME_BASED_READY_MS = 15_000;
+
 /** 텍스트 입력 후 Enter 전송까지 대기 (Ink가 텍스트를 처리할 시간) */
 const SUBMIT_DELAY_MS = 150;
 
@@ -318,6 +321,7 @@ export class PtyWorker {
   private originalRawMode: boolean | undefined;
   private lastCtrlC = 0;
   private ctrlCResetTimer: ReturnType<typeof setTimeout> | null = null;
+  private initFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private options: PtyWorkerOptions) {}
 
@@ -368,11 +372,27 @@ export class PtyWorker {
       }
 
       if (!this.ready) {
-        const clean = stripAnsi(this.idleBuffer);
-        if (process.env.OLYMPUS_PTY_DEBUG) {
-          process.stderr.write(`[PTY-DEBUG] Init buffer (last 500): ${clean.slice(-500)}\n`);
+        // Start time-based fallback on first data (fires after TIME_BASED_READY_MS)
+        if (!this.initFallbackTimer) {
+          this.initFallbackTimer = setTimeout(() => {
+            if (!this.ready) {
+              process.stderr.write('[PTY] Claude CLI active for 15s — marking ready (time-based fallback)\n');
+              this.ready = true;
+              this.readyResolve?.();
+              this.options.onReady?.();
+            }
+            this.initFallbackTimer = null;
+          }, TIME_BASED_READY_MS);
         }
+
+        const clean = stripAnsi(this.idleBuffer);
         if (this.detectIdlePrompt(clean)) {
+          // Pattern matched — cancel time-based fallback
+          if (this.initFallbackTimer) {
+            clearTimeout(this.initFallbackTimer);
+            this.initFallbackTimer = null;
+          }
+          process.stderr.write('[PTY] Idle prompt detected — ready (pattern match)\n');
           this.ready = true;
           this.readyResolve?.();
           this.options.onReady?.();
@@ -382,6 +402,10 @@ export class PtyWorker {
 
     // PTY 종료 핸들러
     this.pty.onExit(({ exitCode }) => {
+      if (this.initFallbackTimer) {
+        clearTimeout(this.initFallbackTimer);
+        this.initFallbackTimer = null;
+      }
       if (this.state.phase === 'processing') {
         this.clearTimers();
         this.state.reject(new Error(`Claude CLI가 예기치 않게 종료됨 (code: ${exitCode})`));
@@ -513,6 +537,10 @@ export class PtyWorker {
     if (this.state.phase === 'processing') {
       this.clearTimers();
     }
+    if (this.initFallbackTimer) {
+      clearTimeout(this.initFallbackTimer);
+      this.initFallbackTimer = null;
+    }
     if (this.ctrlCResetTimer) {
       clearTimeout(this.ctrlCResetTimer);
       this.ctrlCResetTimer = null;
@@ -569,7 +597,11 @@ export class PtyWorker {
 
     const clean = stripAnsi(this.state.buffer);
 
-    if (this.detectIdlePrompt(clean)) {
+    // Check BOTH idle prompt patterns AND completion text patterns
+    const hasIdlePrompt = this.detectIdlePrompt(clean);
+    const hasCompletionText = detectCompletionPattern(clean);
+
+    if (hasIdlePrompt || hasCompletionText) {
       if (!this.state.settleTimer) {
         this.state.settleTimer = setTimeout(() => {
           this.completeTask();
