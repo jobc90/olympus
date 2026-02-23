@@ -241,19 +241,28 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (activeTab !== 'console') return;
+    if (activeTab !== 'console') {
+      // Reset so stale height doesn't lock the layout on re-mount
+      setLeftConsoleHeight(0);
+      return;
+    }
     const el = leftConsoleColumnRef.current;
     if (!el) return;
 
     const update = () => {
-      const next = Math.round(el.getBoundingClientRect().height);
+      // Temporarily remove aside height constraint to measure left column's natural height
+      const next = Math.round(el.scrollHeight);
       setLeftConsoleHeight(prev => (prev === next ? prev : next));
     };
 
-    update();
+    // Delay first measurement by one frame so grid lays out without stale aside height
+    const raf = requestAnimationFrame(update);
     const observer = new ResizeObserver(update);
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+    };
   }, [activeTab, workerTasks.length, polledWorkerConfigs.length, polledActivityEvents.length]);
 
   // Build WorkerConfig[] and WorkerDashboardState map for new components
@@ -555,7 +564,7 @@ export default function App() {
             ) : currentSessionId && currentSession ? (
               <SessionOutputPanel session={currentSession} outputs={sessionOutputs.filter(o => o.sessionId === currentSessionId)} screen={sessionScreens.get(currentSessionId!)} />
             ) : (
-              <section className="grid grid-cols-1 xl:grid-cols-4 gap-6 items-stretch">
+              <section className="grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
                 <div ref={leftConsoleColumnRef} className="xl:col-span-3 space-y-6">
                   <Card className="rounded-2xl h-[248px] pb-2 flex flex-col">
                     <div className="flex items-center justify-between mb-3">
