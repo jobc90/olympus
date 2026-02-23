@@ -142,6 +142,18 @@ OPENAI_API_KEY=sk-...
 
 # Optional: Adjust CLI concurrency (default: 5)
 OLYMPUS_MAX_CONCURRENT_CLI=5
+
+# Gemini Advisor cost controls (defaults are low-token, change-driven mode)
+# 0 = disable periodic full refresh (recommended for daily use)
+OLYMPUS_GEMINI_REFRESH_MS=0
+# Optional toggles: 1/true/on to enable
+OLYMPUS_GEMINI_PRE_REVIEW=0
+OLYMPUS_GEMINI_POST_REVIEW=0
+OLYMPUS_GEMINI_PROACTIVE_ALERT=0
+# Optional tuning
+OLYMPUS_GEMINI_MODEL=gemini-3-flash-preview
+OLYMPUS_GEMINI_ANALYSIS_TIMEOUT_MS=60000
+OLYMPUS_GEMINI_REVIEW_TIMEOUT_MS=30000
 ```
 
 ### Key Config Files

@@ -610,7 +610,34 @@ async function initGeminiAdvisor(workspaceRoot: string) {
     const { GeminiAdvisor } = await import('@olympus-dev/gateway');
     const projects = listWorkspaceProjectsForServer(workspaceRoot);
 
-    const advisor = new GeminiAdvisor();
+    const parseBool = (value: string | undefined, fallback: boolean): boolean => {
+      if (value == null || value.trim() === '') return fallback;
+      const normalized = value.trim().toLowerCase();
+      return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+    };
+
+    const parseIntWithDefault = (value: string | undefined, fallback: number): number => {
+      if (value == null || value.trim() === '') return fallback;
+      const parsed = Number.parseInt(value, 10);
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+    };
+
+    const refreshIntervalMs = parseIntWithDefault(process.env.OLYMPUS_GEMINI_REFRESH_MS, 0);
+    const preTaskReviewEnabled = parseBool(process.env.OLYMPUS_GEMINI_PRE_REVIEW, false);
+    const postTaskReviewEnabled = parseBool(process.env.OLYMPUS_GEMINI_POST_REVIEW, false);
+    const proactiveAlertEnabled = parseBool(process.env.OLYMPUS_GEMINI_PROACTIVE_ALERT, false);
+    const analysisTimeoutMs = parseIntWithDefault(process.env.OLYMPUS_GEMINI_ANALYSIS_TIMEOUT_MS, 60_000);
+    const reviewTimeoutMs = parseIntWithDefault(process.env.OLYMPUS_GEMINI_REVIEW_TIMEOUT_MS, 30_000);
+
+    const advisor = new GeminiAdvisor({
+      model: process.env.OLYMPUS_GEMINI_MODEL || undefined,
+      refreshIntervalMs,
+      preTaskReviewEnabled,
+      postTaskReviewEnabled,
+      proactiveAlertEnabled,
+      analysisTimeoutMs,
+      reviewTimeoutMs,
+    });
     await advisor.initialize(projects);
     const status = advisor.getStatus();
     if (!status.running || !status.ptyAlive) {
@@ -619,6 +646,7 @@ async function initGeminiAdvisor(workspaceRoot: string) {
     }
 
     console.log(chalk.green(`  ✓ Gemini Advisor 초기화 완료 (프로젝트 ${projects.length}개)`));
+    console.log(chalk.gray(`    └ Mode: ${refreshIntervalMs <= 0 ? 'change-driven' : `periodic ${refreshIntervalMs}ms`} / pre-review:${preTaskReviewEnabled ? 'on' : 'off'} / post-review:${postTaskReviewEnabled ? 'on' : 'off'}`));
     return advisor;
   } catch (err) {
     console.log(chalk.yellow(`  ⚠ Gemini Advisor 초기화 실패 (선택 기능): ${(err as Error).message}`));

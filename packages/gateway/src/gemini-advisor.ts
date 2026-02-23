@@ -19,6 +19,7 @@ import { GeminiPty } from './gemini-pty.js';
 
 /** Debounce timer map */
 const DEBOUNCE_MS = 10_000;
+const MIN_EVENT_REANALYZE_MS = 120_000;
 
 interface QueueItem {
   prompt: string;
@@ -88,6 +89,7 @@ export class GeminiAdvisor extends EventEmitter {
   // Timers
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private lastEventAnalyzeAt = new Map<string, number>();
   private running = false;
 
   constructor(config?: Partial<GeminiAdvisorConfig>) {
@@ -333,6 +335,14 @@ export class GeminiAdvisor extends EventEmitter {
       this.debounceTimers.delete(projectPath);
       const project = this.projects.find(p => p.path === projectPath);
       if (project && this.running) {
+        const now = Date.now();
+        const lastAt = this.lastEventAnalyzeAt.get(projectPath) ?? 0;
+        const cachedAt = this.projectCache.get(projectPath)?.analyzedAt ?? 0;
+        const baseline = Math.max(lastAt, cachedAt);
+        if (baseline > 0 && now - baseline < MIN_EVENT_REANALYZE_MS) {
+          return;
+        }
+        this.lastEventAnalyzeAt.set(projectPath, now);
         this.analyzeProject(projectPath, project.name).catch(() => {});
       }
     }, DEBOUNCE_MS);
