@@ -39,7 +39,7 @@ import { LocalContextStoreManager } from '@olympus-dev/core';
 import type { GeminiAdvisor } from './gemini-advisor.js';
 import { UsageMonitor } from './usage-monitor.js';
 import { deriveWorkerEvents } from './worker-events.js';
-import { filterForTelegram } from './response-filter.js';
+import { filterForTelegram, sanitizeBriefing } from './response-filter.js';
 
 export interface GatewayOptions {
   port?: number;
@@ -787,11 +787,11 @@ export class Gateway {
   }
 
   private async generateCodexBriefing(): Promise<void> {
-    // Collect context pieces
-    const geminiContext = this.geminiAdvisor?.buildCodexContext?.() ?? '';
+    // Collect context pieces — keep them short for a concise briefing
+    const geminiContext = this.geminiAdvisor?.buildCodexContext?.({ maxLength: 1500 }) ?? '';
     const workers = this.workerRegistry.getAll();
     const workerLines = workers.length > 0
-      ? workers.map(w => `- ${w.name}: ${w.status} (project: ${w.projectPath})`).join('\n')
+      ? workers.map(w => `- ${w.name}: ${w.status}`).join('\n')
       : '- No workers registered';
 
     let projectSummary = '';
@@ -800,8 +800,8 @@ export class Gateway {
       const projects = rootStore.getAllProjects();
       if (projects.length > 0) {
         projectSummary = projects
-          .slice(0, 10)
-          .map(p => `- ${p.projectName}: ${p.summary ?? 'no summary'}`)
+          .slice(0, 5)
+          .map(p => `- ${p.projectName}: ${(p.summary ?? 'no summary').slice(0, 80)}`)
           .join('\n');
       }
     } catch { /* LocalContextStore may not be initialized */ }
@@ -811,21 +811,25 @@ export class Gateway {
       const { runCli } = await import('./cli-runner.js');
       const combinedPrompt = [
         '### SYSTEM',
-        'You are Olympus Codex. Generate a brief Korean startup greeting for the user.',
-        'Include: project status overview, worker status, key issues/recommendations.',
-        'Be concise, friendly, use Korean. No more than 300 words.',
+        'You are Olympus Codex. Generate a SHORT Korean startup greeting.',
+        'RULES:',
+        '- Maximum 150 words total',
+        '- Plain text only — NO tables, NO box-drawing characters, NO code blocks',
+        '- NO raw file paths or technical details',
+        '- Just summarize: what projects exist, worker status, 1-2 key points',
+        '- Friendly, concise Korean',
         '',
         '### CONTEXT',
-        geminiContext || '(No Gemini analysis available)',
+        geminiContext ? geminiContext.slice(0, 800) : '(No analysis available)',
         '',
-        '## Worker Status',
+        '## Workers',
         workerLines,
         '',
-        '## Project Summary',
-        projectSummary || '(No project data available)',
+        '## Projects',
+        projectSummary || '(No project data)',
         '',
         '### INSTRUCTION',
-        '위 정보를 바탕으로 사용자에게 인사하면서 전체 상황을 브리핑하세요.',
+        '위 정보를 바탕으로 짧고 핵심만 담은 브리핑을 작성하세요. 테이블이나 코드블록 사용 금지.',
       ].join('\n');
 
       const result = await runCli({
@@ -837,10 +841,10 @@ export class Gateway {
       });
 
       if (result.success && result.text) {
-        const filteredGreeting = filterForTelegram(result.text).text.trim();
+        const cleanedGreeting = sanitizeBriefing(result.text, 1500);
         this.lastGreeting = {
           type: 'briefing',
-          text: filteredGreeting || '🏛️ Olympus 시작 브리핑을 생성했지만 표시 가능한 텍스트가 없습니다.',
+          text: cleanedGreeting || '🏛️ Olympus 시작 브리핑을 생성했지만 표시 가능한 텍스트가 없습니다.',
           timestamp: Date.now(),
         };
         this.broadcastToAll('codex:greeting', this.lastGreeting);
@@ -855,9 +859,9 @@ export class Gateway {
     }
     lines.push('👷 워커 현황:', workerLines, '');
     if (geminiContext) {
-      lines.push('💡 Gemini 분석:', geminiContext.slice(0, 500), '');
+      lines.push('💡 Gemini 분석:', geminiContext.slice(0, 300), '');
     }
-    const fallbackGreeting = filterForTelegram(lines.join('\n')).text.trim();
+    const fallbackGreeting = sanitizeBriefing(lines.join('\n'), 1500);
     this.lastGreeting = {
       type: 'briefing',
       text: fallbackGreeting || '🏛️ Olympus 시작 브리핑을 준비했습니다.',

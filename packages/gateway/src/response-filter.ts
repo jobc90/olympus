@@ -60,6 +60,9 @@ const TUI_ARTIFACT_PATTERNS = [
   /tip:\s*run\s*claude\s*--(?:continue|resume)/i,
   /^[-─═]{3,}\s*$/,            // Horizontal dividers
   /^\s*\d+\s*[│|]\s*$/,       // Table borders (empty)
+  /^[┌┐└┘├┤┬┴┼╔╗╚╝╠╣╦╩╬─│═║]+\s*$/,  // Pure box-drawing lines
+  /^[┌├└╔╠╚][─═┬┴╦╩┼╬]+[┐┤┘╗╣╝]\s*$/, // Full table border rows
+  /^[│║]\s*[─═]+\s*[│║]\s*$/,           // Table separator rows
 ];
 
 function removeTuiArtifacts(text: string, removedMarkers: string[]): string {
@@ -185,6 +188,50 @@ export function filterResponse(text: string, config: ResponseFilterConfig): Filt
 
 export function filterForTelegram(text: string): FilterResult {
   return filterResponse(text, TELEGRAM_FILTER_CONFIG);
+}
+
+/**
+ * Sanitize briefing text — aggressive cleanup for Codex startup greeting.
+ * Strips box-drawing tables, collapsed whitespace, and enforces length limit.
+ */
+export function sanitizeBriefing(text: string, maxLength = 1500): string {
+  let result = stripAnsiCodes(text);
+
+  // Remove lines that are box-drawing table structures
+  const lines = result.split('\n');
+  const cleaned = lines.filter(line => {
+    const trimmed = line.trim();
+    // Pure box-drawing border lines
+    if (/^[┌┐└┘├┤┬┴┼╔╗╚╝╠╣╦╩╬─│═║\s]+$/.test(trimmed) && trimmed.length > 2) return false;
+    // Table cell lines: │ content │ content │
+    if (/^[│║].*[│║]$/.test(trimmed) && (trimmed.match(/[│║]/g)?.length ?? 0) >= 3) return false;
+    // Horizontal dividers
+    if (/^[-─═]{3,}$/.test(trimmed)) return false;
+    // TUI artifacts
+    for (const pattern of TUI_ARTIFACT_PATTERNS) {
+      if (pattern.test(trimmed)) return false;
+    }
+    return true;
+  });
+
+  result = cleaned.join('\n');
+
+  // Fix collapsed whitespace (Korean/CJK chars jammed together without spaces)
+  // e.g. "ClaudeCLI를중심으로" → keep as-is (Korean doesn't use spaces between words heavily)
+  // But fix "파일:cli/src" → "파일: cli/src"
+  result = result.replace(/([가-힣]):/g, '$1: ');
+
+  // Collapse excessive blank lines
+  result = collapseBlankLines(result, 1);
+
+  // Enforce max length
+  if (result.length > maxLength) {
+    const cutPoint = result.lastIndexOf('\n', maxLength);
+    result = result.slice(0, cutPoint > maxLength * 0.7 ? cutPoint : maxLength).trimEnd();
+    result += '\n\n... (요약 생략)';
+  }
+
+  return result.trim();
 }
 
 export function filterForApi(text: string): FilterResult {
