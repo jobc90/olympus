@@ -42,7 +42,7 @@ function createPlaceholderState(workers: WorkerConfig[]): OlympusMountainState {
 
 export function MiniOlympusMountain({
   workers,
-  workerStates,
+  workerStates: _workerStates,
   codexConfig,
   olympusMountainState,
   onTick,
@@ -52,17 +52,6 @@ export function MiniOlympusMountain({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="font-pixel text-sm flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-          <span>Olympus</span>
-        </h2>
-        <button
-          className="text-xs font-mono px-2 py-1 rounded-md hover:bg-white/10 transition-colors"
-          style={{ color: 'var(--accent-primary)' }}
-        >
-          Full View
-        </button>
-      </div>
       <div className="group">
         <div
           className="relative rounded-xl overflow-hidden transition-all duration-300 group-hover:ring-2"

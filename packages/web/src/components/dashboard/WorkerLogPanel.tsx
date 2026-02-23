@@ -45,19 +45,18 @@ export function WorkerLogPanel({
       }}
     >
       <div
-        className="w-[min(1440px,96vw)] h-[90vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
+        className="w-[min(1640px,98vw)] h-[94vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
         style={{
-          backgroundColor: 'var(--bg-primary, #0A0F1C)',
+          backgroundColor: '#0a0f1b',
           borderColor: `${color}55`,
           boxShadow: `0 20px 60px ${color}20`,
         }}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+        <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(12, 17, 31, 0.9)' }}>
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-            <span className="font-pixel text-sm truncate" style={{ color }}>{displayName}</span>
-            <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>Terminal</span>
+            <span className="font-mono text-xs truncate" style={{ color }}>{displayName}</span>
+            <span className="text-[11px] font-mono" style={{ color: 'var(--text-secondary)' }}>Terminal</span>
           </div>
           <button
             onClick={onClose}
@@ -70,7 +69,7 @@ export function WorkerLogPanel({
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 p-2">
+        <div className="flex-1 min-h-0 p-1.5">
           <PtyTerminal
             workerName={displayName}
             output={liveOutput ?? ''}

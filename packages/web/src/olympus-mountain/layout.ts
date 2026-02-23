@@ -17,6 +17,15 @@ export const MAP_ROWS = 20;
 // ---------------------------------------------------------------------------
 
 export function getFloorColor(col: number, row: number): string {
+  // Sacred central processional path (entrance -> agora -> temple)
+  if ((col === 11 || col === 12 || col === 13) && row >= 2 && row <= 18) {
+    return (col + row) % 2 === 0 ? '#F8ECD1' : '#EFD9B4';
+  }
+  // Sanctuary aisles with cooler tint to emphasize work area
+  if (col >= 13 && col <= 22 && (row === 11 || row === 14 || row === 17)) {
+    return (col + row) % 2 === 0 ? '#DDE6EE' : '#CCD8E4';
+  }
+
   const isRight = col >= 12;
   const isUpperRight = isRight && row <= 9;
   const isLowerRight = isRight && row >= 10;
@@ -62,17 +71,26 @@ export function buildFurnitureLayout(workerCount: number): FurnitureItem[] {
 
   // 광장 중앙 장식
   items.push({ type: 'round_table', col: 8, row: 5 }); // 중앙 제단
+  items.push({ type: 'carpet', col: 8, row: 6 });
+  items.push({ type: 'carpet', col: 8, row: 7 });
+  items.push({ type: 'carpet', col: 8, row: 8 });
   items.push({ type: 'potted_plant', col: 10, row: 3 }); // 올리브
   items.push({ type: 'potted_plant', col: 10, row: 7 });
+  items.push({ type: 'trophy_shelf', col: 6, row: 8 }); // 영웅 전시
 
   // 오라클 스톤 (좌측 중간)
   items.push({ type: 'whiteboard_obj', col: 3, row: 10 });
   items.push({ type: 'reading_chair', col: 4, row: 10 });
+  items.push({ type: 'small_table', col: 5, row: 10 });
+  items.push({ type: 'carpet', col: 4, row: 9 });
 
   // 아테나 도서관 (좌측 중간아래)
   items.push({ type: 'bookshelf', col: 9, row: 14 });
   items.push({ type: 'bookshelf', col: 9, row: 15 });
+  items.push({ type: 'bookshelf', col: 8, row: 14 });
   items.push({ type: 'reading_chair', col: 10, row: 14 });
+  items.push({ type: 'reading_chair', col: 10, row: 15 });
+  items.push({ type: 'carpet', col: 9, row: 16 });
 
   // 암브로시아 홀 (좌하단 — 확장)
   items.push({ type: 'coffee_machine', col: 2, row: 13 });
@@ -80,15 +98,24 @@ export function buildFurnitureLayout(workerCount: number): FurnitureItem[] {
   items.push({ type: 'sofa', col: 5, row: 15 }); // 확장 영역 소파
   items.push({ type: 'coffee_table', col: 6, row: 16 }); // 확장 영역 테이블
   items.push({ type: 'snack_shelf', col: 2, row: 16 });
-  items.push({ type: 'water_cooler', col: 2, row: 17 });
+  // Keep the lower-left corner blocked to prevent worker corner trapping,
+  // while leaving the entrance lane (2,17) open for movement.
+  items.push({ type: 'water_cooler', col: 1, row: 18 });
+  items.push({ type: 'arcade_machine', col: 6, row: 13 }); // 오락/휴식
+  items.push({ type: 'vending_machine', col: 7, row: 14 });
+  items.push({ type: 'carpet', col: 5, row: 14 });
+  items.push({ type: 'carpet', col: 6, row: 15 });
 
   // 프로필라에아 (입구)
   items.push({ type: 'door_mat', col: 2, row: 18 });
   items.push({ type: 'potted_plant', col: 1, row: 17 });
+  items.push({ type: 'potted_plant', col: 3, row: 18 });
+  items.push({ type: 'carpet', col: 3, row: 17 });
 
   // 광장 벽 장식
   items.push({ type: 'wall_clock', col: 6, row: 1 });
   items.push({ type: 'poster', col: 9, row: 1 });
+  items.push({ type: 'poster', col: 3, row: 1 });
 
   // === 우상단: 제우스 신전 ===
   items.push({ type: 'big_desk', col: 17, row: 2 }); // 왕좌
@@ -97,8 +124,13 @@ export function buildFurnitureLayout(workerCount: number): FurnitureItem[] {
   items.push({ type: 'trophy_shelf', col: 19, row: 1 }); // 우측 장식
   items.push({ type: 'floor_window', col: 14, row: 1 });
   items.push({ type: 'floor_window', col: 22, row: 1 });
+  items.push({ type: 'floor_window', col: 18, row: 1 });
+  items.push({ type: 'carpet', col: 17, row: 4 });
   items.push({ type: 'potted_plant', col: 14, row: 4 });
   items.push({ type: 'potted_plant', col: 22, row: 4 });
+  items.push({ type: 'potted_plant', col: 16, row: 4 });
+  items.push({ type: 'potted_plant', col: 18, row: 4 });
+  items.push({ type: 'round_table', col: 17, row: 5 });
 
   // === 우상단 아래: 아고라 ===
   items.push({ type: 'long_table', col: 17, row: 7 });
@@ -107,6 +139,11 @@ export function buildFurnitureLayout(workerCount: number): FurnitureItem[] {
   items.push({ type: 'meeting_chair', col: 17, row: 6 });
   items.push({ type: 'meeting_chair', col: 17, row: 8 });
   items.push({ type: 'whiteboard_obj', col: 21, row: 7 });
+  items.push({ type: 'meeting_chair', col: 15, row: 7 });
+  items.push({ type: 'meeting_chair', col: 19, row: 7 });
+  items.push({ type: 'carpet', col: 16, row: 8 });
+  items.push({ type: 'carpet', col: 17, row: 8 });
+  items.push({ type: 'carpet', col: 18, row: 8 });
 
   // === 우하단: 수행 성역 (워커 작업대) — 대리석 탁자 + 구름 의자 ===
   const sanctuaryDesks = [
@@ -120,6 +157,9 @@ export function buildFurnitureLayout(workerCount: number): FurnitureItem[] {
   for (let i = 0; i < Math.min(workerCount, 6); i++) {
     items.push({ type: i % 2 === 1 ? 'standing_desk' : 'marble_round_table', ...sanctuaryDesks[i] });
     items.push({ type: 'cloud_seat', ...sanctuaryChairs[i] });
+    items.push({ type: 'carpet', col: sanctuaryDesks[i].col, row: sanctuaryDesks[i].row - 1 });
+    items.push({ type: 'carpet', col: sanctuaryDesks[i].col + 1, row: sanctuaryDesks[i].row });
+    items.push({ type: 'monitor', ...sanctuaryDesks[i] });
     if (i % 2 === 1) {
       items.push({ type: 'dual_monitor', ...sanctuaryDesks[i] });
     }
@@ -128,6 +168,16 @@ export function buildFurnitureLayout(workerCount: number): FurnitureItem[] {
   // 성역 장식
   items.push({ type: 'server_rack', col: 13, row: 11 });
   items.push({ type: 'server_rack', col: 13, row: 14 });
+  items.push({ type: 'server_rack', col: 13, row: 17 });
+  items.push({ type: 'marble_round_table', col: 17, row: 11 });
+  items.push({ type: 'marble_round_table', col: 17, row: 14 });
+  items.push({ type: 'marble_round_table', col: 17, row: 17 });
+  items.push({ type: 'cloud_seat', col: 18, row: 11 });
+  items.push({ type: 'cloud_seat', col: 18, row: 14 });
+  items.push({ type: 'cloud_seat', col: 18, row: 17 });
+  items.push({ type: 'carpet', col: 17, row: 10 });
+  items.push({ type: 'carpet', col: 17, row: 13 });
+  items.push({ type: 'carpet', col: 17, row: 16 });
 
   return items;
 }

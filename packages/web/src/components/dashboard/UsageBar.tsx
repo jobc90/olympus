@@ -69,8 +69,12 @@ export default function UsageBar({ data }: UsageBarProps) {
   if (!data || !data.timestamp) {
     return (
       <div
-        className="rounded-xl px-4 py-3 font-mono text-xs"
-        style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+        className="rounded-2xl px-4 py-4 font-mono text-xs"
+        style={{
+          background: 'linear-gradient(145deg, rgba(17, 24, 39, 0.92), rgba(11, 18, 31, 0.9))',
+          border: '1px solid var(--border)',
+          color: 'var(--text-secondary)',
+        }}
       >
         <span style={{ opacity: 0.6 }}>Usage data will appear when a Claude CLI session is active with the dashboard plugin.</span>
       </div>
@@ -79,60 +83,108 @@ export default function UsageBar({ data }: UsageBarProps) {
 
   return (
     <div
-      className="rounded-xl px-4 py-3 font-mono text-sm space-y-1.5"
-      style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+      className="rounded-2xl px-4 py-4 font-mono text-sm space-y-3"
+      style={{
+        background: 'linear-gradient(145deg, rgba(17, 24, 39, 0.92), rgba(11, 18, 31, 0.9))',
+        border: '1px solid var(--border)',
+        color: 'var(--text-primary)',
+      }}
     >
-      {/* Row 1: Claude — model + context + cost + rate limits */}
-      <div className="flex items-center flex-wrap gap-y-0.5">
-        <span>🤖 <span className="font-semibold" style={{ color: '#CE93D8' }}>Claude</span></span>
-        {data.model && (
-          <><Sep /><span>{data.model.displayName} <span style={{ color: 'var(--text-secondary)' }}>({data.model.id})</span></span></>
-        )}
-        {data.context && (
-          <><Sep /><ProgressBar percent={data.context.percentage} /><Sep /><span>{formatTokens(data.context.totalTokens)}/{formatTokens(data.context.contextSize)}</span></>
-        )}
-        {data.cost && (
-          <><Sep /><span style={{ color: '#66BB6A' }}>${data.cost.totalCostUsd.toFixed(2)}</span></>
-        )}
-        {data.rateLimit5h && !data.rateLimit5h.isError && (
-          <><Sep /><RateWidget label="5h" percent={data.rateLimit5h.utilization} resetAt={data.rateLimit5h.resetsAt} /></>
-        )}
-        {data.rateLimit7d && !data.rateLimit7d.isError && (
-          <><Sep /><RateWidget label="7d" percent={data.rateLimit7d.utilization} resetAt={data.rateLimit7d.resetsAt} /></>
-        )}
+      <div className="text-lg font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+        Model Usage
       </div>
 
-      {/* Row 2: Codex — model + rate limits */}
-      <div className="flex items-center flex-wrap gap-y-0.5">
-        {data.codexUsage ? (
-          <>
-            <span>🔷 <span className="font-semibold" style={{ color: '#4FC3F7' }}>Codex</span></span>
-            <Sep /><span>{data.codexUsage.model}</span>
-            {!data.codexUsage.isError && data.codexUsage.primaryPercent !== null && (
-              <><Sep /><RateWidget label="5h" percent={data.codexUsage.primaryPercent} resetAt={data.codexUsage.primaryResetAt} /></>
-            )}
-            {!data.codexUsage.isError && data.codexUsage.secondaryPercent !== null && (
-              <><Sep /><RateWidget label="7d" percent={data.codexUsage.secondaryPercent} resetAt={data.codexUsage.secondaryResetAt} /></>
-            )}
-          </>
-        ) : (
-          <span style={{ color: 'var(--text-secondary)' }}>🔷 Codex — no data</span>
-        )}
-      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+        <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(16, 23, 37, 0.75)' }}>
+          <div className="flex items-center gap-1.5 text-xs mb-1">
+            <span>🤖</span>
+            <span className="font-semibold" style={{ color: '#E1BEE7' }}>Claude</span>
+          </div>
+          <div className="text-xs space-y-1.5">
+            <div className="flex items-center justify-between gap-2 min-w-0">
+              <span className="truncate">
+                {data.model ? (
+                  <>
+                    {data.model.displayName}{' '}
+                    <span style={{ color: 'var(--text-secondary)' }}>({data.model.id})</span>
+                  </>
+                ) : (
+                  <span style={{ color: 'var(--text-secondary)' }}>No model</span>
+                )}
+              </span>
+            </div>
 
-      {/* Row 3: Gemini — model + usage */}
-      <div className="flex items-center flex-wrap gap-y-0.5">
-        {data.geminiUsage ? (
-          <>
-            <span>💎 <span className="font-semibold" style={{ color: '#66BB6A' }}>Gemini</span></span>
-            <Sep /><span>{data.geminiUsage.model}</span>
-            {!data.geminiUsage.isError && data.geminiUsage.usedPercent !== null && (
-              <><Sep /><RateWidget label="" percent={data.geminiUsage.usedPercent} resetAt={data.geminiUsage.resetAt} /></>
-            )}
-          </>
-        ) : (
-          <span style={{ color: 'var(--text-secondary)' }}>💎 Gemini — no data</span>
-        )}
+            <div className="flex items-center gap-1.5 flex-wrap min-h-[16px]">
+              {data.context ? (
+                <>
+                  <ProgressBar percent={data.context.percentage} />
+                  <span>{formatTokens(data.context.totalTokens)}/{formatTokens(data.context.contextSize)}</span>
+                  <span style={{ color: '#66BB6A' }}>
+                    {data.cost ? `$${data.cost.totalCostUsd.toFixed(2)}` : '-'}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span style={{ color: 'var(--text-secondary)' }}>Context unavailable</span>
+                  <span style={{ color: '#66BB6A' }}>
+                    {data.cost ? `$${data.cost.totalCostUsd.toFixed(2)}` : '-'}
+                  </span>
+                </>
+              )}
+            </div>
+
+            <div className="flex items-center flex-wrap gap-1 min-h-[16px]">
+              {data.rateLimit5h && !data.rateLimit5h.isError ? (
+                <RateWidget label="5h" percent={data.rateLimit5h.utilization} resetAt={data.rateLimit5h.resetsAt} />
+              ) : (
+                <span style={{ color: 'var(--text-secondary)' }}>5h: -</span>
+              )}
+              <Sep />
+              {data.rateLimit7d && !data.rateLimit7d.isError ? (
+                <RateWidget label="7d" percent={data.rateLimit7d.utilization} resetAt={data.rateLimit7d.resetsAt} />
+              ) : (
+                <span style={{ color: 'var(--text-secondary)' }}>7d: -</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(16, 23, 37, 0.75)' }}>
+          <div className="flex items-center gap-1.5 text-xs mb-1">
+            <span>🔷</span>
+            <span className="font-semibold" style={{ color: '#7DD3FC' }}>Codex</span>
+          </div>
+          {data.codexUsage ? (
+            <div className="text-xs space-y-1">
+              <div>{data.codexUsage.model}</div>
+              {!data.codexUsage.isError && data.codexUsage.primaryPercent !== null && (
+                <RateWidget label="5h" percent={data.codexUsage.primaryPercent} resetAt={data.codexUsage.primaryResetAt} />
+              )}
+              {!data.codexUsage.isError && data.codexUsage.secondaryPercent !== null && (
+                <RateWidget label="7d" percent={data.codexUsage.secondaryPercent} resetAt={data.codexUsage.secondaryResetAt} />
+              )}
+            </div>
+          ) : (
+            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>No usage data</div>
+          )}
+        </div>
+
+        <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(16, 23, 37, 0.75)' }}>
+          <div className="flex items-center gap-1.5 text-xs mb-1">
+            <span>💎</span>
+            <span className="font-semibold" style={{ color: '#9AE6B4' }}>Gemini</span>
+          </div>
+          {data.geminiUsage ? (
+            <div className="text-xs space-y-1">
+              <div>{data.geminiUsage.model}</div>
+              {!data.geminiUsage.isError && data.geminiUsage.usedPercent !== null && (
+                <RateWidget label="used" percent={data.geminiUsage.usedPercent} resetAt={data.geminiUsage.resetAt} />
+              )}
+            </div>
+          ) : (
+            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>No usage data</div>
+          )}
+        </div>
       </div>
     </div>
   );

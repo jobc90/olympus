@@ -3,7 +3,6 @@
 // ============================================================================
 
 import type { GeminiConfig, WorkerAvatar } from '../../lib/types';
-import StatusBadge from '../shared/StatusBadge';
 import { drawWorker } from '../../sprites/characters';
 
 interface GeminiAdvisorPanelProps {
@@ -16,7 +15,7 @@ interface GeminiAdvisorPanelProps {
   onChatClick?: () => void;
 }
 
-function PixelHeraAvatar({ size = 64 }: { size?: number }) {
+function PixelHeraAvatar({ size = 96 }: { size?: number }) {
   const canvasRef = (canvas: HTMLCanvasElement | null) => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -52,59 +51,63 @@ export function GeminiAdvisorPanel({ geminiConfig, geminiBehavior, cacheCount, l
   };
 
   const description = behaviorInfo[geminiBehavior] ?? '대기 중';
+  const focusText = currentTask
+    ? currentTask.slice(0, 32) + (currentTask.length > 32 ? '…' : '')
+    : '프로젝트 컨텍스트 대기';
 
   return (
     <div
-      className="group relative rounded-xl p-4 transition-all duration-300 hover:scale-[1.02] cursor-pointer"
+      className="group relative rounded-2xl p-2.5 transition-all duration-200 cursor-pointer h-[172px] overflow-hidden"
       style={{
-        backgroundColor: 'var(--bg-card)',
-        border: '1px solid #AB47BC30',
-        boxShadow: '0 0 20px #AB47BC08',
+        background: 'linear-gradient(150deg, rgba(28, 11, 36, 0.95), rgba(22, 12, 33, 0.9))',
+        border: '1px solid #AB47BC4a',
       }}
       onClick={onChatClick}
     >
-      {/* Glow on hover */}
       <div
-        className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+        className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"
         style={{
-          boxShadow: 'inset 0 0 30px #AB47BC10, 0 0 30px #AB47BC10',
+          boxShadow: '0 14px 30px rgba(171, 71, 188, 0.15)',
         }}
       />
 
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-lg">{geminiConfig.emoji}</span>
-        <h3 className="font-pixel text-sm" style={{ color: 'var(--text-primary)' }}>
-          Gemini Advisor — {geminiConfig.name}
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <span className="text-base">{geminiConfig.emoji}</span>
+        <h3 className="font-semibold text-sm" style={{ color: '#EFD8FF' }}>
+          Advisor / Gemini
         </h3>
       </div>
 
-      {/* Content */}
-      <div className="flex items-start gap-4">
-        {/* Avatar */}
-        <PixelHeraAvatar size={64} />
+      <div className="flex items-start gap-2.5">
+        <PixelHeraAvatar size={96} />
 
-        {/* Info */}
-        <div className="flex-1 space-y-2">
-          <div>
-            <StatusBadge behavior={geminiBehavior} size="sm" />
-          </div>
-          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-            {currentTask ? currentTask.slice(0, 60) + (currentTask.length > 60 ? '...' : '') : description}
+        <div className="flex-1 h-[96px] text-[11px] font-mono flex flex-col justify-between min-w-0">
+          <p className="truncate" style={{ color: '#F4E9FF' }}>
+            Hera
           </p>
-          <div className="flex items-center gap-3 text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>
-            <span>Cache: {cacheCount}</span>
-            <span>Last: {lastAnalyzed ? formatRelativeTime(lastAnalyzed) : 'Never'}</span>
-          </div>
+          <p className="truncate" style={{ color: '#DABFE8' }}>
+            {infoEmoji(geminiBehavior)} {description}
+          </p>
+          <p className="truncate" style={{ color: '#C2A2D1' }}>
+            🗂️ Cache: {cacheCount} · Last: {lastAnalyzed ? formatRelativeTime(lastAnalyzed) : 'Never'}
+          </p>
+          <p className="truncate" style={{ color: '#C2A2D1' }}>
+            💡 {focusText}
+          </p>
         </div>
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-end mt-2">
-        <span className="text-[10px] font-mono opacity-0 group-hover:opacity-60 transition-opacity" style={{ color: 'var(--text-secondary)' }}>
-          Click to chat
-        </span>
       </div>
     </div>
   );
+}
+
+function infoEmoji(behavior: string): string {
+  const emojis: Record<string, string> = {
+    idle: '😴',
+    scanning: '🔎',
+    analyzing: '🧠',
+    advising: '🗣️',
+    caching: '🗂️',
+    offline: '💤',
+  };
+  return emojis[behavior] ?? '💎';
 }

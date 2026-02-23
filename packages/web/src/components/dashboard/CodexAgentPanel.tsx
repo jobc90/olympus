@@ -3,7 +3,6 @@
 // ============================================================================
 
 import type { CodexConfig } from '../../lib/types';
-import StatusBadge from '../shared/StatusBadge';
 import { drawCodex } from '../../sprites/characters';
 
 interface CodexAgentPanelProps {
@@ -13,7 +12,7 @@ interface CodexAgentPanelProps {
   onChatClick?: () => void;
 }
 
-function PixelCodexAvatar({ size = 64 }: { size?: number }) {
+function PixelCodexAvatar({ size = 96 }: { size?: number }) {
   const canvasRef = (canvas: HTMLCanvasElement | null) => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -48,61 +47,65 @@ export function CodexAgentPanel({ codexConfig, codexBehavior, connected, onChatC
   };
 
   const description = behaviorInfo[codexBehavior] ?? '대기 중';
+  const connectionText = connected ? '연결됨' : '연결 끊김';
+  const dutyText: Record<string, string> = {
+    supervising: '팀 상태 모니터링',
+    directing: '워커 작업 지시',
+    analyzing: '결과 분석 중',
+    meeting: '협업 조율 중',
+    offline: '대기 중',
+  };
 
   return (
     <div
-      className="group relative rounded-xl p-4 transition-all duration-300 hover:scale-[1.02] cursor-pointer"
+      className="group relative rounded-2xl p-2.5 transition-all duration-200 cursor-pointer h-[172px] overflow-hidden"
       style={{
-        backgroundColor: 'var(--bg-card)',
-        border: '1px solid #FFD70030',
-        boxShadow: '0 0 20px #FFD70008',
+        background: 'linear-gradient(150deg, rgba(20, 17, 8, 0.95), rgba(30, 26, 11, 0.9))',
+        border: '1px solid #FFD7004a',
       }}
       onClick={onChatClick}
     >
-      {/* Glow on hover */}
       <div
-        className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+        className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"
         style={{
-          boxShadow: 'inset 0 0 30px #FFD70010, 0 0 30px #FFD70010',
+          boxShadow: '0 14px 30px rgba(255, 215, 0, 0.15)',
         }}
       />
 
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-lg">⚡</span>
-        <h3 className="font-pixel text-sm" style={{ color: 'var(--text-primary)' }}>
-          Codex Agent — Zeus
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <span className="text-base">{codexConfig.emoji}</span>
+        <h3 className="font-semibold text-sm" style={{ color: '#FFF2C4' }}>
+          Orchestrator / Codex
         </h3>
       </div>
 
-      {/* Content */}
-      <div className="flex items-start gap-4">
-        {/* Avatar */}
-        <PixelCodexAvatar size={64} />
+      <div className="flex items-start gap-2.5">
+        <PixelCodexAvatar size={96} />
 
-        {/* Info */}
-        <div className="flex-1 space-y-2">
-          <div>
-            <StatusBadge behavior={codexBehavior} size="sm" />
-          </div>
-          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-            {description}
+        <div className="flex-1 h-[96px] text-[11px] font-mono flex flex-col justify-between min-w-0">
+          <p className="truncate" style={{ color: '#FFF2C4' }}>
+            Zeus
           </p>
-          <div className="flex items-center gap-2 text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>
-            <span>상태:</span>
-            <span style={{ color: connected ? 'var(--accent-success)' : 'var(--accent-danger)' }}>
-              {connected ? '연결됨' : '연결 끊김'}
-            </span>
-          </div>
+          <p className="truncate" style={{ color: '#DCC287' }}>{infoEmoji(codexBehavior)} {description}</p>
+          <p className="truncate" style={{ color: connected ? 'var(--accent-success)' : 'var(--accent-danger)' }}>
+            {connected ? '🟢' : '🔴'} {connectionText}
+          </p>
+          <p className="truncate" style={{ color: '#BFAE7A' }}>
+            🏛️ {dutyText[codexBehavior] ?? '조율 중'}
+          </p>
         </div>
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-end mt-2">
-        <span className="text-[10px] font-mono opacity-0 group-hover:opacity-60 transition-opacity" style={{ color: 'var(--text-secondary)' }}>
-          Click to chat
-        </span>
       </div>
     </div>
   );
+}
+
+function infoEmoji(behavior: string): string {
+  const emojis: Record<string, string> = {
+    supervising: '👀',
+    directing: '📋',
+    analyzing: '📊',
+    meeting: '🤝',
+    offline: '💤',
+  };
+  return emojis[behavior] ?? '⚡';
 }

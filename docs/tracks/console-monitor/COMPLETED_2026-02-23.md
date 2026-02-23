@@ -82,3 +82,30 @@
 
 - GeminiAdvisor 로그의 `Prompt queue returned null (timeout or offline)`는 현재 구현상 폴백 경로이며,
   프로젝트 분석 캐시는 fallback 값으로 유지된다.
+
+## 추가 반영 (2026-02-23 오후)
+
+### 6) Monitor 캐릭터 동작/좌표 안정화
+
+- 워커 이동 동기화 분산 강화:
+  - workerId 해시 기반 seed로 이동 주기/배회 타겟 분리
+  - 이동 cadence를 워커별 `2..5 tick`으로 분산
+- 스폰/재배치 안전성 강화:
+  - 초기 배치/동적 등록 시 walkable 안전 좌표 보정
+  - non-walkable 좌표 감지 시 인접 free 타일로 rescue
+- 좌측 하단 코너 끼임 방지:
+  - `propylaea` zone을 극좌측 코너 제외하도록 조정
+  - 코너 오브젝트 배치 조정으로 입구 동선 확보
+
+주요 파일:
+- `packages/web/src/hooks/useOlympusMountain.ts`
+- `packages/web/src/olympus-mountain/layout.ts`
+- `packages/web/src/olympus-mountain/zones.ts`
+
+### 7) Monitor Zeus 카드 정보행 정합성
+
+- Zeus 카드 우측 정보행을 Hera와 동일한 4줄 구조로 맞춤
+- `Last analyzed ...` 라인 추가 (activity 기반 최신 Codex 이벤트 시각 사용)
+
+주요 파일:
+- `packages/web/src/components/monitor/OlympusTempleMonitor.tsx`

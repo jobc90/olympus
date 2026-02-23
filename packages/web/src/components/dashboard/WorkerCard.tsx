@@ -2,10 +2,8 @@
 // WorkerCard — Individual worker status card
 // ============================================================================
 
-import { useState, useEffect } from 'react';
 import type { WorkerConfig, WorkerDashboardState, WorkerAvatar } from '../../lib/types';
 import { BEHAVIOR_INFO, formatRelativeTime } from '../../lib/state-mapper';
-import StatusBadge from '../shared/StatusBadge';
 import { drawWorker } from '../../sprites/characters';
 
 interface WorkerCardProps {
@@ -15,7 +13,7 @@ interface WorkerCardProps {
   onDetailClick?: (workerId: string) => void;
 }
 
-function PixelAvatar({ worker, size = 64 }: { worker: WorkerConfig; size?: number }) {
+function PixelAvatar({ worker, size = 92 }: { worker: WorkerConfig; size?: number }) {
   const canvasRef = (canvas: HTMLCanvasElement | null) => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -43,99 +41,77 @@ function PixelAvatar({ worker, size = 64 }: { worker: WorkerConfig; size?: numbe
 
 
 export function WorkerCard({ worker, state, onChatClick, onDetailClick }: WorkerCardProps) {
-  const [relativeTime, setRelativeTime] = useState('');
   const behavior = state?.behavior ?? 'idle';
   const info = BEHAVIOR_INFO[behavior];
-
-  useEffect(() => {
-    const update = () => {
-      setRelativeTime(state ? formatRelativeTime(state.lastActivity) : 'unknown');
-    };
-    update();
-    const timer = setInterval(update, 1000);
-    return () => clearInterval(timer);
-  }, [state?.lastActivity, state]);
+  const projectPath = worker.projectPath ? worker.projectPath.replace(/^\/Users\/[^/]+\//, '~/') : worker.id;
+  const statusText = `${info.emoji} ${info.label}`;
+  const taskLabel = state?.currentTask?.title ?? 'No active task';
+  const lastActivity = state?.lastActivity ? formatRelativeTime(state.lastActivity) : 'no activity';
 
   return (
     <div
-      className="group relative rounded-xl p-4 transition-all duration-300 hover:scale-[1.02] cursor-pointer"
+      className="group relative rounded-2xl p-3 transition-all duration-200 h-[206px] overflow-hidden flex flex-col"
       style={{
-        backgroundColor: 'var(--bg-card)',
-        border: `1px solid ${info.neonColor}30`,
-        boxShadow: `0 0 20px ${info.neonColor}08`,
+        background: 'linear-gradient(165deg, rgba(17, 24, 39, 0.94), rgba(10, 16, 28, 0.94))',
+        border: `1px solid ${info.neonColor}45`,
       }}
-      onClick={() => onChatClick?.(worker.id)}
     >
-      {/* Glow on hover */}
       <div
-        className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+        className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"
         style={{
-          boxShadow: `inset 0 0 30px ${info.neonColor}10, 0 0 30px ${info.neonColor}10`,
+          boxShadow: `0 12px 30px ${info.neonColor}1c`,
         }}
       />
 
-      {/* Header: Avatar + Name + Status */}
-      <div className="flex items-start gap-3 mb-3">
-        <PixelAvatar worker={worker} />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="font-pixel text-sm truncate" style={{ color: 'var(--text-primary)' }}>
-              {worker.avatar.charAt(0).toUpperCase() + worker.avatar.slice(1)}
-            </span>
-            {worker.emoji && <span>{worker.emoji}</span>}
+      <div className="flex items-start gap-3 min-h-0">
+        <PixelAvatar worker={worker} size={96} />
+        <div
+          className="flex-1 min-w-0 h-[96px] rounded-lg border px-2.5 py-2 text-[11px] font-mono flex flex-col justify-between"
+          style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(8, 13, 26, 0.45)' }}
+        >
+          <div className="truncate leading-tight" style={{ color: 'var(--text-primary)' }}>
+            {worker.name}
           </div>
-          <div className="text-[10px] font-mono truncate" style={{ color: 'var(--text-secondary)' }}>
-            {worker.projectPath ? worker.projectPath.replace(/^\/Users\/[^/]+\//, '~/') : worker.name}
+          <div className="truncate leading-tight" style={{ color: 'var(--text-secondary)' }}>
+            {projectPath}
           </div>
-          <div className="mt-1">
-            <StatusBadge behavior={behavior} size="sm" />
+          <div className="truncate leading-tight" style={{ color: info.neonColor }}>
+            {statusText}
           </div>
         </div>
       </div>
 
-      {/* Model info */}
-      {state?.sessionLog?.[0] && (
-        <div className="mb-1.5">
-          <span className="text-[10px] font-mono truncate block" style={{ color: 'var(--text-secondary)' }}>
-            {state.sessionLog[0]}
-          </span>
-        </div>
-      )}
-
-      {/* Current task */}
-      {state?.currentTask && (
-        <div className="mb-2">
-          <span className="text-[10px] font-mono truncate block" style={{ color: 'var(--text-secondary)' }}>
-            {state.currentTask.title}
-          </span>
-        </div>
-      )}
-
-      {/* Footer: Last activity + detail button */}
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>
-          Last: {relativeTime}
+      <div
+        className="mt-2 rounded-lg border px-2 py-1.5 text-[10px] font-mono flex items-center justify-between gap-2"
+        style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(8, 13, 26, 0.45)' }}
+      >
+        <span className="truncate" style={{ color: 'var(--text-secondary)' }} title={taskLabel}>
+          {taskLabel}
         </span>
-        <div className="flex items-center gap-2">
-          {onChatClick && (
-            <button
-              className="text-[10px] font-mono px-2 py-0.5 rounded border hover:bg-white/10 transition-colors"
-              style={{ color: 'var(--text-primary)', borderColor: 'var(--border)' }}
-              onClick={(e) => { e.stopPropagation(); onChatClick(worker.id); }}
-            >
-              Chat
-            </button>
-          )}
-          {onDetailClick && (
-            <button
-              className="text-[10px] font-mono px-2 py-0.5 rounded border hover:bg-white/10 transition-colors"
-              style={{ color: info.neonColor, borderColor: `${info.neonColor}66` }}
-              onClick={(e) => { e.stopPropagation(); onDetailClick(worker.id); }}
-            >
-              Terminal
-            </button>
-          )}
-        </div>
+        <span className="shrink-0" style={{ color: info.neonColor }}>
+          {lastActivity}
+        </span>
+      </div>
+
+      <div className="flex items-center justify-end gap-1.5 mt-2">
+        {onChatClick && (
+          <button
+            className="text-[11px] font-mono px-2 py-1 rounded-md border hover:bg-white/10 transition-colors"
+            style={{ color: 'var(--text-primary)', borderColor: 'var(--border)' }}
+            onClick={(e) => { e.stopPropagation(); onChatClick(worker.id); }}
+          >
+            Chat
+          </button>
+        )}
+        {onDetailClick && (
+          <button
+            className="text-[11px] font-mono px-2 py-1 rounded-md border hover:bg-white/10 transition-colors"
+            style={{ color: info.neonColor, borderColor: `${info.neonColor}66` }}
+            onClick={(e) => { e.stopPropagation(); onDetailClick(worker.id); }}
+          >
+            Terminal
+          </button>
+        )}
       </div>
     </div>
   );

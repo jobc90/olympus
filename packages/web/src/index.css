@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -88,6 +88,10 @@
   font-family: 'JetBrains Mono', monospace;
 }
 
+.font-serif {
+  font-family: 'Cinzel', serif;
+}
+
 /* ============================================================================
    Theme Animations
    ============================================================================ */
@@ -112,6 +116,17 @@
   50% { transform: translateY(-4px); }
 }
 
+@keyframes templeGlowShift {
+  0% { transform: translateX(-5%); opacity: 0.55; }
+  50% { transform: translateX(5%); opacity: 0.75; }
+  100% { transform: translateX(-5%); opacity: 0.55; }
+}
+
+@keyframes templePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(79, 195, 247, 0.35); }
+  50% { box-shadow: 0 0 0 8px rgba(79, 195, 247, 0); }
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -119,6 +134,7 @@
 
   body {
     @apply bg-background text-text antialiased font-sans;
+    font-family: 'Space Grotesk', system-ui, sans-serif;
     background-image:
       radial-gradient(ellipse at top, rgba(0, 212, 255, 0.03) 0%, transparent 50%),
       radial-gradient(ellipse at bottom right, rgba(255, 215, 0, 0.02) 0%, transparent 50%);
@@ -190,5 +206,146 @@
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  .temple-shell {
+    position: relative;
+    background:
+      radial-gradient(120% 150% at 50% -20%, rgba(249, 215, 128, 0.22), transparent 55%),
+      linear-gradient(145deg, #141728 0%, #0e1323 45%, #171a2b 100%);
+    border-color: rgba(251, 220, 155, 0.3);
+    box-shadow: 0 20px 80px rgba(8, 11, 20, 0.65);
+  }
+
+  .temple-glow-layer {
+    position: absolute;
+    inset: -30%;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 20% 20%, rgba(255, 215, 130, 0.18), transparent 40%),
+      radial-gradient(circle at 75% 15%, rgba(171, 71, 188, 0.18), transparent 35%),
+      radial-gradient(circle at 50% 90%, rgba(79, 195, 247, 0.13), transparent 45%);
+    filter: blur(24px);
+    animation: templeGlowShift 8s ease-in-out infinite;
+  }
+
+  .temple-pill {
+    border: 1px solid rgba(251, 220, 155, 0.35);
+    border-radius: 999px;
+    background: rgba(20, 27, 45, 0.65);
+    color: #f7d89a;
+    padding: 0.35rem 0.65rem;
+  }
+
+  .temple-god-card {
+    border: 1px solid rgba(251, 220, 155, 0.28);
+    border-radius: 1rem;
+    padding: 0.9rem;
+    background: linear-gradient(145deg, rgba(16, 20, 34, 0.92), rgba(24, 30, 47, 0.92));
+    min-height: 160px;
+  }
+
+  .temple-stage {
+    position: relative;
+    border: 1px solid rgba(251, 220, 155, 0.28);
+    border-radius: 1.1rem;
+    background:
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.02), rgba(10, 10, 15, 0.22)),
+      linear-gradient(180deg, rgba(15, 21, 36, 0.92), rgba(20, 24, 38, 0.92));
+    overflow: hidden;
+    padding: 0.85rem;
+  }
+
+  .temple-columns {
+    position: absolute;
+    inset: 0.5rem;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+    pointer-events: none;
+    opacity: 0.22;
+  }
+
+  .temple-columns span {
+    background: linear-gradient(180deg, rgba(255, 235, 192, 0.6), rgba(222, 192, 142, 0.08));
+    border: 1px solid rgba(255, 235, 192, 0.2);
+    border-radius: 0.6rem;
+  }
+
+  .temple-worker-grid {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 0.65rem;
+    max-height: 440px;
+    overflow-y: auto;
+    padding-right: 0.15rem;
+  }
+
+  .temple-worker-card {
+    border: 1px solid var(--border);
+    border-radius: 0.95rem;
+    background: linear-gradient(170deg, rgba(16, 20, 33, 0.93), rgba(12, 16, 28, 0.93));
+    padding: 0.6rem;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.2s ease;
+  }
+
+  .temple-worker-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+  }
+
+  .temple-worker-card.selected {
+    box-shadow: 0 0 0 1px rgba(251, 220, 155, 0.45), 0 10px 28px rgba(0, 0, 0, 0.4);
+  }
+
+  .temple-worker-card.active {
+    animation: templePulse 1.8s ease-out infinite;
+  }
+
+  .temple-btn {
+    border: 1px solid rgba(251, 220, 155, 0.36);
+    border-radius: 0.6rem;
+    padding: 0.28rem 0.6rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: #f8e4bd;
+    background: rgba(255, 215, 130, 0.08);
+    transition: background-color 0.18s ease, border-color 0.18s ease;
+  }
+
+  .temple-btn:hover {
+    background: rgba(255, 215, 130, 0.16);
+    border-color: rgba(251, 220, 155, 0.62);
+  }
+
+  .temple-btn-strong {
+    border-color: rgba(79, 195, 247, 0.45);
+    color: #a7e6ff;
+    background: rgba(79, 195, 247, 0.12);
+  }
+
+  .temple-btn-strong:hover {
+    border-color: rgba(79, 195, 247, 0.75);
+    background: rgba(79, 195, 247, 0.2);
+  }
+}
+
+@layer utilities {
+  /* Global readability bump: keep titles intact, scale only small body text by one step */
+  .text-xs {
+    font-size: 0.8125rem;
+    line-height: 1.2rem;
+  }
+
+  .text-\[10px\] {
+    font-size: 11px;
+    line-height: 1rem;
+  }
+
+  .text-\[11px\] {
+    font-size: 12px;
+    line-height: 1.1rem;
   }
 }

@@ -13,7 +13,7 @@ interface PtyTerminalProps {
   onResize?: (cols: number, rows: number) => void;
 }
 
-const FONT_FAMILY = 'SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+const FONT_FAMILY = '"JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
 
 export function PtyTerminal({
   workerName,
@@ -168,14 +168,8 @@ export function PtyTerminal({
     previousOutputRef.current = output;
   }, [output]);
 
-  const sendKey = (data: string) => {
-    if (!connected) return;
-    onInput(data);
-    terminalRef.current?.focus();
-  };
-
   return (
-    <div className="rounded-lg border" style={{ borderColor: 'var(--border)', backgroundColor: '#0B1020' }}>
+    <div className="rounded-lg border h-full" style={{ borderColor: 'var(--border)', backgroundColor: '#0B1020' }}>
       <div
         className="flex items-center justify-between px-2 py-1 border-b"
         style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(15, 23, 42, 0.85)' }}
@@ -183,52 +177,8 @@ export function PtyTerminal({
         <div className="text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>
           {workerName} PTY
         </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            className="text-[10px] font-mono px-1.5 py-0.5 rounded hover:bg-white/10 transition-colors"
-            style={{ color: 'var(--text-secondary)' }}
-            onClick={() => sendKey('\u001b[A')}
-            title="Arrow Up"
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            className="text-[10px] font-mono px-1.5 py-0.5 rounded hover:bg-white/10 transition-colors"
-            style={{ color: 'var(--text-secondary)' }}
-            onClick={() => sendKey('\u001b[B')}
-            title="Arrow Down"
-          >
-            ↓
-          </button>
-          <button
-            type="button"
-            className="text-[10px] font-mono px-1.5 py-0.5 rounded hover:bg-white/10 transition-colors"
-            style={{ color: 'var(--text-secondary)' }}
-            onClick={() => sendKey('\t')}
-            title="Tab"
-          >
-            Tab
-          </button>
-          <button
-            type="button"
-            className="text-[10px] font-mono px-1.5 py-0.5 rounded hover:bg-white/10 transition-colors"
-            style={{ color: 'var(--text-secondary)' }}
-            onClick={() => sendKey('\r')}
-            title="Enter"
-          >
-            Enter
-          </button>
-          <button
-            type="button"
-            className="text-[10px] font-mono px-1.5 py-0.5 rounded hover:bg-white/10 transition-colors"
-            style={{ color: 'var(--text-secondary)' }}
-            onClick={() => sendKey('\u0003')}
-            title="Ctrl+C"
-          >
-            Ctrl+C
-          </button>
+        <div className="text-[10px] font-mono" style={{ color: connected ? '#4ADE80' : '#F87171' }}>
+          {connected ? 'CONNECTED' : 'OFFLINE'}
         </div>
       </div>
 

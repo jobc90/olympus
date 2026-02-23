@@ -34,7 +34,7 @@ interface CardHeaderProps {
 export function CardHeader({ children, action }: CardHeaderProps) {
   return (
     <div className="flex items-center justify-between mb-3">
-      <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">
+      <h3 className="text-lg font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>
         {children}
       </h3>
       {action && <div>{action}</div>}

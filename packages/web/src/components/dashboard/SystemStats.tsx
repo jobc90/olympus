@@ -34,9 +34,9 @@ function AnimatedNumber({ value, format }: { value: number; format?: (n: number)
     return () => clearTimeout(timer);
   }, [value, display, mounted]);
 
-  if (!mounted) return <span className="font-pixel">-</span>;
+  if (!mounted) return <span className="font-semibold tabular-nums">-</span>;
 
-  return <span className="font-pixel">{format ? format(Math.round(display)) : Math.round(display)}</span>;
+  return <span className="font-semibold tabular-nums">{format ? format(Math.round(display)) : Math.round(display)}</span>;
 }
 
 export default function SystemStats({ stats }: SystemStatsProps) {
@@ -46,23 +46,25 @@ export default function SystemStats({ stats }: SystemStatsProps) {
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       {items.map(item => (
         <div
           key={item.label}
-          className="flex flex-col items-center gap-1 rounded-xl px-3 py-3 transition-all hover:scale-105 overflow-hidden"
+          className="rounded-2xl px-4 py-4 transition-all"
           style={{
-            backgroundColor: 'var(--bg-card)',
+            background: 'linear-gradient(145deg, rgba(17, 24, 39, 0.92), rgba(11, 18, 31, 0.9))',
             border: '1px solid var(--border)',
           }}
         >
-          <span className="text-base">{item.icon}</span>
-          <span className="text-lg truncate" style={{ color: item.color }}>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-mono uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+              {item.label}
+            </span>
+            <span className="text-lg">{item.icon}</span>
+          </div>
+          <div className="mt-2 text-3xl leading-none" style={{ color: item.color }}>
             <AnimatedNumber value={item.value} />
-          </span>
-          <span className="text-[10px] font-mono uppercase tracking-wider truncate" style={{ color: 'var(--text-secondary)' }}>
-            {item.label}
-          </span>
+          </div>
         </div>
       ))}
     </div>

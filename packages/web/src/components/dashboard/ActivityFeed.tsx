@@ -16,6 +16,7 @@ interface ActivityEvent {
 interface ActivityFeedProps {
   events: ActivityEvent[];
   maxHeight?: number;
+  height?: number | string;
 }
 
 const EVENT_STYLES: Record<string, { icon: string; color: string }> = {
@@ -43,7 +44,7 @@ function formatRelativeTime(ts: number): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-export default function ActivityFeed({ events, maxHeight = 400 }: ActivityFeedProps) {
+export default function ActivityFeed({ events, maxHeight = 400, height }: ActivityFeedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAtTopRef = useRef(true);
   const [typeFilter, setTypeFilter] = useState<'all' | 'state' | 'task' | 'error'>('all');
@@ -79,17 +80,24 @@ export default function ActivityFeed({ events, maxHeight = 400 }: ActivityFeedPr
   }, [filteredEvents.length]);
 
   return (
-    <div>
-      <h2 className="font-pixel text-sm mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+    <div
+      className="rounded-2xl border p-3 flex flex-col min-h-0"
+      style={{
+        ...(height ? { height } : undefined),
+        backgroundColor: 'var(--bg-card)',
+        borderColor: 'var(--border)',
+      }}
+    >
+      <h2 className="text-lg font-semibold tracking-tight mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
         <span>{'\u{1F4E1}'}</span>
         <span>Activity Feed</span>
       </h2>
-      <div className="mb-2 flex flex-wrap items-center gap-2">
+      <div className="mb-2 flex flex-nowrap items-center gap-2 overflow-x-auto">
         {(['all', 'state', 'task', 'error'] as const).map(filter => (
           <button
             key={filter}
             onClick={() => setTypeFilter(filter)}
-            className="px-2 py-1 rounded text-[10px] font-mono border transition-colors"
+            className="px-2 py-1 rounded text-[10px] font-mono border transition-colors shrink-0"
             style={{
               borderColor: typeFilter === filter ? 'var(--accent-primary)' : 'var(--border)',
               color: typeFilter === filter ? 'var(--accent-primary)' : 'var(--text-secondary)',
@@ -103,17 +111,17 @@ export default function ActivityFeed({ events, maxHeight = 400 }: ActivityFeedPr
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="agent/message filter"
-          className="ml-auto rounded px-2 py-1 text-[10px] font-mono border"
+          className="ml-auto rounded px-2 py-1 text-[10px] font-mono border w-32 shrink-0"
           style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)' }}
         />
       </div>
       <div
         ref={scrollRef}
-        className="rounded-xl overflow-y-auto space-y-1 p-3"
+        className="rounded-xl overflow-y-auto space-y-1 p-3 flex-1 min-h-0"
         style={{
-          backgroundColor: 'var(--bg-card)',
+          backgroundColor: 'rgba(8, 13, 26, 0.45)',
           border: '1px solid var(--border)',
-          maxHeight,
+          ...(height ? {} : { maxHeight }),
         }}
         onScroll={() => {
           if (scrollRef.current) {

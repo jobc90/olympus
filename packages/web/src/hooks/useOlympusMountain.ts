@@ -11,9 +11,11 @@ import type {
   GeminiBehavior,
   WorkerBehavior,
   WorkerConfig,
+  WorkerAvatar,
   CodexConfig,
   CharacterAnim,
   Direction,
+  Zone,
   ZoneId,
   Bubble,
 } from '../lib/types';
@@ -48,11 +50,223 @@ export interface UseOlympusMountainReturn {
 
 const SANCTUARY_ZONES: ZoneId[] = ['sanctuary_0', 'sanctuary_1', 'sanctuary_2', 'sanctuary_3', 'sanctuary_4', 'sanctuary_5'];
 
-function createInitialWorkerRuntime(id: string, index: number, workerCount: number): WorkerRuntime {
+interface MotionProfile {
+  work: CharacterAnim[];
+  think: CharacterAnim[];
+  idle: CharacterAnim[];
+  social: CharacterAnim[];
+  rest: CharacterAnim[];
+  celebrate: CharacterAnim[];
+  move: CharacterAnim[];
+}
+
+const DEFAULT_MOTION: MotionProfile = {
+  work: ['sit_typing', 'keyboard_mash'],
+  think: ['sit_idle', 'nod'],
+  idle: ['stand', 'stretch'],
+  social: ['wave', 'raise_hand'],
+  rest: ['drink_coffee', 'sit_idle'],
+  celebrate: ['thumbs_up', 'celebrate'],
+  move: ['walk_frame1', 'walk_frame2'],
+};
+
+const AVATAR_MOTION: Record<WorkerAvatar, MotionProfile> = {
+  athena:     { work: ['hand_task', 'sit_typing'], think: ['point', 'nod'], idle: ['stand', 'stretch'], social: ['raise_hand', 'point'], rest: ['sit_idle', 'drink_coffee'], celebrate: ['thumbs_up', 'celebrate'], move: ['walk_frame1', 'walk_frame2'] },
+  poseidon:   { work: ['sit_typing', 'keyboard_mash'], think: ['sit_idle', 'nod'], idle: ['stand', 'wave'], social: ['wave', 'raise_hand'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['celebrate', 'thumbs_up'], move: ['walk_frame1', 'walk_frame2'] },
+  ares:       { work: ['keyboard_mash', 'hand_task'], think: ['stand', 'nod'], idle: ['stand', 'stretch'], social: ['raise_hand', 'wave'], rest: ['sit_idle', 'drink_coffee'], celebrate: ['celebrate', 'thumbs_up'], move: ['run', 'walk_frame1', 'walk_frame2'] },
+  apollo:     { work: ['sit_typing', 'point'], think: ['nod', 'sit_idle'], idle: ['stand', 'wave'], social: ['wave', 'raise_hand'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['celebrate', 'thumbs_up'], move: ['walk_frame1', 'walk_frame2'] },
+  artemis:    { work: ['hand_task', 'sit_typing'], think: ['point', 'sit_idle'], idle: ['stand', 'nod'], social: ['raise_hand', 'wave'], rest: ['sit_idle', 'drink_coffee'], celebrate: ['thumbs_up', 'celebrate'], move: ['run', 'walk_frame1', 'walk_frame2'] },
+  hermes:     { work: ['keyboard_mash', 'sit_typing'], think: ['nod', 'stand'], idle: ['wave', 'stand'], social: ['wave', 'raise_hand'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['celebrate', 'thumbs_up'], move: ['run', 'walk_frame1', 'walk_frame2'] },
+  hephaestus: { work: ['hand_task', 'keyboard_mash'], think: ['sit_idle', 'nod'], idle: ['stand', 'stretch'], social: ['raise_hand', 'point'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['thumbs_up', 'celebrate'], move: ['walk_frame1', 'walk_frame2'] },
+  dionysus:   { work: ['sit_typing', 'keyboard_mash'], think: ['sit_idle', 'nod'], idle: ['wave', 'stand'], social: ['wave', 'raise_hand'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['celebrate', 'thumbs_up'], move: ['walk_frame1', 'walk_frame2'] },
+  demeter:    { work: ['hand_task', 'sit_typing'], think: ['nod', 'sit_idle'], idle: ['stand', 'stretch'], social: ['wave', 'raise_hand'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['thumbs_up', 'celebrate'], move: ['walk_frame1', 'walk_frame2'] },
+  aphrodite:  { work: ['sit_typing', 'hand_task'], think: ['sit_idle', 'nod'], idle: ['wave', 'stand'], social: ['wave', 'raise_hand'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['celebrate', 'thumbs_up'], move: ['walk_frame1', 'walk_frame2'] },
+  hera:       { work: ['point', 'sit_typing'], think: ['nod', 'sit_idle'], idle: ['stand', 'wave'], social: ['raise_hand', 'point'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['thumbs_up', 'celebrate'], move: ['walk_frame1', 'walk_frame2'] },
+  hades:      { work: ['keyboard_mash', 'hand_task'], think: ['stand', 'sit_idle'], idle: ['stand', 'nod'], social: ['point', 'raise_hand'], rest: ['sit_idle', 'drink_coffee'], celebrate: ['thumbs_up', 'celebrate'], move: ['walk_frame1', 'walk_frame2'] },
+  persephone: { work: ['sit_typing', 'hand_task'], think: ['nod', 'sit_idle'], idle: ['wave', 'stand'], social: ['wave', 'raise_hand'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['celebrate', 'thumbs_up'], move: ['walk_frame1', 'walk_frame2'] },
+  prometheus: { work: ['keyboard_mash', 'sit_typing'], think: ['stand', 'nod'], idle: ['stretch', 'stand'], social: ['raise_hand', 'point'], rest: ['sit_idle', 'drink_coffee'], celebrate: ['celebrate', 'thumbs_up'], move: ['run', 'walk_frame1', 'walk_frame2'] },
+  helios:     { work: ['point', 'sit_typing'], think: ['nod', 'sit_idle'], idle: ['wave', 'stand'], social: ['raise_hand', 'wave'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['celebrate', 'thumbs_up'], move: ['run', 'walk_frame1', 'walk_frame2'] },
+  nike:       { work: ['hand_task', 'sit_typing'], think: ['nod', 'stand'], idle: ['stand', 'wave'], social: ['raise_hand', 'wave'], rest: ['sit_idle', 'drink_coffee'], celebrate: ['celebrate', 'thumbs_up'], move: ['run', 'walk_frame1', 'walk_frame2'] },
+  pan:        { work: ['keyboard_mash', 'hand_task'], think: ['sit_idle', 'nod'], idle: ['stand', 'stretch'], social: ['wave', 'raise_hand'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['thumbs_up', 'celebrate'], move: ['walk_frame1', 'walk_frame2'] },
+  hecate:     { work: ['sit_typing', 'point'], think: ['sit_idle', 'nod'], idle: ['stand', 'stretch'], social: ['point', 'raise_hand'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['celebrate', 'thumbs_up'], move: ['walk_frame1', 'walk_frame2'] },
+  iris:       { work: ['point', 'sit_typing'], think: ['nod', 'stand'], idle: ['wave', 'stand'], social: ['wave', 'raise_hand'], rest: ['sit_idle', 'drink_coffee'], celebrate: ['celebrate', 'thumbs_up'], move: ['run', 'walk_frame1', 'walk_frame2'] },
+  heracles:   { work: ['hand_task', 'keyboard_mash'], think: ['stand', 'nod'], idle: ['stretch', 'stand'], social: ['raise_hand', 'point'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['celebrate', 'thumbs_up'], move: ['run', 'walk_frame1', 'walk_frame2'] },
+  selene:     { work: ['sit_typing', 'point'], think: ['sit_idle', 'nod'], idle: ['stand', 'wave'], social: ['wave', 'raise_hand'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['thumbs_up', 'celebrate'], move: ['walk_frame1', 'walk_frame2'] },
+};
+
+function pickByTick(list: CharacterAnim[], tick: number, seed: number, speed = 120): CharacterAnim {
+  if (list.length === 0) return 'stand';
+  const idx = Math.floor((tick + seed * 17) / speed) % list.length;
+  return list[idx];
+}
+
+function getAvatarBehaviorAnim(
+  avatar: WorkerAvatar | undefined,
+  behavior: WorkerBehavior,
+  baseAnim: CharacterAnim,
+  tick: number,
+  seed: number,
+): CharacterAnim {
+  const profile = avatar ? (AVATAR_MOTION[avatar] ?? DEFAULT_MOTION) : DEFAULT_MOTION;
+
+  if (behavior === 'working' || behavior === 'reviewing' || behavior === 'analyzing' || behavior === 'deploying' || behavior === 'error') {
+    return pickByTick(profile.work, tick, seed, 90);
+  }
+  if (behavior === 'thinking') {
+    return pickByTick(profile.think, tick, seed, 100);
+  }
+  if (behavior === 'chatting' || behavior === 'collaborating' || behavior === 'meeting' || behavior === 'directing') {
+    return pickByTick(profile.social, tick, seed, 110);
+  }
+  if (behavior === 'resting' || behavior === 'offline') {
+    return pickByTick(profile.rest, tick, seed, 130);
+  }
+  if (behavior === 'completed') {
+    return pickByTick(profile.celebrate, tick, seed, 100);
+  }
+  if (behavior === 'idle' || behavior === 'starting') {
+    return pickByTick(profile.idle, tick, seed, 140);
+  }
+
+  return baseAnim;
+}
+
+function toKey(col: number, row: number): string {
+  return `${col},${row}`;
+}
+
+function hashId(id: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h >>> 0);
+}
+
+function isWalkable(grid: WalkGrid, col: number, row: number): boolean {
+  if (row < 0 || row >= grid.length || col < 0 || col >= (grid[0]?.length ?? 0)) return false;
+  const tile = grid[row]?.[col];
+  return tile === 'floor' || tile === 'door';
+}
+
+function collectZonePoints(zone: Zone, grid: WalkGrid): Array<{ col: number; row: number }> {
+  const points: Array<{ col: number; row: number }> = [];
+  for (let row = zone.minRow; row <= zone.maxRow; row++) {
+    for (let col = zone.minCol; col <= zone.maxCol; col++) {
+      if (isWalkable(grid, col, row)) {
+        points.push({ col, row });
+      }
+    }
+  }
+  return points;
+}
+
+function pickZoneTarget(
+  zone: Zone,
+  grid: WalkGrid,
+  from: { col: number; row: number },
+  reserved: Set<string>,
+  occupied: Set<string>,
+  minDistance = 2,
+  chooserSeed = 0,
+): { col: number; row: number } | null {
+  const candidates = collectZonePoints(zone, grid);
+  if (candidates.length === 0) return null;
+
+  const free = candidates.filter((p) => {
+    const key = toKey(p.col, p.row);
+    return !reserved.has(key) && !occupied.has(key);
+  });
+  const pool = free.length > 0 ? free : [];
+  if (pool.length === 0) {
+    const taken = new Set<string>([...reserved, ...occupied]);
+    const rescue = findNearestFree(from, grid, taken, 12);
+    if (rescue) {
+      reserved.add(toKey(rescue.col, rescue.row));
+      return rescue;
+    }
+    return null;
+  }
+
+  const ranked = [...pool].sort((a, b) => {
+    const da = Math.abs(a.col - from.col) + Math.abs(a.row - from.row);
+    const db = Math.abs(b.col - from.col) + Math.abs(b.row - from.row);
+    return db - da;
+  });
+  const preferred = ranked.filter((p) => Math.abs(p.col - from.col) + Math.abs(p.row - from.row) >= minDistance);
+  const choicePool = preferred.length > 0 ? preferred : ranked;
+  const topN = Math.min(choicePool.length, 6);
+  const pickIdx = topN > 0 ? (Math.abs(chooserSeed) % topN) : 0;
+  const target = choicePool[pickIdx] ?? choicePool[0];
+  if (!target) return null;
+  reserved.add(toKey(target.col, target.row));
+  return target;
+}
+
+function findNearestFree(
+  origin: { col: number; row: number },
+  grid: WalkGrid,
+  taken: Set<string>,
+  maxRadius = 4,
+): { col: number; row: number } | null {
+  for (let radius = 1; radius <= maxRadius; radius++) {
+    for (let dc = -radius; dc <= radius; dc++) {
+      for (let dr = -radius; dr <= radius; dr++) {
+        if (Math.abs(dc) + Math.abs(dr) !== radius) continue;
+        const col = origin.col + dc;
+        const row = origin.row + dr;
+        if (!isWalkable(grid, col, row)) continue;
+        const key = toKey(col, row);
+        if (taken.has(key)) continue;
+        return { col, row };
+      }
+    }
+  }
+  return null;
+}
+
+function ensureSafeSpawn(
+  preferred: { col: number; row: number },
+  grid: WalkGrid,
+  taken: Set<string>,
+): { col: number; row: number } {
+  const preferredKey = toKey(preferred.col, preferred.row);
+  if (isWalkable(grid, preferred.col, preferred.row) && !taken.has(preferredKey)) {
+    taken.add(preferredKey);
+    return preferred;
+  }
+  const fallback = findNearestFree(preferred, grid, taken, 12);
+  if (fallback) {
+    taken.add(toKey(fallback.col, fallback.row));
+    return fallback;
+  }
+  // Last resort (should be rare): keep preferred even if cramped.
+  taken.add(preferredKey);
+  return preferred;
+}
+
+function deoverlapWorkers(workers: WorkerRuntime[], grid: WalkGrid): void {
+  const taken = new Set<string>();
+  for (const worker of workers) {
+    const key = toKey(worker.pos.col, worker.pos.row);
+    if (!taken.has(key)) {
+      taken.add(key);
+      continue;
+    }
+    const fallback = findNearestFree(worker.pos, grid, taken);
+    if (fallback) {
+      worker.pos = fallback;
+      worker.screenPos = gridToScreen(fallback);
+      taken.add(toKey(fallback.col, fallback.row));
+    } else {
+      taken.add(key);
+    }
+  }
+}
+
+function createInitialWorkerRuntime(id: string, index: number, pos: { col: number; row: number }): WorkerRuntime {
   const sanctuaryZone = SANCTUARY_ZONES[index % SANCTUARY_ZONES.length];
-  // Initial position at gods_plaza (no fixed placement!)
-  const plaza = getZone('gods_plaza', workerCount);
-  const pos = plaza ? getRandomPointInZone(plaza) : { col: 3 + index * 2, row: 5 + (index % 3) * 3 };
   return {
     id,
     currentState: 'idle',
@@ -72,17 +286,29 @@ function createInitialWorkerRuntime(id: string, index: number, workerCount: numb
 
 export function useOlympusMountain({ workers, workerStates, codexBehavior, geminiBehavior = 'offline' }: UseOlympusMountainParams): UseOlympusMountainReturn {
   const [olympusMountainState, setOlympusMountainState] = useState<OlympusMountainState>(() => {
+    const initialGrid = createWalkGrid(workers.length);
     const gardenZone = getZone('olympus_garden', workers.length);
     const ambrosiaZone = getZone('ambrosia_hall', workers.length);
+    const plazaZone = getZone('gods_plaza', workers.length);
     const gardenCenter = gardenZone ? { ...gardenZone.center } : { col: 4, row: 4 };
     const ambrosiaCenter = ambrosiaZone ? { ...ambrosiaZone.center } : { col: 4, row: 15 };
 
     // Gemini starts at athenas_library
     const athenaLibZone = getZone('athenas_library', workers.length);
     const geminiStartPos = athenaLibZone ? { ...athenaLibZone.center } : { col: 9, row: 14 };
+    const occupiedInitial = new Set<string>();
+    const reservedInitial = new Set<string>();
+    const initialWorkerRuntimes = workers.map((w, i) => {
+      const fallback = { col: 3 + (i % 4) * 2, row: 6 + Math.floor(i / 4) * 2 };
+      const candidate = plazaZone
+        ? (pickZoneTarget(plazaZone, initialGrid, plazaZone.center, reservedInitial, occupiedInitial, 2, hashId(w.id)) ?? fallback)
+        : fallback;
+      const safePos = ensureSafeSpawn(candidate, initialGrid, occupiedInitial);
+      return createInitialWorkerRuntime(w.id, i, safePos);
+    });
 
     return {
-      workers: workers.map((w, i) => createInitialWorkerRuntime(w.id, i, workers.length)),
+      workers: initialWorkerRuntimes,
       codex: { anim: 'sit_typing' as CharacterAnim },
       gemini: {
         behavior: 'offline' as GeminiBehavior,
@@ -141,15 +367,23 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
   // Sync worker runtimes when workers config changes
   useEffect(() => {
     setOlympusMountainState(prev => {
+      const occupied = new Set(prev.workers.map((r) => toKey(r.pos.col, r.pos.row)));
+      const reserved = new Set<string>();
+      const grid = walkGridRef.current;
+      const entranceZone = getZone('propylaea', workers.length);
+
       const newRuntimes = workers.map((w, i) => {
         const existing = prev.workers.find(r => r.id === w.id);
         if (existing) return existing;
         // New worker starts at propylaea, transitions to plaza
-        const entranceZone = getZone('propylaea', workers.length);
-        const startPos = entranceZone ? { ...entranceZone.center } : { col: 2, row: 18 };
-        const runtime = createInitialWorkerRuntime(w.id, i, workers.length);
-        runtime.pos = startPos;
-        runtime.screenPos = gridToScreen(startPos);
+        const fallback = { col: 2 + (i % 3), row: 17 + ((i + 1) % 2) };
+        const candidate = entranceZone
+          ? (pickZoneTarget(entranceZone, grid, entranceZone.center, reserved, occupied, 1, hashId(w.id)) ?? fallback)
+          : fallback;
+        const safeStart = ensureSafeSpawn(candidate, grid, occupied);
+        const runtime = createInitialWorkerRuntime(w.id, i, safeStart);
+        runtime.pos = safeStart;
+        runtime.screenPos = gridToScreen(safeStart);
         runtime.currentState = 'arriving';
         return runtime;
       });
@@ -165,6 +399,9 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
         .map(b => ({ ...b, ttl: b.ttl - 1 }))
         .filter(b => b.ttl > 0);
       let newParticles: Particle[] = tickParticles(prev.particles);
+      const workerConfigById = new Map(workers.map((w) => [w.id, w] as const));
+      const occupiedPositions = new Set(prev.workers.map((w) => toKey(w.pos.col, w.pos.row)));
+      const reservedTargets = new Set<string>();
 
       // Initialize behaviorTicks with random offsets (once) so workers don't sync
       if (!behaviorTicksInitRef.current) {
@@ -172,7 +409,7 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
         for (let i = 0; i < prev.workers.length; i++) {
           const wid = prev.workers[i].id;
           if (behaviorTicksRef.current[wid] === undefined) {
-            behaviorTicksRef.current[wid] = Math.floor(Math.random() * 50);
+            behaviorTicksRef.current[wid] = hashId(wid) % 90;
           }
         }
       }
@@ -205,6 +442,18 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
 
         const targetZone = resolveZone(behavior, runtime.deskZone);
         const updated: WorkerRuntime = { ...runtime };
+        const workerCfg = workerConfigById.get(runtime.id);
+        const workerSeed = hashId(runtime.id);
+
+        // Rescue invalid/blocked current tile (legacy bad spawn or map changes).
+        if (!isWalkable(walkGridRef.current, updated.pos.col, updated.pos.row)) {
+          const rescued = findNearestFree(updated.pos, walkGridRef.current, occupiedPositions, 12);
+          if (rescued) {
+            updated.pos = rescued;
+            updated.screenPos = gridToScreen(rescued);
+            updated.path = [];
+          }
+        }
 
         // Check if worker needs to move to a new zone
         const zone = getZone(targetZone, workers.length);
@@ -214,11 +463,28 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
             updated.pos.row >= zone.minRow && updated.pos.row <= zone.maxRow;
 
           if (!inZone && updated.path.length === 0) {
-            const target = getRandomPointInZone(zone);
-            const path = findPath(walkGridRef.current, updated.pos, target);
-            if (path.length > 0) {
+            const target = pickZoneTarget(
+              zone,
+              walkGridRef.current,
+              updated.pos,
+              reservedTargets,
+              occupiedPositions,
+              2,
+              workerSeed + newTick + idx * 17,
+            );
+            const path = target ? findPath(walkGridRef.current, updated.pos, target) : [];
+            if (path.length > 0 && target) {
               updated.path = path;
               updated.transitioning = true;
+              occupiedPositions.add(toKey(target.col, target.row));
+            } else if (target) {
+              const rescueNearTarget = findNearestFree(target, walkGridRef.current, occupiedPositions, 8);
+              if (rescueNearTarget) {
+                updated.pos = rescueNearTarget;
+                updated.screenPos = gridToScreen(rescueNearTarget);
+                updated.path = [];
+                occupiedPositions.add(toKey(rescueNearTarget.col, rescueNearTarget.row));
+              }
             }
           }
 
@@ -230,36 +496,54 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
           }
         }
 
-        // Idle worker free roaming: periodic wander within gods_plaza
-        if (behavior === 'idle' || behavior === 'thinking' || behavior === 'completed') {
-          const targetZoneId = resolveZone(behavior, runtime.deskZone);
-          if (targetZoneId === 'gods_plaza' && updated.path.length === 0) {
-            const wanderInterval = 300 + (idx * 17) % 60; // 300~360 tick interval (~10-12s at 30fps)
-            const behTicks = behaviorTicksRef.current[runtime.id] ?? 0;
-            if (behTicks > 0 && behTicks % wanderInterval === 0) {
-              const plazaZone = getZone('gods_plaza', workers.length);
-              if (plazaZone) {
-                // Pick a target with minimum distance to ensure visible movement
-                let newTarget = getRandomPointInZone(plazaZone);
-                const minDist = 3;
-                for (let attempt = 0; attempt < 5; attempt++) {
-                  const dist = Math.abs(newTarget.col - updated.pos.col) + Math.abs(newTarget.row - updated.pos.row);
-                  if (dist >= minDist) break;
-                  newTarget = getRandomPointInZone(plazaZone);
-                }
-                const path = findPath(walkGridRef.current, updated.pos, newTarget);
-                if (path.length > 0) {
-                  updated.path = path;
-                  updated.transitioning = true;
-                }
-              }
+        // Free motion logic: social zones wander often, sanctuaries occasionally reposition.
+        if (zone && updated.path.length === 0) {
+          const behTicks = behaviorTicksRef.current[runtime.id] ?? 0;
+          const inSanctuary = targetZone.startsWith('sanctuary_');
+
+          let wanderInterval = 0;
+          let minDist = 1;
+
+          if (inSanctuary) {
+            if (behavior === 'working' || behavior === 'reviewing' || behavior === 'analyzing' || behavior === 'deploying' || behavior === 'error') {
+              wanderInterval = 220 + (workerSeed % 90);
+              minDist = 1;
+            }
+          } else if (
+            behavior === 'idle' ||
+            behavior === 'thinking' ||
+            behavior === 'completed' ||
+            behavior === 'chatting' ||
+            behavior === 'collaborating' ||
+            behavior === 'resting'
+          ) {
+            wanderInterval = 150 + (workerSeed % 80);
+            minDist = 2;
+          }
+
+          if (wanderInterval > 0 && behTicks > 0 && behTicks % wanderInterval === 0) {
+            const target = pickZoneTarget(
+              zone,
+              walkGridRef.current,
+              updated.pos,
+              reservedTargets,
+              occupiedPositions,
+              minDist,
+              workerSeed + behTicks + idx * 31,
+            );
+            const path = target ? findPath(walkGridRef.current, updated.pos, target) : [];
+            if (path.length > 0 && target) {
+              updated.path = path;
+              updated.transitioning = true;
+              occupiedPositions.add(toKey(target.col, target.row));
             }
           }
         }
 
         // Move along path
         if (updated.path.length > 0) {
-          if (newTick % 2 === 0) {
+          const moveStride = 2 + (workerSeed % 4); // 2..5 tick cadence per worker
+          if (newTick % moveStride === 0) {
             const next = updated.path[0];
 
             // Update direction
@@ -272,8 +556,12 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
             updated.screenPos = gridToScreen(updated.pos);
             updated.path = updated.path.slice(1);
 
-            // Walking animation alternation
-            updated.anim = newTick % 8 < 4 ? 'walk_frame1' : 'walk_frame2';
+            // Avatar-specific movement animation profile
+            const moveProfile = workerCfg ? (AVATAR_MOTION[workerCfg.avatar] ?? DEFAULT_MOTION) : DEFAULT_MOTION;
+            const moveAnim = pickByTick(moveProfile.move, newTick, workerSeed, 8);
+            updated.anim = (moveAnim === 'run' || moveAnim === 'walk_frame1' || moveAnim === 'walk_frame2')
+              ? moveAnim
+              : (newTick % 8 < 4 ? 'walk_frame1' : 'walk_frame2');
           }
         } else {
           // At destination — play behavior animation
@@ -287,8 +575,9 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
             // Clear transition
             if (transitionStart) delete transitionAnimRef.current[runtime.id];
 
-            // Use tick-based animation variation from behaviors
-            updated.anim = getAnimForTick(mapping, newTick + idx * 73);
+            // Base behavior animation + avatar-specific motion personality
+            const baseAnim = getAnimForTick(mapping, newTick + idx * 73);
+            updated.anim = getAvatarBehaviorAnim(workerCfg?.avatar, behavior, baseAnim, newTick, workerSeed);
           }
 
           // Spawn particles periodically (with variation)
@@ -305,7 +594,7 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
 
           // Show bubble occasionally (staggered per worker, with varied text)
           if (newTick % 300 === (idx * 50) % 300) {
-            const bubbleText = getBubbleText(mapping, Math.floor(newTick / 300) + idx);
+            const bubbleText = getBubbleText(mapping, Math.floor((newTick + workerSeed) / 300) + idx);
             if (bubbleText) {
               const sp = gridToScreen(updated.pos);
               newBubbles.push({
@@ -333,6 +622,9 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
 
         newWorkers.push(updated);
       }
+
+      // Resolve accidental overlaps after movement/zone transitions.
+      deoverlapWorkers(newWorkers, walkGridRef.current);
 
       // Update bubble positions to follow their attached workers
       for (const bubble of newBubbles) {
@@ -478,7 +770,7 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
         dayNightPhase,
       };
     });
-  }, [workerStates, workers.length, codexBehavior, geminiBehavior]);
+  }, [workerStates, workers, codexBehavior, geminiBehavior]);
 
   return { olympusMountainState, tick: tickFn };
 }

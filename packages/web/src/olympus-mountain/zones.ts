@@ -31,7 +31,8 @@ export const ZONES_TEMPLATE: Record<ZoneId, Omit<Zone, 'id'>> = {
   // 오라클 챔버 (좌측 하단 구석)
   oracle_chamber: { label: 'Oracle Chamber', emoji: '🔮', center: { col: 8, row: 17 }, minCol: 6, maxCol: 10, minRow: 17, maxRow: 18 },
   // 프로필라에아 (좌측 최하단 — 입구)
-  propylaea:      { label: 'Propylaea', emoji: '🏛️', center: { col: 2, row: 18 }, minCol: 1, maxCol: 4, minRow: 17, maxRow: 19 },
+  // Exclude the extreme left corner so workers don't target a trap-like tile.
+  propylaea:      { label: 'Propylaea', emoji: '🏛️', center: { col: 3, row: 18 }, minCol: 2, maxCol: 4, minRow: 17, maxRow: 19 },
   // 신들의 광장 (좌측 전체 — 자유 이동 공간)
   gods_plaza:     { label: 'Agora of Gods', emoji: '🏛️', center: { col: 6, row: 8 }, minCol: 1, maxCol: 11, minRow: 1, maxRow: 18 },
 };

@@ -50,7 +50,7 @@ export default {
         'theme-border': 'var(--border)',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['Space Grotesk', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'Menlo', 'monospace'],
         pixel: ['"Press Start 2P"', 'monospace'],
       },

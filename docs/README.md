@@ -38,6 +38,7 @@ docs/
 ├── design/                    ← Design decisions & agent system
 │   ├── agent-system.md        ← 19 Custom Agents & activation policy
 │   ├── team-protocol.md       ← Team Engineering Protocol v3.2
+│   ├── CONSOLE_MONITOR_DESIGN_FREEZE_2026-02-23.md ← Console/Monitor 디자인 시스템 동결 스펙
 │   ├── CODEX_ORCHESTRATOR_DEVELOPMENT_PLAN.md  ← Codex orchestrator design
 │   └── DASHBOARD_REFACTORING_PLAN.md  ← Dashboard refactoring plan
 │
@@ -45,6 +46,7 @@ docs/
 │   └── console-monitor/
 │       ├── README.md
 │       ├── COMPLETED_2026-02-20.md
+│       ├── COMPLETED_2026-02-23.md
 │       └── NEXT_STEPS_2026-02-20.md
 │
 ├── spec/                      ← Technical specifications & contracts

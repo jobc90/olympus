@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { GridPos } from './isometric';
-import { drawIsometricTile, gridToScreen } from './isometric';
+import { drawIsometricTile, drawIsometricBlock, gridToScreen, TILE_W, TILE_H } from './isometric';
 import { drawWalls, drawDividerWall, drawZoneLabel, drawBackground, drawNightOverlay, drawMarbleVeins } from '../sprites/decorations';
 import { drawFurniture, drawMonitorScreen, drawRoomba } from '../sprites/furniture';
 import { drawWorker, drawCodex, drawGemini, drawNameTag, drawStatusAura, drawUnicorn, drawCupid } from '../sprites/characters';
@@ -126,6 +126,10 @@ export interface Zone {
   label: string;
   emoji: string;
   center: GridPos;
+  minCol: number;
+  maxCol: number;
+  minRow: number;
+  maxRow: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,8 +154,328 @@ interface RenderConfig {
   codex: CodexConfig;
   gemini?: GeminiConfig;
   connected: boolean;
+  selectedWorkerId?: string | null;
   layout: LayoutProvider;
 }
+
+const ACTIVE_WORK_BEHAVIORS = new Set([
+  'working',
+  'thinking',
+  'reviewing',
+  'deploying',
+  'collaborating',
+  'chatting',
+  'analyzing',
+  'directing',
+  'meeting',
+  'starting',
+  'error',
+]);
+
+function isInZone(pos: GridPos, zone: Zone): boolean {
+  return (
+    pos.col >= zone.minCol &&
+    pos.col <= zone.maxCol &&
+    pos.row >= zone.minRow &&
+    pos.row <= zone.maxRow
+  );
+}
+
+function drawIsoOverlayTile(
+  ctx: CanvasRenderingContext2D,
+  col: number,
+  row: number,
+  color: string,
+  alpha: number,
+): void {
+  const { x, y } = gridToScreen({ col, row });
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.moveTo(x, y - TILE_H / 2);
+  ctx.lineTo(x + TILE_W / 2, y);
+  ctx.lineTo(x, y + TILE_H / 2);
+  ctx.lineTo(x - TILE_W / 2, y);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawFunctionalZoneOverlays(
+  ctx: CanvasRenderingContext2D,
+  zones: Record<string, Zone>,
+  walkGrid: string[][],
+  state: OlympusMountainState,
+  config: RenderConfig,
+): void {
+  const activeZoneIds = new Set<string>();
+  for (const runtime of state.workers) {
+    const workerCfg = config.workers.find((w) => w.id === runtime.id);
+    const behavior = workerCfg?.behavior ?? 'idle';
+    if (!ACTIVE_WORK_BEHAVIORS.has(behavior)) continue;
+
+    for (const [zoneId, zone] of Object.entries(zones)) {
+      if (isInZone(runtime.pos, zone)) {
+        activeZoneIds.add(zoneId);
+        break;
+      }
+    }
+  }
+
+  for (const [zoneId, zone] of Object.entries(zones)) {
+    let color = '#FBC02D';
+    let alpha = 0.04;
+
+    if (zoneId.startsWith('sanctuary_')) {
+      color = '#4FC3F7';
+      alpha = activeZoneIds.has(zoneId) ? 0.13 : 0.07;
+    } else if (zoneId === 'gods_plaza' || zoneId === 'ambrosia_hall' || zoneId === 'olympus_garden') {
+      color = '#FFCA75';
+      alpha = 0.06;
+    } else if (zoneId === 'zeus_temple' || zoneId === 'agora') {
+      color = '#D8B4FE';
+      alpha = 0.07;
+    }
+
+    for (let row = zone.minRow; row <= zone.maxRow; row++) {
+      for (let col = zone.minCol; col <= zone.maxCol; col++) {
+        const tile = walkGrid[row]?.[col];
+        if (tile === 'wall') continue;
+        drawIsoOverlayTile(ctx, col, row, color, alpha);
+      }
+    }
+  }
+}
+
+function getCodexPositionByAnim(anim: CharacterAnim, tick: number): GridPos {
+  if (anim === 'raise_hand' || anim === 'wave' || anim === 'nod') {
+    const patrol = [
+      { col: 16, row: 7 },
+      { col: 17, row: 7 },
+      { col: 18, row: 7 },
+      { col: 17, row: 8 },
+    ];
+    return patrol[Math.floor(tick / 90) % patrol.length];
+  }
+  if (anim === 'point' || anim === 'hand_task') {
+    return { col: 18, row: 5 };
+  }
+  if (anim === 'sit_typing' || anim === 'keyboard_mash') {
+    return { col: 17, row: 2 };
+  }
+  return { col: 17, row: 3 };
+}
+
+function drawSacredRoutes(ctx: CanvasRenderingContext2D, tick: number): void {
+  const processionalPath: GridPos[] = [
+    { col: 3, row: 17 }, { col: 4, row: 16 }, { col: 5, row: 15 }, { col: 6, row: 14 },
+    { col: 7, row: 13 }, { col: 8, row: 12 }, { col: 9, row: 11 }, { col: 10, row: 10 },
+    { col: 11, row: 9 }, { col: 12, row: 8 }, { col: 13, row: 7 }, { col: 14, row: 6 },
+    { col: 15, row: 5 }, { col: 16, row: 4 }, { col: 17, row: 3 },
+  ];
+  for (let i = 0; i < processionalPath.length; i++) {
+    const p = processionalPath[i];
+    const pulse = 0.05 + (0.03 * ((Math.sin((tick + i * 8) * 0.08) + 1) / 2));
+    drawIsoOverlayTile(ctx, p.col, p.row, '#F5C76B', pulse);
+  }
+}
+
+function drawBrazier(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number, sacred = false): void {
+  const base = sacred ? '#D6B171' : '#B18A59';
+  const left = sacred ? '#A57A44' : '#8A653C';
+  const right = sacred ? '#966A35' : '#75512F';
+  drawIsometricBlock(ctx, { col, row }, sacred ? 11 : 9, base, left, right);
+
+  const sp = gridToScreen({ col, row });
+  const flameJitter = Math.floor(Math.sin((tick + col * 13 + row * 7) * 0.22) * 2);
+  const flameH = sacred ? 16 : 12;
+  ctx.fillStyle = '#FFCC68';
+  ctx.fillRect(sp.x - 3, sp.y - flameH - 10 + flameJitter, 6, flameH);
+  ctx.fillStyle = '#FF7A2F';
+  ctx.fillRect(sp.x - 2, sp.y - flameH - 8 + flameJitter, 4, flameH - 4);
+  if ((tick + col + row) % 5 !== 0) {
+    ctx.fillStyle = '#FFF5B1';
+    ctx.fillRect(sp.x - 1, sp.y - flameH - 6 + flameJitter, 2, flameH - 8);
+  }
+}
+
+function drawTempleSetPieces(
+  ctx: CanvasRenderingContext2D,
+  drawables: Array<{ depth: number; draw: () => void }>,
+  tick: number,
+): void {
+  const outerColumns: Array<{ col: number; row: number; h: number }> = [
+    { col: 14, row: 2, h: 30 },
+    { col: 16, row: 2, h: 30 },
+    { col: 18, row: 2, h: 30 },
+    { col: 20, row: 2, h: 30 },
+    { col: 14, row: 4, h: 26 },
+    { col: 20, row: 4, h: 26 },
+  ];
+
+  for (const c of outerColumns) {
+    drawables.push({
+      depth: c.col + c.row - 0.6,
+      draw: () => {
+        drawIsometricBlock(ctx, { col: c.col, row: c.row }, c.h, '#F2DEC0', '#CCB08A', '#B99667');
+        const sp = gridToScreen({ col: c.col, row: c.row });
+        ctx.fillStyle = '#E9C56D';
+        ctx.fillRect(sp.x - 8, sp.y - c.h - 8, 16, 4);
+      },
+    });
+  }
+
+  const braziers: Array<{ col: number; row: number; sacred?: boolean }> = [
+    { col: 15, row: 5, sacred: true },
+    { col: 19, row: 5, sacred: true },
+    { col: 13, row: 11 },
+    { col: 21, row: 11 },
+    { col: 13, row: 17 },
+    { col: 21, row: 17 },
+    { col: 6, row: 13 },
+    { col: 8, row: 4 },
+  ];
+  for (const b of braziers) {
+    drawables.push({
+      depth: b.col + b.row - 0.2,
+      draw: () => drawBrazier(ctx, b.col, b.row, tick, !!b.sacred),
+    });
+  }
+}
+
+function drawWorkerBehaviorProp(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  behavior: string | undefined,
+  tick: number,
+  color: string,
+): void {
+  if (!behavior) return;
+  const px = (ox: number, oy: number, w: number, h: number, fill: string) => {
+    ctx.fillStyle = fill;
+    ctx.fillRect(x + ox, y + oy, w, h);
+  };
+
+  px(7, -35, 12, 9, 'rgba(8, 14, 28, 0.85)');
+  px(7, -35, 12, 1, `${color}AA`);
+
+  if (behavior === 'working' || behavior === 'analyzing' || behavior === 'reviewing') {
+    px(10, -32, 6, 3, '#4FC3F7');
+    px(11, -29, 4, 1, '#9EE8FF');
+    px(12, -28, 2, 1, '#3F5D7A');
+    return;
+  }
+  if (behavior === 'deploying') {
+    px(11, -33, 2, 5, '#FFAA5B');
+    px(10, -31, 1, 3, '#F47421');
+    px(13, -31, 1, 3, '#F47421');
+    px(11, -28, 2, 2, '#FFE4A5');
+    return;
+  }
+  if (behavior === 'thinking') {
+    const blink = (tick % 24) < 18;
+    px(11, -32, 2, 2, blink ? '#FFD54F' : '#BFA43C');
+    px(11, -29, 2, 2, '#FFD54F');
+    px(11, -27, 2, 1, '#FFD54F');
+    return;
+  }
+  if (behavior === 'chatting' || behavior === 'collaborating' || behavior === 'meeting' || behavior === 'directing') {
+    px(10, -32, 6, 4, '#D1A7FF');
+    px(11, -28, 2, 1, '#D1A7FF');
+    return;
+  }
+  if (behavior === 'resting' || behavior === 'idle') {
+    px(10, -32, 5, 4, '#E8D6B2');
+    px(14, -31, 1, 2, '#D0B78B');
+    px(10, -32, 5, 1, '#B58E5A');
+    return;
+  }
+  if (behavior === 'error') {
+    const blink = (tick % 20) < 10;
+    px(11, -33, 2, 6, blink ? '#FF4E4E' : '#8E1D1D');
+    px(11, -26, 2, 1, blink ? '#FFB6B6' : '#6D1C1C');
+    return;
+  }
+  if (behavior === 'offline') {
+    px(10, -32, 6, 4, '#95A3B6');
+    px(11, -31, 4, 2, '#C7D2E2');
+    return;
+  }
+  if (behavior === 'starting') {
+    px(11, -33, 2, 6, '#7DDB84');
+    px(10, -31, 4, 2, '#A2E7A8');
+  }
+}
+
+function drawSelectedWorkerHighlight(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  tick: number,
+  accentColor: string,
+): void {
+  const pulse = 0.5 + 0.5 * Math.sin(tick * 0.18);
+  const left = Math.round(x - 16 - pulse * 1.5);
+  const top = Math.round(y - 55 - pulse * 1.2);
+  const width = Math.round(32 + pulse * 3);
+  const height = Math.round(44 + pulse * 2);
+
+  ctx.save();
+
+  // Dark border base (high contrast on any tile)
+  ctx.globalAlpha = 0.96;
+  ctx.strokeStyle = 'rgba(6, 10, 20, 0.95)';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(left - 1, top - 1, width + 2, height + 2);
+
+  // Gold outer stroke
+  ctx.globalAlpha = 0.92;
+  ctx.strokeStyle = '#FFE082';
+  ctx.lineWidth = 2.5;
+  ctx.strokeRect(left, top, width, height);
+
+  // Accent inner stroke (worker color)
+  ctx.globalAlpha = 0.85;
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(left + 2, top + 2, width - 4, height - 4);
+
+  // Corner pixels for stronger "selected" feedback
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#FFF3C1';
+  ctx.fillRect(left - 2, top - 2, 6, 2);
+  ctx.fillRect(left - 2, top - 2, 2, 6);
+  ctx.fillRect(left + width - 2, top - 2, 6, 2);
+  ctx.fillRect(left + width + 2, top - 2, 2, 6);
+  ctx.fillRect(left - 2, top + height + 2, 6, 2);
+  ctx.fillRect(left - 2, top + height - 2, 2, 6);
+  ctx.fillRect(left + width - 2, top + height + 2, 6, 2);
+  ctx.fillRect(left + width + 2, top + height - 2, 2, 6);
+
+  // Beacon above head
+  const beaconY = top - 12 - pulse * 2;
+  ctx.fillStyle = 'rgba(6, 10, 20, 0.95)';
+  ctx.beginPath();
+  ctx.moveTo(x, beaconY - 2);
+  ctx.lineTo(x - 6, beaconY + 8);
+  ctx.lineTo(x + 6, beaconY + 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#FFE082';
+  ctx.beginPath();
+  ctx.moveTo(x, beaconY);
+  ctx.lineTo(x - 4, beaconY + 6);
+  ctx.lineTo(x + 4, beaconY + 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = accentColor;
+  ctx.fillRect(x - 1, beaconY + 2, 2, 2);
+
+  ctx.restore();
+}
+
 
 // ---------------------------------------------------------------------------
 // Main render
@@ -168,6 +492,7 @@ export function renderFrame(
 
   const workerCount = config.workers.length;
   const layout = config.layout;
+  const zones = layout.buildZones(workerCount);
 
   drawBackground(ctx, width, height, state.dayNightPhase, state.tick);
   drawWalls(ctx, layout.MAP_COLS, layout.MAP_ROWS);
@@ -189,11 +514,15 @@ export function renderFrame(
     }
   }
 
+  drawFunctionalZoneOverlays(ctx, zones, walkGrid, state, config);
+  drawSacredRoutes(ctx, state.tick);
+
   interface Drawable {
     depth: number;
     draw: () => void;
   }
   const drawables: Drawable[] = [];
+  drawTempleSetPieces(ctx, drawables, state.tick);
 
   const furniture = layout.buildFurnitureLayout(workerCount);
   for (const item of furniture) {
@@ -252,6 +581,7 @@ export function renderFrame(
           workerCfg.emoji,
           workerCfg.skinToneIndex,
         );
+        drawWorkerBehaviorProp(ctx, sp.x, sp.y, workerCfg.behavior, state.tick, workerCfg.color);
         drawNameTag(ctx, sp.x, sp.y + 2, workerCfg.name, workerCfg.color);
       },
     });
@@ -289,7 +619,7 @@ export function renderFrame(
     },
   });
 
-  const codexPos = { col: 17, row: 3 };
+  const codexPos = getCodexPositionByAnim(state.codex.anim, state.tick);
   drawables.push({
     depth: codexPos.row + codexPos.col,
     draw: () => {
@@ -327,7 +657,6 @@ export function renderFrame(
   drawables.sort((a, b) => a.depth - b.depth);
   for (const d of drawables) d.draw();
 
-  const zones = layout.buildZones(workerCount);
   for (const zone of Object.values(zones)) {
     if (zone.id.startsWith('sanctuary_')) {
       const idx = parseInt(zone.id.replace('sanctuary_', ''), 10);
@@ -359,7 +688,10 @@ export function renderFrame(
       }
     }
   }
-  drawNightOverlay(ctx, width, height, state.dayNightPhase, glowSpots);
+  drawNightOverlay(ctx, width, height, state.dayNightPhase, glowSpots, {
+    mapCols: layout.MAP_COLS,
+    mapRows: layout.MAP_ROWS,
+  });
 
   // Title
   ctx.save();
@@ -381,4 +713,14 @@ export function renderFrame(
     ctx.fillText('Disconnected', width - 16, 24);
   }
   ctx.restore();
+
+  // Selected worker highlight (top-most overlay to keep beacon always visible)
+  if (config.selectedWorkerId) {
+    const selectedRuntime = state.workers.find((w) => w.id === config.selectedWorkerId);
+    const selectedCfg = config.workers.find((w) => w.id === config.selectedWorkerId);
+    if (selectedRuntime) {
+      const sp = gridToScreen(selectedRuntime.pos);
+      drawSelectedWorkerHighlight(ctx, sp.x, sp.y, state.tick, selectedCfg?.color ?? '#4FC3F7');
+    }
+  }
 }

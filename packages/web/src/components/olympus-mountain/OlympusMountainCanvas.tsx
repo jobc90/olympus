@@ -34,9 +34,27 @@ const layoutProvider: LayoutProvider = {
   buildFurnitureLayout,
   buildZones: (workerCount: number) => {
     const zones = buildZones(workerCount);
-    const result: Record<string, { id: string; label: string; emoji: string; center: { col: number; row: number } }> = {};
+    const result: Record<string, {
+      id: string;
+      label: string;
+      emoji: string;
+      center: { col: number; row: number };
+      minCol: number;
+      maxCol: number;
+      minRow: number;
+      maxRow: number;
+    }> = {};
     for (const [key, zone] of Object.entries(zones)) {
-      result[key] = { id: zone.id, label: zone.label, emoji: zone.emoji, center: zone.center };
+      result[key] = {
+        id: zone.id,
+        label: zone.label,
+        emoji: zone.emoji,
+        center: zone.center,
+        minCol: zone.minCol,
+        maxCol: zone.maxCol,
+        minRow: zone.minRow,
+        maxRow: zone.maxRow,
+      };
     }
     return result;
   },
@@ -59,6 +77,7 @@ interface OlympusMountainCanvasProps {
   workers: WorkerConfig[];
   codexConfig: CodexConfig;
   geminiConfig?: GeminiConfig;
+  selectedWorkerId?: string | null;
   onTick: () => void;
   /** Internal render resolution width (default: 1100) */
   width?: number;
@@ -80,6 +99,7 @@ export function OlympusMountainCanvas({
   workers,
   codexConfig,
   geminiConfig,
+  selectedWorkerId,
   onTick,
   width = BASE_WIDTH,
   height = BASE_HEIGHT,
@@ -131,24 +151,25 @@ export function OlympusMountainCanvas({
 
   // Store latest props in refs to avoid stale closures in the render loop
   const propsRef = useRef({
-    olympusMountainState, workers, codexConfig, geminiConfig, connected, onTick, width, height, scale, dpr, onWorkerClick,
+    olympusMountainState, workers, codexConfig, geminiConfig, selectedWorkerId, connected, onTick, width, height, scale, dpr, onWorkerClick,
     onPerformanceUpdate,
   });
   useEffect(() => {
     propsRef.current = {
-      olympusMountainState, workers, codexConfig, geminiConfig, connected, onTick, width, height, scale, dpr, onWorkerClick, onPerformanceUpdate,
+      olympusMountainState, workers, codexConfig, geminiConfig, selectedWorkerId, connected, onTick, width, height, scale, dpr, onWorkerClick, onPerformanceUpdate,
     };
   });
 
   useEffect(() => {
     const render = (timestamp: number) => {
-      const {
-        olympusMountainState: os,
-        workers: ws,
-        codexConfig: cc,
-        geminiConfig: gc,
-        connected: cn,
-        onTick: ot,
+        const {
+          olympusMountainState: os,
+          workers: ws,
+          codexConfig: cc,
+          geminiConfig: gc,
+          selectedWorkerId: selectedId,
+          connected: cn,
+          onTick: ot,
         width: w,
         height: h,
         scale: sc,
@@ -204,6 +225,7 @@ export function OlympusMountainCanvas({
           workers: canvasWorkers,
           codex: canvasCodex,
           gemini: canvasGemini,
+          selectedWorkerId: selectedId,
           connected: cn,
           layout: layoutProvider,
         });
