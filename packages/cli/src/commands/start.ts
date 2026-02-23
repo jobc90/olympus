@@ -13,6 +13,8 @@ interface TaskPayload {
   provider?: string;
   dangerouslySkipPermissions?: boolean;
   projectPath?: string;
+  /** 'terminal' when task originates from dashboard PTY input */
+  source?: string;
 }
 
 interface WorkerInputPayload {
@@ -291,6 +293,24 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
           }
 
           const task = msg.payload as TaskPayload;
+
+          // Terminal-sourced tasks: input already sent via sendInput — just monitor completion
+          if (task.source === 'terminal') {
+            handledTaskIds.add(task.taskId);
+            ptyWorker.monitorForCompletion(task.prompt)
+              .then(result => reportResult(task.taskId, {
+                success: result.success,
+                text: result.text.slice(0, 50000),
+                durationMs: result.durationMs,
+              }))
+              .catch(err => reportResult(task.taskId, {
+                success: false,
+                error: (err as Error).message,
+                durationMs: 0,
+              }));
+            return;
+          }
+
           handleTask(task);
           return;
         }

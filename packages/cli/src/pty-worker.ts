@@ -646,6 +646,42 @@ export class PtyWorker {
     this.pty.write(data);
   }
 
+  /**
+   * Start monitoring for task completion without writing to PTY.
+   * Used when input has already been sent via sendInput() (terminal mode).
+   * Reuses the same completion detection logic as executeTask().
+   */
+  monitorForCompletion(prompt: string): Promise<TaskResult> {
+    if (this.state.phase !== 'idle') {
+      throw new Error('이미 작업 진행 중입니다');
+    }
+    if (!this.pty) {
+      throw new Error('PTY가 시작되지 않았습니다');
+    }
+
+    return new Promise<TaskResult>((resolve, reject) => {
+      const now = Date.now();
+
+      this.state = {
+        phase: 'processing',
+        prompt,
+        startTime: now,
+        buffer: '',
+        resolve,
+        reject,
+        settleTimer: null,
+        submitted: true,
+        submittedAt: now,
+        hasBackgroundAgents: false,
+        lastAgentActivityAt: 0,
+        lastOutputAt: now,
+        completionRecheckTimer: null,
+      };
+
+      this.armCompletionRecheck();
+    });
+  }
+
   resize(cols: number, rows: number): void {
     if (!this.pty) return;
     if (!Number.isFinite(cols) || !Number.isFinite(rows)) return;

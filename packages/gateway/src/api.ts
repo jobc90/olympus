@@ -361,6 +361,9 @@ export function createApiHandler(options: ApiHandlerOptions) {
   } = options;
   const workspaceRoot = options.workspaceRoot ?? process.cwd();
 
+  // Terminal input buffer per worker — accumulates keystrokes, creates task on Enter (\r)
+  const terminalInputBuffers = new Map<string, string>();
+
   // Async CLI task store (in-memory, 1-hour TTL)
   const asyncTasks = new Map<string, { status: 'running' | 'completed' | 'failed'; result?: import('@olympus-dev/protocol').CliRunResult; error?: string; startedAt: number }>();
 
@@ -582,12 +585,47 @@ ${body.message}`;
           sendJson(res, 400, { error: 'Invalid input length' });
           return;
         }
+
+        // Always forward raw input to PTY
         onWorkerEvent?.('worker:input', {
           workerId: worker.id,
           workerName: worker.name,
           input,
           timestamp: Date.now(),
         });
+
+        // Buffer input to detect Enter (\r or \n) — then create a task for tracking
+        const isCtrlChar = input.length === 1 && input.charCodeAt(0) < 32
+          && input !== '\r' && input !== '\n';
+        if (isCtrlChar) {
+          // Control characters (Ctrl+C etc.) — clear buffer, don't create task
+          terminalInputBuffers.delete(worker.id);
+        } else if (input.includes('\r') || input.includes('\n')) {
+          const prev = terminalInputBuffers.get(worker.id) ?? '';
+          const fullInput = prev + input.replace(/[\r\n]+$/, '');
+          terminalInputBuffers.delete(worker.id);
+
+          // Only create task if there's meaningful text (not just Enter)
+          const prompt = fullInput.trim();
+          if (prompt.length >= 2 && worker.status !== 'busy') {
+            const task = workerRegistry.createTask(worker.id, prompt);
+            onWorkerEvent?.('worker:task:assigned', {
+              taskId: task.taskId,
+              workerId: worker.id,
+              workerName: worker.name,
+              prompt,
+              provider: 'claude',
+              dangerouslySkipPermissions: true,
+              projectPath: worker.projectPath,
+              source: 'terminal',
+            });
+          }
+        } else {
+          // Accumulate printable characters
+          const prev = terminalInputBuffers.get(worker.id) ?? '';
+          terminalInputBuffers.set(worker.id, prev + input);
+        }
+
         sendJson(res, 200, { ok: true });
         return;
       }
