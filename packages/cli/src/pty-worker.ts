@@ -420,6 +420,8 @@ export class PtyWorker {
   private originalRawMode: boolean | undefined;
   private stdinDecoder = new StringDecoder('utf8');
   private initFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When true, suppress stderr diagnostic messages to avoid TUI corruption */
+  private ttyAttached = false;
 
   constructor(private options: PtyWorkerOptions) {}
 
@@ -446,6 +448,13 @@ export class PtyWorker {
       cwd: this.options.projectPath,
       env: { ...process.env } as Record<string, string>,
     });
+
+    // Enable alternate screen buffer so PTY output doesn't mix with host shell
+    if (process.stdout.isTTY) {
+      // Save cursor + enter alternate screen + hide cursor
+      process.stdout.write('\x1b[?1049h\x1b[?25l');
+      this.ttyAttached = true;
+    }
 
     // PTY 출력 핸들러
     this.pty.onData((data: string) => {
@@ -477,7 +486,9 @@ export class PtyWorker {
         if (!this.initFallbackTimer) {
           this.initFallbackTimer = setTimeout(() => {
             if (!this.ready) {
-              process.stderr.write('[PTY] Claude CLI active for 15s — marking ready (time-based fallback)\n');
+              if (!this.ttyAttached) {
+                process.stderr.write('[PTY] Claude CLI active for 15s — marking ready (time-based fallback)\n');
+              }
               this.ready = true;
               this.readyResolve?.();
               this.options.onReady?.();
@@ -493,7 +504,9 @@ export class PtyWorker {
             clearTimeout(this.initFallbackTimer);
             this.initFallbackTimer = null;
           }
-          process.stderr.write('[PTY] Idle prompt detected — ready (pattern match)\n');
+          if (!this.ttyAttached) {
+            process.stderr.write('[PTY] Idle prompt detected — ready (pattern match)\n');
+          }
           this.ready = true;
           this.readyResolve?.();
           this.options.onReady?.();
@@ -523,7 +536,6 @@ export class PtyWorker {
       this.originalRawMode = process.stdin.isRaw;
       process.stdin.setRawMode(true);
       process.stdin.resume();
-      process.stderr.write('\x1b[90m[PTY] Ctrl+C to exit worker (Ctrl+] also supported)\x1b[0m\r\n');
 
       this.stdinHandler = (data: Buffer) => {
         if (!this.pty) return;
@@ -706,6 +718,12 @@ export class PtyWorker {
     this.pty?.kill();
     this.pty = null;
     this.state = { phase: 'idle' };
+
+    // Restore original terminal: show cursor + leave alternate screen
+    if (this.ttyAttached) {
+      process.stdout.write('\x1b[?25h\x1b[?1049l');
+      this.ttyAttached = false;
+    }
   }
 
   // ──────────────────────────────────────

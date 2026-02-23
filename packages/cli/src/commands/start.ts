@@ -87,8 +87,8 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
   let shuttingDown = false;
   let streamBuffer = '';
   let streamFlushTimer: ReturnType<typeof setTimeout> | null = null;
-  const STREAM_FLUSH_MS = 120;
-  const STREAM_FLUSH_SIZE = 8192;
+  const STREAM_FLUSH_MS = 30;
+  const STREAM_FLUSH_SIZE = 2048;
 
   // shutdown 함수를 먼저 선언 (onExit에서 참조)
   let shutdownFn: ((signal: string) => Promise<void>) | null = null;
@@ -346,8 +346,6 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
   async function shutdown(signal: string) {
     if (shuttingDown) return;
     shuttingDown = true;
-    logBrief('');
-    logBrief(chalk.gray('Shutting down...'));
     clearInterval(heartbeatInterval);
     clearInterval(recoveryPollInterval);
     if (streamFlushTimer) {
@@ -357,6 +355,9 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
     await flushWorkerStream();
 
     ptyWorker.destroy();
+    // After destroy(), alternate screen is restored — safe to print
+    logBrief('');
+    logBrief(chalk.gray('Shutting down...'));
 
     ws?.close();
     try {
