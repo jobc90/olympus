@@ -193,6 +193,14 @@ export interface OlympusState {
     summary: string;
     timestamp: number;
   } | null;
+  // Worker task Codex summary for ChatWindow (replaces raw completion text)
+  lastWorkerSummary: {
+    workerId: string;
+    workerName: string;
+    summary: string;
+    taskId: string;
+    timestamp: number;
+  } | null;
   // Worker task failure events for ChatWindow (R2)
   lastWorkerFailure: {
     workerId: string;
@@ -419,6 +427,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     codexGreeting: null,
     lastWorkerCompletion: null,
     lastWorkerAssignment: null,
+    lastWorkerSummary: null,
     lastWorkerFailure: null,
     workerLogs: loadWorkerLogsFromStorage(),
     selectedWorkerId: null,
@@ -1171,9 +1180,9 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       }
     });
 
-    // Worker task summary update
+    // Worker task summary update — Codex summarization result
     client.on('worker:task:summary', (m) => {
-      const payload = m.payload as { taskId: string; workerId?: string; summary: string };
+      const payload = m.payload as { taskId: string; workerId?: string; workerName?: string; summary: string };
       if (payload.workerId) {
         const workerId = payload.workerId;
         setState((s) => {
@@ -1196,6 +1205,13 @@ export function useOlympus(options: UseOlympusOptions = {}) {
                 sessionLog: pushSessionLog(existingDashboard.sessionLog, payload.summary),
                 lastActivity: now,
               },
+            },
+            lastWorkerSummary: {
+              workerId,
+              workerName: payload.workerName ?? workerId,
+              summary: payload.summary,
+              taskId: payload.taskId,
+              timestamp: now,
             },
             syncStatus: {
               ...s.syncStatus,
@@ -2080,6 +2096,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     resizeWorkerTerminal,
     lastWorkerCompletion: state.lastWorkerCompletion,
     lastWorkerAssignment: state.lastWorkerAssignment,
+    lastWorkerSummary: state.lastWorkerSummary,
     lastWorkerFailure: state.lastWorkerFailure,
     workerLogs: state.workerLogs,
     selectedWorkerId: state.selectedWorkerId,

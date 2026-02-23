@@ -210,6 +210,7 @@ export default function App() {
     resizeWorkerTerminal,
     lastWorkerCompletion,
     lastWorkerAssignment,
+    lastWorkerSummary,
     lastWorkerFailure,
     workerLogs,
     selectedWorkerId,
@@ -355,18 +356,17 @@ export default function App() {
     }
   }, [chatWithGemini, chatWithCodex, polledWorkerConfigs]);
 
-  // Worker task completion → ChatWindow message
+  // Worker task completion → ChatWindow message (only on failure; success waits for Codex summary)
   useEffect(() => {
     if (!lastWorkerCompletion) return;
+    // On success, Codex summary (worker:task:summary) will provide the chat message
+    if (lastWorkerCompletion.success) return;
 
-    const { workerId, workerName, summary, success } = lastWorkerCompletion;
-    const icon = success ? '✅' : '❌';
-    const content = `${icon} ${summary}`;
-
+    const { workerId, summary } = lastWorkerCompletion;
     const agentMsg = {
       id: crypto.randomUUID(),
       role: 'agent' as const,
-      content,
+      content: `❌ ${summary}`,
       timestamp: lastWorkerCompletion.timestamp,
     };
 
@@ -375,6 +375,24 @@ export default function App() {
       [workerId]: appendChatMessage(prev[workerId] || [], agentMsg),
     }));
   }, [lastWorkerCompletion?.timestamp]);
+
+  // Worker task Codex summary → ChatWindow message (preferred over raw completion text)
+  useEffect(() => {
+    if (!lastWorkerSummary) return;
+
+    const { workerId, summary } = lastWorkerSummary;
+    const agentMsg = {
+      id: crypto.randomUUID(),
+      role: 'agent' as const,
+      content: `✅ ${summary}`,
+      timestamp: lastWorkerSummary.timestamp,
+    };
+
+    setChatMessages(prev => ({
+      ...prev,
+      [workerId]: appendChatMessage(prev[workerId] || [], agentMsg),
+    }));
+  }, [lastWorkerSummary?.timestamp]);
 
   // Worker task assignment → ChatWindow message (R2)
   useEffect(() => {
