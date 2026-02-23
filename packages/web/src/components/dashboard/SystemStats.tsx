@@ -8,15 +8,7 @@ interface SystemStatsProps {
   stats: {
     totalWorkers: number;
     activeWorkers: number;
-    totalTokens: number;
-    failedTasks: number;
   };
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
 }
 
 function AnimatedNumber({ value, format }: { value: number; format?: (n: number) => string }) {
@@ -51,12 +43,10 @@ export default function SystemStats({ stats }: SystemStatsProps) {
   const items = [
     { label: 'Workers', value: stats.totalWorkers, icon: '\u{1F916}', color: 'var(--accent-primary)' },
     { label: 'Active', value: stats.activeWorkers, icon: '\u{26A1}', color: 'var(--accent-success)' },
-    { label: 'Tokens', value: stats.totalTokens, icon: '\u{1FA99}', color: 'var(--accent-warning)', format: formatTokens },
-    { label: 'Failed', value: stats.failedTasks, icon: '\u{274C}', color: 'var(--accent-danger)' },
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 gap-3">
       {items.map(item => (
         <div
           key={item.label}
@@ -68,7 +58,7 @@ export default function SystemStats({ stats }: SystemStatsProps) {
         >
           <span className="text-base">{item.icon}</span>
           <span className="text-lg truncate" style={{ color: item.color }}>
-            <AnimatedNumber value={item.value} format={item.format} />
+            <AnimatedNumber value={item.value} />
           </span>
           <span className="text-[10px] font-mono uppercase tracking-wider truncate" style={{ color: 'var(--text-secondary)' }}>
             {item.label}

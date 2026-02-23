@@ -219,6 +219,10 @@ export interface UseOlympusOptions {
 const WORKER_COLORS = ['#4FC3F7', '#FF7043', '#66BB6A', '#AB47BC', '#FFCA28', '#EF5350'];
 const WORKER_AVATARS = ['athena', 'poseidon', 'ares', 'apollo', 'artemis', 'hermes', 'hephaestus', 'dionysus', 'demeter', 'aphrodite', 'hades', 'persephone', 'prometheus', 'helios', 'nike', 'pan', 'hecate', 'iris', 'heracles'];
 const ACTIVE_BEHAVIORS = new Set(['working', 'thinking', 'reviewing', 'deploying', 'analyzing', 'collaborating', 'chatting']);
+const WORKER_LOGS_STORAGE_KEY = 'olympus-worker-logs-v1';
+const WORKER_OUTPUTS_STORAGE_KEY = 'olympus-worker-outputs-v1';
+const MAX_PERSISTED_WORKER_LOGS = 20;
+const MAX_PERSISTED_WORKER_OUTPUT = 120_000;
 const WORKER_BEHAVIOR_VALUES: WorkerBehavior[] = [
   'working', 'idle', 'thinking', 'completed', 'error', 'offline',
   'chatting', 'reviewing', 'deploying', 'resting', 'collaborating',
@@ -290,6 +294,79 @@ function getPreferredTelegramChatId(): number | undefined {
   return Math.floor(parsed);
 }
 
+function loadWorkerLogsFromStorage(): Map<string, WorkerLogEntry[]> {
+  if (typeof window === 'undefined') return new Map();
+  try {
+    const raw = window.localStorage.getItem(WORKER_LOGS_STORAGE_KEY);
+    if (!raw) return new Map();
+    const parsed = JSON.parse(raw) as Record<string, WorkerLogEntry[]>;
+    if (!parsed || typeof parsed !== 'object') return new Map();
+    const map = new Map<string, WorkerLogEntry[]>();
+    for (const [workerId, entries] of Object.entries(parsed)) {
+      if (!Array.isArray(entries) || entries.length === 0) continue;
+      map.set(workerId, entries.slice(-MAX_PERSISTED_WORKER_LOGS));
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+function saveWorkerLogsToStorage(workerLogs: Map<string, WorkerLogEntry[]>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const payload: Record<string, WorkerLogEntry[]> = {};
+    for (const [workerId, entries] of workerLogs.entries()) {
+      if (!entries.length) continue;
+      payload[workerId] = entries.slice(-MAX_PERSISTED_WORKER_LOGS);
+    }
+    window.localStorage.setItem(WORKER_LOGS_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore localStorage errors
+  }
+}
+
+function loadWorkersFromStorage(): Map<string, WorkerInfo> {
+  if (typeof window === 'undefined') return new Map();
+  try {
+    const raw = window.localStorage.getItem(WORKER_OUTPUTS_STORAGE_KEY);
+    if (!raw) return new Map();
+    const parsed = JSON.parse(raw) as Record<string, WorkerInfo>;
+    if (!parsed || typeof parsed !== 'object') return new Map();
+    const map = new Map<string, WorkerInfo>();
+    for (const [workerId, info] of Object.entries(parsed)) {
+      if (!info || typeof info !== 'object') continue;
+      map.set(workerId, {
+        workerId,
+        projectPath: String(info.projectPath ?? ''),
+        status: info.status === 'completed' || info.status === 'failed' ? info.status : 'running',
+        output: String(info.output ?? '').slice(-MAX_PERSISTED_WORKER_OUTPUT),
+      });
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+function saveWorkersToStorage(workers: Map<string, WorkerInfo>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const payload: Record<string, WorkerInfo> = {};
+    for (const [workerId, info] of workers.entries()) {
+      payload[workerId] = {
+        workerId,
+        projectPath: info.projectPath,
+        status: info.status,
+        output: info.output.slice(-MAX_PERSISTED_WORKER_OUTPUT),
+      };
+    }
+    window.localStorage.setItem(WORKER_OUTPUTS_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore localStorage errors
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -313,7 +390,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     agentState: 'IDLE',
     agentProgress: null,
     agentTaskId: null,
-    workers: new Map(),
+    workers: loadWorkersFromStorage(),
     taskHistory: [],
     pendingApproval: null,
     cliHistory: [],
@@ -343,7 +420,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     lastWorkerCompletion: null,
     lastWorkerAssignment: null,
     lastWorkerFailure: null,
-    workerLogs: new Map(),
+    workerLogs: loadWorkerLogsFromStorage(),
     selectedWorkerId: null,
     syncStatus: {
       lastPollAt: null,
@@ -1187,12 +1264,48 @@ export function useOlympus(options: UseOlympusOptions = {}) {
 
     client.onWorkerOutput((p) => {
       setState((s) => {
+        const now = Date.now();
         const workers = new Map(s.workers);
-        const existing = workers.get(p.workerId);
-        if (existing) {
-          workers.set(p.workerId, { ...existing, output: (existing.output + p.content).slice(-5000) });
-        }
-        return { ...s, workers };
+        const chunk = (
+          (p as { content?: string }).content
+          ?? (p as { text?: string }).text
+          ?? ''
+        );
+        if (!chunk) return s;
+
+        const byId = typeof (p as { workerId?: unknown }).workerId === 'string'
+          ? (p as { workerId: string }).workerId
+          : '';
+        const byName = typeof (p as { workerName?: unknown }).workerName === 'string'
+          ? s.workerConfigs.find(cfg => cfg.registeredName === (p as { workerName?: string }).workerName)?.id
+          : undefined;
+        const resolvedWorkerId = byId || byName;
+        if (!resolvedWorkerId) return s;
+
+        const existing = workers.get(resolvedWorkerId);
+        const projectPath = existing?.projectPath
+          ?? s.workerConfigs.find(w => w.id === resolvedWorkerId)?.projectPath
+          ?? '';
+        const base: WorkerInfo = existing ?? {
+          workerId: resolvedWorkerId,
+          projectPath,
+          status: 'running',
+          output: '',
+        };
+
+        workers.set(resolvedWorkerId, {
+          ...base,
+          status: 'running',
+          output: (base.output + chunk).slice(-200_000),
+        });
+        return {
+          ...s,
+          workers,
+          syncStatus: {
+            ...s.syncStatus,
+            lastWsEventAt: now,
+          },
+        };
       });
     });
 
@@ -1369,13 +1482,18 @@ export function useOlympus(options: UseOlympusOptions = {}) {
               workerBehaviors[w.id] = 'offline';
             } else if (w.status === 'failed' as string) {
               workerBehaviors[w.id] = 'error';
-            } else if (hasActiveStream) {
-              workerBehaviors[w.id] = 'working';
             } else if (w.status === 'busy' && w.currentTaskId) {
               workerBehaviors[w.id] = 'working';
             } else if (w.status === 'busy') {
-              workerBehaviors[w.id] = 'thinking';
+              // Busy without taskId: still show active if stream is flowing.
+              workerBehaviors[w.id] = hasActiveStream ? 'working' : 'thinking';
             } else {
+              // When registry says idle, never pin to "working" only by CLI stream.
+              // Streams can be stale or unrelated to this worker.
+              if (hasActiveStream) {
+                workerBehaviors[w.id] = 'chatting';
+                continue;
+              }
               // Check if recently completed (within last 30s via cliHistory)
               const recentComplete = s.cliHistory.find(
                 h => sessionKeyMatchesWorker(h.sessionKey, w.id, w.name) && (now - h.timestamp) < 30000,
@@ -1672,6 +1790,20 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     }
   }, [state.activityEvents]);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      saveWorkerLogsToStorage(state.workerLogs);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [state.workerLogs]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      saveWorkersToStorage(state.workers);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [state.workers]);
+
   // =========================================================================
   // Actions (existing)
   // =========================================================================
@@ -1891,6 +2023,40 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     }
   }, [host, port, apiKey]);
 
+  const sendWorkerInput = useCallback(async (workerId: string, input: string): Promise<boolean> => {
+    if (!workerId || !input) return false;
+    try {
+      const res = await fetch(`http://${host}:${port}/api/workers/${encodeURIComponent(workerId)}/input`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({ input }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }, [host, port, apiKey]);
+
+  const resizeWorkerTerminal = useCallback(async (workerId: string, cols: number, rows: number): Promise<boolean> => {
+    if (!workerId) return false;
+    try {
+      const res = await fetch(`http://${host}:${port}/api/workers/${encodeURIComponent(workerId)}/resize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({ cols, rows }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }, [host, port, apiKey]);
+
   return {
     ...state,
     subscribe,
@@ -1910,6 +2076,8 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     chatWithGemini,
     chatWithCodex,
     deleteCliSession,
+    sendWorkerInput,
+    resizeWorkerTerminal,
     lastWorkerCompletion: state.lastWorkerCompletion,
     lastWorkerAssignment: state.lastWorkerAssignment,
     lastWorkerFailure: state.lastWorkerFailure,

@@ -54,6 +54,10 @@ const TUI_ARTIFACT_PATTERNS = [
   /^\s*[A-Za-z]\s*$/,           // fragmented single-letter lines
   /^\s*\d{1,5}\s*$/,            // fragmented numeric lines
   /^[✢✳✶✻✽·]?\s*[A-Za-z][A-Za-z-]{2,24}…(?:\s*\(thinking\))?$/i, // one-word ellipsis animation
+  /^[✢✳✶✻✽·]?\s*(?:Processing|Forming|Flowing|Deliberating|Effecting|Thinking)…?(?:\s*thinking)?\s*$/i,
+  /^[✢✳✶✻✽·]?\s*[A-Za-z][A-Za-z-]{2,24}…?thinking\s*$/i,
+  /^[✢✳✶✻✽·]?\s*[A-Za-z][A-Za-z-]{2,24}…?\(thought[^)]*\)\s*$/i,
+  /tip:\s*run\s*claude\s*--(?:continue|resume)/i,
   /^[-─═]{3,}\s*$/,            // Horizontal dividers
   /^\s*\d+\s*[│|]\s*$/,       // Table borders (empty)
 ];

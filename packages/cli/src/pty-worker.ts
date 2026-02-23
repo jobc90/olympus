@@ -12,6 +12,7 @@
 import { chmodSync, accessSync, constants } from 'fs';
 import { join, dirname } from 'path';
 import { createRequire } from 'module';
+import { StringDecoder } from 'string_decoder';
 import { stripAnsi } from './utils/strip-ansi.js';
 
 /**
@@ -45,8 +46,10 @@ export interface PtyWorkerOptions {
   trustMode: boolean;
   cols?: number;
   rows?: number;
+  /** Raw PTY output callback for mirroring/stream relay */
+  onData?: (data: string) => void;
   onReady?: () => void;
-  onExit?: () => void; // Double Ctrl+C 종료 콜백
+  onExit?: () => void; // worker 종료 콜백 (Ctrl+] escape)
 }
 
 export interface TaskResult {
@@ -94,8 +97,10 @@ const TIME_BASED_READY_MS = 15_000;
 /** 텍스트 입력 후 Enter 전송까지 대기 (Ink가 텍스트를 처리할 시간) */
 const SUBMIT_DELAY_MS = 150;
 
-/** Double Ctrl+C 감지 시간 (ms) */
-const DOUBLE_CTRLC_MS = 1000;
+/** Ctrl+C (0x03): worker escape key (terminates worker + Claude PTY) */
+const CTRL_C_BYTE = 0x03;
+/** Ctrl+] (0x1D): alternate worker escape key */
+const WORKER_ESCAPE_BYTE = 0x1d;
 
 /** 출력이 멈춘 뒤 완료 재검사 지연 */
 const QUIET_RECHECK_MS = 2_500;
@@ -413,8 +418,7 @@ export class PtyWorker {
   private stdinHandler: ((data: Buffer) => void) | null = null;
   private resizeHandler: (() => void) | null = null;
   private originalRawMode: boolean | undefined;
-  private lastCtrlC = 0;
-  private ctrlCResetTimer: ReturnType<typeof setTimeout> | null = null;
+  private stdinDecoder = new StringDecoder('utf8');
   private initFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private options: PtyWorkerOptions) {}
@@ -446,6 +450,7 @@ export class PtyWorker {
     // PTY 출력 핸들러
     this.pty.onData((data: string) => {
       process.stdout.write(data);
+      this.options.onData?.(data);
       this.idleBuffer += data;
 
       if (this.state.phase === 'processing' && this.state.submitted) {
@@ -511,40 +516,44 @@ export class PtyWorker {
       this.pty = null;
     });
 
-    // stdin → PTY 포워딩 (사용자 키보드 입력 + Ctrl+C 처리)
+    // stdin → PTY 포워딩 (raw passthrough)
+    // - Ctrl+C exits worker process (and Claude PTY is terminated in shutdown).
+    // - Ctrl+] is an alternate exit key.
     if (process.stdin.isTTY) {
       this.originalRawMode = process.stdin.isRaw;
       process.stdin.setRawMode(true);
       process.stdin.resume();
+      process.stderr.write('\x1b[90m[PTY] Ctrl+C to exit worker (Ctrl+] also supported)\x1b[0m\r\n');
 
       this.stdinHandler = (data: Buffer) => {
         if (!this.pty) return;
 
-        // Ctrl+C (0x03) 처리: 더블 Ctrl+C → 종료
-        if (data.length === 1 && data[0] === 0x03) {
-          const now = Date.now();
-          if (now - this.lastCtrlC < DOUBLE_CTRLC_MS) {
-            // 더블 Ctrl+C → 워커 종료
-            if (this.options.onExit) {
-              this.options.onExit();
-            } else {
-              process.exit(0);
-            }
-            return;
+        // Ctrl+C → worker exit
+        if (data.length === 1 && data[0] === CTRL_C_BYTE) {
+          if (this.options.onExit) {
+            this.options.onExit();
+          } else {
+            process.exit(0);
           }
-          this.lastCtrlC = now;
-          // Clear the timestamp after the double-press window expires
-          if (this.ctrlCResetTimer) clearTimeout(this.ctrlCResetTimer);
-          this.ctrlCResetTimer = setTimeout(() => {
-            this.lastCtrlC = 0;
-            this.ctrlCResetTimer = null;
-          }, DOUBLE_CTRLC_MS);
-          // Show hint after first Ctrl+C
-          process.stderr.write('\x1b[90m  (Ctrl+C once more to exit)\x1b[0m\r\n');
-          // 첫 Ctrl+C → Claude CLI에 전달 (작업 중단)
+          return;
         }
 
-        this.pty.write(data.toString());
+        // Ctrl+] → worker exit
+        if (data.length === 1 && data[0] === WORKER_ESCAPE_BYTE) {
+          if (this.options.onExit) {
+            this.options.onExit();
+          } else {
+            process.exit(0);
+          }
+          return;
+        }
+
+        // Decode with StringDecoder to preserve split UTF-8 sequences.
+        // Normalize Enter key to CR for Ink TUI compatibility.
+        const decoded = this.stdinDecoder.write(data);
+        if (!decoded) return;
+        const normalized = decoded.replace(/\r?\n/g, '\r');
+        this.pty.write(normalized);
       };
       process.stdin.on('data', this.stdinHandler);
     }
@@ -632,6 +641,19 @@ export class PtyWorker {
     return this.pty !== null;
   }
 
+  sendInput(data: string): void {
+    if (!this.pty || !data) return;
+    this.pty.write(data);
+  }
+
+  resize(cols: number, rows: number): void {
+    if (!this.pty) return;
+    if (!Number.isFinite(cols) || !Number.isFinite(rows)) return;
+    const safeCols = Math.max(20, Math.floor(cols));
+    const safeRows = Math.max(8, Math.floor(rows));
+    this.pty.resize(safeCols, safeRows);
+  }
+
   destroy(): void {
     if (this.state.phase === 'processing') {
       this.clearTimers();
@@ -639,10 +661,6 @@ export class PtyWorker {
     if (this.initFallbackTimer) {
       clearTimeout(this.initFallbackTimer);
       this.initFallbackTimer = null;
-    }
-    if (this.ctrlCResetTimer) {
-      clearTimeout(this.ctrlCResetTimer);
-      this.ctrlCResetTimer = null;
     }
     if (this.resizeHandler) {
       process.stdout.removeListener('resize', this.resizeHandler);
@@ -670,6 +688,8 @@ export class PtyWorker {
         // stdin may already be destroyed
       }
     }
+    this.stdinDecoder.end();
+    this.stdinDecoder = new StringDecoder('utf8');
   }
 
   // ──────────────────────────────────────

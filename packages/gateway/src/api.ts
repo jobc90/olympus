@@ -4,11 +4,12 @@ import { authMiddleware, loadConfig, validateApiKey } from './auth.js';
 import { handleCorsPrefllight, setCorsHeaders } from './cors.js';
 import type { RunManager, RunOptions } from './run-manager.js';
 import { SessionManager, type SessionEvent } from './session-manager.js';
-import { runParallel, GeminiExecutor, TaskStore, ContextStore, ContextService, extractContext, type LocalContextStoreManager } from '@olympus-dev/core';
+import { runParallel, GeminiExecutor, TaskStore, ContextStore, ContextService, type LocalContextStoreManager } from '@olympus-dev/core';
 import type { CreateTaskInput, UpdateTaskInput, CreateContextInput, UpdateContextInput, ContextScope, CreateMergeInput, ReportUpstreamInput } from '@olympus-dev/protocol';
 import type { CodexAdapter } from './codex-adapter.js';
 import type { GeminiAdvisor } from './gemini-advisor.js';
 import { filterForApi, filterForTelegram, filterStreamChunk } from './response-filter.js';
+import { extractContextWithLlm } from './llm-context-extractor.js';
 
 /** Build worker status section for Codex system prompt (R1) */
 function buildWorkerStatusSection(
@@ -271,6 +272,18 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     if (parts[2] && parts[3] === 'heartbeat') {
       return { path: '/api/workers/:id/heartbeat', id: parts[2], query };
     }
+    // /api/workers/:id/stream — worker raw PTY output relay
+    if (parts[2] && parts[3] === 'stream') {
+      return { path: '/api/workers/:id/stream', id: parts[2], query };
+    }
+    // /api/workers/:id/input — dashboard key input relay to worker PTY
+    if (parts[2] && parts[3] === 'input') {
+      return { path: '/api/workers/:id/input', id: parts[2], query };
+    }
+    // /api/workers/:id/resize — dashboard terminal resize relay
+    if (parts[2] && parts[3] === 'resize') {
+      return { path: '/api/workers/:id/resize', id: parts[2], query };
+    }
     // /api/workers/:id/task — assign task to worker
     if (parts[2] && parts[3] === 'task') {
       return { path: '/api/workers/:id/task', id: parts[2], query };
@@ -524,6 +537,90 @@ ${body.message}`;
         return;
       }
 
+      // POST /api/workers/:id/stream — worker raw PTY output relay
+      if (path === '/api/workers/:id/stream' && method === 'POST' && id) {
+        if (!workerRegistry) {
+          sendJson(res, 503, { error: 'Worker registry not available' });
+          return;
+        }
+        const worker = workerRegistry.getAll().find(w => w.id === id);
+        if (!worker) {
+          sendJson(res, 404, { error: 'Worker not found' });
+          return;
+        }
+        const body = await parseBody<{ content?: string; timestamp?: number }>(req);
+        const content = typeof body.content === 'string' ? body.content : '';
+        if (!content) {
+          sendJson(res, 200, { ok: true, ignored: true });
+          return;
+        }
+        onWorkerEvent?.('worker:output', {
+          workerId: worker.id,
+          workerName: worker.name,
+          content,
+          text: content,
+          timestamp: body.timestamp ?? Date.now(),
+        });
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+
+      // POST /api/workers/:id/input — dashboard key input relay
+      if (path === '/api/workers/:id/input' && method === 'POST' && id) {
+        if (!workerRegistry) {
+          sendJson(res, 503, { error: 'Worker registry not available' });
+          return;
+        }
+        const worker = workerRegistry.getAll().find(w => w.id === id);
+        if (!worker) {
+          sendJson(res, 404, { error: 'Worker not found' });
+          return;
+        }
+        const body = await parseBody<{ input?: string }>(req);
+        const input = typeof body.input === 'string' ? body.input : '';
+        if (!input || input.length > 4096) {
+          sendJson(res, 400, { error: 'Invalid input length' });
+          return;
+        }
+        onWorkerEvent?.('worker:input', {
+          workerId: worker.id,
+          workerName: worker.name,
+          input,
+          timestamp: Date.now(),
+        });
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+
+      // POST /api/workers/:id/resize — dashboard terminal resize relay
+      if (path === '/api/workers/:id/resize' && method === 'POST' && id) {
+        if (!workerRegistry) {
+          sendJson(res, 503, { error: 'Worker registry not available' });
+          return;
+        }
+        const worker = workerRegistry.getAll().find(w => w.id === id);
+        if (!worker) {
+          sendJson(res, 404, { error: 'Worker not found' });
+          return;
+        }
+        const body = await parseBody<{ cols?: number; rows?: number }>(req);
+        const cols = Number(body.cols);
+        const rows = Number(body.rows);
+        if (!Number.isFinite(cols) || !Number.isFinite(rows)) {
+          sendJson(res, 400, { error: 'cols and rows must be numbers' });
+          return;
+        }
+        onWorkerEvent?.('worker:resize', {
+          workerId: worker.id,
+          workerName: worker.name,
+          cols: Math.max(20, Math.floor(cols)),
+          rows: Math.max(8, Math.floor(rows)),
+          timestamp: Date.now(),
+        });
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+
       // POST /api/workers/:id/task — Assign task to worker (worker executes CLI directly)
       if (path === '/api/workers/:id/task' && method === 'POST' && id) {
         if (!workerRegistry) {
@@ -601,8 +698,12 @@ ${body.message}`;
       // POST /api/workers/tasks/:taskId/progress — Worker reports intermediate progress
       if (path === '/api/workers/tasks/:id/progress' && method === 'POST' && id) {
         const body = await parseBody<{ text: string; timestamp?: number }>(req);
+        const task = workerRegistry?.getTask(id);
         onWorkerEvent?.('worker:output', {
           taskId: id,
+          workerId: task?.workerId,
+          workerName: task?.workerName,
+          content: body.text,
           text: body.text,
           timestamp: body.timestamp ?? Date.now(),
         });
@@ -728,7 +829,10 @@ ${body.message}`;
             if (localContextManager && task) {
               try {
                 const worker = workerRegistry?.getAll().find(w => w.id === task.workerId);
-                const extracted = extractContext(result, task.prompt);
+                const extracted = await extractContextWithLlm({
+                  result,
+                  prompt: task.prompt,
+                });
                 const projectPath = worker?.projectPath ?? workspaceRoot;
                 const store = await localContextManager.getProjectStore(projectPath);
                 store.saveWorkerContext({
@@ -827,7 +931,10 @@ ${body.message}`;
           if (localContextManager && task) {
             try {
               const worker = workerRegistry?.getAll().find(w => w.id === task.workerId);
-              const extracted = extractContext(result, task.prompt);
+              const extracted = await extractContextWithLlm({
+                result,
+                prompt: task.prompt,
+              });
               const projectPath = worker?.projectPath ?? workspaceRoot;
               const store = await localContextManager.getProjectStore(projectPath);
               store.saveWorkerContext({
@@ -1289,7 +1396,10 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${workerRegistry 
         // Save worker context to LocalContextStore
         if (localContextManager && body.workspaceDir) {
           try {
-            const extracted = extractContext(result, body.prompt!);
+            const extracted = await extractContextWithLlm({
+              result,
+              prompt: body.prompt!,
+            });
             const store = await localContextManager.getProjectStore(body.workspaceDir);
             store.saveWorkerContext({
               id: randomUUID(),
@@ -1370,7 +1480,7 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${workerRegistry 
         asyncTasks.set(taskId, { status: 'running', startedAt: Date.now() });
 
         // Background execution
-        runCli(params).then(result => {
+        runCli(params).then(async (result) => {
           const existing = asyncTasks.get(taskId);
           if (!existing) return;
           asyncTasks.set(taskId, { status: 'completed', result, startedAt: existing.startedAt });
@@ -1402,6 +1512,39 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${workerRegistry 
                 projectPath: (body.workspaceDir as string) ?? '', workerCount: 0,
               });
             } catch { /* ignore */ }
+          }
+
+          if (localContextManager && body.workspaceDir) {
+            try {
+              const promptText = String(body.prompt ?? '');
+              const extracted = await extractContextWithLlm({
+                result,
+                prompt: promptText,
+              });
+              const store = await localContextManager.getProjectStore(body.workspaceDir as string);
+              store.saveWorkerContext({
+                id: randomUUID(),
+                workerId: 'cli-async',
+                workerName: 'cli-async',
+                prompt: promptText.slice(0, 500),
+                success: result.success,
+                summary: extracted.summary,
+                filesChanged: extracted.filesChanged,
+                decisions: extracted.decisions,
+                errors: extracted.errors,
+                dependencies: extracted.dependencies,
+                model: result.model,
+                inputTokens: result.usage.inputTokens,
+                outputTokens: result.usage.outputTokens,
+                costUsd: result.cost,
+                durationMs: result.durationMs,
+                numTurns: result.numTurns,
+                rawText: result.text.slice(0, 8000),
+                createdAt: new Date().toISOString(),
+              });
+              store.updateProjectContext();
+              await localContextManager.propagateToRoot(body.workspaceDir as string, workspaceRoot);
+            } catch { /* save failure — response still OK */ }
           }
 
           onCliComplete?.(result);

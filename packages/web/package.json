@@ -12,8 +12,10 @@
   "dependencies": {
     "@olympus-dev/client": "workspace:*",
     "@olympus-dev/protocol": "workspace:*",
+    "@xterm/addon-fit": "^0.11.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "xterm": "^5.3.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.18",

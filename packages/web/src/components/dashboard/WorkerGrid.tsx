@@ -33,7 +33,7 @@ export function WorkerGrid({ workers, workerStates, onChatClick, onDetailClick }
   return (
     <div>
       <h2 className="font-pixel text-sm mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-        <span>Workers</span>
+        <span>Active Workers</span>
         <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
           ({workers.length})
         </span>

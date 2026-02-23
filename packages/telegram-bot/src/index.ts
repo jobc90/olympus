@@ -48,6 +48,10 @@ const TUI_ARTIFACT_PATTERNS = [
   /^\s*[A-Za-z]\s*$/,
   /^\s*\d{1,5}\s*$/,
   /^[✢✳✶✻✽·]?\s*[A-Za-z][A-Za-z-]{2,24}…(?:\s*\(thinking\))?$/i,
+  /^[✢✳✶✻✽·]?\s*(?:Processing|Forming|Flowing|Deliberating|Effecting|Thinking)…?(?:\s*thinking)?\s*$/i,
+  /^[✢✳✶✻✽·]?\s*[A-Za-z][A-Za-z-]{2,24}…?thinking\s*$/i,
+  /^[✢✳✶✻✽·]?\s*[A-Za-z][A-Za-z-]{2,24}…?\(thought[^)]*\)\s*$/i,
+  /tip:\s*run\s*claude\s*--(?:continue|resume)/i,
   /^[-─═]{3,}\s*$/,
   /^\s*\d+\s*[│|]\s*$/,
 ];

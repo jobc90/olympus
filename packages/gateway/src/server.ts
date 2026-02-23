@@ -35,10 +35,11 @@ import { MemoryStore } from './memory/store.js';
 import { CliSessionStore } from './cli-session-store.js';
 import type { CodexAdapter } from './codex-adapter.js';
 import { WorkerRegistry } from './worker-registry.js';
-import { LocalContextStoreManager, extractContext } from '@olympus-dev/core';
+import { LocalContextStoreManager } from '@olympus-dev/core';
 import type { GeminiAdvisor } from './gemini-advisor.js';
 import { UsageMonitor } from './usage-monitor.js';
 import { deriveWorkerEvents } from './worker-events.js';
+import { filterForTelegram } from './response-filter.js';
 
 export interface GatewayOptions {
   port?: number;
@@ -836,7 +837,12 @@ export class Gateway {
       });
 
       if (result.success && result.text) {
-        this.lastGreeting = { type: 'briefing', text: result.text, timestamp: Date.now() };
+        const filteredGreeting = filterForTelegram(result.text).text.trim();
+        this.lastGreeting = {
+          type: 'briefing',
+          text: filteredGreeting || '🏛️ Olympus 시작 브리핑을 생성했지만 표시 가능한 텍스트가 없습니다.',
+          timestamp: Date.now(),
+        };
         this.broadcastToAll('codex:greeting', this.lastGreeting);
         return;
       }
@@ -851,7 +857,12 @@ export class Gateway {
     if (geminiContext) {
       lines.push('💡 Gemini 분석:', geminiContext.slice(0, 500), '');
     }
-    this.lastGreeting = { type: 'briefing', text: lines.join('\n'), timestamp: Date.now() };
+    const fallbackGreeting = filterForTelegram(lines.join('\n')).text.trim();
+    this.lastGreeting = {
+      type: 'briefing',
+      text: fallbackGreeting || '🏛️ Olympus 시작 브리핑을 준비했습니다.',
+      timestamp: Date.now(),
+    };
     this.broadcastToAll('codex:greeting', this.lastGreeting);
   }
 

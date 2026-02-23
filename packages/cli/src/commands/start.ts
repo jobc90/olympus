@@ -15,6 +15,17 @@ interface TaskPayload {
   projectPath?: string;
 }
 
+interface WorkerInputPayload {
+  workerId: string;
+  input: string;
+}
+
+interface WorkerResizePayload {
+  workerId: string;
+  cols: number;
+  rows: number;
+}
+
 interface WorkerTaskSnapshot {
   taskId: string;
   workerId: string;
@@ -70,15 +81,65 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
 
   // 3. PtyWorker 시작 (PTY 전용 — spawn 폴백 없음)
   let ptyWorker: PtyWorkerType;
+  let workerId = '';
+  let shuttingDown = false;
+  let streamBuffer = '';
+  let streamFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  const STREAM_FLUSH_MS = 120;
+  const STREAM_FLUSH_SIZE = 8192;
 
   // shutdown 함수를 먼저 선언 (onExit에서 참조)
   let shutdownFn: ((signal: string) => Promise<void>) | null = null;
+
+  async function flushWorkerStream(): Promise<void> {
+    if (!workerId || !streamBuffer) return;
+    const content = streamBuffer;
+    streamBuffer = '';
+
+    try {
+      await fetch(`${gatewayUrl}/api/workers/${workerId}/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          content,
+          timestamp: Date.now(),
+        }),
+      });
+    } catch {
+      // Stream relay is best-effort.
+    }
+  }
+
+  function queueWorkerStream(chunk: string): void {
+    if (shuttingDown || !chunk) return;
+    streamBuffer += chunk;
+
+    if (streamBuffer.length >= STREAM_FLUSH_SIZE) {
+      if (streamFlushTimer) {
+        clearTimeout(streamFlushTimer);
+        streamFlushTimer = null;
+      }
+      void flushWorkerStream();
+      return;
+    }
+
+    if (!streamFlushTimer) {
+      streamFlushTimer = setTimeout(() => {
+        streamFlushTimer = null;
+        void flushWorkerStream();
+      }, STREAM_FLUSH_MS);
+    }
+  }
 
   try {
     const { PtyWorker } = await import('../pty-worker.js');
     ptyWorker = new PtyWorker({
       projectPath,
       trustMode: forceTrust,
+      onData: queueWorkerStream,
       onReady: () => {},
       onExit: () => {
         if (shutdownFn) shutdownFn('Ctrl+C');
@@ -104,7 +165,6 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
   }
 
   // 4. Register worker
-  let workerId: string;
   try {
     const regRes = await fetch(`${gatewayUrl}/api/workers/register`, {
       method: 'POST',
@@ -116,6 +176,7 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
     workerId = data.worker.id;
     workerName = data.worker.name;
     logBrief(chalk.gray(`  Worker: ${workerName} (PTY)`));
+    await flushWorkerStream();
   } catch (err) {
     logBrief(chalk.red(`  워커 등록 실패: ${(err as Error).message}`));
     ptyWorker.destroy();
@@ -231,6 +292,21 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
 
           const task = msg.payload as TaskPayload;
           handleTask(task);
+          return;
+        }
+
+        if (msg.type === 'worker:input' && msg.payload?.workerId === workerId) {
+          const payload = msg.payload as WorkerInputPayload;
+          if (typeof payload.input === 'string' && payload.input.length > 0) {
+            ptyWorker.sendInput(payload.input);
+          }
+          return;
+        }
+
+        if (msg.type === 'worker:resize' && msg.payload?.workerId === workerId) {
+          const payload = msg.payload as WorkerResizePayload;
+          ptyWorker.resize(payload.cols, payload.rows);
+          return;
         }
       } catch { /* ignore parse errors */ }
     });
@@ -248,10 +324,17 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
 
   // 7. Graceful shutdown
   async function shutdown(signal: string) {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logBrief('');
     logBrief(chalk.gray('Shutting down...'));
     clearInterval(heartbeatInterval);
     clearInterval(recoveryPollInterval);
+    if (streamFlushTimer) {
+      clearTimeout(streamFlushTimer);
+      streamFlushTimer = null;
+    }
+    await flushWorkerStream();
 
     ptyWorker.destroy();
 
@@ -269,6 +352,8 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
 
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGHUP', () => shutdown('SIGHUP'));
+  process.on('SIGQUIT', () => shutdown('SIGQUIT'));
 
   // Keep process alive
   await new Promise(() => {});

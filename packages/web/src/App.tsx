@@ -29,9 +29,6 @@ import { OlympusMountainCanvas } from './components/olympus-mountain/OlympusMoun
 import { OlympusMountainControls } from './components/olympus-mountain/OlympusMountainControls';
 import ChatWindow from './components/chat/ChatWindow';
 import SettingsPanel from './components/settings/SettingsPanel';
-import { WorkerTaskBoard } from './components/WorkerTaskBoard';
-import { GatewayEventLog } from './components/GatewayEventLog';
-import CliSessionsPanel from './components/dashboard/CliSessionsPanel';
 import { WorkerLogPanel } from './components/dashboard/WorkerLogPanel';
 
 import type { WorkerConfig, WorkerDashboardState, CodexConfig, GeminiConfig, WorkerAvatar, WorkerBehavior } from './lib/types';
@@ -99,6 +96,53 @@ function getConfig() {
   return config;
 }
 
+type ChatMessage = {
+  id: string;
+  role: 'user' | 'agent';
+  content: string;
+  timestamp: number;
+};
+
+const CHAT_MESSAGES_STORAGE_KEY = 'olympus-chat-messages-v1';
+const CHAT_MESSAGES_PER_AGENT_LIMIT = 200;
+
+function loadChatMessages(): Record<string, ChatMessage[]> {
+  try {
+    const raw = localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, ChatMessage[]>;
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function trimChatMessages(
+  input: Record<string, ChatMessage[]>,
+  limit = CHAT_MESSAGES_PER_AGENT_LIMIT,
+): Record<string, ChatMessage[]> {
+  const next: Record<string, ChatMessage[]> = {};
+  for (const [agentId, messages] of Object.entries(input)) {
+    if (!Array.isArray(messages) || messages.length === 0) continue;
+    next[agentId] = messages.slice(-limit);
+  }
+  return next;
+}
+
+function appendChatMessage(list: ChatMessage[], msg: ChatMessage): ChatMessage[] {
+  const last = list[list.length - 1];
+  if (
+    last &&
+    last.role === msg.role &&
+    last.content.trim() === msg.content.trim() &&
+    Math.abs(last.timestamp - msg.timestamp) < 1_500
+  ) {
+    return list;
+  }
+  return [...list, msg];
+}
+
 
 // ---------------------------------------------------------------------------
 // App
@@ -116,7 +160,7 @@ export default function App() {
     localStorage.setItem('olympus-active-tab', tab);
   }, []);
   const [chatTarget, setChatTarget] = useState<{ id: string; name: string; emoji?: string; color?: string } | null>(null);
-  const [chatMessages, setChatMessages] = useState<Record<string, Array<{ id: string; role: 'user' | 'agent'; content: string; timestamp: number }>>>({});
+  const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>(loadChatMessages);
   const [monitorSelectedWorkerId, setMonitorSelectedWorkerId] = useState<string | null>(null);
   const [monitorBehaviorOverrides, setMonitorBehaviorOverrides] = useState<Record<string, WorkerBehavior>>({});
   const [perfTick, setPerfTick] = useState(0);
@@ -164,9 +208,10 @@ export default function App() {
     systemStats: polledSystemStats,
     activityEvents: polledActivityEvents,
     usageData,
+    workers,
     workerTasks,
-    cliSessions,
-    deleteCliSession,
+    sendWorkerInput,
+    resizeWorkerTerminal,
     lastWorkerCompletion,
     lastWorkerAssignment,
     lastWorkerFailure,
@@ -188,6 +233,20 @@ export default function App() {
     const timer = setInterval(() => setPerfTick((v) => v + 1), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Apply persisted theme on initial load.
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('olympus-theme') || 'midnight';
+    document.documentElement.dataset.theme = savedTheme;
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHAT_MESSAGES_STORAGE_KEY, JSON.stringify(trimChatMessages(chatMessages)));
+    } catch {
+      // ignore localStorage quota errors
+    }
+  }, [chatMessages]);
 
   // Build WorkerConfig[] and WorkerDashboardState map for new components
   const WORKER_AVATARS = ['athena', 'poseidon', 'ares', 'apollo', 'artemis', 'hermes', 'hephaestus', 'dionysus', 'demeter', 'aphrodite', 'hades', 'persephone', 'prometheus', 'helios', 'nike', 'pan', 'hecate', 'iris', 'heracles'];
@@ -238,12 +297,7 @@ export default function App() {
   const systemStats = (connected && polledSystemStats.totalWorkers > 0)
     ? polledSystemStats
     : { totalWorkers: 0, activeWorkers: 0, totalTokens: 0, failedTasks: 0 };
-  const activeTaskCount = workerTasks.filter(t => t.status === 'active' || t.status === 'timeout').length;
-  const failedTaskCount = workerTasks.filter(t => t.status === 'failed').length;
   const nowMs = Date.now() + perfTick * 0; // 1s tick-driven recalculation
-  const lastSyncTimestamp = Math.max(syncStatus.lastPollAt ?? 0, syncStatus.lastWsEventAt ?? 0);
-  const syncLabel = lastSyncTimestamp > 0 ? formatRelativeTime(lastSyncTimestamp) : 'never';
-  const syncStale = lastSyncTimestamp > 0 ? (nowMs - lastSyncTimestamp > 20_000) : true;
   const wsEventLagMs = syncStatus.lastWsEventAt ? Math.max(0, nowMs - syncStatus.lastWsEventAt) : null;
   const pollLagMs = syncStatus.lastPollAt ? Math.max(0, nowMs - syncStatus.lastPollAt) : null;
   const selectedMonitorWorkerId = monitorSelectedWorkerId ?? workerConfigs[0]?.id ?? null;
@@ -276,11 +330,12 @@ export default function App() {
     const userMsg = { id: crypto.randomUUID(), role: 'user' as const, content: message, timestamp: Date.now() };
     setChatMessages(prev => ({
       ...prev,
-      [agentId]: [...(prev[agentId] || []), userMsg],
+      [agentId]: appendChatMessage(prev[agentId] || [], userMsg),
     }));
 
     try {
-      let content: string;
+      let content = '';
+      let shouldAppendResponse = true;
 
       if (agentId.startsWith('gemini')) {
         // Hera (Gemini) → POST /api/chat
@@ -296,19 +351,25 @@ export default function App() {
         const mentionName = wConfig?.registeredName ?? wConfig?.name ?? agentId;
         const res = await chatWithCodex(`@${mentionName} ${message}`);
         content = res.response ?? 'No response';
+        // Worker card에서는 즉시 위임 ACK 대신 worker:task:assigned 이벤트 메시지를 사용한다.
+        if (res.type === 'delegation') {
+          shouldAppendResponse = false;
+        }
       }
 
-      const agentMsg = { id: crypto.randomUUID(), role: 'agent' as const, content, timestamp: Date.now() };
-      setChatMessages(prev => ({
-        ...prev,
-        [agentId]: [...(prev[agentId] || []), agentMsg],
-      }));
+      if (shouldAppendResponse && content.trim()) {
+        const agentMsg = { id: crypto.randomUUID(), role: 'agent' as const, content, timestamp: Date.now() };
+        setChatMessages(prev => ({
+          ...prev,
+          [agentId]: appendChatMessage(prev[agentId] || [], agentMsg),
+        }));
+      }
     } catch (e) {
       const errorContent = `Error: ${(e as Error).message}`;
       const errorMsg = { id: crypto.randomUUID(), role: 'agent' as const, content: errorContent, timestamp: Date.now() };
       setChatMessages(prev => ({
         ...prev,
-        [agentId]: [...(prev[agentId] || []), errorMsg],
+        [agentId]: appendChatMessage(prev[agentId] || [], errorMsg),
       }));
     }
   }, [chatWithGemini, chatWithCodex, polledWorkerConfigs]);
@@ -330,7 +391,7 @@ export default function App() {
 
     setChatMessages(prev => ({
       ...prev,
-      [workerId]: [...(prev[workerId] || []), agentMsg],
+      [workerId]: appendChatMessage(prev[workerId] || [], agentMsg),
     }));
   }, [lastWorkerCompletion?.timestamp]);
 
@@ -358,7 +419,7 @@ export default function App() {
       );
 
       const next = hasSameRecentUserPrompt
-        ? [...existing, startedMsg]
+        ? appendChatMessage(existing, startedMsg)
         : [
             ...existing,
             ...(prompt ? [{
@@ -393,7 +454,7 @@ export default function App() {
 
     setChatMessages(prev => ({
       ...prev,
-      [workerId]: [...(prev[workerId] || []), agentMsg],
+      [workerId]: appendChatMessage(prev[workerId] || [], agentMsg),
     }));
   }, [lastWorkerFailure?.timestamp]);
 
@@ -410,7 +471,7 @@ export default function App() {
 
     setChatMessages(prev => ({
       ...prev,
-      codex: [...(prev['codex'] || []), agentMsg],
+      codex: appendChatMessage(prev['codex'] || [], agentMsg),
     }));
   }, [codexGreeting?.timestamp]);
 
@@ -424,11 +485,15 @@ export default function App() {
     setChatTarget(w ? { id: w.id, name: w.name, emoji: w.emoji, color: w.color } : { id: workerId, name: workerId });
   }, [workerConfigs]);
 
-  const handleReuseCliSession = useCallback(async (session: { key: string; lastPrompt: string }) => {
-    const prompt = `세션 ${session.key} 기반으로 이어서 진행해줘.\n최근 프롬프트: ${session.lastPrompt}`;
-    await handleChatSend('codex', prompt);
-    setChatTarget({ id: 'codex', name: 'Zeus', emoji: '\u26A1', color: '#FFD700' });
-  }, [handleChatSend]);
+  const handleWorkerTerminalInput = useCallback((data: string) => {
+    if (!selectedWorkerId) return;
+    void sendWorkerInput(selectedWorkerId, data);
+  }, [selectedWorkerId, sendWorkerInput]);
+
+  const handleWorkerTerminalResize = useCallback((cols: number, rows: number) => {
+    if (!selectedWorkerId) return;
+    void resizeWorkerTerminal(selectedWorkerId, cols, rows);
+  }, [selectedWorkerId, resizeWorkerTerminal]);
 
   const currentRun = runs.find((r) => r.runId === currentRunId);
   const currentSession = sessions.find((s) => s.id === currentSessionId);
@@ -462,70 +527,26 @@ export default function App() {
         {/* ===================== CONSOLE TAB ===================== */}
         {activeTab === 'console' && (
           <>
-            {/* Global Control Strip */}
-            <Card className="mb-6 mt-4 py-3">
-              <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-xs font-mono">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: connected ? 'var(--accent-success)' : 'var(--accent-danger)' }} />
-                  <span style={{ color: 'var(--text-secondary)' }}>Gateway</span>
-                  <span style={{ color: connected ? 'var(--accent-success)' : 'var(--accent-danger)' }}>
-                    {connected ? 'connected' : 'disconnected'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span style={{ color: 'var(--text-secondary)' }}>Active Tasks</span>
-                  <span style={{ color: 'var(--accent-primary)' }}>{activeTaskCount}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span style={{ color: 'var(--text-secondary)' }}>Failed Tasks</span>
-                  <span style={{ color: failedTaskCount > 0 ? 'var(--accent-danger)' : 'var(--text-primary)' }}>{failedTaskCount}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span style={{ color: 'var(--text-secondary)' }}>Last Sync</span>
-                  <span style={{ color: syncStale ? 'var(--accent-warning)' : 'var(--text-primary)' }}>{syncLabel}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span style={{ color: 'var(--text-secondary)' }}>Poll Failures</span>
-                  <span style={{ color: syncStatus.pollFailureCount > 0 ? 'var(--accent-warning)' : 'var(--text-primary)' }}>
-                    {syncStatus.pollFailureCount}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span style={{ color: 'var(--text-secondary)' }}>WS Lag</span>
-                  <span style={{ color: wsEventLagMs !== null && wsEventLagMs > 5000 ? 'var(--accent-warning)' : 'var(--text-primary)' }}>
-                    {wsEventLagMs !== null ? `${wsEventLagMs}ms` : '-'}
-                  </span>
-                </div>
-              </div>
-              {syncStatus.lastPollError && (
-                <div className="mt-2 text-[11px] font-mono" style={{ color: 'var(--accent-warning)' }}>
-                  Poll Warning: {syncStatus.lastPollError}
-                </div>
-              )}
-            </Card>
-
-            {/* Usage — Statusline Dashboard */}
-            <div className="mb-6">
+            {/* Usage — full width */}
+            <section className="mb-6 mt-4">
               <h2 className="font-pixel text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
                 Usage
               </h2>
               <UsageBar data={usageData} />
-            </div>
+            </section>
 
-            {/* Overview — System Stats */}
-            <div className="mb-6">
+            {/* Overview — full width */}
+            <section className="mb-6">
               <h2 className="font-pixel text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
                 Overview
               </h2>
               <SystemStats stats={systemStats} />
-            </div>
+            </section>
 
-            {/* Main 4-column layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-              {/* Left: Command + Workers + Operational panels (3/4) */}
-              <div className="lg:col-span-3 space-y-6">
-                {/* Olympian Command — Zeus + Hera */}
-                <div>
+            {/* Olympian Command + Live Preview */}
+            <section className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <Card>
                   <h2 className="font-pixel text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
                     Olympian Command
                   </h2>
@@ -546,95 +567,113 @@ export default function App() {
                       onChatClick={() => setChatTarget({ id: 'gemini', name: 'Hera', emoji: '\uD83E\uDD89', color: '#CE93D8' })}
                     />
                   </div>
-                </div>
-
-                {/* Active Workers */}
-                <div>
-                  <h2 className="font-pixel text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
-                    Active Workers
-                  </h2>
-                  <WorkerGrid
-                    workers={workerConfigs}
-                    workerStates={workerStates}
-                    onChatClick={handleChatClick}
-                    onDetailClick={handleDetailClick}
-                  />
-                </div>
-
-                {/* Operational panels */}
-                {currentRunId && currentRun ? (
-                  <>
-                    {/* Run Header */}
-                    <Card className="flex items-center justify-between py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                        <span className="font-mono text-sm text-primary">
-                          {currentRunId}
-                        </span>
-                        <span className="text-xs text-text-muted">
-                          Phase {currentRun.phase}: {currentRun.phaseName}
-                        </span>
-                      </div>
-                      {currentRun.status === 'running' && (
-                        <button
-                          onClick={() => cancel(currentRunId)}
-                          className="text-xs text-error hover:text-error/80 transition-colors flex items-center gap-1"
-                        >
-                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                            <path
-                              fillRule="evenodd"
-                              d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                          Cancel
-                        </button>
-                      )}
-                    </Card>
-
-                    {/* Phase Progress */}
-                    <PhaseProgress phase={phase} />
-
-                    {/* Tasks */}
-                    <TaskList tasks={tasks} />
-
-                    {/* Agent Stream */}
-                    <AgentStream agentStreams={agentStreams} />
-                  </>
-                ) : currentSessionId && currentSession ? (
-                  <SessionOutputPanel session={currentSession} outputs={sessionOutputs.filter(o => o.sessionId === currentSessionId)} screen={sessionScreens.get(currentSessionId!)} />
-                ) : (
-                  <>
-                    <WorkerTaskBoard tasks={workerTasks} />
-                    <LiveOutputPanel streams={cliStreams} />
-                    <AgentHistoryPanel history={cliHistory} />
-                    <GatewayEventLog logs={logs} />
-                  </>
-                )}
+                </Card>
               </div>
 
-              {/* Right Sidebar: MiniOlympus + Activity + Context + Sessions (1/4) */}
-              <aside className="lg:col-span-1 space-y-4">
-                {/* Compact Olympus Mountain preview — click to go to Monitor tab */}
-                <div className="cursor-pointer" onClick={() => setActiveTab('monitor')}>
-                  <MiniOlympusMountain
-                    workers={workerConfigs}
-                    workerStates={workerStates}
-                    codexConfig={codexConfig}
-                    olympusMountainState={olympusMountainState}
-                    onTick={tick}
+              <div>
+                <Card>
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="font-pixel text-sm" style={{ color: 'var(--text-primary)' }}>
+                      Olympus Live Preview
+                    </h2>
+                    <button
+                      type="button"
+                      className="text-[10px] font-mono px-2 py-1 rounded border hover:bg-white/10 transition-colors"
+                      style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+                      onClick={() => setActiveTab('monitor')}
+                    >
+                      Open Monitor
+                    </button>
+                  </div>
+                  <div className="cursor-pointer" onClick={() => setActiveTab('monitor')}>
+                    <MiniOlympusMountain
+                      workers={workerConfigs}
+                      workerStates={workerStates}
+                      codexConfig={codexConfig}
+                      olympusMountainState={olympusMountainState}
+                      onTick={tick}
+                    />
+                  </div>
+                </Card>
+              </div>
+            </section>
+
+            {/* Active Workers */}
+            <section className="mb-6">
+              <WorkerGrid
+                workers={workerConfigs}
+                workerStates={workerStates}
+                onChatClick={handleChatClick}
+                onDetailClick={handleDetailClick}
+              />
+            </section>
+
+            {/* Operational Panels */}
+            {currentRunId && currentRun ? (
+              <section className="space-y-6">
+                <Card className="flex items-center justify-between py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                    <span className="font-mono text-sm text-primary">
+                      {currentRunId}
+                    </span>
+                    <span className="text-xs text-text-muted">
+                      Phase {currentRun.phase}: {currentRun.phaseName}
+                    </span>
+                  </div>
+                  {currentRun.status === 'running' && (
+                    <button
+                      onClick={() => cancel(currentRunId)}
+                      className="text-xs text-error hover:text-error/80 transition-colors flex items-center gap-1"
+                    >
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path
+                          fillRule="evenodd"
+                          d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      Cancel
+                    </button>
+                  )}
+                </Card>
+                <PhaseProgress phase={phase} />
+                <TaskList tasks={tasks} />
+                <AgentStream agentStreams={agentStreams} />
+              </section>
+            ) : currentSessionId && currentSession ? (
+              <SessionOutputPanel session={currentSession} outputs={sessionOutputs.filter(o => o.sessionId === currentSessionId)} screen={sessionScreens.get(currentSessionId!)} />
+            ) : (
+              <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                <div className="xl:col-span-2">
+                  <ActivityFeed
+                    events={connected && polledActivityEvents.length > 0 ? polledActivityEvents.map(e => ({
+                      id: e.id,
+                      type: e.type,
+                      agentName: e.agentName,
+                      message: e.message,
+                      timestamp: e.timestamp,
+                      color: e.color,
+                    })) : []}
+                    maxHeight={560}
                   />
                 </div>
-                <ActivityFeed events={connected && polledActivityEvents.length > 0 ? polledActivityEvents.map(e => ({
-                  id: e.id, type: e.type, agentName: e.agentName, message: e.message, timestamp: e.timestamp, color: e.color,
-                })) : []} />
-                <CliSessionsPanel
-                  sessions={cliSessions}
-                  onDelete={deleteCliSession}
-                  onReuse={handleReuseCliSession}
-                />
-              </aside>
-            </div>
+                <aside className="space-y-6">
+                  <LiveOutputPanel streams={cliStreams} />
+                  <AgentHistoryPanel history={cliHistory} />
+                  {syncStatus.lastPollError && (
+                    <Card>
+                      <h3 className="font-pixel text-xs mb-2" style={{ color: 'var(--text-primary)' }}>
+                        Sync Warning
+                      </h3>
+                      <p className="text-xs font-mono" style={{ color: 'var(--accent-warning)' }}>
+                        {syncStatus.lastPollError}
+                      </p>
+                    </Card>
+                  )}
+                </aside>
+              </section>
+            )}
           </>
         )}
 
@@ -785,7 +824,7 @@ export default function App() {
                         className="text-[10px] font-mono px-2 py-1 rounded border hover:bg-white/10 transition-colors"
                         style={{ borderColor: 'var(--border)', color: 'var(--text-primary)' }}
                       >
-                        Logs
+                        Terminal
                       </button>
                     </div>
                   </div>
@@ -813,9 +852,13 @@ export default function App() {
       {/* Worker Log Panel */}
       {selectedWorkerId && (
         <WorkerLogPanel
+          key={selectedWorkerId}
           workerId={selectedWorkerId}
-          workerConfig={polledWorkerConfigs.find(w => w.id === selectedWorkerId)}
-          logs={workerLogs.get(selectedWorkerId) ?? []}
+          workerConfig={workerConfigs.find(w => w.id === selectedWorkerId)}
+          liveOutput={workers.get(selectedWorkerId)?.output ?? ''}
+          connected={connected}
+          onTerminalInput={handleWorkerTerminalInput}
+          onTerminalResize={handleWorkerTerminalResize}
           onClose={() => setSelectedWorkerId(null)}
         />
       )}
@@ -866,15 +909,26 @@ export default function App() {
           }}
           onUpdate={(cfg) => {
             if (cfg.theme) handleThemeChange(cfg.theme);
-            // Parse gateway URL back to host:port
-            if (cfg.gateway) {
-              const parts = cfg.gateway.url.split(':');
-              const host = parts[0] || config.host;
-              const port = parseInt(parts[1]) || config.port;
-              handleConfigSave({ host, port, apiKey: cfg.gateway.token || config.apiKey });
-            } else {
+            if (!cfg.gateway) {
               setShowSettings(false);
+              return;
             }
+
+            // Parse gateway URL back to host:port (supports "host:port" and "http(s)://host:port").
+            const normalized = cfg.gateway.url.trim().replace(/^https?:\/\//i, '');
+            const parts = normalized.split(':');
+            const host = parts[0] || config.host;
+            const parsedPort = Number(parts[1]);
+            const port = Number.isFinite(parsedPort) && parsedPort > 0 ? Math.floor(parsedPort) : config.port;
+            const apiKey = cfg.gateway.token || config.apiKey;
+
+            const gatewayChanged = host !== config.host || port !== config.port || apiKey !== config.apiKey;
+            if (gatewayChanged) {
+              handleConfigSave({ host, port, apiKey });
+              return;
+            }
+
+            setShowSettings(false);
           }}
           onClose={() => setShowSettings(false)}
         />
