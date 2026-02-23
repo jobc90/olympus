@@ -300,6 +300,117 @@ function drawBrazier(ctx: CanvasRenderingContext2D, col: number, row: number, ti
   }
 }
 
+function drawIsoDiamond(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  halfW: number,
+  halfH: number,
+  fill: string,
+  stroke?: string,
+): void {
+  ctx.beginPath();
+  ctx.moveTo(x, y - halfH);
+  ctx.lineTo(x + halfW, y);
+  ctx.lineTo(x, y + halfH);
+  ctx.lineTo(x - halfW, y);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  if (stroke) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+function drawTempleColumn(
+  ctx: CanvasRenderingContext2D,
+  col: number,
+  row: number,
+  height: number,
+  tick: number,
+): void {
+  const sp = gridToScreen({ col, row });
+
+  // Stepped base (stylobate + plinth)
+  drawIsometricBlock(ctx, { col, row }, 8, '#DCC6A1', '#B89D79', '#A98A64');
+  drawIsometricBlock(ctx, { col, row }, 12, '#E7D4B3', '#C6AB84', '#B6946D');
+
+  const shaftTopY = sp.y - height + 14;
+  const shaftBottomY = sp.y - 10;
+  const shaftHalfWTop = 9;
+  const shaftHalfWBottom = 11;
+  const shaftHalfH = 4;
+
+  const top = {
+    n: { x: sp.x, y: shaftTopY - shaftHalfH },
+    e: { x: sp.x + shaftHalfWTop, y: shaftTopY },
+    s: { x: sp.x, y: shaftTopY + shaftHalfH },
+    w: { x: sp.x - shaftHalfWTop, y: shaftTopY },
+  };
+  const bottom = {
+    n: { x: sp.x, y: shaftBottomY - shaftHalfH },
+    e: { x: sp.x + shaftHalfWBottom, y: shaftBottomY },
+    s: { x: sp.x, y: shaftBottomY + shaftHalfH },
+    w: { x: sp.x - shaftHalfWBottom, y: shaftBottomY },
+  };
+
+  // Shaft faces
+  ctx.beginPath();
+  ctx.moveTo(top.w.x, top.w.y);
+  ctx.lineTo(top.s.x, top.s.y);
+  ctx.lineTo(bottom.s.x, bottom.s.y);
+  ctx.lineTo(bottom.w.x, bottom.w.y);
+  ctx.closePath();
+  ctx.fillStyle = '#D6BE97';
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(top.s.x, top.s.y);
+  ctx.lineTo(top.e.x, top.e.y);
+  ctx.lineTo(bottom.e.x, bottom.e.y);
+  ctx.lineTo(bottom.s.x, bottom.s.y);
+  ctx.closePath();
+  ctx.fillStyle = '#C4A57D';
+  ctx.fill();
+
+  // Soft back face hint
+  ctx.beginPath();
+  ctx.moveTo(top.n.x, top.n.y);
+  ctx.lineTo(top.e.x, top.e.y);
+  ctx.lineTo(bottom.e.x, bottom.e.y);
+  ctx.lineTo(bottom.n.x, bottom.n.y);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(112, 88, 58, 0.25)';
+  ctx.fill();
+
+  // Fluting lines (vertical grooves)
+  ctx.strokeStyle = 'rgba(243, 233, 214, 0.42)';
+  ctx.lineWidth = 1;
+  for (let i = -3; i <= 3; i++) {
+    const t = i / 3;
+    const x = sp.x + t * 6.5 + (t > 0 ? 1.2 : -1.2);
+    ctx.beginPath();
+    ctx.moveTo(x, shaftTopY + 1);
+    ctx.lineTo(x, shaftBottomY + 1);
+    ctx.stroke();
+  }
+
+  // Bottom ring (torus)
+  drawIsoDiamond(ctx, sp.x, shaftBottomY + 2, 13, 5, '#D8C09A', '#9F815B');
+  // Capital (echinus + abacus)
+  drawIsoDiamond(ctx, sp.x, shaftTopY - 2, 13, 5, '#EAD8B7', '#A98B63');
+  drawIsoDiamond(ctx, sp.x, shaftTopY - 8, 16, 6, '#F1E4C8', '#B19673');
+  ctx.fillStyle = '#F7EED8';
+  ctx.fillRect(sp.x - 8, shaftTopY - 15, 16, 3);
+
+  // Sacred trim accent (subtle pulse)
+  const pulse = 0.42 + 0.22 * ((Math.sin((tick + col * 9 + row * 7) * 0.08) + 1) / 2);
+  ctx.fillStyle = `rgba(241, 204, 118, ${pulse.toFixed(3)})`;
+  ctx.fillRect(sp.x - 7, shaftTopY - 11, 14, 2);
+}
+
 function drawTempleSetPieces(
   ctx: CanvasRenderingContext2D,
   drawables: Array<{ depth: number; draw: () => void }>,
@@ -318,10 +429,7 @@ function drawTempleSetPieces(
     drawables.push({
       depth: c.col + c.row - 0.6,
       draw: () => {
-        drawIsometricBlock(ctx, { col: c.col, row: c.row }, c.h, '#F2DEC0', '#CCB08A', '#B99667');
-        const sp = gridToScreen({ col: c.col, row: c.row });
-        ctx.fillStyle = '#E9C56D';
-        ctx.fillRect(sp.x - 8, sp.y - c.h - 8, 16, 4);
+        drawTempleColumn(ctx, c.col, c.row, c.h, tick);
       },
     });
   }
