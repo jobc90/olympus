@@ -179,7 +179,7 @@ export function OlympusTempleMonitor({
     : workers[0] ?? null;
   const selectedState = selectedWorker ? workerStates[selectedWorker.id] : undefined;
   const selectedTask = selectedWorker ? activeTasksByWorker.get(selectedWorker.id) : undefined;
-  const recentEvents = activityEvents.slice(0, 7);
+  const recentEvents = activityEvents.slice().sort((a, b) => b.timestamp - a.timestamp).slice(0, 7);
   const codexLastAnalyzed = useMemo(() => {
     let latest: number | null = null;
     for (const event of activityEvents) {

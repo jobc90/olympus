@@ -52,7 +52,7 @@ export default function ActivityFeed({ events, maxHeight = 400, height }: Activi
 
   const filteredEvents = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return events.filter(event => {
+    const filtered = events.filter(event => {
       const byType =
         typeFilter === 'all' ? true :
         typeFilter === 'state' ? event.type === 'state_change' :
@@ -71,6 +71,7 @@ export default function ActivityFeed({ events, maxHeight = 400, height }: Activi
       if (!q) return true;
       return event.agentName.toLowerCase().includes(q) || event.message.toLowerCase().includes(q);
     });
+    return filtered.slice().sort((a, b) => b.timestamp - a.timestamp);
   }, [events, query, typeFilter]);
 
   useEffect(() => {

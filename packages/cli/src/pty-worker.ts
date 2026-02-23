@@ -449,10 +449,16 @@ export class PtyWorker {
       env: { ...process.env } as Record<string, string>,
     });
 
-    // Enable alternate screen buffer so PTY output doesn't mix with host shell
+    // Enable alternate screen buffer so PTY output doesn't mix with host shell.
+    // Also enable mouse tracking (SGR mode) to prevent terminal from converting
+    // mouse wheel scrolling into arrow-key sequences (\x1b[A/B), which would
+    // trigger Claude CLI's command history navigation and cause display corruption.
     if (process.stdout.isTTY) {
-      // Save cursor + enter alternate screen + hide cursor
-      process.stdout.write('\x1b[?1049h\x1b[?25l');
+      process.stdout.write(
+        '\x1b[?1049h'   // enter alternate screen
+        + '\x1b[?1000h' // enable basic mouse tracking
+        + '\x1b[?1006h' // enable SGR extended mouse mode
+      );
       this.ttyAttached = true;
     }
 
@@ -561,10 +567,16 @@ export class PtyWorker {
         }
 
         // Decode with StringDecoder to preserve split UTF-8 sequences.
-        // Normalize Enter key to CR for Ink TUI compatibility.
         const decoded = this.stdinDecoder.write(data);
         if (!decoded) return;
-        const normalized = decoded.replace(/\r?\n/g, '\r');
+
+        // Filter out mouse event sequences sent by the terminal when mouse
+        // tracking is enabled.  SGR format: \x1b[<btn;col;row[Mm]
+        const filtered = decoded.replace(/\x1b\[\<\d+;\d+;\d+[Mm]/g, '');
+        if (!filtered) return;
+
+        // Normalize Enter key to CR for Ink TUI compatibility.
+        const normalized = filtered.replace(/\r?\n/g, '\r');
         this.pty.write(normalized);
       };
       process.stdin.on('data', this.stdinHandler);
@@ -719,9 +731,14 @@ export class PtyWorker {
     this.pty = null;
     this.state = { phase: 'idle' };
 
-    // Restore original terminal: show cursor + leave alternate screen
+    // Restore original terminal: disable mouse tracking + show cursor + leave alternate screen
     if (this.ttyAttached) {
-      process.stdout.write('\x1b[?25h\x1b[?1049l');
+      process.stdout.write(
+        '\x1b[?1006l'   // disable SGR extended mouse mode
+        + '\x1b[?1000l' // disable basic mouse tracking
+        + '\x1b[?25h'   // show cursor
+        + '\x1b[?1049l' // leave alternate screen
+      );
       this.ttyAttached = false;
     }
   }
