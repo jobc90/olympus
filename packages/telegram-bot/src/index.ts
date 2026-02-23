@@ -1036,7 +1036,7 @@ class OlympusBot {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${this.config.apiKey}`,
           },
-          body: JSON.stringify({ message: text, chatId: ctx.chat.id }),
+          body: JSON.stringify({ message: text, chatId: ctx.chat.id, source: 'telegram' }),
           signal: AbortSignal.timeout(1_800_000),
         });
 
@@ -1949,7 +1949,9 @@ class OlympusBot {
       }
     }
 
-    // Handle worker task:completed — Codex가 요약한 결과를 텔레그램에 전달
+    // Handle worker task:completed
+    // Telegram UX rule: do NOT send raw completion body here.
+    // Users should receive only worker:task:summary (Codex summary).
     if (msg.type === 'worker:task:completed') {
       const taskPayload = msg.payload as {
         taskId: string;
@@ -1968,29 +1970,6 @@ class OlympusBot {
       // WI-4.4: Skip if already delivered via forwardToCli polling
       if (this.deliveredTasks.has(taskPayload.taskId)) {
         this.deliveredTasks.delete(taskPayload.taskId);
-        return;
-      }
-
-      const targetChatId = taskPayload.chatId ?? this.config.allowedUsers[0];
-      if (targetChatId) {
-        const durationSec = Math.round((taskPayload.durationMs ?? 0) / 1000);
-        const icon = taskPayload.success ? '✅' : '❌';
-        // R5: Prefer filteredText (pre-filtered by gateway) over raw summary
-        const summaryText = taskPayload.filteredText ?? taskPayload.summary ?? (taskPayload.success ? '작업 완료' : '작업 실패');
-        let text = `[${taskPayload.workerName}] ${icon} 완료 (${durationSec}초)\n\n${summaryText}`;
-
-        // Append Gemini review badge if available
-        if (taskPayload.geminiReview) {
-          const qualityIcon = taskPayload.geminiReview.quality === 'critical' ? '🔴' : taskPayload.geminiReview.quality === 'warning' ? '🟡' : '🟢';
-          text += `\n\n${qualityIcon} Gemini 검토: ${taskPayload.geminiReview.summary}`;
-          if (taskPayload.geminiReview.concerns.length > 0) {
-            text += `\n⚠️ ${taskPayload.geminiReview.concerns.join('\n⚠️ ')}`;
-          }
-        }
-
-        this.sendLongMessage(targetChatId, text).catch((err) => {
-          structuredLog('error', 'telegram-bot', 'task_completed_send_failed', { error: (err as Error).message });
-        });
       }
       return;
     }
@@ -2029,26 +2008,33 @@ class OlympusBot {
       return;
     }
 
-    // Handle worker task:final_after_timeout — 타임아웃 후 최종 완료
+    // Handle worker task:final_after_timeout
+    // Telegram UX rule: suppress raw final body; summary event will deliver concise result.
     if (msg.type === 'worker:task:final_after_timeout') {
-      const taskPayload = msg.payload as {
-        taskId: string;
-        workerName: string;
+      this.lastSeenTaskTimestamp = Date.now();
+      return;
+    }
+
+    // Handle dashboard:chat:mirror — mirror dashboard Codex/Gemini chat to Telegram
+    if (msg.type === 'dashboard:chat:mirror') {
+      const payload = msg.payload as {
+        source?: string;
+        agent?: 'codex' | 'gemini';
+        query?: string;
+        answer?: string;
         chatId?: number;
-        summary?: string;
-        success: boolean;
-        durationMs?: number;
       };
 
-      const targetChatId = taskPayload.chatId ?? this.config.allowedUsers[0];
-      if (targetChatId) {
-        const durationMin = Math.round((taskPayload.durationMs ?? 0) / 60000);
-        const icon = taskPayload.success ? '✅' : '❌';
-        const summaryText = taskPayload.summary ?? (taskPayload.success ? '작업 완료' : '작업 실패');
-        const text = `[${taskPayload.workerName}] ${icon} 최종 완료 (${durationMin}분)\n\n${summaryText}`;
-        this.sendLongMessage(targetChatId, text).catch((err) => {
-          structuredLog('error', 'telegram-bot', 'task_final_send_failed', { error: (err as Error).message });
-        });
+      const chatId = payload.chatId ?? this.config.allowedUsers[0];
+      if (chatId) {
+        const agentName = payload.agent === 'gemini' ? 'Hera' : 'Zeus';
+        const q = safeSlice((payload.query ?? '').trim(), 140);
+        const filtered = filterForTelegram(payload.answer ?? '');
+        const a = safeSlice(filtered.text.trim(), 2000);
+        let text = `🖥️ [Dashboard→${agentName}]`;
+        if (q) text += `\nQ: ${q}${(payload.query ?? '').length > 140 ? '...' : ''}`;
+        if (a) text += `\n\n${a}`;
+        this.sendLongMessage(chatId, text).catch(() => {});
       }
       return;
     }
@@ -2360,6 +2346,8 @@ class OlympusBot {
 
   /**
    * WI-4.5: Catch up on missed worker task completions after WebSocket reconnect.
+   * Telegram UX rule: no raw completion replay. Summary-only delivery is handled
+   * by live worker:task:summary events.
    */
   private async catchUpMissedWorkerTasks(): Promise<void> {
     try {
@@ -2371,18 +2359,7 @@ class OlympusBot {
 
       const { tasks } = await res.json() as { tasks: Array<{ taskId: string; workerName: string; status: string; completedAt?: number; chatId?: number; result?: { success: boolean; text?: string } }> };
 
-      for (const task of tasks) {
-        if (!task.completedAt || !task.chatId) continue;
-        if (task.completedAt <= this.lastSeenTaskTimestamp) continue;
-        if (this.deliveredTasks.has(task.taskId)) continue;
-        if (task.status !== 'completed' && task.status !== 'failed') continue;
-
-        const icon = task.result?.success ? '✅' : '❌';
-        const filtered = filterForTelegram(task.result?.text ?? '');
-        const text = `[${task.workerName}] ${icon} 완료 (재접속 중 수신)\n\n${safeSlice(filtered.text, 2000)}`;
-        await this.sendLongMessage(task.chatId, text).catch(() => {});
-      }
-
+      // Intentionally no Telegram send here (summary-only policy).
       this.lastSeenTaskTimestamp = Date.now();
     } catch { /* ignore */ }
   }

@@ -12,7 +12,33 @@ interface TaskPayload {
   prompt: string;
   provider?: string;
   dangerouslySkipPermissions?: boolean;
-  projectPath: string;
+  projectPath?: string;
+}
+
+interface WorkerTaskSnapshot {
+  taskId: string;
+  workerId: string;
+  workerName: string;
+  prompt: string;
+  status: 'running' | 'timeout' | 'completed' | 'failed';
+}
+
+/**
+ * Select one recoverable pending task for this worker.
+ * Used as a fallback when WS assignment events are missed.
+ */
+export function selectPendingTaskForWorker(
+  tasks: WorkerTaskSnapshot[],
+  workerId: string,
+  handledTaskIds: Set<string>,
+): WorkerTaskSnapshot | null {
+  for (const task of tasks) {
+    if (task.workerId !== workerId) continue;
+    if (task.status !== 'running' && task.status !== 'timeout') continue;
+    if (handledTaskIds.has(task.taskId)) continue;
+    return task;
+  }
+  return null;
 }
 
 /** Write a brief message to stderr (visible even in PTY mode, doesn't corrupt TUI) */
@@ -108,6 +134,8 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
 
   // ─── 결과 보고 ───
 
+  const handledTaskIds = new Set<string>();
+
   async function reportResult(taskId: string, result: Record<string, unknown>): Promise<void> {
     await fetch(`${gatewayUrl}/api/workers/tasks/${taskId}`, {
       method: 'POST',
@@ -121,6 +149,11 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
   // ─── PTY 작업 처리 ───
 
   async function handleTask(task: TaskPayload): Promise<void> {
+    if (handledTaskIds.has(task.taskId)) {
+      return;
+    }
+    handledTaskIds.add(task.taskId);
+
     try {
       const { result } = await ptyWorker.executeTaskWithTimeout(task.prompt);
 
@@ -139,6 +172,34 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
     }
   }
 
+  async function recoverMissedTaskViaPolling(): Promise<void> {
+    if (ptyWorker.isProcessing) return;
+
+    try {
+      const res = await fetch(`${gatewayUrl}/api/workers/tasks`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!res.ok) return;
+
+      const body = await res.json() as { tasks?: WorkerTaskSnapshot[] };
+      const tasks = body.tasks ?? [];
+      const pending = selectPendingTaskForWorker(tasks, workerId, handledTaskIds);
+      if (!pending) return;
+
+      process.stderr.write(chalk.gray(`[worker] 누락된 작업 복구: ${pending.taskId.slice(0, 8)} (${pending.workerName})\n`));
+      await handleTask({
+        taskId: pending.taskId,
+        workerId: pending.workerId,
+        workerName: pending.workerName,
+        prompt: pending.prompt,
+        projectPath,
+      });
+    } catch {
+      // polling errors are non-fatal
+    }
+  }
+
   // 6. Connect WebSocket with proper authentication
   const wsUrl = gatewayUrl.replace(/^http/, 'ws') + GATEWAY_PATH;
   let ws: WebSocket | null = null;
@@ -150,6 +211,9 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
         clientType: 'worker',
         apiKey,
       })));
+
+      // Recover tasks that might have been assigned while WS was disconnected.
+      recoverMissedTaskViaPolling().catch(() => {});
     });
     ws.on('message', (data) => {
       try {
@@ -178,11 +242,16 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
 
   connectWs();
 
+  const recoveryPollInterval = setInterval(() => {
+    recoverMissedTaskViaPolling().catch(() => {});
+  }, 5_000);
+
   // 7. Graceful shutdown
   async function shutdown(signal: string) {
     logBrief('');
     logBrief(chalk.gray('Shutting down...'));
     clearInterval(heartbeatInterval);
+    clearInterval(recoveryPollInterval);
 
     ptyWorker.destroy();
 

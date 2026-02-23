@@ -280,6 +280,16 @@ function sessionKeyMatchesWorker(sessionKey: string, workerId: string, workerNam
   return false;
 }
 
+function getPreferredTelegramChatId(): number | undefined {
+  if (typeof window === 'undefined') return undefined;
+  const raw = window.localStorage.getItem('olympus.telegram.chatId')
+    ?? window.localStorage.getItem('olympus-telegram-chat-id');
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return Math.floor(parsed);
+}
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -1822,13 +1832,18 @@ export function useOlympus(options: UseOlympusOptions = {}) {
 
   // HTTP chat helpers for agent-specific routing
   const chatWithGemini = useCallback(async (message: string): Promise<{ reply: string }> => {
+    const chatId = getPreferredTelegramChatId();
     const res = await fetch(`http://${host}:${port}/api/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({
+        message,
+        source: 'dashboard',
+        ...(chatId ? { chatId } : {}),
+      }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
@@ -1838,13 +1853,18 @@ export function useOlympus(options: UseOlympusOptions = {}) {
   }, [host, port, apiKey]);
 
   const chatWithCodex = useCallback(async (message: string): Promise<{ type: string; response: string }> => {
+    const chatId = getPreferredTelegramChatId();
     const res = await fetch(`http://${host}:${port}/api/codex/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({
+        message,
+        source: 'dashboard',
+        ...(chatId ? { chatId } : {}),
+      }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));

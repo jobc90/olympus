@@ -351,6 +351,22 @@ export function createApiHandler(options: ApiHandlerOptions) {
   // Async CLI task store (in-memory, 1-hour TTL)
   const asyncTasks = new Map<string, { status: 'running' | 'completed' | 'failed'; result?: import('@olympus-dev/protocol').CliRunResult; error?: string; startedAt: number }>();
 
+  const emitDashboardChatMirror = (
+    agent: 'codex' | 'gemini',
+    query: string,
+    answer: string,
+    chatId?: number,
+  ): void => {
+    onWorkerEvent?.('dashboard:chat:mirror', {
+      source: 'dashboard',
+      agent,
+      query: query.slice(0, 500),
+      answer: answer.slice(0, 8000),
+      chatId,
+      timestamp: Date.now(),
+    });
+  };
+
   return async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
     // Handle CORS
     if (handleCorsPrefllight(req, res)) {
@@ -387,7 +403,8 @@ export function createApiHandler(options: ApiHandlerOptions) {
 
       // POST /api/chat — Hera (GeminiAdvisor) chat with project context
       if (path === '/api/chat' && method === 'POST') {
-        const body = await parseBody<{ message: string }>(req);
+        const body = await parseBody<{ message: string; source?: 'dashboard' | 'telegram' | 'cli'; chatId?: number }>(req);
+        const source = body.source ?? 'dashboard';
 
         if (!body.message) {
           sendJson(res, 400, { error: 'Bad Request', message: 'message is required' });
@@ -438,13 +455,24 @@ ${body.message}`;
 
           if (result.success) {
             sendJson(res, 200, { reply: result.output });
+            if (source === 'dashboard') {
+              emitDashboardChatMirror('gemini', body.message, result.output ?? '', body.chatId);
+            }
           } else {
             console.error('[api/chat] Gemini execute failed:', result.error);
-            sendJson(res, 200, { reply: result.error || '죄송합니다. Gemini 응답을 생성할 수 없습니다.' });
+            const reply = result.error || '죄송합니다. Gemini 응답을 생성할 수 없습니다.';
+            sendJson(res, 200, { reply });
+            if (source === 'dashboard') {
+              emitDashboardChatMirror('gemini', body.message, reply, body.chatId);
+            }
           }
         } catch (err) {
           console.error('[api/chat] Gemini error:', (err as Error).message);
-          sendJson(res, 200, { reply: `Gemini 오류: ${(err as Error).message}` });
+          const reply = `Gemini 오류: ${(err as Error).message}`;
+          sendJson(res, 200, { reply });
+          if (source === 'dashboard') {
+            emitDashboardChatMirror('gemini', body.message, reply, body.chatId);
+          }
         }
         return;
       }
@@ -876,7 +904,8 @@ ${body.message}`;
 
       // POST /api/codex/chat — Codex chat + worker delegation
       if (path === '/api/codex/chat' && method === 'POST') {
-        const body = await parseBody<{ message: string; chatId?: number }>(req);
+        const body = await parseBody<{ message: string; chatId?: number; source?: 'dashboard' | 'telegram' | 'cli' }>(req);
+        const source = body.source ?? 'dashboard';
         if (!body.message) {
           sendJson(res, 400, { error: 'message is required' });
           return;
@@ -1070,25 +1099,38 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${workerRegistry 
               taskId: task.taskId,
               response: `✅ ${worker.name}에게 작업을 전달했습니다: "${taskPrompt.trim().slice(0, 50)}..."`,
             });
+            // delegation completion is already delivered via worker events
             return;
           } else if (worker && worker.status === 'busy') {
+            const response = `⏳ ${worker.name}은(는) 현재 작업 중입니다. 잠시 후 다시 시도해 주세요.`;
             sendJson(res, 200, {
               type: 'chat',
-              response: `⏳ ${worker.name}은(는) 현재 작업 중입니다. 잠시 후 다시 시도해 주세요.`,
+              response,
             });
+            if (source === 'dashboard') {
+              emitDashboardChatMirror('codex', body.message, response, body.chatId);
+            }
             return;
           } else if (worker && worker.status === 'offline') {
+            const response = `⚠️ ${worker.name}은(는) 현재 오프라인입니다. 워커를 재시작해 주세요.`;
             sendJson(res, 200, {
               type: 'error',
-              response: `⚠️ ${worker.name}은(는) 현재 오프라인입니다. 워커를 재시작해 주세요.`,
+              response,
             });
+            if (source === 'dashboard') {
+              emitDashboardChatMirror('codex', body.message, response, body.chatId);
+            }
             return;
           } else {
             // R6: worker not found
+            const response = `❌ 워커 "${workerName}"을(를) 찾을 수 없습니다. /workers 명령으로 등록된 워커를 확인하세요.`;
             sendJson(res, 200, {
               type: 'error',
-              response: `❌ 워커 "${workerName}"을(를) 찾을 수 없습니다. /workers 명령으로 등록된 워커를 확인하세요.`,
+              response,
             });
+            if (source === 'dashboard') {
+              emitDashboardChatMirror('codex', body.message, response, body.chatId);
+            }
             return;
           }
         }
@@ -1112,6 +1154,9 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${workerRegistry 
           }
 
           sendJson(res, 200, { type: 'chat', response: result.text });
+          if (source === 'dashboard') {
+            emitDashboardChatMirror('codex', body.message, result.text ?? '', body.chatId);
+          }
         } catch (err) {
           sendJson(res, 500, { error: 'Chat failed', message: (err as Error).message });
         }

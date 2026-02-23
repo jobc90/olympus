@@ -823,6 +823,7 @@ export default function App() {
       {/* ChatWindow */}
       {chatTarget && (() => {
         const isCodex = chatTarget.id === 'codex';
+        const isGemini = chatTarget.id.startsWith('gemini');
         const ws = workerStates[chatTarget.id];
         const behavior = isCodex ? (connected ? polledCodexBehavior : 'supervising') : (ws?.behavior ?? 'idle');
         const bInfo = BEHAVIOR_INFO[behavior as keyof typeof BEHAVIOR_INFO];
@@ -838,6 +839,9 @@ export default function App() {
           details.push({ label: 'Tasks', value: String(ws.totalTasks ?? 0) });
           details.push({ label: 'Last', value: formatRelativeTime(ws.lastActivity) });
           if (ws.currentTask) details.push({ label: 'Task', value: ws.currentTask.title });
+        }
+        if (isCodex || isGemini) {
+          details.push({ label: 'Sync', value: 'Dashboard + Telegram', color: 'var(--accent-success)' });
         }
         return (
           <ChatWindow

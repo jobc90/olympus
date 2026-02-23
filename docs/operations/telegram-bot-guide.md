@@ -194,9 +194,11 @@ The bot maintains a persistent WebSocket connection to the Gateway for real-time
 
 *Worker events:*
 - `worker:task:assigned` — Task assigned to worker
-- `worker:task:completed` — Worker finished with result
+- `worker:task:completed` — Worker finished (raw completion body is suppressed in Telegram)
 - `worker:task:timeout` — 30-minute timeout with partial result
-- `worker:task:final_after_timeout` — Late completion after timeout
+- `worker:task:final_after_timeout` — Late completion after timeout (raw final body suppressed in Telegram)
+- `worker:task:summary` — Codex concise summary (primary Telegram completion message)
+- `dashboard:chat:mirror` — Dashboard Codex/Gemini chat mirrored into Telegram (`🖥️ [Dashboard→...]`)
 
 *RPC responses:*
 - `rpc:result` — RPC call succeeded
@@ -249,10 +251,31 @@ POST /api/workers/{workerId}/task
 POST /api/codex/chat
 {
   "message": "user message",
-  "chatId": number
+  "chatId": number,
+  "source": "telegram" | "dashboard" | "cli"
 }
 # Response: { type, response, taskId? }
 ```
+
+**Gemini Chat:**
+```bash
+POST /api/chat
+{
+  "message": "user message",
+  "chatId": number,              # optional
+  "source": "telegram" | "dashboard" | "cli"
+}
+# Response: { reply }
+```
+
+### UX Policy (Telegram)
+
+- Worker completion in Telegram is **summary-first**:
+  - do not send full raw worker completion text from `worker:task:completed`
+  - do not send raw final text from `worker:task:final_after_timeout`
+  - send concise result via `worker:task:summary`
+- After WebSocket reconnect, catch-up no longer replays raw completion bodies.
+- Dashboard-originated Codex/Gemini chat can be mirrored into Telegram for channel continuity.
 
 **Codex Routing:**
 ```bash

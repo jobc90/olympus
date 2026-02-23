@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Dashboard chat mirror to Telegram**: Codex/Gemini replies triggered from Dashboard character-card chat are now mirrored to Telegram as concise messages (`🖥️ [Dashboard→Zeus/Hera] ...`) for cross-channel visibility.
+- **Worker task recovery fallback**: Worker daemon now polls `/api/workers/tasks` (5s interval + WS reconnect hook) to recover tasks that may have been missed when `worker:task:assigned` WS events are dropped.
+
+### Changed
+
+- **Dashboard chat request metadata**: Web Dashboard now sends `source: "dashboard"` and optional `chatId` for `/api/codex/chat` and `/api/chat`, enabling channel-aware routing and mirror delivery.
+- **Telegram source tagging**: Telegram bot now sends `source: "telegram"` to `/api/codex/chat` to prevent cross-channel echo loops.
+- **ChatWindow detail hint**: Codex/Gemini chat panel now shows `Sync: Dashboard + Telegram` status for clearer UX expectations.
+
+### Fixed
+
+- **Telegram duplicate completion noise**: Telegram no longer sends raw `worker:task:completed`/`worker:task:final_after_timeout` payload text; users receive only `worker:task:summary` concise output.
+- **Reconnect replay duplication**: Telegram catch-up path no longer replays raw worker completion bodies after reconnect, reducing message spam.
+
 ## [0.5.1] - 2026-02-11
 
 ### Changed
