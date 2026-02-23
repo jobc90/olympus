@@ -246,17 +246,35 @@ function simpleHash(str: string): number {
   return Math.abs(hash);
 }
 
-function registeredWorkerToConfig(w: RegisteredWorker, _index: number): WorkerConfigEntry {
-  const h = simpleHash(w.id);
-  const avatarName = WORKER_AVATARS[h % WORKER_AVATARS.length];
-  return {
-    id: w.id,
-    name: avatarName.charAt(0).toUpperCase() + avatarName.slice(1),
-    color: WORKER_COLORS[h % WORKER_COLORS.length],
-    avatar: avatarName,
-    projectPath: w.projectPath,
-    registeredName: w.name,
-  };
+function buildWorkerConfigs(workers: RegisteredWorker[]): WorkerConfigEntry[] {
+  const usedAvatars = new Set<string>();
+  // Sort by id for deterministic assignment order across polls
+  const sorted = [...workers].sort((a, b) => a.id.localeCompare(b.id));
+  const configMap = new Map<string, WorkerConfigEntry>();
+
+  for (const w of sorted) {
+    const h = simpleHash(w.id);
+    let idx = h % WORKER_AVATARS.length;
+    // Resolve hash collision: find next available avatar
+    let attempts = 0;
+    while (usedAvatars.has(WORKER_AVATARS[idx]) && attempts < WORKER_AVATARS.length) {
+      idx = (idx + 1) % WORKER_AVATARS.length;
+      attempts++;
+    }
+    const avatarName = WORKER_AVATARS[idx];
+    usedAvatars.add(avatarName);
+    configMap.set(w.id, {
+      id: w.id,
+      name: avatarName.charAt(0).toUpperCase() + avatarName.slice(1),
+      color: WORKER_COLORS[h % WORKER_COLORS.length],
+      avatar: avatarName,
+      projectPath: w.projectPath,
+      registeredName: w.name,
+    });
+  }
+
+  // Return in original order
+  return workers.map(w => configMap.get(w.id)!);
 }
 
 function asWorkerBehavior(input: string | undefined): WorkerBehavior {
@@ -1484,7 +1502,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
         setState((s) => {
           const now = Date.now();
           // Convert to workerConfigs
-          const workerConfigs = registeredWorkers.map((w, i) => registeredWorkerToConfig(w, i));
+          const workerConfigs = buildWorkerConfigs(registeredWorkers);
 
           // Derive behaviors from worker status + CLI streams
           const workerBehaviors: Record<string, string> = {};
