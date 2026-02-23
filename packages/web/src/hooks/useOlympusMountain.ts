@@ -403,13 +403,13 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
       const occupiedPositions = new Set(prev.workers.map((w) => toKey(w.pos.col, w.pos.row)));
       const reservedTargets = new Set<string>();
 
-      // Initialize behaviorTicks with random offsets (once) so workers don't sync
+      // Initialize behaviorTicks with wide random offsets (once) so workers don't sync
       if (!behaviorTicksInitRef.current) {
         behaviorTicksInitRef.current = true;
         for (let i = 0; i < prev.workers.length; i++) {
           const wid = prev.workers[i].id;
           if (behaviorTicksRef.current[wid] === undefined) {
-            behaviorTicksRef.current[wid] = hashId(wid) % 90;
+            behaviorTicksRef.current[wid] = hashId(wid) % 500;
           }
         }
       }
@@ -496,18 +496,19 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
           }
         }
 
-        // Free motion logic: social zones wander often, sanctuaries occasionally reposition.
+        // Free motion logic: leisurely wandering with wide per-worker variance.
         if (zone && updated.path.length === 0) {
           const behTicks = behaviorTicksRef.current[runtime.id] ?? 0;
           const inSanctuary = targetZone.startsWith('sanctuary_');
 
           let wanderInterval = 0;
-          let minDist = 1;
+          let minDist = 2;
 
           if (inSanctuary) {
             if (behavior === 'working' || behavior === 'reviewing' || behavior === 'analyzing' || behavior === 'deploying' || behavior === 'error') {
-              wanderInterval = 220 + (workerSeed % 90);
-              minDist = 1;
+              // Working workers rarely reposition — long intervals with wide seed spread
+              wanderInterval = 500 + (workerSeed % 300);
+              minDist = 2;
             }
           } else if (
             behavior === 'idle' ||
@@ -517,8 +518,9 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
             behavior === 'collaborating' ||
             behavior === 'resting'
           ) {
-            wanderInterval = 150 + (workerSeed % 80);
-            minDist = 2;
+            // Social/idle: slower, relaxed roaming
+            wanderInterval = 350 + (workerSeed % 250);
+            minDist = 3;
           }
 
           if (wanderInterval > 0 && behTicks > 0 && behTicks % wanderInterval === 0) {
@@ -542,7 +544,7 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
 
         // Move along path
         if (updated.path.length > 0) {
-          const moveStride = 2 + (workerSeed % 4); // 2..5 tick cadence per worker
+          const moveStride = 4 + (workerSeed % 5); // 4..8 tick cadence — slower, more relaxed pace
           if (newTick % moveStride === 0) {
             const next = updated.path[0];
 
