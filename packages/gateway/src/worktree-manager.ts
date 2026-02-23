@@ -207,8 +207,37 @@ export class WorktreeManager {
     }
   }
 
-  async resolveConflicts(files: string[]): Promise<void> {
-    // Simple strategy: accept theirs (the WI branch wins)
+  /**
+   * Get the conflicted content of files (with <<<< ==== >>>> markers).
+   */
+  async getConflictContent(files: string[]): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+    for (const file of files) {
+      try {
+        const content = await readFile(join(this.projectPath, file), 'utf-8');
+        result.set(file, content);
+      } catch {
+        result.set(file, '(unable to read)');
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Write resolved content for conflicted files and commit.
+   */
+  async writeResolvedFiles(resolved: Map<string, string>): Promise<void> {
+    for (const [file, content] of resolved) {
+      await writeFile(join(this.projectPath, file), content);
+    }
+    await this.git(['add', ...Array.from(resolved.keys())]);
+    await this.git(['commit', '--no-edit']);
+  }
+
+  /**
+   * Fallback: accept theirs (the WI branch wins) for all conflict files.
+   */
+  async resolveConflictsTheirs(files: string[]): Promise<void> {
     for (const file of files) {
       await this.git(['checkout', '--theirs', '--', file]);
     }
@@ -216,11 +245,42 @@ export class WorktreeManager {
     await this.git(['commit', '--no-edit']);
   }
 
+  /** @deprecated Use resolveConflictsTheirs or writeResolvedFiles */
+  async resolveConflicts(files: string[]): Promise<void> {
+    return this.resolveConflictsTheirs(files);
+  }
+
   async abortMerge(): Promise<void> {
     try {
       await this.git(['merge', '--abort']);
     } catch {
       // May not be in merge state
+    }
+  }
+
+  /**
+   * Get diff summary for a worktree branch (files changed + stat).
+   * Used to inject predecessor WI context into dependent WI prompts.
+   */
+  async getWorktreeDiffSummary(wiId: string, maxLength = 2000): Promise<string> {
+    const info = this.worktrees.get(wiId);
+    if (!info) return '';
+
+    try {
+      // Get diffstat against base
+      const diffstat = await this.git(
+        ['diff', '--stat', this.baseBranch + '...' + info.branch],
+      );
+      // Get the actual diff (truncated)
+      const diff = await this.git(
+        ['diff', this.baseBranch + '...' + info.branch],
+      );
+      const summary = `Files changed:\n${diffstat}\n\nDiff:\n${diff}`;
+      return summary.length > maxLength
+        ? summary.slice(0, maxLength) + '\n... (truncated)'
+        : summary;
+    } catch {
+      return '';
     }
   }
 

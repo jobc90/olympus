@@ -212,6 +212,7 @@ export interface TeamOrchestratorOptions {
 export class TeamOrchestrator extends EventEmitter {
   private sessions = new Map<string, TeamSession>();
   private cancellations = new Set<string>();
+  private abortControllers = new Map<string, AbortController>();
   private worktreeManagers = new Map<string, WorktreeManager>();
   private options: TeamOrchestratorOptions;
 
@@ -238,6 +239,9 @@ export class TeamOrchestrator extends EventEmitter {
     };
 
     this.sessions.set(teamId, session);
+
+    const ac = new AbortController();
+    this.abortControllers.set(teamId, ac);
 
     this.emit('team:started', { teamId, prompt, projectPath });
 
@@ -269,6 +273,14 @@ export class TeamOrchestrator extends EventEmitter {
     this.cancellations.add(teamId);
     session.phase = 'cancelled';
     session.error = 'Cancelled by user';
+
+    // Abort running CLI processes immediately
+    const ac = this.abortControllers.get(teamId);
+    if (ac) {
+      ac.abort();
+      this.abortControllers.delete(teamId);
+    }
+
     this.emit('team:phase', { teamId, phase: 'cancelled', message: 'Cancelled by user' });
 
     // Cleanup worktrees
@@ -425,12 +437,15 @@ Rules:
 - Each prompt must be self-contained with enough context to implement without seeing other WIs
 - Use existing project patterns and conventions`;
 
+    const abortSignal = this.abortControllers.get(session.id)?.signal;
+
     const result = await runCli({
       prompt: planPrompt,
       provider: 'claude',
       workspaceDir: session.projectPath,
       timeoutMs: PLAN_TIMEOUT_MS,
       dangerouslySkipPermissions: true,
+      abortSignal,
     });
 
     if (!result.success || !result.text) {
@@ -448,6 +463,7 @@ Rules:
         workspaceDir: session.projectPath,
         timeoutMs: PLAN_TIMEOUT_MS,
         dangerouslySkipPermissions: true,
+        abortSignal,
       });
       if (!retryResult.success || !retryResult.text) {
         throw new Error('Plan JSON extraction failed after retry');
@@ -465,6 +481,8 @@ Rules:
   private async executePhase(session: TeamSession, manager: WorktreeManager): Promise<void> {
     const teamId = session.id;
     const workItems = session.workItems;
+    // Store diff summaries of completed WIs for dependent context injection
+    const completedDiffs = new Map<string, string>();
 
     // Mark initially ready WIs
     for (const wi of workItems) {
@@ -485,9 +503,25 @@ Rules:
         wi.startedAt = Date.now();
         this.emit('team:wi:started', { teamId, wiId: wi.id, title: wi.title });
 
-        const promise = this.executeWorkItem(session, wi, manager)
-          .then(() => {
+        // Build predecessor context from completed dependencies
+        const predecessorContext = wi.blockedBy
+          .map(depId => {
+            const diff = completedDiffs.get(depId);
+            if (!diff) return '';
+            const depWi = workItems.find(w => w.id === depId);
+            return `### ${depId}: ${depWi?.title ?? ''}\n${diff}`;
+          })
+          .filter(Boolean)
+          .join('\n\n');
+
+        const promise = this.executeWorkItem(session, wi, manager, predecessorContext)
+          .then(async () => {
             executing.delete(wi.id);
+            // Capture diff summary for future dependents
+            if (wi.status === 'completed') {
+              const diff = await manager.getWorktreeDiffSummary(wi.id, 1500);
+              if (diff) completedDiffs.set(wi.id, diff);
+            }
             // Unblock dependents
             for (const other of workItems) {
               if (other.status === 'pending' && other.blockedBy.every(
@@ -519,15 +553,22 @@ Rules:
     session: TeamSession,
     wi: TeamWorkItem,
     manager: WorktreeManager,
+    predecessorContext?: string,
   ): Promise<void> {
     const teamId = session.id;
+    const abortSignal = this.abortControllers.get(teamId)?.signal;
+
+    const predecessorSection = predecessorContext
+      ? `\n## Predecessor Work Items (already completed — reference their changes)\n${predecessorContext}\n`
+      : '';
+
     const wiPrompt = `## Work Item: ${wi.id} — ${wi.title}
 ${wi.prompt}
 
 ## File Ownership
 You may ONLY modify these files: ${wi.ownedFiles.length > 0 ? wi.ownedFiles.join(', ') : '(create new files as needed)'}
 Read-only reference files: ${wi.readOnlyFiles.length > 0 ? wi.readOnlyFiles.join(', ') : '(none)'}
-
+${predecessorSection}
 Rules:
 - Only modify files listed in your ownership. Create new files if needed.
 - If you need changes to read-only files, describe what changes are needed in a comment but do NOT modify them.
@@ -543,6 +584,7 @@ Rules:
           workspaceDir: wi.worktreePath,
           timeoutMs: WI_TIMEOUT_MS,
           dangerouslySkipPermissions: true,
+          abortSignal,
         });
 
         wi.cliResult = result;
@@ -621,12 +663,20 @@ Rules:
 
       if (!result.success && result.conflictFiles) {
         conflicts++;
-        // Auto-resolve with theirs strategy
-        try {
-          await manager.resolveConflicts(result.conflictFiles);
-        } catch {
-          await manager.abortMerge();
-          throw new Error(`Unresolvable merge conflict in ${wiId}: ${result.conflictFiles.join(', ')}`);
+
+        // Try intelligent conflict resolution via Claude CLI
+        const resolved = await this.resolveConflictsIntelligently(
+          session, manager, wiId, result.conflictFiles,
+        );
+
+        if (!resolved) {
+          // Fallback: accept theirs (the later WI branch wins)
+          try {
+            await manager.resolveConflictsTheirs(result.conflictFiles);
+          } catch {
+            await manager.abortMerge();
+            throw new Error(`Unresolvable merge conflict in ${wiId}: ${result.conflictFiles.join(', ')}`);
+          }
         }
       }
 
@@ -636,12 +686,81 @@ Rules:
     }
   }
 
+  /**
+   * Attempt to resolve merge conflicts by asking Claude to intelligently merge
+   * the conflicted content. Falls back to false if resolution fails.
+   */
+  private async resolveConflictsIntelligently(
+    session: TeamSession,
+    manager: WorktreeManager,
+    wiId: string,
+    conflictFiles: string[],
+  ): Promise<boolean> {
+    try {
+      const conflictContent = await manager.getConflictContent(conflictFiles);
+
+      // Build conflict context for Claude
+      const filesContext = Array.from(conflictContent.entries())
+        .map(([file, content]) => `### ${file}\n\`\`\`\n${content.slice(0, 3000)}\n\`\`\``)
+        .join('\n\n');
+
+      const resolvePrompt = `You are resolving git merge conflicts. The conflicts occurred while merging work item "${wiId}" into the merge branch.
+
+## Conflicted Files
+${filesContext}
+
+## Instructions
+For each file, resolve the conflict markers (<<<<<<< ======= >>>>>>>) by intelligently merging BOTH sides. Keep all meaningful changes from both branches.
+
+Output ONLY valid JSON mapping file paths to their fully resolved content (no conflict markers):
+{
+  ${conflictFiles.map(f => `"${f}": "resolved content..."`).join(',\n  ')}
+}
+
+Rules:
+- Include the COMPLETE file content, not just the conflicted sections
+- Remove ALL conflict markers (<<<<<<< ======= >>>>>>>)
+- Preserve both sides' changes when possible
+- If changes are mutually exclusive, prefer the newer work item's changes`;
+
+      const abortSignal = this.abortControllers.get(session.id)?.signal;
+
+      const result = await runCli({
+        prompt: resolvePrompt,
+        provider: 'claude',
+        workspaceDir: session.projectPath,
+        timeoutMs: 60_000,
+        dangerouslySkipPermissions: true,
+        abortSignal,
+      });
+
+      if (!result.success || !result.text) return false;
+
+      const parsed = extractJson(result.text) as Record<string, string>;
+      if (!parsed || typeof parsed !== 'object') return false;
+
+      const resolvedMap = new Map<string, string>();
+      for (const file of conflictFiles) {
+        const content = parsed[file];
+        if (typeof content !== 'string' || content.includes('<<<<<<<') || content.includes('>>>>>>>')) {
+          return false; // Still contains conflict markers — bail
+        }
+        resolvedMap.set(file, content);
+      }
+
+      await manager.writeResolvedFiles(resolvedMap);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // ──────────────────────────────────────────────
   // Phase 5: Verify
   // ──────────────────────────────────────────────
 
   private async verifyPhase(session: TeamSession): Promise<void> {
-    // Run a quick build check in the project directory (on merge branch)
+    // Run a build check in the project directory (on merge branch)
     try {
       await execFile('pnpm', ['build'], {
         cwd: session.projectPath,
@@ -650,8 +769,7 @@ Rules:
       });
     } catch (err) {
       const errMsg = (err as Error).message;
-      // Build failure is not fatal — log warning
-      console.warn(`[TeamOrchestrator] Build verification warning: ${errMsg.slice(0, 200)}`);
+      throw new Error(`Build verification failed: ${errMsg.slice(0, 500)}`);
     }
   }
 

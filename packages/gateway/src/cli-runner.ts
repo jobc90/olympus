@@ -331,12 +331,13 @@ function buildSafeEnv(): NodeJS.ProcessEnv {
 function spawnCli(
   command: string,
   args: string[],
-  options: { cwd?: string; timeoutMs: number; onStdout?: (chunk: string) => void },
+  options: { cwd?: string; timeoutMs: number; onStdout?: (chunk: string) => void; abortSignal?: AbortSignal },
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
     let timedOut = false;
+    let aborted = false;
     let settled = false;
 
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
@@ -349,6 +350,12 @@ function spawnCli(
       if (killHandle) clearTimeout(killHandle);
       resolve(result);
     };
+
+    // Check if already aborted before spawning
+    if (options.abortSignal?.aborted) {
+      settle({ exitCode: null, stdout: '', stderr: 'aborted', timedOut: false });
+      return;
+    }
 
     let proc: ChildProcess;
     try {
@@ -377,11 +384,26 @@ function spawnCli(
     });
 
     proc.on('close', (code) => {
-      settle({ exitCode: code, stdout, stderr, timedOut });
+      settle({ exitCode: code, stdout, stderr, timedOut: timedOut || aborted });
     });
     proc.on('error', (err) => {
       settle({ exitCode: null, stdout, stderr: stderr + err.message, timedOut: false });
     });
+
+    // Wire AbortSignal — kills the process immediately on abort
+    if (options.abortSignal) {
+      const onAbort = () => {
+        if (settled) return;
+        aborted = true;
+        proc.kill('SIGTERM');
+        killHandle = setTimeout(() => {
+          try { proc.kill('SIGKILL'); } catch { /* already dead */ }
+        }, 5_000);
+      };
+      options.abortSignal.addEventListener('abort', onAbort, { once: true });
+      // Cleanup listener when process ends naturally
+      proc.on('close', () => options.abortSignal?.removeEventListener('abort', onAbort));
+    }
 
     // Only set timeout if timeoutMs > 0; when 0, wait for natural process exit
     if (options.timeoutMs > 0) {
@@ -432,7 +454,7 @@ export async function runCli(params: CliRunParams): Promise<CliRunResult> {
     const { exitCode, stdout, stderr, timedOut } = await spawnCli(
       backend.command,
       args,
-      { cwd: params.workspaceDir, timeoutMs, onStdout: params.onStream },
+      { cwd: params.workspaceDir, timeoutMs, onStdout: params.onStream, abortSignal: params.abortSignal },
     );
     const wallDuration = Date.now() - startTime;
 

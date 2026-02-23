@@ -51,6 +51,8 @@ export interface CliRunParams {
   dangerouslySkipPermissions?: boolean;
   allowedTools?: string[];
   onStream?: (chunk: string) => void;
+  /** AbortSignal for external cancellation — kills the CLI process immediately */
+  abortSignal?: AbortSignal;
 }
 
 // ──────────────────────────────────────────────
