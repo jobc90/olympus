@@ -39,6 +39,7 @@ import { LocalContextStoreManager } from '@olympus-dev/core';
 import type { GeminiAdvisor } from './gemini-advisor.js';
 import { UsageMonitor } from './usage-monitor.js';
 import { deriveWorkerEvents } from './worker-events.js';
+import { TeamOrchestrator } from './team-orchestrator.js';
 import { filterForTelegram, sanitizeBriefing } from './response-filter.js';
 
 export interface GatewayOptions {
@@ -79,6 +80,7 @@ export class Gateway {
   private workerRegistry: WorkerRegistry;
   private localContextManager: LocalContextStoreManager;
   private usageMonitor: UsageMonitor | null = null;
+  private teamOrchestrator: TeamOrchestrator;
   private lastGreeting: { type: string; text: string; timestamp: number } | null = null;
   private startupBriefingTimer: ReturnType<typeof setTimeout> | null = null;
   private briefingInProgress = false;
@@ -116,6 +118,24 @@ export class Gateway {
 
     // Initialize LocalContextStoreManager
     this.localContextManager = new LocalContextStoreManager();
+
+    // Initialize Team Orchestrator (v4 — git worktree isolation)
+    this.teamOrchestrator = new TeamOrchestrator({
+      geminiAdvisor: options.geminiAdvisor,
+      workspaceRoot: this.workspaceRoot,
+    });
+
+    // Wire team events to broadcast
+    const teamEvents = [
+      'team:started', 'team:phase', 'team:plan:ready',
+      'team:wi:started', 'team:wi:completed', 'team:wi:failed',
+      'team:merge:progress', 'team:completed', 'team:failed',
+    ];
+    for (const eventName of teamEvents) {
+      this.teamOrchestrator.on(eventName, (payload: unknown) => {
+        this.broadcastToAll(eventName, payload);
+      });
+    }
 
     // Initialize Channel Manager (always needed for broadcast)
     this.channelManager = new ChannelManager();
@@ -321,6 +341,7 @@ export class Gateway {
         onCliComplete: (result) => this.broadcastToAll('cli:complete', result),
         onCliStream: (chunk) => this.broadcastToAll('cli:stream', chunk),
         onWorkerEvent: (eventType, payload) => this.broadcastWorkerEvent(eventType, payload),
+        teamOrchestrator: this.teamOrchestrator,
       });
 
       this.httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -369,6 +390,13 @@ export class Gateway {
 
     // Cancel all active runs
     this.runManager.cancelAllRuns();
+
+    // Cancel active team sessions
+    for (const session of this.teamOrchestrator.getAllSessions()) {
+      if (session.phase !== 'completed' && session.phase !== 'failed' && session.phase !== 'cancelled') {
+        this.teamOrchestrator.cancel(session.id);
+      }
+    }
 
     // Terminate agent and workers (if initialized)
     if (this.agent) this.agent.cancel();

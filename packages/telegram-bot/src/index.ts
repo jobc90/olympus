@@ -172,17 +172,17 @@ function safeSlice(text: string, maxLength: number): string {
 
 class OlympusBot {
   private static readonly COMMAND_MENU = [
-    { command: 'start', description: '환영 메시지와 빠른 시작' },
-    { command: 'help', description: '명령어 전체 도움말' },
-    { command: 'workers', description: '워커 목록 및 빠른 지시' },
-    { command: 'sessions', description: '세션 상태/전환 가이드' },
-    { command: 'use', description: '세션/모드 전환' },
+    { command: 'start', description: '시작 화면' },
+    { command: 'help', description: '전체 명령어 안내' },
+    { command: 'workers', description: '워커 현황 + 지시' },
+    { command: 'sessions', description: '세션 목록/전환' },
+    { command: 'use', description: '모드 전환 (직접/오케스트레이터)' },
     { command: 'close', description: '세션 종료' },
-    { command: 'last', description: '현재 세션 마지막 출력' },
-    { command: 'health', description: 'Gateway/WS 상태 확인' },
-    { command: 'codex', description: 'Codex 오케스트레이터 질의' },
-    { command: 'team', description: 'Team Engineering 실행' },
-    { command: 'tasks', description: '활성 작업 목록' },
+    { command: 'last', description: '마지막 출력 보기' },
+    { command: 'health', description: '시스템 상태' },
+    { command: 'codex', description: 'Codex에 질의' },
+    { command: 'team', description: '팀 프로토콜 실행' },
+    { command: 'tasks', description: '작업 목록' },
   ] as const;
 
   private bot: Telegraf;
@@ -277,37 +277,27 @@ class OlympusBot {
   }
 
   private buildStartMessage(workers: Array<{ name: string; status: string; projectPath: string }>): string {
-    const exampleWorker = workers.length > 0 ? workers[0].name : 'olympus';
-
     let msg = `⚡ *Olympus*\n\n`;
-    msg += `텔레그램에서 워커를 바로 지시하고, 세션 상태를 확인할 수 있습니다.\n\n`;
 
     if (workers.length > 0) {
-      msg += `*활성 워커* (${workers.length}개)\n`;
       for (const w of workers) {
         const icon = w.status === 'idle' ? '🟢' : w.status === 'busy' ? '🔴' : '⚫';
         const shortPath = w.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
         msg += `${icon} \`@${w.name}\` — \`${shortPath}\`\n`;
       }
       msg += '\n';
-    }
 
-    msg += `*사용법*\n`;
-    msg += `워커에게 지시 → \`@워커이름 작업내용\`\n`;
-    msg += `일반 대화 → 그냥 메시지 입력\n\n`;
+      msg += `*바로 지시하기*\n`;
+      for (const w of workers.slice(0, 3)) {
+        msg += `\`@${w.name} git status\`\n`;
+      }
+      msg += '\n';
 
-    msg += `*예시*\n`;
-    msg += `\`@${exampleWorker} 현재 브랜치 상태 알려줘\`\n`;
-    msg += `\`@${exampleWorker} 테스트 돌려줘\`\n\n`;
-
-    msg += `*명령어*\n`;
-    msg += `/help — 전체 명령어 안내\n`;
-    msg += `/workers — 워커 목록 + 빠른 지시\n`;
-    msg += `/sessions — 세션 상태/전환\n`;
-    msg += `/health — 시스템 상태\n\n`;
-
-    if (workers.length > 0) {
-      msg += `💡 팁: \`@워커이름\` 뒤에 작업 내용을 입력하면 해당 워커가 바로 실행합니다.`;
+      msg += `/workers · /help · /health`;
+    } else {
+      msg += `워커가 없습니다. 터미널에서 시작하세요:\n`;
+      msg += `\`olympus start --name hub\`\n\n`;
+      msg += `/help — 명령어 안내`;
     }
 
     return msg;
@@ -317,32 +307,33 @@ class OlympusBot {
     chatId: number,
     workers: Array<{ name: string; status: string; projectPath: string }>,
   ): string {
-    const mode = this.directMode.get(chatId) ? '🔗 직접 모드' : '🤖 오케스트레이터 모드';
-    const currentSession = this.getActiveSessionName(chatId)?.replace(/^olympus-/, '') ?? '없음';
-    const mySessionCount = this.chatSessions.get(chatId)?.size ?? 0;
-    const exampleWorker = workers[0]?.name ?? 'olympus';
+    const modeLabel = this.directMode.get(chatId) ? '직접' : '오케스트레이터';
+    const currentSession = this.getActiveSessionName(chatId)?.replace(/^olympus-/, '') ?? '-';
+    const exampleWorker = workers[0]?.name ?? 'hub';
 
-    let msg = `📘 *Olympus 명령어 가이드*\n\n`;
-    msg += `*현재 상태*\n`;
-    msg += `모드: ${mode}\n`;
-    msg += `현재 세션: ${currentSession}\n`;
-    msg += `내 연결 세션: ${mySessionCount}개\n`;
-    msg += `활성 워커: ${workers.length}개\n\n`;
+    let msg = `📘 *명령어 가이드*\n`;
+    msg += `${modeLabel} 모드 · 세션: ${currentSession} · 워커: ${workers.length}개\n\n`;
 
-    msg += `*추천 시작 순서*\n`;
-    msg += `1. \`/workers\` 로 워커 확인\n`;
-    msg += `2. \`@${exampleWorker} 상황파악하고 보고해\` 실행\n`;
-    msg += `3. \`/sessions\` 로 세션 상태 확인\n\n`;
+    msg += `*워커 제어*\n`;
+    msg += `\`@워커이름 작업내용\` — 워커에게 직접 지시\n`;
+    msg += `/workers — 워커 현황 + 빠른 지시\n`;
+    msg += `/tasks — 진행 중인 작업 목록\n\n`;
 
-    msg += `*전체 명령어*\n`;
-    for (const cmd of OlympusBot.COMMAND_MENU) {
-      msg += `/${cmd.command} — ${cmd.description}\n`;
-    }
+    msg += `*세션 관리*\n`;
+    msg += `/sessions — 세션 목록\n`;
+    msg += `/use main — 오케스트레이터 모드\n`;
+    msg += `/use <이름> — 직접 모드 전환\n`;
+    msg += `/close <이름> — 세션 종료\n`;
+    msg += `/last — 마지막 출력\n\n`;
 
-    msg += `\n*빠른 예시*\n`;
+    msg += `*시스템*\n`;
+    msg += `/health — 상태 확인\n`;
+    msg += `/codex <질문> — Codex 질의\n`;
+    msg += `/team <작업> — 팀 프로토콜\n\n`;
+
+    msg += `*예시*\n`;
     msg += `\`@${exampleWorker} 빌드하고 테스트 돌려줘\`\n`;
-    msg += `\`/use main\` (오케스트레이터 복귀)\n`;
-    msg += `\`/use ${exampleWorker}\` (직접 모드 전환)\n`;
+    msg += `\`/codex 전체 프로젝트 상태 알려줘\``;
 
     return msg;
   }
@@ -376,17 +367,17 @@ class OlympusBot {
     if (command.startsWith('u')) suggestions.push('/use');
     if (command.startsWith('h')) suggestions.push('/help');
     if (command.startsWith('c')) suggestions.push('/codex');
+    if (command.startsWith('t')) suggestions.push('/team', '/tasks');
 
-    for (const fallback of ['/help', '/workers', '/sessions']) {
+    for (const fallback of ['/help', '/workers']) {
       if (!suggestions.includes(fallback)) suggestions.push(fallback);
       if (suggestions.length >= 3) break;
     }
 
-    const known = OlympusBot.COMMAND_MENU.map(cmd => `/${cmd.command}`).join(', ');
     return (
-      `❓ 알 수 없는 명령어: \`${text.split(/\s+/)[0]}\`\n\n` +
-      `추천 명령어: ${suggestions.map(v => `\`${v}\``).join(', ')}\n\n` +
-      `전체 목록: ${known}`
+      `\`${text.split(/\s+/)[0]}\` — 없는 명령어입니다.\n\n` +
+      `혹시? ${suggestions.map(v => `\`${v}\``).join('  ')}\n` +
+      `/help 에서 전체 명령어를 확인하세요.`
     );
   }
 
@@ -461,19 +452,20 @@ class OlympusBot {
       try {
         const res = await fetch(`${this.config.gatewayUrl}/healthz`);
         const data = await res.json() as { status: string; uptime: number };
-        const wsStatus = this.isConnected ? '✅ 연결됨' : '❌ 연결 끊김';
-        const sessions = this.chatSessions.get(ctx.chat.id);
-        const sessionCount = sessions?.size ?? 0;
-        const activeName = this.activeSession.get(ctx.chat.id);
-        await ctx.reply(
-          `✅ Gateway 정상\n\n` +
-          `상태: ${data.status}\n` +
-          `가동시간: ${Math.floor(data.uptime / 60)}분\n` +
-          `WebSocket: ${wsStatus}\n` +
-          `활성 세션: ${sessionCount}개\n` +
-          `현재 세션: ${activeName ? `'${activeName}'` : '없음'}`,
-          { parse_mode: 'Markdown' }
-        );
+        const wsOk = this.isConnected;
+        const sessionCount = this.chatSessions.get(ctx.chat.id)?.size ?? 0;
+        const uptimeMin = Math.floor(data.uptime / 60);
+        const uptimeStr = uptimeMin >= 60 ? `${Math.floor(uptimeMin / 60)}h ${uptimeMin % 60}m` : `${uptimeMin}m`;
+
+        let msg = `✅ 정상 — 가동 ${uptimeStr}, WS ${wsOk ? '연결' : '끊김'}, 세션 ${sessionCount}개`;
+        if (!wsOk || data.status !== 'ok') {
+          msg = `⚠️ 점검 필요\n\n`;
+          msg += `Gateway: ${data.status}\n`;
+          msg += `WebSocket: ${wsOk ? '✅' : '❌'}\n`;
+          msg += `가동시간: ${uptimeStr}\n`;
+          msg += `세션: ${sessionCount}개`;
+        }
+        await ctx.reply(msg, { parse_mode: 'Markdown' });
       } catch (err) {
         await ctx.reply(`❌ Gateway 연결 실패\n${(err as Error).message}`);
       }
@@ -654,15 +646,14 @@ class OlympusBot {
       const nameInput = ctx.message.text.replace(/^\/use\s*/, '').trim();
 
       if (!nameInput) {
-        const mode = this.directMode.get(ctx.chat.id) ? '🔗 직접 모드' : '🤖 오케스트레이터 모드';
-        const currentSession = this.getActiveSessionName(ctx.chat.id)?.replace(/^olympus-/, '') ?? '없음';
+        const isDirect = this.directMode.get(ctx.chat.id);
+        const currentSession = this.getActiveSessionName(ctx.chat.id)?.replace(/^olympus-/, '') ?? '-';
         await ctx.reply(
-          `현재 모드: ${mode}\n` +
-          `현재 세션: ${currentSession}\n\n` +
-          `사용법:\n` +
-          `• \`/use main\` — 오케스트레이터 모드\n` +
-          `• \`/use direct <세션>\` — 직접 모드\n` +
-          `• \`/use <세션>\` — 직접 모드로 전환`,
+          `현재: ${isDirect ? '직접' : '오케스트레이터'} 모드 (세션: ${currentSession})\n\n` +
+          `\`/use main\` — 오케스트레이터로 복귀\n` +
+          `\`/use <세션이름>\` — 직접 모드 전환\n\n` +
+          `_직접 모드: 메시지가 세션에 직접 전달_\n` +
+          `_오케스트레이터: AI가 적절한 워커에 분배_`,
           { parse_mode: 'Markdown' }
         );
         return;
@@ -790,40 +781,35 @@ class OlympusBot {
       }
     });
 
-    // /team <prompt> - Team Engineering Protocol via async API + polling
+    // /team <prompt> - Team Engineering Protocol v4 (git worktree isolation)
     this.bot.command('team', async (ctx) => {
       const text = ctx.message.text;
       const prompt = text.replace(/^\/team\s*/, '').trim();
 
       if (!prompt) {
         await ctx.reply(
-          '❌ 요청 내용을 입력해주세요.\n\n' +
-          '예:\n' +
-          '`/team 로그인 UI 개선`\n' +
-          '`/team 장바구니 기능 추가`\n' +
-          '`/team 결제 시스템 리팩토링`',
+          '`/team <작업>` — Team v4 (Git Worktree 격리)\n\n' +
+          '`/team API 엔드포인트 추가하고 테스트 작성`\n' +
+          '`/team 로그인 페이지 UI 개선`\n' +
+          '`/team 성능 병목 분석하고 최적화`',
           { parse_mode: 'Markdown' }
         );
         return;
       }
 
-      const statusMsg = await ctx.reply(`🚀 *Team Engineering Protocol* 시작 중...`, { parse_mode: 'Markdown' });
+      const statusMsg = await ctx.reply(`🚀 *Team v4* 시작 중...`, { parse_mode: 'Markdown' });
       await ctx.sendChatAction('typing');
 
       try {
-        // 1. 비동기 실행 요청
-        const startRes = await fetch(`${this.config.gatewayUrl}/api/cli/run/async`, {
+        const startRes = await fetch(`${this.config.gatewayUrl}/api/team/start`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${this.config.apiKey}`,
           },
           body: JSON.stringify({
-            prompt: `[TEAM ENGINEERING PROTOCOL] Execute the Team Engineering Protocol defined in your CLAUDE.md for the following task. Activate all On-Demand agents, follow the full workflow (Skill Discovery → Work Decomposition → Team Creation → Consensus → 2-Phase Development → Review → QA). Task: ${prompt}`,
-            sessionKey: `telegram:${ctx.chat.id}:team`,
-            provider: 'claude',
-            timeoutMs: 1_800_000,
-            dangerouslySkipPermissions: true,
+            prompt,
+            chatId: ctx.chat.id,
           }),
           signal: AbortSignal.timeout(30_000),
         });
@@ -833,8 +819,8 @@ class OlympusBot {
           throw new Error(error.message);
         }
 
-        const { taskId } = await startRes.json() as { taskId: string };
-        await this.pollTeamTask(ctx, taskId, statusMsg.message_id);
+        const { teamId } = await startRes.json() as { teamId: string };
+        await this.pollTeamSession(ctx, teamId, statusMsg.message_id);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         await ctx.telegram.editMessageText(
@@ -850,12 +836,10 @@ class OlympusBot {
 
       if (!text) {
         await this.safeReply(ctx,
-          '🤖 *Codex Orchestrator*\n\n' +
-          '사용법: `/codex <질문>`\n\n' +
-          '예:\n' +
-          '`/codex 알파 프로젝트 빌드해줘`\n' +
-          '`/codex 모든 프로젝트 상태`\n' +
-          '`/codex deploy 관련 작업 검색`',
+          '`/codex <질문>` — Codex에 질의/지시\n\n' +
+          '`/codex 전체 프로젝트 상태 알려줘`\n' +
+          '`/codex hub 워커 최근 작업 요약`\n' +
+          '`/codex 빌드 에러 원인 분석해줘`',
           'Markdown'
         );
         return;
@@ -974,39 +958,37 @@ class OlympusBot {
 
         if (workers.length === 0) {
           await ctx.reply(
-            '📭 등록된 워커가 없습니다.\n\n' +
-            '💡 터미널에서 워커를 시작하세요:\n' +
-            '`olympus start --name hub --project ~/dev/console`',
+            '워커가 없습니다.\n\n' +
+            '터미널에서 시작:\n' +
+            '`olympus start --name hub`\n' +
+            '`olympus start --name api --project ~/dev/console`',
             { parse_mode: 'Markdown' }
           );
           return;
         }
 
-        let msg = `⚡ *워커 목록* (${workers.length}개)\n\n`;
+        let msg = `⚡ *워커* (${workers.length})\n\n`;
 
         for (const w of workers) {
           const icon = w.status === 'idle' ? '🟢' : w.status === 'busy' ? '🔴' : '⚫';
-          const statusText = w.status === 'idle' ? '대기 중' : w.status === 'busy' ? '작업 중' : '오프라인';
           const shortPath = w.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
-          const age = this.formatAge(w.registeredAt);
 
-          msg += `*${w.name}* ${icon} ${statusText}\n`;
-          msg += `📂 \`${shortPath}\`\n`;
-          msg += `⏱ ${age}\n`;
-          if (w.currentTaskPrompt) {
-            msg += `💬 ${w.currentTaskPrompt.slice(0, 60)}${w.currentTaskPrompt.length > 60 ? '...' : ''}\n`;
+          msg += `${icon} *${w.name}* — \`${shortPath}\`\n`;
+          if (w.status === 'busy' && w.currentTaskPrompt) {
+            msg += `  💬 ${w.currentTaskPrompt.slice(0, 80)}${w.currentTaskPrompt.length > 80 ? '...' : ''}\n`;
+          } else if (w.status === 'idle') {
+            msg += `  \`@${w.name} git status\`\n`;
           }
-          msg += `➡️ \`@${w.name} 명령\`\n\n`;
+          msg += '\n';
         }
 
-        msg += `${'─'.repeat(25)}\n`;
-        msg += `💡 *사용법*: \`@워커이름 작업내용\`\n`;
-        msg += `🧭 모드 전환: \`/use <세션>\`, \`/use main\`\n\n`;
-        msg += `*빠른 템플릿*\n`;
-        for (const worker of workers.slice(0, 3)) {
-          msg += `• \`@${worker.name} 상황파악하고 오늘 우선순위 3개 정리해줘\`\n`;
+        const idleWorkers = workers.filter(w => w.status === 'idle');
+        if (idleWorkers.length > 0) {
+          const w = idleWorkers[0];
+          msg += `*빠른 지시*\n`;
+          msg += `\`@${w.name} 빌드하고 테스트 돌려줘\`\n`;
+          msg += `\`@${w.name} 최근 변경사항 요약해줘\``;
         }
-        msg += `• \`@${workers[0].name} 빌드하고 테스트 돌려줘\``;
 
         await ctx.reply(msg, { parse_mode: 'Markdown' });
       } catch (err) {
@@ -1267,26 +1249,23 @@ class OlympusBot {
       message = text;
     }
 
-    // "team" or "team:" prefix detection → Team Engineering Protocol (async 30min)
+    // "team" or "team:" prefix detection → Team v4 (git worktree isolation)
     const teamMatch = message.match(/^team[:\s]\s*(.+)$/is);
     if (teamMatch) {
       const teamPrompt = teamMatch[1].trim();
-      const statusMsg = await ctx.reply(`🚀 *Team Engineering Protocol* 시작 중...\n워커: ${displayName}`, { parse_mode: 'Markdown' });
+      const statusMsg = await ctx.reply(`🚀 *Team v4* 시작 중...\n워커: ${displayName}`, { parse_mode: 'Markdown' });
       await ctx.sendChatAction('typing');
 
       try {
-        const startRes = await fetch(`${this.config.gatewayUrl}/api/cli/run/async`, {
+        const startRes = await fetch(`${this.config.gatewayUrl}/api/team/start`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${this.config.apiKey}`,
           },
           body: JSON.stringify({
-            prompt: `[TEAM ENGINEERING PROTOCOL] Execute the Team Engineering Protocol defined in your CLAUDE.md for the following task. Activate all On-Demand agents, follow the full workflow (Skill Discovery → Work Decomposition → Team Creation → Consensus → 2-Phase Development → Review → QA). Task: ${teamPrompt}`,
-            sessionKey: `${sessionKey}:team`,
-            provider: 'claude',
-            timeoutMs: 1_800_000,
-            dangerouslySkipPermissions: true,
+            prompt: teamPrompt,
+            chatId: ctx.chat.id,
           }),
           signal: AbortSignal.timeout(30_000),
         });
@@ -1296,8 +1275,8 @@ class OlympusBot {
           throw new Error(error.message);
         }
 
-        const { taskId } = await startRes.json() as { taskId: string };
-        await this.pollTeamTask(ctx, taskId, statusMsg.message_id);
+        const { teamId } = await startRes.json() as { teamId: string };
+        await this.pollTeamSession(ctx, teamId, statusMsg.message_id);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         await ctx.telegram.editMessageText(
@@ -1467,40 +1446,52 @@ class OlympusBot {
    * Poll a team task for completion (30min max, 10s interval).
    * Shared by /team command and @worker team prefix.
    */
-  private async pollTeamTask(
+  private async pollTeamSession(
     ctx: Context & { chat: { id: number } },
-    taskId: string,
+    teamId: string,
     statusMsgId: number,
   ): Promise<void> {
-    const POLL_INTERVAL = 10_000;
-    const MAX_POLLS = 180; // 30분
+    const POLL_INTERVAL = 5_000;
+    const MAX_POLLS = 360; // 30분
+
+    let lastText = '';
 
     for (let polls = 1; polls <= MAX_POLLS; polls++) {
       await new Promise(r => setTimeout(r, POLL_INTERVAL));
 
       try {
         const statusRes = await fetch(
-          `${this.config.gatewayUrl}/api/cli/run/${taskId}/status`,
+          `${this.config.gatewayUrl}/api/team/${teamId}/status`,
           {
             headers: { Authorization: `Bearer ${this.config.apiKey}` },
             signal: AbortSignal.timeout(10_000),
           }
         );
         const data = await statusRes.json() as {
-          status: string;
-          result?: CliRunResult;
+          teamId: string;
+          phase: string;
+          workItems: Array<{ id: string; title: string; status: string; durationMs?: number; error?: string }>;
+          mergeProgress?: { merged: number; total: number; conflicts: number };
           error?: string;
-          elapsedMs?: number;
+          summary?: string;
+          totalCost?: number;
+          elapsedMs: number;
         };
 
-        if (data.status === 'completed' && data.result) {
-          const result = data.result;
-          const footer = result.usage
-            ? `\n\n📊 ${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4)} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
-            : '';
+        const elapsed = Math.round(data.elapsedMs / 1000);
 
-          const fullText = `✅ *Team 완료*\n\n${result.text}${footer}`;
-          const chunks = splitLongMessage(fullText, 4000);
+        if (data.phase === 'completed') {
+          let text = `✅ *Team v4 완료* (${elapsed}초`;
+          if (data.totalCost) text += `, $${data.totalCost.toFixed(4)}`;
+          text += ')\n\n';
+
+          for (const wi of data.workItems) {
+            const icon = wi.status === 'completed' ? '✅' : '❌';
+            const dur = wi.durationMs ? ` (${Math.round(wi.durationMs / 1000)}초)` : '';
+            text += `${icon} ${wi.id}: ${wi.title}${dur}\n`;
+          }
+
+          const chunks = splitLongMessage(text, 4000);
           await ctx.telegram.editMessageText(
             ctx.chat.id, statusMsgId, undefined,
             chunks[0], { parse_mode: 'Markdown' }
@@ -1511,25 +1502,40 @@ class OlympusBot {
           return;
         }
 
-        if (data.status === 'failed') {
+        if (data.phase === 'failed' || data.phase === 'cancelled') {
           await ctx.telegram.editMessageText(
             ctx.chat.id, statusMsgId, undefined,
-            `❌ Team 실패: ${data.error}`
+            `❌ Team ${data.phase === 'cancelled' ? '취소됨' : '실패'}: ${data.error ?? 'unknown'}`
           ).catch(() => {});
           return;
         }
 
-        // Progress update every 60초
-        if (polls % 6 === 0) {
-          const elapsed = Math.round((data.elapsedMs ?? polls * POLL_INTERVAL) / 1000);
+        // Build progress text
+        let text = `🔄 *Team v4* \\[${data.phase}\\] (${elapsed}초)\n\n`;
+        for (const wi of data.workItems) {
+          let icon = '⬜';
+          if (wi.status === 'completed') icon = '✅';
+          else if (wi.status === 'running') icon = '🔄';
+          else if (wi.status === 'failed') icon = '❌';
+          else if (wi.status === 'ready') icon = '⏳';
+          text += `${icon} ${wi.id}: ${wi.title}\n`;
+        }
+
+        if (data.mergeProgress) {
+          text += `\n🔀 Merge: ${data.mergeProgress.merged}/${data.mergeProgress.total}`;
+          if (data.mergeProgress.conflicts > 0) text += ` (충돌 ${data.mergeProgress.conflicts})`;
+        }
+
+        // Only update if text changed
+        if (text !== lastText) {
+          lastText = text;
           await ctx.telegram.editMessageText(
             ctx.chat.id, statusMsgId, undefined,
-            `🔄 *Team 진행 중...* (${elapsed}초 경과)`,
+            text.slice(0, TELEGRAM_MSG_LIMIT),
             { parse_mode: 'Markdown' }
           ).catch(() => {});
         }
       } catch {
-        // 네트워크 에러 시 다음 폴링까지 대기
         continue;
       }
     }
@@ -1537,7 +1543,7 @@ class OlympusBot {
     // 타임아웃
     await ctx.telegram.editMessageText(
       ctx.chat.id, statusMsgId, undefined,
-      '⏰ Team 타임아웃 (30분)'
+      '⏰ Team v4 타임아웃 (30분)'
     ).catch(() => {});
   }
 
@@ -1945,7 +1951,7 @@ class OlympusBot {
         const promptText = taskPayload.prompt
           ? `\n> ${safeSlice(taskPayload.prompt, 100)}${taskPayload.prompt.length > 100 ? '...' : ''}`
           : '';
-        const text = `🔄 [${taskPayload.workerName}] 작업 시작${promptText}`;
+        const text = `▶️ \`@${taskPayload.workerName}\` 시작${promptText}`;
 
         this.sendLongMessage(targetChatId, text).catch((err) => {
           structuredLog('error', 'telegram-bot', 'task_assigned_send_failed', { error: (err as Error).message });
@@ -2049,7 +2055,7 @@ class OlympusBot {
       if (greetingPayload.text) {
         const targetChatId = this.config.allowedUsers[0];
         if (targetChatId) {
-          this.sendLongMessage(targetChatId, `🏛️ **Olympus 브리핑**\n\n${greetingPayload.text}`)
+          this.sendLongMessage(targetChatId, `📋 *브리핑*\n\n${greetingPayload.text}`)
             .catch((err: Error) => console.warn('[TelegramBot] Failed to send greeting:', err.message));
         }
       }
@@ -2090,7 +2096,7 @@ class OlympusBot {
       const summaryPayload = msg.payload as { taskId: string; workerName: string; chatId?: number; summary: string };
       const chatId = summaryPayload.chatId ?? this.config.allowedUsers[0];
       if (chatId) {
-        const text = `📝 [${summaryPayload.workerName}] 작업 요약\n\n${summaryPayload.summary}`;
+        const text = `✅ \`@${summaryPayload.workerName}\` 완료\n\n${summaryPayload.summary}`;
         this.sendLongMessage(chatId, text).catch(() => {});
       }
       return;

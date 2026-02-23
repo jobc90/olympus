@@ -71,6 +71,7 @@ export interface ApiHandlerOptions {
   onWorkerEvent?: (eventType: string, payload: unknown) => void;
   localContextManager?: LocalContextStoreManager;
   workspaceRoot?: string;
+  teamOrchestrator?: import('./team-orchestrator.js').TeamOrchestrator;
 }
 
 /**
@@ -329,6 +330,19 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     }
   }
 
+  // /api/team routes
+  if (parts[0] === 'api' && parts[1] === 'team') {
+    if (parts[2] === 'start') {
+      return { path: '/api/team/start', query };
+    }
+    if (parts[2] && parts[3] === 'status') {
+      return { path: '/api/team/:id/status', id: parts[2], query };
+    }
+    if (parts[2] && parts[3] === 'cancel') {
+      return { path: '/api/team/:id/cancel', id: parts[2], query };
+    }
+  }
+
   // /api/operations/:id
   if (parts[0] === 'api' && parts[1] === 'operations' && parts[2]) {
     return { path: '/api/operations/:id', id: parts[2], query };
@@ -358,6 +372,7 @@ export function createApiHandler(options: ApiHandlerOptions) {
     onCliStream,
     onWorkerEvent,
     localContextManager,
+    teamOrchestrator,
   } = options;
   const workspaceRoot = options.workspaceRoot ?? process.cwd();
 
@@ -2359,6 +2374,70 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${workerRegistry 
         } catch (e) {
           sendJson(res, 500, { error: (e as Error).message });
         }
+        return;
+      }
+
+      // ============ Team API (v4 — Worktree Isolation) ============
+
+      // POST /api/team/start — start team session
+      if (path === '/api/team/start' && method === 'POST') {
+        if (!teamOrchestrator) {
+          sendJson(res, 503, { error: 'Service Unavailable', message: 'Team orchestrator not available' });
+          return;
+        }
+        const body = await parseBody<{ prompt?: string; projectPath?: string; chatId?: number }>(req);
+        if (!body.prompt) {
+          sendJson(res, 400, { error: 'Bad Request', message: 'prompt is required' });
+          return;
+        }
+        const projectPath = body.projectPath || workspaceRoot;
+        const teamId = await teamOrchestrator.start(body.prompt, projectPath, body.chatId);
+        sendJson(res, 202, { teamId });
+        return;
+      }
+
+      // GET /api/team/:id/status — get team session status
+      if (path === '/api/team/:id/status' && method === 'GET' && id) {
+        if (!teamOrchestrator) {
+          sendJson(res, 503, { error: 'Service Unavailable', message: 'Team orchestrator not available' });
+          return;
+        }
+        const session = teamOrchestrator.getSession(id);
+        if (!session) {
+          sendJson(res, 404, { error: 'Not Found', message: `Team session ${id} not found` });
+          return;
+        }
+        sendJson(res, 200, {
+          teamId: session.id,
+          phase: session.phase,
+          workItems: session.workItems.map(wi => ({
+            id: wi.id,
+            title: wi.title,
+            status: wi.status,
+            durationMs: wi.durationMs,
+            error: wi.error,
+          })),
+          mergeProgress: session.mergeProgress,
+          error: session.error,
+          summary: session.summary,
+          totalCost: session.totalCost,
+          elapsedMs: Date.now() - session.startedAt,
+        });
+        return;
+      }
+
+      // POST /api/team/:id/cancel — cancel team session
+      if (path === '/api/team/:id/cancel' && method === 'POST' && id) {
+        if (!teamOrchestrator) {
+          sendJson(res, 503, { error: 'Service Unavailable', message: 'Team orchestrator not available' });
+          return;
+        }
+        const cancelled = teamOrchestrator.cancel(id);
+        if (!cancelled) {
+          sendJson(res, 404, { error: 'Not Found', message: `Team session ${id} not found or already finished` });
+          return;
+        }
+        sendJson(res, 200, { cancelled: true });
         return;
       }
 

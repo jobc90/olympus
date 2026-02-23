@@ -41,3 +41,6 @@ export {
   isProjectDirectory,
   type WorkspaceProject,
 } from './workspace-root.js';
+export { WorktreeManager } from './worktree-manager.js';
+export { TeamOrchestrator, topologicalSort, extractJson, validatePlan } from './team-orchestrator.js';
+export type { TeamOrchestratorOptions } from './team-orchestrator.js';

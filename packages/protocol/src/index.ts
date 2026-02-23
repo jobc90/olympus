@@ -218,6 +218,25 @@ export type {
 
 export { DEFAULT_DRAFT_STREAM_CONFIG } from './draft-stream.js';
 
+// Team Engineering Protocol v4 types
+export type {
+  TeamPhase,
+  TeamWiStatus,
+  TeamRequirement,
+  TeamWorkItem,
+  TeamPlan,
+  TeamSession,
+  TeamStartedEvent,
+  TeamPhaseEvent,
+  TeamPlanReadyEvent,
+  TeamWiStartedEvent,
+  TeamWiCompletedEvent,
+  TeamWiFailedEvent,
+  TeamMergeProgressEvent,
+  TeamCompletedEvent,
+  TeamFailedEvent,
+} from './team.js';
+
 // Response Filter types (5-stage pipeline)
 export type {
   FilterStage,
