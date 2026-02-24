@@ -141,34 +141,34 @@ const HERA_PROFILE: SpriteProfile = {
 };
 
 const WORKER_STYLE_MAP: Record<WorkerAvatar, WorkerStyle> = {
-  athena: { hair: '#6E7F95', mantle: '#5D728B', trim: '#D6E4F5', crest: '#D4AF37', prop: 'spear' },
-  poseidon: { hair: '#2C78C4', mantle: '#2273B0', trim: '#9ED8FF', crest: '#B3E5FC', prop: 'trident' },
-  ares: { hair: '#5A2A2A', mantle: '#8E2020', trim: '#F28B82', crest: '#C62828', prop: 'blade' },
-  apollo: { hair: '#D8A540', mantle: '#C18A2A', trim: '#FFE08A', crest: '#FFF3B0', prop: 'sunstaff' },
-  artemis: { hair: '#7D8A72', mantle: '#6B8A59', trim: '#DCE8C8', crest: '#BFD6B3', prop: 'bow' },
-  hermes: { hair: '#8C7555', mantle: '#355DA8', trim: '#BFDBFE', crest: '#F7EED7', prop: 'wing' },
-  hephaestus: { hair: '#5A4636', mantle: '#885A3C', trim: '#D9A066', crest: '#CFD8DC', prop: 'hammer' },
-  dionysus: { hair: '#5B3A67', mantle: '#7B1FA2', trim: '#D4A7E6', crest: '#9CCC65', prop: 'vine' },
-  demeter: { hair: '#A68C53', mantle: '#7A9640', trim: '#E8D79B', crest: '#EACB62', prop: 'wheat' },
-  aphrodite: { hair: '#8A5A63', mantle: '#C2185B', trim: '#F8BBD0', crest: '#F48FB1', prop: 'mirror' },
-  hera: { hair: '#5C3C70', mantle: '#7E57C2', trim: '#D4C3E7', crest: '#F1D37A', prop: 'mirror' },
-  hades: { hair: '#2C2F3C', mantle: '#313843', trim: '#90A4AE', crest: '#607D8B', prop: 'obsidian_staff' },
-  persephone: { hair: '#7A5565', mantle: '#2E7D32', trim: '#B9E4BC', crest: '#EC6C9E', prop: 'rose' },
-  prometheus: { hair: '#5E4638', mantle: '#B45B26', trim: '#FDBA74', crest: '#FFD54F', prop: 'torch' },
-  helios: { hair: '#B4862C', mantle: '#D28F1E', trim: '#FDE68A', crest: '#FFF2A8', prop: 'halo' },
-  nike: { hair: '#8F7652', mantle: '#9A7B45', trim: '#F5E5B6', crest: '#FFFFFF', prop: 'laurel' },
-  pan: { hair: '#4C3C30', mantle: '#5D4535', trim: '#C8A27A', crest: '#9A7450', prop: 'flute' },
-  hecate: { hair: '#463A5B', mantle: '#5B21B6', trim: '#C4B5FD', crest: '#E1BEE7', prop: 'lantern' },
-  iris: { hair: '#7A5A70', mantle: '#C23F6A', trim: '#FDB4C7', crest: '#7BC7FF', prop: 'rainbow_ribbon' },
-  heracles: { hair: '#6C5843', mantle: '#7B5B47', trim: '#E6CCAE', crest: '#C49A6C', prop: 'club' },
-  selene: { hair: '#6D7299', mantle: '#4A57A8', trim: '#C5CAE9', crest: '#E8EAF6', prop: 'crescent' },
+  athena:     { hair: '#8888AA', mantle: '#445878', trim: '#B8D8F8', crest: '#D0E8FF', prop: 'spear' },
+  poseidon:   { hair: '#1A88CC', mantle: '#14507A', trim: '#60D0E8', crest: '#60D0E8', prop: 'trident' },
+  ares:       { hair: '#D01818', mantle: '#881010', trim: '#FF3030', crest: '#FF3030', prop: 'blade' },
+  apollo:     { hair: '#FFD040', mantle: '#E07010', trim: '#FFE860', crest: '#FFE860', prop: 'sunstaff' },
+  artemis:    { hair: '#D0D0F0', mantle: '#2A5E30', trim: '#90C890', crest: '#DDEEDD', prop: 'bow' },
+  hermes:     { hair: '#D0A818', mantle: '#28882E', trim: '#FFE840', crest: '#FFE840', prop: 'wing' },
+  hephaestus: { hair: '#5A3020', mantle: '#7A5030', trim: '#C06820', crest: '#A04820', prop: 'hammer' },
+  dionysus:   { hair: '#7030A0', mantle: '#400870', trim: '#C080FF', crest: '#B070F0', prop: 'vine' },
+  demeter:    { hair: '#C09820', mantle: '#507020', trim: '#C8D850', crest: '#D0C040', prop: 'wheat' },
+  aphrodite:  { hair: '#FF88CC', mantle: '#E03070', trim: '#FFB8DD', crest: '#FFCCEE', prop: 'rose' },
+  hera:       { hair: '#2A1040', mantle: '#3855C0', trim: '#FFD700', crest: '#C8A020', prop: 'mirror' },
+  hades:      { hair: '#101010', mantle: '#200A40', trim: '#7040A8', crest: '#502880', prop: 'obsidian_staff' },
+  persephone: { hair: '#8838B8', mantle: '#5830A0', trim: '#FF90C8', crest: '#CC88FF', prop: 'laurel' },
+  prometheus: { hair: '#2E1A0A', mantle: '#3E2808', trim: '#FF5010', crest: '#C03808', prop: 'torch' },
+  helios:     { hair: '#FF9000', mantle: '#FFB820', trim: '#FFF080', crest: '#FFF060', prop: 'halo' },
+  nike:       { hair: '#E8E8FF', mantle: '#D8E8FF', trim: '#FFD700', crest: '#E0E8FF', prop: 'wing' },
+  pan:        { hair: '#5A2808', mantle: '#4A2E08', trim: '#88C030', crest: '#60A020', prop: 'flute' },
+  hecate:     { hair: '#301858', mantle: '#180830', trim: '#9040FF', crest: '#7030CC', prop: 'lantern' },
+  iris:       { hair: '#FF6088', mantle: '#C040A0', trim: '#FFB0D0', crest: '#88CCFF', prop: 'rainbow_ribbon' },
+  heracles:   { hair: '#A06030', mantle: '#704020', trim: '#E0A060', crest: '#C08840', prop: 'club' },
+  selene:     { hair: '#C0C8F0', mantle: '#3040A0', trim: '#D0D8FF', crest: '#E8E8FF', prop: 'crescent' },
 };
 
 const ZEUS_WORKER_STYLE: WorkerStyle = {
-  hair: '#6D5A45',
-  mantle: '#CFA93A',
-  trim: '#FFE08A',
-  crest: '#FFF3B0',
+  hair: '#F8F4E0',
+  mantle: '#5A3590',
+  trim: '#FFD700',
+  crest: '#FFD700',
   prop: 'sunstaff',
 };
 
@@ -327,25 +327,25 @@ const HD_AVATAR_SPECS: Record<WorkerLikeAvatar, HdAvatarSpec> = {
   athena: { ...HD_BASE_FEMALE, height: 58, headW: 10, headH: 10, shoulder: 14, waist: 9, hip: 12, hairStyle: 'bun', outfitStyle: 'armor', skinA: '#F2DEC9', skinB: '#D2AE90', eye: '#24364A' },
   poseidon: { ...HD_BASE_MALE, height: 60, headW: 12, headH: 11, shoulder: 17, waist: 11, hip: 13, legW: 3, hairStyle: 'wavy', outfitStyle: 'robe', facial: 'beard', skinA: '#ECD5BC', skinB: '#C8A487', eye: '#1E4A64' },
   ares: { ...HD_BASE_MALE, height: 59, headW: 11, headH: 10, shoulder: 18, waist: 12, hip: 13, legW: 4, hairStyle: 'spike', outfitStyle: 'armor', facial: 'stubble', skinA: '#E7CCB2', skinB: '#BE9473', eye: '#45211E' },
-  apollo: { ...HD_BASE_MALE, height: 54, headW: 10, headH: 9, shoulder: 11, waist: 8, hip: 10, legW: 2, hairStyle: 'wavy', outfitStyle: 'tunic', skinA: '#F3DCC2', skinB: '#D0AA85', eye: '#5C4021' },
+  apollo: { ...HD_BASE_MALE, height: 54, headW: 10, headH: 9, shoulder: 11, waist: 8, hip: 10, legW: 2, hairStyle: 'spike', outfitStyle: 'tunic', skinA: '#F3DCC2', skinB: '#D0AA85', eye: '#5C4021' },
   artemis: { ...HD_BASE_FEMALE, height: 57, headW: 10, headH: 10, shoulder: 12, waist: 8, hip: 11, hairStyle: 'pony', outfitStyle: 'tunic', skinA: '#F2DEC9', skinB: '#CCAA8C', eye: '#2C4A32' },
   hermes: { ...HD_BASE_MALE, height: 51, headW: 9, headH: 9, shoulder: 10, waist: 8, hip: 9, legW: 2, hairStyle: 'short', outfitStyle: 'tunic', skinA: '#EFD6BB', skinB: '#C6A07F', eye: '#3D2D21' },
   hephaestus: { ...HD_BASE_MALE, height: 60, headW: 13, headH: 11, shoulder: 17, waist: 13, hip: 14, legW: 4, hairStyle: 'short', outfitStyle: 'armor', facial: 'beard', skinA: '#E1C4A6', skinB: '#B98B66', eye: '#3A2A1F' },
-  dionysus: { ...HD_BASE_MALE, height: 53, headW: 11, headH: 10, shoulder: 12, waist: 9, hip: 11, legW: 3, hairStyle: 'curly', outfitStyle: 'robe', skinA: '#EED2B8', skinB: '#C6A07F', eye: '#4A2A56' },
+  dionysus: { ...HD_BASE_MALE, height: 53, headW: 11, headH: 10, shoulder: 12, waist: 9, hip: 11, legW: 3, hairStyle: 'wavy', outfitStyle: 'robe', skinA: '#EED2B8', skinB: '#C6A07F', eye: '#4A2A56' },
   demeter: { ...HD_BASE_FEMALE, height: 59, headW: 11, headH: 10, shoulder: 13, waist: 9, hip: 14, hairStyle: 'braid', outfitStyle: 'dress', skinA: '#F0D7BE', skinB: '#C8A583', eye: '#5A4726' },
-  aphrodite: { ...HD_BASE_FEMALE, height: 55, headW: 10, headH: 9, shoulder: 10, waist: 7, hip: 13, hairStyle: 'long', outfitStyle: 'gown', skinA: '#F7E1CD', skinB: '#DDB69A', eye: '#5C2F4C' },
+  aphrodite: { ...HD_BASE_FEMALE, height: 55, headW: 10, headH: 9, shoulder: 10, waist: 7, hip: 13, hairStyle: 'curly', outfitStyle: 'gown', skinA: '#F7E1CD', skinB: '#DDB69A', eye: '#5C2F4C' },
   hera: { ...HD_BASE_FEMALE, height: 61, headW: 12, headH: 11, shoulder: 13, waist: 8, hip: 15, hairStyle: 'long', outfitStyle: 'gown', skinA: '#F4DECB', skinB: '#D5AF96', eye: '#3B2A52' },
-  hades: { ...HD_BASE_MALE, height: 59, headW: 11, headH: 10, shoulder: 14, waist: 9, hip: 12, hairStyle: 'hood', outfitStyle: 'cloak', facial: 'goatee', skinA: '#E7D4C7', skinB: '#BCA091', eye: '#1F3040' },
+  hades: { ...HD_BASE_MALE, height: 59, headW: 11, headH: 10, shoulder: 14, waist: 9, hip: 12, hairStyle: 'short', outfitStyle: 'cloak', facial: 'goatee', skinA: '#E7D4C7', skinB: '#BCA091', eye: '#1F3040' },
   persephone: { ...HD_BASE_FEMALE, height: 53, headW: 10, headH: 9, shoulder: 10, waist: 7, hip: 12, hairStyle: 'long', outfitStyle: 'dress', skinA: '#F7E2CE', skinB: '#DDB89D', eye: '#5A3456' },
-  prometheus: { ...HD_BASE_MALE, height: 56, headW: 10, headH: 10, shoulder: 13, waist: 9, hip: 11, legW: 3, hairStyle: 'spike', outfitStyle: 'tunic', skinA: '#E8CEB1', skinB: '#BF956F', eye: '#5A3827' },
-  helios: { ...HD_BASE_MALE, height: 58, headW: 11, headH: 10, shoulder: 14, waist: 10, hip: 12, legW: 3, hairStyle: 'wavy', outfitStyle: 'robe', skinA: '#EFD4B8', skinB: '#C59D76', eye: '#6B4A24' },
-  nike: { ...HD_BASE_FEMALE, height: 51, headW: 9, headH: 9, shoulder: 10, waist: 7, hip: 11, legW: 2, hairStyle: 'pony', outfitStyle: 'tunic', skinA: '#F3DBC3', skinB: '#CCA885', eye: '#4D3F2F' },
+  prometheus: { ...HD_BASE_MALE, height: 56, headW: 10, headH: 10, shoulder: 13, waist: 9, hip: 11, legW: 3, hairStyle: 'short', outfitStyle: 'tunic', skinA: '#E8CEB1', skinB: '#BF956F', eye: '#5A3827' },
+  helios: { ...HD_BASE_MALE, height: 58, headW: 11, headH: 10, shoulder: 14, waist: 10, hip: 12, legW: 3, hairStyle: 'spike', outfitStyle: 'robe', skinA: '#EFD4B8', skinB: '#C59D76', eye: '#6B4A24' },
+  nike: { ...HD_BASE_FEMALE, height: 51, headW: 9, headH: 9, shoulder: 10, waist: 7, hip: 11, legW: 2, hairStyle: 'bun', outfitStyle: 'tunic', skinA: '#F3DBC3', skinB: '#CCA885', eye: '#4D3F2F' },
   pan: { ...HD_BASE_MALE, height: 52, headW: 10, headH: 9, shoulder: 14, waist: 10, hip: 12, legW: 3, hairStyle: 'curly', outfitStyle: 'tunic', facial: 'goatee', skinA: '#DDB590', skinB: '#B68660', eye: '#3C2E24' },
-  hecate: { ...HD_BASE_FEMALE, height: 56, headW: 11, headH: 10, shoulder: 12, waist: 8, hip: 12, hairStyle: 'hood', outfitStyle: 'cloak', skinA: '#EBD9CE', skinB: '#BDA6A0', eye: '#4B3270' },
+  hecate: { ...HD_BASE_FEMALE, height: 56, headW: 11, headH: 10, shoulder: 12, waist: 8, hip: 12, hairStyle: 'braid', outfitStyle: 'cloak', skinA: '#EBD9CE', skinB: '#BDA6A0', eye: '#4B3270' },
   iris: { ...HD_BASE_FEMALE, height: 50, headW: 9, headH: 9, shoulder: 9, waist: 7, hip: 11, legW: 2, hairStyle: 'pony', outfitStyle: 'dress', skinA: '#F5DEC8', skinB: '#D8B092', eye: '#3E2A38' },
   heracles: { ...HD_BASE_MALE, height: 61, headW: 12, headH: 10, shoulder: 19, waist: 13, hip: 15, legW: 4, hairStyle: 'spike', outfitStyle: 'armor', facial: 'stubble', skinA: '#E5C6A6', skinB: '#BD936D', eye: '#3E2A21' },
   selene: { ...HD_BASE_FEMALE, height: 58, headW: 11, headH: 10, shoulder: 11, waist: 7, hip: 13, hairStyle: 'long', outfitStyle: 'gown', skinA: '#F0E2D8', skinB: '#C7B7B8', eye: '#2C365C' },
-  zeus: { ...HD_BASE_MALE, height: 61, headW: 13, headH: 11, shoulder: 18, waist: 12, hip: 14, legW: 4, hairStyle: 'wavy', outfitStyle: 'robe', facial: 'beard', skinA: '#EDD5BC', skinB: '#C9A583', eye: '#3B2E1E' },
+  zeus: { ...HD_BASE_MALE, height: 61, headW: 13, headH: 11, shoulder: 18, waist: 12, hip: 14, legW: 4, hairStyle: 'spike', outfitStyle: 'robe', facial: 'beard', skinA: '#EDD5BC', skinB: '#C9A583', eye: '#3B2E1E' },
 };
 
 const HD_FACE_SPECS: Record<WorkerLikeAvatar, HdFaceSpec> = {
@@ -417,23 +417,23 @@ function drawHdPixelAvatar(
   c.fillStyle = 'rgba(0,0,0,0.28)';
   c.fillRect(2, 29, 12, 2);
 
-  // ── Feet & Legs (chibi: short legs, y=23..28) ────────────────────────
+  // ── Feet & Legs (chibi: stubby legs, y=22..29) ────────────────────────
   if (!seated) {
     const lFY = step === 0 ? 27 : 28;
     const rFY = step === 1 ? 27 : 28;
     px(3, lFY, 3, 2, shoes);
     px(10, rFY, 3, 2, shoes);
-    const lLY = step === 0 ? 23 : 24;
-    const rLY = step === 1 ? 23 : 24;
-    px(3, lLY, 3, 4, pants);
-    px(10, rLY, 3, 4, pants);
+    const lLY = step === 0 ? 22 : 23;
+    const rLY = step === 1 ? 22 : 23;
+    px(3, lLY, 3, 5, pants);
+    px(10, rLY, 3, 5, pants);
   } else {
-    px(3, 25, 3, 2, shoes);
-    px(10, 25, 3, 2, shoes);
+    px(3, 26, 3, 2, shoes);
+    px(10, 26, 3, 2, shoes);
   }
 
-  // ── Body / outfit (style-specific chibi torso y=15..20) ─────────────
-  const bodyY = 15;
+  // ── Body / outfit (chibi torso y=16..21) ────────────────────────────
+  const bodyY = 16;
   const bodyH = 6;
   switch (spec.outfitStyle) {
     case 'armor':
@@ -504,79 +504,91 @@ function drawHdPixelAvatar(
   px(1, bodyY + 6, 2, 2, skin);
   px(13, bodyY + 6, 2, 2, skin);
 
-  // ── Neck (chibi: 1px, y=14) ───────────────────────────────────────────
-  px(6, 14, 4, 1, skin);
-  px(7, 14, 2, 1, skinSh);
+  // ── Neck (chibi: 1px, y=15) ───────────────────────────────────────────
+  px(6, 15, 4, 1, skin);
+  px(7, 15, 2, 1, skinSh);
 
-  // ── Face skin — big chibi head (drawn first, hair goes on top) ────────
-  // Head occupies y=0..13 (14px) vs body y=15..28 (14px) = 50% head ratio
-  px(2, 6, 12, 8, skin);          // face interior y=6..13, 12px wide
-  px(3, 14, 10, 1, skin);         // chin overlap with neck
-  px(11, 7, 2, 6, skinSh);        // right-side face shadow
-  px(6, 13, 2, 1, skinSh);        // chin shadow
+  // ── Face skin — BIG chibi head (drawn first, hair goes on top) ────────
+  // Head occupies y=0..14 (15px ~47%) vs body y=16..29 (14px)
+  px(2, 5, 12, 10, skin);         // face interior y=5..14, 12px wide
+  px(3, 15, 10, 1, skin);         // chin overlap with neck
+  px(11, 6, 2, 8, skinSh);        // right-side face shadow
+  px(6, 14, 2, 1, skinSh);        // chin shadow
 
   // ── Hair — each case draws its FULL shape on top of skin ─────────────
   switch (spec.hairStyle) {
     case 'long':
-      // Classic cap + long flowing hair to shoulder level
+      // Cap + long flowing sides to below chin
       px(4, 0, 8, 1, hair);
       px(2, 1, 12, 5, hair);
       px(1, 2, 14, 3, hair);       // widest at y=2..4
-      px(1, 5, 2, 9, hair);        // left long flow y=5..13
-      px(13, 5, 2, 9, hair);       // right long flow y=5..13
+      px(1, 5, 2, 10, hair);       // left long flow y=5..14
+      px(13, 5, 2, 10, hair);      // right long flow y=5..14
       break;
     case 'wavy':
-      // Wide cap overflowing head edges + wavy extension below
+      // Dramatic flowing waves with side bumps
       px(4, 0, 8, 1, hair);
-      px(1, 1, 14, 5, hair);
-      px(0, 2, 16, 3, hair);       // full-canvas-width wave y=2..4
-      px(0, 5, 3, 7, hair);        // left wavy side
-      px(13, 5, 3, 7, hair);       // right wavy side
+      px(2, 1, 12, 2, hair);       // top
+      px(0, 2, 16, 3, hair);       // full-width wave y=2..4
+      px(1, 5, 2, 3, hair);        // left wave bump y=5..7
+      px(12, 5, 3, 3, hair);       // right wave bump y=5..7
+      px(1, 8, 2, 5, hair);        // left flow y=8..12
+      px(13, 8, 2, 5, hair);       // right flow y=8..12
       break;
     case 'spike':
-      // Three distinct spike tips at crown, solid base below
-      px(3, 0, 2, 1, hair);        // spike L
-      px(7, 0, 2, 1, hair);        // spike C
-      px(11, 0, 2, 1, hair);       // spike R
-      px(2, 1, 12, 4, hair);
-      px(1, 2, 14, 3, hair);
-      break;
-    case 'bun':
-      // Tight cap with tall top-knot bump at center
-      px(6, 0, 4, 3, hair);        // tall bun knot (3px high)
-      px(3, 2, 10, 1, hair);       // cap crown connects to bun
-      px(2, 3, 12, 3, hair);
+      // Three DRAMATIC spikes at crown
+      px(3, 2, 3, 1, hair);        // spike L base
+      px(4, 1, 2, 1, hair);        // spike L mid
+      px(4, 0, 1, 1, hair);        // spike L tip
+      px(7, 1, 2, 1, hair);        // spike C mid
+      px(7, 0, 2, 1, hair);        // spike C tip (2px wide, goes highest)
+      px(10, 2, 3, 1, hair);       // spike R base
+      px(10, 1, 2, 1, hair);       // spike R mid
+      px(11, 0, 1, 1, hair);       // spike R tip
+      px(2, 3, 12, 3, hair);       // solid base cap y=3..5
       px(1, 4, 14, 2, hair);       // widest at y=4..5
       break;
+    case 'bun':
+      // Large rounded top-knot bun
+      px(4, 0, 8, 2, hair);        // bun top (8px wide)
+      px(5, 0, 6, 1, hair);        // bun peak
+      px(3, 2, 10, 2, hair);       // bun lower + cap merge
+      px(2, 4, 12, 2, hair);       // cap
+      px(1, 5, 14, 1, hair);       // widest at y=5
+      break;
     case 'curly':
-      // Huge puffy cloud extending well beyond head on both sides
-      px(4, 0, 8, 1, hair);
-      px(0, 1, 16, 5, hair);       // full-width cap
-      px(0, 6, 3, 7, hair);        // left big puff y=6..12
-      px(13, 6, 3, 7, hair);       // right big puff
+      // HUGE fluffy cloud — maximum volume
+      px(2, 0, 12, 1, hair);       // very top
+      px(0, 1, 16, 2, hair);       // full width y=1..2
+      px(0, 3, 16, 2, hair);       // full width y=3..4
+      px(0, 5, 16, 3, hair);       // full width y=5..7
+      px(0, 8, 3, 5, hair);        // left big puff y=8..12
+      px(13, 8, 3, 5, hair);       // right big puff y=8..12
       break;
     case 'pony':
-      // Modest cap + thick ponytail hanging on right side
+      // Cap + thick ponytail on right + hair tie
       px(4, 0, 8, 1, hair);
       px(2, 1, 12, 5, hair);
       px(1, 2, 14, 3, hair);
-      px(13, 4, 3, 13, hair);      // thick ponytail (3px wide, 13px long)
+      px(12, 6, 3, 1, trim);       // ponytail tie/band
+      px(12, 5, 3, 14, hair);      // thick ponytail (3px wide, y=5..18)
       break;
     case 'braid':
-      // Cap + long braid stripe with segmented gap pattern
+      // Cap + long braided rope with alternating segments
       px(4, 0, 8, 1, hair);
       px(2, 1, 12, 5, hair);
       px(1, 2, 14, 3, hair);
-      px(13, 5, 2, 16, hair);      // braid runs from y=5 to y=20
-      px(13, 8,  2, 1, skinSh);    // braid gap 1
-      px(13, 11, 2, 1, skinSh);    // braid gap 2
-      px(13, 14, 2, 1, skinSh);    // braid gap 3
+      px(12, 6, 2, 17, hair);      // braid runs y=6..22
+      px(12, 9,  2, 1, trim);      // braid segment 1
+      px(12, 12, 2, 1, trim);      // braid segment 2
+      px(12, 15, 2, 1, trim);      // braid segment 3
+      px(12, 18, 2, 1, trim);      // braid segment 4
       break;
     case 'hood':
-      // Full hood (shirt color) with inner face opening
-      px(0, 0, 16, 14, shirt);     // entire head area in hood/cloak color
-      px(3, 6, 10, 8, skin);       // inner face opening
-      px(10, 7, 2, 6, skinSh);     // face shadow inside hood
+      // Full hood covering head — face visible through opening
+      px(0, 0, 16, 15, shirt);     // entire hood in mantle color
+      px(3, 5, 10, 9, skin);       // inner face opening y=5..13
+      px(10, 6, 2, 7, skinSh);     // face shadow inside hood
       px(6, 13, 2, 1, skinSh);
       break;
     default: // 'short' — minimal rounded cap
@@ -620,20 +632,19 @@ function drawHdPixelAvatar(
 
   // ── Hair crest accent (style.crest color, drawn on hair cap) ──────────
   if (style.crest) {
-    px(6, 2, 4, 1, style.crest);              // crest stripe in hair
+    px(6, 3, 4, 1, style.crest);              // crest stripe in hair
   }
 
-  // ── Eyes (chibi face: y=6..13, eyes at y=9..10) ───────────────────────
+  // ── Eyes (chibi: BIG 3×2 eyes for cute look, y=9..10) ──────────────────
   const eyeY = 9;
-  // ── Eyes (simple 2-dot style — no expression) ────────────────────────
   if (!blink) {
-    px(5, eyeY, 2, 2, spec.eye);    // L eye
-    px(10, eyeY, 2, 2, spec.eye);   // R eye
-    px(6, eyeY, 1, 1, '#FFFFFF');   // L highlight
-    px(11, eyeY, 1, 1, '#FFFFFF');  // R highlight
+    px(4, eyeY, 3, 2, spec.eye);    // L eye (3px wide × 2px tall)
+    px(9, eyeY, 3, 2, spec.eye);    // R eye (3px wide × 2px tall)
+    px(4, eyeY, 1, 1, '#FFFFFF');   // L highlight (top-left)
+    px(9, eyeY, 1, 1, '#FFFFFF');   // R highlight (top-left)
   } else {
-    px(5, eyeY + 1, 2, 1, skinSh); // blink L
-    px(10, eyeY + 1, 2, 1, skinSh);// blink R
+    px(4, eyeY + 1, 3, 1, skinSh); // blink L
+    px(9, eyeY + 1, 3, 1, skinSh); // blink R
   }
 
   // ── Prop (held item drawn in sprite) ─────────────────────────────────

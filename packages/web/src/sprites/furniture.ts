@@ -85,7 +85,7 @@ const GLD2= '#A07A00';   // gold deep
 // Book spine colors — vibrant RPG library feel
 const BOOK_COLORS = ['#C03030','#3060C0','#30A050','#C0A020','#8030B0','#C06020','#20A0A0','#A03060'];
 
-const FURNITURE_SCALE = 1;
+const FURNITURE_SCALE = 2;
 
 // ---------------------------------------------------------------------------
 // Pixel helpers
@@ -681,7 +681,7 @@ function drawVendingMachine(ctx: CanvasRenderingContext2D, col: number, row: num
   // Body outline + casing
   px(ctx, x - 11, y - 38, 22, 36, OL);
   px(ctx, x - 10, y - 37, 20, 34, '#1848A8');  // blue body
-  px(ctx, x - 10, y - 37, 20, 6, '#1438888');  // top darker
+  px(ctx, x - 10, y - 37, 20, 6, '#143888');   // top darker
   // Glass display panel
   px(ctx, x - 8, y - 30, 16, 20, OL);
   px(ctx, x - 7, y - 29, 14, 18, '#6898D8');   // glass panel
