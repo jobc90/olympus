@@ -285,28 +285,28 @@ function drawZoneBoundaries(
 function getCodexPositionByAnim(anim: CharacterAnim, tick: number): GridPos {
   if (anim === 'raise_hand' || anim === 'wave' || anim === 'nod') {
     const patrol = [
-      { col: 16, row: 7 },
-      { col: 17, row: 7 },
-      { col: 18, row: 7 },
-      { col: 17, row: 8 },
+      { col: 11, row: 4 },
+      { col: 12, row: 4 },
+      { col: 13, row: 4 },
+      { col: 12, row: 5 },
     ];
     return patrol[Math.floor(tick / 90) % patrol.length];
   }
   if (anim === 'point' || anim === 'hand_task') {
-    return { col: 18, row: 5 };
+    return { col: 13, row: 4 };
   }
   if (anim === 'sit_typing' || anim === 'keyboard_mash') {
-    return { col: 17, row: 2 };
+    return { col: 12, row: 2 };
   }
-  return { col: 17, row: 3 };
+  return { col: 12, row: 3 };
 }
 
 function drawSacredRoutes(ctx: CanvasRenderingContext2D, tick: number): void {
   const processionalPath: GridPos[] = [
-    { col: 3, row: 17 }, { col: 4, row: 16 }, { col: 5, row: 15 }, { col: 6, row: 14 },
-    { col: 7, row: 13 }, { col: 8, row: 12 }, { col: 9, row: 11 }, { col: 10, row: 10 },
-    { col: 11, row: 9 }, { col: 12, row: 8 }, { col: 13, row: 7 }, { col: 14, row: 6 },
-    { col: 15, row: 5 }, { col: 16, row: 4 }, { col: 17, row: 3 },
+    { col: 11, row: 18 }, { col: 11, row: 17 }, { col: 12, row: 16 }, { col: 12, row: 15 },
+    { col: 11, row: 14 }, { col: 11, row: 13 }, { col: 12, row: 12 }, { col: 12, row: 11 },
+    { col: 11, row: 10 }, { col: 11, row: 9 }, { col: 12, row: 8 }, { col: 12, row: 7 },
+    { col: 11, row: 6 }, { col: 11, row: 5 }, { col: 12, row: 4 }, { col: 12, row: 3 },
   ];
   for (let i = 0; i < processionalPath.length; i++) {
     const p = processionalPath[i];
@@ -686,8 +686,8 @@ export function renderFrame(
 
   // Sanctuary positions for monitor screen state overlay
   const deskPositions = [
-    { col: 14, row: 12 }, { col: 14, row: 15 }, { col: 14, row: 18 },
-    { col: 20, row: 12 }, { col: 20, row: 15 }, { col: 20, row: 18 },
+    { col: 17, row: 11 }, { col: 17, row: 14 }, { col: 17, row: 17 },
+    { col: 21, row: 11 }, { col: 21, row: 14 }, { col: 21, row: 17 },
   ];
 
   for (let i = 0; i < config.workers.length && i < deskPositions.length; i++) {
