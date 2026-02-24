@@ -57,6 +57,8 @@ export type ZoneId =
   | 'oracle_stone'
   | 'athenas_library'
   | 'olympus_garden'
+  | 'celestial_observatory'
+  | 'hephaestus_forge'
   | 'oracle_chamber'
   | 'propylaea'
   | 'gods_plaza';

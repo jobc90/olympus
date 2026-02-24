@@ -27,13 +27,13 @@ export const BEHAVIOR_MAP: Record<WorkerBehavior, BehaviorMapping> = {
   // Worker behaviors (12)
   working:       { zone: '_own_sanctuary', anim: 'sit_typing',   altAnims: ['keyboard_mash'],  bubble: null,          altBubbles: ['Coding...', 'In the zone'],  particle: 'code',      priority: 5 },
   idle:          { zone: 'gods_plaza',     anim: 'stand',        altAnims: ['stretch', 'nod', 'wave'],  bubble: null,  altBubbles: ['...', 'Waiting'],  particle: null,        priority: 1 },
-  thinking:      { zone: 'gods_plaza',     anim: 'sit_idle',     altAnims: ['nod'],             bubble: 'Thinking...', altBubbles: ['Hmm...', 'Let me see...'],   particle: 'question',  priority: 4 },
+  thinking:      { zone: 'celestial_observatory', anim: 'sit_idle', altAnims: ['nod'],          bubble: 'Thinking...', altBubbles: ['Hmm...', 'Let me see...'],   particle: 'question',  priority: 4 },
   completed:     { zone: 'gods_plaza',     anim: 'celebrate',    altAnims: ['thumbs_up'],       bubble: 'Done!',       altBubbles: ['Ship it!', 'Nailed it!'],    particle: 'confetti',  altParticles: ['lightbulb', 'sparkle'], priority: 3 },
   error:         { zone: '_own_sanctuary', anim: 'stand',        bubble: 'Error!',      altBubbles: ['Bug!', 'Hmm...'],   particle: 'fire',    altParticles: ['error'],  priority: 6 },
   offline:       { zone: 'propylaea',      anim: 'sleep',        bubble: null,          particle: 'zzz',       priority: 0 },
   chatting:      { zone: 'agora',          anim: 'wave',         altAnims: ['raise_hand'],      bubble: null,          altBubbles: ['Hey!', 'Sup?'],              particle: null,        priority: 3 },
   reviewing:     { zone: 'oracle_stone',   anim: 'hand_task',    altAnims: ['point', 'nod'],    bubble: 'Reviewing',   altBubbles: ['LGTM?', 'Checking...'],      particle: 'check',     priority: 4 },
-  deploying:     { zone: 'oracle_chamber', anim: 'run',          bubble: 'Deploying',   altBubbles: ['Shipping!', 'CI/CD!'],  particle: 'binary',  altParticles: ['lightning'], priority: 5 },
+  deploying:     { zone: 'hephaestus_forge', anim: 'run',        bubble: 'Deploying',   altBubbles: ['Shipping!', 'CI/CD!'],  particle: 'binary',  altParticles: ['lightning'], priority: 5 },
   resting:       { zone: 'ambrosia_hall',  anim: 'drink_coffee', bubble: null,          altBubbles: ['Ahh...', 'Nice'],    particle: 'coffee_steam', priority: 1 },
   collaborating: { zone: 'agora',          anim: 'sit_typing',   altAnims: ['nod', 'point'],    bubble: null,          altBubbles: ['Together!', 'Good idea!'],   particle: 'sparkle',   priority: 4 },
   starting:      { zone: 'propylaea',      anim: 'walk_frame1',  bubble: 'Starting...', particle: null,        priority: 2 },
@@ -46,8 +46,8 @@ export const BEHAVIOR_MAP: Record<WorkerBehavior, BehaviorMapping> = {
 
 export const GEMINI_BEHAVIOR_MAP: Record<GeminiBehavior, BehaviorMapping> = {
   idle:        { zone: 'ambrosia_hall',   anim: 'sit_idle',      bubble: null,         particle: null,        priority: 1 },
-  scanning:    { zone: 'ambrosia_hall',   anim: 'sit_typing',    bubble: 'Scanning',   particle: 'binary',    priority: 3 },
-  analyzing:   { zone: 'ambrosia_hall',   anim: 'keyboard_mash', bubble: 'Analyzing',  particle: 'code',      priority: 5 },
+  scanning:    { zone: 'celestial_observatory', anim: 'sit_typing', bubble: 'Scanning', particle: 'binary',    priority: 3 },
+  analyzing:   { zone: 'celestial_observatory', anim: 'keyboard_mash', bubble: 'Analyzing', particle: 'code',   priority: 5 },
   advising:    { zone: 'zeus_temple',     anim: 'point',         bubble: 'Advising',   particle: 'sparkle',   priority: 4 },
   refreshing:  { zone: 'ambrosia_hall',   anim: 'sit_typing',    bubble: 'Refreshing', particle: 'lightbulb', priority: 3 },
   offline:     { zone: 'propylaea',       anim: 'sleep',         bubble: null,         particle: 'zzz',       priority: 0 },

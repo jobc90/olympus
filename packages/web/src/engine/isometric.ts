@@ -12,10 +12,10 @@ export interface ScreenPos {
   y: number;
 }
 
-export const TILE_W = 40;
-export const TILE_H = 20;
-export const MAP_OFFSET_X = 500;
-export const MAP_OFFSET_Y = 90;
+export const TILE_W = 32;
+export const TILE_H = 16;
+export const MAP_OFFSET_X = 520;
+export const MAP_OFFSET_Y = 100;
 
 function shadeHex(hex: string, delta: number): string {
   if (!hex.startsWith('#') || (hex.length !== 7 && hex.length !== 4)) {
@@ -69,7 +69,7 @@ export function drawIsometricTile(
   ctx.fillStyle = fillColor;
   ctx.fill();
 
-  // Pixel-style bevel shading (gives pseudo 3D floor depth)
+  // Pixel-style bevel shading for floor depth separation
   ctx.beginPath();
   ctx.moveTo(north.x, north.y);
   ctx.lineTo(south.x, south.y);

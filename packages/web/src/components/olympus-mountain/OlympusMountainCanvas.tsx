@@ -67,6 +67,7 @@ const layoutProvider: LayoutProvider = {
 const BASE_WIDTH = 1100;
 const BASE_HEIGHT = 620;
 const ASPECT_RATIO = BASE_WIDTH / BASE_HEIGHT;
+const PIXEL_DETAIL_MULTIPLIER = 1;
 
 // ---------------------------------------------------------------------------
 // Props
@@ -145,7 +146,7 @@ export function OlympusMountainCanvas({
   const displayHeight = Math.round(displayWidth / ASPECT_RATIO);
 
   // DPR-aware rendering for sharp output
-  const dpr = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+  const dpr = PIXEL_DETAIL_MULTIPLIER;
   const canvasPixelWidth = Math.round(width * scale * dpr);
   const canvasPixelHeight = Math.round(height * scale * dpr);
 

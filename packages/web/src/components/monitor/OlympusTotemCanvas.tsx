@@ -244,11 +244,16 @@ function drawWorkerSprite(
 
   // Aura ring
   if (selected) {
-    ctx.strokeStyle = `${baseColor}`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(x + 12, y + 12, 18, 0, Math.PI * 2);
-    ctx.stroke();
+    const cx = x + 12;
+    const cy = y + 12;
+    const r = 18;
+    ctx.fillStyle = `${baseColor}`;
+    for (let yy = -r; yy <= r; yy++) {
+      const ny = yy / r;
+      const span = Math.floor(r * Math.sqrt(Math.max(0, 1 - ny * ny)));
+      ctx.fillRect(cx - span, cy + yy, 1, 1);
+      ctx.fillRect(cx + span, cy + yy, 1, 1);
+    }
   }
 
   const tunic = shade(baseColor, 8);

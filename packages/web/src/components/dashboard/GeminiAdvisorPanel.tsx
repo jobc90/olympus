@@ -2,8 +2,8 @@
 // GeminiAdvisorPanel — Hera (Gemini) advisor status panel
 // ============================================================================
 
-import type { GeminiConfig, WorkerAvatar } from '../../lib/types';
-import { drawWorker } from '../../sprites/characters';
+import type { GeminiConfig } from '../../lib/types';
+import { drawGemini } from '../../sprites/characters';
 
 interface GeminiAdvisorPanelProps {
   geminiConfig: GeminiConfig;
@@ -22,7 +22,7 @@ function PixelHeraAvatar({ size = 96 }: { size?: number }) {
     if (!ctx) return;
     ctx.clearRect(0, 0, size, size);
     ctx.imageSmoothingEnabled = false;
-    drawWorker(ctx, size / 2, size - 6, 'stand', 's', 0, 'hera' as WorkerAvatar, '#AB47BC', '');
+    drawGemini(ctx, size / 2, size - 6, 'stand', 0, 'hera', '');
   };
 
   return (

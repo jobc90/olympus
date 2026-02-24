@@ -3,8 +3,8 @@
 // ============================================================================
 
 import type { GridPos } from './topdown';
-import { gridToScreen, getFootPos, TILE_PX, MAP_OFFSET_X, MAP_OFFSET_Y, drawFloorTile, depthOf } from './topdown';
-import { drawBackground, drawNightOverlay, drawZoneLabel } from '../sprites/decorations';
+import { gridToScreen, getFootPos, TILE_PX, MAP_OFFSET_X, MAP_OFFSET_Y, depthOf } from './topdown';
+import { drawBackground, drawTempleGround, drawZoneLabel } from '../sprites/decorations';
 import { drawFurniture, drawRoomba } from '../sprites/furniture';
 import { drawWorker, drawCodex, drawGemini, drawNameTag, drawStatusAura, drawUnicorn, drawCupid } from '../sprites/characters';
 import { drawBubble, drawParticle } from '../sprites/effects';
@@ -38,6 +38,15 @@ export type CharacterAnim =
 export type WorkerAvatar = 'athena' | 'poseidon' | 'ares' | 'apollo' | 'artemis' | 'hermes' | 'hephaestus' | 'dionysus' | 'demeter' | 'aphrodite' | 'hera' | 'hades' | 'persephone' | 'prometheus' | 'helios' | 'nike' | 'pan' | 'hecate' | 'iris' | 'heracles' | 'selene';
 export type CodexAvatar = 'zeus';
 export type GeminiAvatar = 'hera';
+const ALWAYS_LABELED_ZONE_IDS = new Set([
+  'zeus_temple',
+  'agora',
+  'olympus_garden',
+  'celestial_observatory',
+  'ambrosia_hall',
+  'athenas_library',
+  'hephaestus_forge',
+]);
 
 export interface Bubble {
   text: string;
@@ -162,6 +171,7 @@ const ACTIVE_WORK_BEHAVIORS = new Set([
   'working', 'thinking', 'reviewing', 'deploying', 'collaborating',
   'chatting', 'analyzing', 'directing', 'meeting', 'starting', 'error',
 ]);
+const NON_VISUAL_ZONE_IDS = new Set(['oracle_stone', 'oracle_chamber', 'gods_plaza']);
 
 // ---------------------------------------------------------------------------
 // Codex (Zeus) position in top-down grid
@@ -183,12 +193,11 @@ function getCodexPos(anim: CharacterAnim, tick: number): GridPos {
 // Zone overlay tinting
 // ---------------------------------------------------------------------------
 
-function drawZoneOverlays(
-  ctx: CanvasRenderingContext2D,
+function collectActiveZoneIds(
   zones: Record<string, Zone>,
   state: OlympusMountainState,
   config: RenderConfig,
-): void {
+): Set<string> {
   const activeZoneIds = new Set<string>();
   for (const runtime of state.workers) {
     const workerCfg = config.workers.find((w) => w.id === runtime.id);
@@ -203,54 +212,52 @@ function drawZoneOverlays(
       }
     }
   }
+  return activeZoneIds;
+}
 
+function drawZoneOverlays(
+  ctx: CanvasRenderingContext2D,
+  zones: Record<string, Zone>,
+  activeZoneIds: Set<string>,
+): void {
   for (const [zoneId, zone] of Object.entries(zones)) {
+    if (NON_VISUAL_ZONE_IDS.has(zoneId)) continue;
+    const isActive = activeZoneIds.has(zoneId);
     let color = '#FBC02D';
-    let alpha = 0.0;
+    let alpha = isActive ? 0.18 : 0.0;
+    let lineWidth = isActive ? 3 : 1;
 
     if (zoneId.startsWith('sanctuary_')) {
-      color = '#4FC3F7';
-      alpha = activeZoneIds.has(zoneId) ? 0.22 : 0.08;
+      color = '#6EB0E8';
+      alpha = isActive ? 0.22 : 0.04;
+      lineWidth = isActive ? 3 : 1.5;
     } else if (zoneId === 'zeus_temple') {
-      color = '#FFD700';
-      alpha = 0.10;
+      color = '#E0BB63';
     } else if (zoneId === 'agora') {
-      color = '#F5E6C8';
-      alpha = 0.08;
+      color = '#C39B70';
     } else if (zoneId === 'hephaestus_forge') {
-      color = '#FF6D00';
-      alpha = activeZoneIds.has(zoneId) ? 0.18 : 0.05;
+      color = '#D77544';
+      alpha = isActive ? 0.25 : 0.03;
     } else if (zoneId === 'celestial_observatory') {
-      color = '#B49FE1';
-      alpha = 0.08;
+      color = '#9487C7';
+    } else if (zoneId === 'olympus_garden') {
+      color = '#7BA66B';
     }
 
-    if (alpha <= 0) continue;
-
     ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = color;
     const x = MAP_OFFSET_X + zone.minCol * TILE_PX;
     const y = MAP_OFFSET_Y + zone.minRow * TILE_PX;
     const w = (zone.maxCol - zone.minCol + 1) * TILE_PX;
     const h = (zone.maxRow - zone.minRow + 1) * TILE_PX;
-    ctx.fillRect(x, y, w, h);
-    ctx.restore();
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Processional path shimmer
-// ---------------------------------------------------------------------------
-
-function drawProcessionalPath(ctx: CanvasRenderingContext2D, mapRows: number, tick: number): void {
-  const pathCol = 16;
-  for (let r = 5; r <= 13; r++) {
-    const pulse = 0.04 + 0.02 * Math.sin((tick + r * 12) * 0.07);
-    ctx.save();
-    ctx.globalAlpha = pulse;
-    ctx.fillStyle = '#F7C948';
-    ctx.fillRect(MAP_OFFSET_X + pathCol * TILE_PX, MAP_OFFSET_Y + r * TILE_PX, TILE_PX, TILE_PX);
+    if (alpha > 0) {
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lineWidth;
+      ctx.strokeRect(x + 3, y + 3, w - 6, h - 6);
+      ctx.globalAlpha = isActive ? 0.1 : 0.02;
+      ctx.fillStyle = color;
+      ctx.fillRect(x + 5, y + 5, w - 10, h - 10);
+    }
     ctx.restore();
   }
 }
@@ -344,28 +351,18 @@ export function renderFrame(
   const workerCount = config.workers.length;
   const layout = config.layout;
   const zones = layout.buildZones(workerCount);
+  const activeZoneIds = collectActiveZoneIds(zones, state, config);
 
   // 1. Background sky
   drawBackground(ctx, width, height, state.dayNightPhase, state.tick);
 
-  // 2. Floor tiles — all tiles, row by row (no Z-sort needed for flat floor)
-  for (let row = 0; row < layout.MAP_ROWS; row++) {
-    for (let col = 0; col < layout.MAP_COLS; col++) {
-      const color = layout.getFloorColor(col, row);
-      // Subtle grid line only on walkable interior tiles
-      const isBorder = col === 0 || col === layout.MAP_COLS - 1 || row === 0 || row === layout.MAP_ROWS - 1;
-      const borderColor = isBorder ? undefined : 'rgba(0,0,0,0.06)';
-      drawFloorTile(ctx, col, row, color, borderColor);
-    }
-  }
+  // 2. Zone-based temple floor (non-tiled)
+  drawTempleGround(ctx, layout.MAP_COLS, layout.MAP_ROWS, zones, activeZoneIds, state.dayNightPhase, state.tick);
 
   // 3. Zone tint overlays
-  drawZoneOverlays(ctx, zones, state, config);
+  drawZoneOverlays(ctx, zones, activeZoneIds);
 
-  // 4. Processional path shimmer
-  drawProcessionalPath(ctx, layout.MAP_ROWS, state.tick);
-
-  // 5. Collect all Z-sorted drawables (furniture + characters + NPCs)
+  // 4. Collect all Z-sorted drawables (furniture + characters + NPCs)
   interface Drawable {
     depth: number;
     draw: () => void;
@@ -378,8 +375,7 @@ export function renderFrame(
     drawables.push({
       depth: depthOf(item.col, item.row),
       draw: () => {
-        const sp = gridToScreen({ col: item.col, row: item.row });
-        drawFurniture(ctx, item.type, sp.x, sp.y, state.tick);
+        drawFurniture(ctx, item.type, item.col, item.row, state.tick);
       },
     });
   }
@@ -474,7 +470,8 @@ export function renderFrame(
     depth: depthOf(codexPos.col, codexPos.row) + 0.01,
     draw: () => {
       const foot = getFootPos(codexPos);
-      drawCodex(ctx, foot.x, foot.y, state.codex.anim, state.tick, config.codex.avatar, config.codex.emoji);
+      // Keep Zeus appearance identical to character card style.
+      drawCodex(ctx, foot.x, foot.y, 'stand', state.tick, config.codex.avatar, config.codex.emoji);
       if (config.selectedWorkerId === 'codex') {
         drawNameTag(ctx, foot.x, foot.y, config.codex.name, '#FFD700');
       }
@@ -489,7 +486,16 @@ export function renderFrame(
       depth: depthOf(geminiPos.col, geminiPos.row) + 0.01,
       draw: () => {
         const foot = getFootPos(capturedGeminiPos);
-        drawGemini(ctx, foot.x, foot.y, state.gemini.anim, state.tick, config.gemini!.avatar, config.gemini!.emoji);
+        drawGemini(
+          ctx,
+          foot.x,
+          foot.y,
+          'stand',
+          state.tick,
+          config.gemini!.avatar,
+          config.gemini!.emoji,
+          's',
+        );
         if (config.selectedWorkerId === 'gemini') {
           drawNameTag(ctx, foot.x, foot.y, config.gemini!.name, '#9C27B0');
         }
@@ -500,6 +506,12 @@ export function renderFrame(
   // Sort by depth (painter's algorithm — lower row draws first)
   drawables.sort((a, b) => a.depth - b.depth);
   for (const d of drawables) d.draw();
+
+  // Always show major zone labels so area boundaries remain readable.
+  for (const zone of Object.values(zones)) {
+    if (!ALWAYS_LABELED_ZONE_IDS.has(zone.id)) continue;
+    drawZoneLabel(ctx, zone.label, zone.emoji, zone.center.col, zone.center.row, 0.48);
+  }
 
   // Zone labels — only show selected worker's sanctuary
   if (config.selectedWorkerId) {
@@ -519,31 +531,12 @@ export function renderFrame(
   for (const particle of state.particles) drawParticle(ctx, particle);
   for (const bubble of state.bubbles) drawBubble(ctx, bubble);
 
-  // Night overlay
-  const glowSpots: Array<{ x: number; y: number; color: string }> = [];
-  if (state.dayNightPhase > 0.5) {
-    for (const item of furniture) {
-      if (['monitor', 'dual_monitor', 'desk', 'standing_desk'].includes(item.type)) {
-        const sp = gridToScreen({ col: item.col, row: item.row });
-        glowSpots.push({ x: sp.x + TILE_PX / 2, y: sp.y, color: '#4FC3F7' });
-      } else if (item.type === 'server_rack') {
-        const sp = gridToScreen({ col: item.col, row: item.row });
-        glowSpots.push({ x: sp.x + TILE_PX / 2, y: sp.y, color: '#4CAF50' });
-      } else if (item.type === 'arcade_machine') {
-        const sp = gridToScreen({ col: item.col, row: item.row });
-        glowSpots.push({ x: sp.x + TILE_PX / 2, y: sp.y, color: '#FF1744' });
-      }
-    }
-  }
-  drawNightOverlay(ctx, width, height, state.dayNightPhase, glowSpots, {
-    mapCols: layout.MAP_COLS,
-    mapRows: layout.MAP_ROWS,
-  });
+  // Day/night visual toggles are intentionally disabled.
 
   // Title bar
   ctx.save();
   ctx.font = 'bold 13px monospace';
-  ctx.fillStyle = state.dayNightPhase > 0.5 ? '#FFD700' : '#DAA520';
+  ctx.fillStyle = '#DAA520';
   ctx.textAlign = 'left';
   ctx.fillText('\u26F0\uFE0F Mount Olympus', 12, 22);
   ctx.restore();

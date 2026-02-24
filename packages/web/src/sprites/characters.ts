@@ -71,6 +71,8 @@ interface WorkerStyle {
     | 'crescent';
 }
 
+type WorkerLikeAvatar = WorkerAvatar | 'zeus';
+
 const WORKER_SIGIL_MAP: Record<WorkerAvatar, DivineSigil> = {
   athena: { glyph: 'shield', ring: '#5C7A99', glow: '#C62828', primary: '#8FA7BF', secondary: '#C62828' },
   poseidon: { glyph: 'trident', ring: '#0277BD', glow: '#80DEEA', primary: '#008FCB', secondary: '#B3E5FC' },
@@ -123,7 +125,7 @@ const WORKER_PROFILE_MAP: Record<WorkerAvatar, SpriteProfile> = {
 };
 
 const ZEUS_PROFILE: SpriteProfile = {
-  sheet: 5,
+  sheet: 0,
   accent: '#CFA93A',
   trim: '#FFE08A',
   sigil: ZEUS_SIGIL,
@@ -131,9 +133,9 @@ const ZEUS_PROFILE: SpriteProfile = {
 };
 
 const HERA_PROFILE: SpriteProfile = {
-  sheet: 3,
-  accent: '#7E57C2',
-  trim: '#D1C4E9',
+  sheet: 4,
+  accent: '#6A1B9A',
+  trim: '#D7C3EF',
   sigil: HERA_SIGIL,
   crown: 'gold',
 };
@@ -162,6 +164,14 @@ const WORKER_STYLE_MAP: Record<WorkerAvatar, WorkerStyle> = {
   selene: { hair: '#6D7299', mantle: '#4A57A8', trim: '#C5CAE9', crest: '#E8EAF6', prop: 'crescent' },
 };
 
+const ZEUS_WORKER_STYLE: WorkerStyle = {
+  hair: '#6D5A45',
+  mantle: '#CFA93A',
+  trim: '#FFE08A',
+  crest: '#FFF3B0',
+  prop: 'sunstaff',
+};
+
 const SHEET_URLS = [
   '/pixel-agents/char_0.png',
   '/pixel-agents/char_1.png',
@@ -175,8 +185,6 @@ const FRAME_W = 16;
 const FRAME_H = 32;
 const WORKER_DRAW_SCALE_MAP = 2;
 const WORKER_DRAW_SCALE_PANEL = 1.2;
-const DIVINE_DRAW_SCALE_MAP = 2;
-const DIVINE_DRAW_SCALE_PANEL = 1.6;
 const PANEL_AVATAR_Y_THRESHOLD = 96;
 
 const SHEET_CACHE: Array<HTMLImageElement | null> = [null, null, null, null, null, null];
@@ -225,6 +233,666 @@ function resolveDirection(direction: Direction): { row: number; flip: boolean } 
 
 function resolveDrawScale(footY: number, mapScale: number, panelScale: number): number {
   return footY <= PANEL_AVATAR_Y_THRESHOLD ? panelScale : mapScale;
+}
+
+const HD_PIXEL_CHARACTER_MODE = true;
+const HD_RENDER_REV = 'ref_v2';
+const HD_SPRITE_W = 16;
+const HD_SPRITE_H = 32;
+const HD_SPRITE_CACHE = new Map<string, HTMLCanvasElement>();
+const HD_SILHOUETTE_CACHE = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
+
+function getSilhouette(src: HTMLCanvasElement): HTMLCanvasElement {
+  let sil = HD_SILHOUETTE_CACHE.get(src);
+  if (!sil) {
+    sil = document.createElement('canvas');
+    sil.width = src.width;
+    sil.height = src.height;
+    const c2 = sil.getContext('2d')!;
+    c2.drawImage(src, 0, 0);
+    c2.globalCompositeOperation = 'source-in';
+    c2.fillStyle = '#0F1621';
+    c2.fillRect(0, 0, sil.width, sil.height);
+    c2.globalCompositeOperation = 'source-over';
+    HD_SILHOUETTE_CACHE.set(src, sil);
+  }
+  return sil;
+}
+
+type HdHairStyle = 'short' | 'long' | 'bun' | 'spike' | 'wavy' | 'hood' | 'braid' | 'curly' | 'pony';
+type HdOutfitStyle = 'robe' | 'armor' | 'tunic' | 'dress' | 'gown' | 'cloak';
+type HdFacialStyle = 'none' | 'beard' | 'goatee' | 'stubble';
+type HdBrowStyle = 'soft' | 'calm' | 'arched' | 'stern' | 'fierce';
+type HdMouthStyle = 'smile' | 'line' | 'smirk' | 'frown' | 'open';
+
+interface HdAvatarSpec {
+  gender: 'm' | 'f';
+  height: number;
+  headW: number;
+  headH: number;
+  shoulder: number;
+  waist: number;
+  hip: number;
+  legW: number;
+  skinA: string;
+  skinB: string;
+  eye: string;
+  hairStyle: HdHairStyle;
+  outfitStyle: HdOutfitStyle;
+  facial: HdFacialStyle;
+}
+
+interface HdFaceSpec {
+  brow: HdBrowStyle;
+  mouth: HdMouthStyle;
+  eyeGap: number;
+  browLift: number;
+}
+
+const HD_BASE_MALE: HdAvatarSpec = {
+  gender: 'm',
+  height: 56,
+  headW: 12,
+  headH: 11,
+  shoulder: 14,
+  waist: 10,
+  hip: 12,
+  legW: 3,
+  skinA: '#F0D8BF',
+  skinB: '#D2AE8C',
+  eye: '#2A1F18',
+  hairStyle: 'short',
+  outfitStyle: 'robe',
+  facial: 'none',
+};
+
+const HD_BASE_FEMALE: HdAvatarSpec = {
+  gender: 'f',
+  height: 56,
+  headW: 11,
+  headH: 11,
+  shoulder: 12,
+  waist: 9,
+  hip: 13,
+  legW: 2,
+  skinA: '#F5DEC8',
+  skinB: '#D8B093',
+  eye: '#3A2A22',
+  hairStyle: 'long',
+  outfitStyle: 'dress',
+  facial: 'none',
+};
+
+const HD_AVATAR_SPECS: Record<WorkerLikeAvatar, HdAvatarSpec> = {
+  athena: { ...HD_BASE_FEMALE, height: 58, headW: 10, headH: 10, shoulder: 14, waist: 9, hip: 12, hairStyle: 'bun', outfitStyle: 'armor', skinA: '#F2DEC9', skinB: '#D2AE90', eye: '#24364A' },
+  poseidon: { ...HD_BASE_MALE, height: 60, headW: 12, headH: 11, shoulder: 17, waist: 11, hip: 13, legW: 3, hairStyle: 'wavy', outfitStyle: 'robe', facial: 'beard', skinA: '#ECD5BC', skinB: '#C8A487', eye: '#1E4A64' },
+  ares: { ...HD_BASE_MALE, height: 59, headW: 11, headH: 10, shoulder: 18, waist: 12, hip: 13, legW: 4, hairStyle: 'spike', outfitStyle: 'armor', facial: 'stubble', skinA: '#E7CCB2', skinB: '#BE9473', eye: '#45211E' },
+  apollo: { ...HD_BASE_MALE, height: 54, headW: 10, headH: 9, shoulder: 11, waist: 8, hip: 10, legW: 2, hairStyle: 'wavy', outfitStyle: 'tunic', skinA: '#F3DCC2', skinB: '#D0AA85', eye: '#5C4021' },
+  artemis: { ...HD_BASE_FEMALE, height: 57, headW: 10, headH: 10, shoulder: 12, waist: 8, hip: 11, hairStyle: 'pony', outfitStyle: 'tunic', skinA: '#F2DEC9', skinB: '#CCAA8C', eye: '#2C4A32' },
+  hermes: { ...HD_BASE_MALE, height: 51, headW: 9, headH: 9, shoulder: 10, waist: 8, hip: 9, legW: 2, hairStyle: 'short', outfitStyle: 'tunic', skinA: '#EFD6BB', skinB: '#C6A07F', eye: '#3D2D21' },
+  hephaestus: { ...HD_BASE_MALE, height: 60, headW: 13, headH: 11, shoulder: 17, waist: 13, hip: 14, legW: 4, hairStyle: 'short', outfitStyle: 'armor', facial: 'beard', skinA: '#E1C4A6', skinB: '#B98B66', eye: '#3A2A1F' },
+  dionysus: { ...HD_BASE_MALE, height: 53, headW: 11, headH: 10, shoulder: 12, waist: 9, hip: 11, legW: 3, hairStyle: 'curly', outfitStyle: 'robe', skinA: '#EED2B8', skinB: '#C6A07F', eye: '#4A2A56' },
+  demeter: { ...HD_BASE_FEMALE, height: 59, headW: 11, headH: 10, shoulder: 13, waist: 9, hip: 14, hairStyle: 'braid', outfitStyle: 'dress', skinA: '#F0D7BE', skinB: '#C8A583', eye: '#5A4726' },
+  aphrodite: { ...HD_BASE_FEMALE, height: 55, headW: 10, headH: 9, shoulder: 10, waist: 7, hip: 13, hairStyle: 'long', outfitStyle: 'gown', skinA: '#F7E1CD', skinB: '#DDB69A', eye: '#5C2F4C' },
+  hera: { ...HD_BASE_FEMALE, height: 61, headW: 12, headH: 11, shoulder: 13, waist: 8, hip: 15, hairStyle: 'long', outfitStyle: 'gown', skinA: '#F4DECB', skinB: '#D5AF96', eye: '#3B2A52' },
+  hades: { ...HD_BASE_MALE, height: 59, headW: 11, headH: 10, shoulder: 14, waist: 9, hip: 12, hairStyle: 'hood', outfitStyle: 'cloak', facial: 'goatee', skinA: '#E7D4C7', skinB: '#BCA091', eye: '#1F3040' },
+  persephone: { ...HD_BASE_FEMALE, height: 53, headW: 10, headH: 9, shoulder: 10, waist: 7, hip: 12, hairStyle: 'long', outfitStyle: 'dress', skinA: '#F7E2CE', skinB: '#DDB89D', eye: '#5A3456' },
+  prometheus: { ...HD_BASE_MALE, height: 56, headW: 10, headH: 10, shoulder: 13, waist: 9, hip: 11, legW: 3, hairStyle: 'spike', outfitStyle: 'tunic', skinA: '#E8CEB1', skinB: '#BF956F', eye: '#5A3827' },
+  helios: { ...HD_BASE_MALE, height: 58, headW: 11, headH: 10, shoulder: 14, waist: 10, hip: 12, legW: 3, hairStyle: 'wavy', outfitStyle: 'robe', skinA: '#EFD4B8', skinB: '#C59D76', eye: '#6B4A24' },
+  nike: { ...HD_BASE_FEMALE, height: 51, headW: 9, headH: 9, shoulder: 10, waist: 7, hip: 11, legW: 2, hairStyle: 'pony', outfitStyle: 'tunic', skinA: '#F3DBC3', skinB: '#CCA885', eye: '#4D3F2F' },
+  pan: { ...HD_BASE_MALE, height: 52, headW: 10, headH: 9, shoulder: 14, waist: 10, hip: 12, legW: 3, hairStyle: 'curly', outfitStyle: 'tunic', facial: 'goatee', skinA: '#DDB590', skinB: '#B68660', eye: '#3C2E24' },
+  hecate: { ...HD_BASE_FEMALE, height: 56, headW: 11, headH: 10, shoulder: 12, waist: 8, hip: 12, hairStyle: 'hood', outfitStyle: 'cloak', skinA: '#EBD9CE', skinB: '#BDA6A0', eye: '#4B3270' },
+  iris: { ...HD_BASE_FEMALE, height: 50, headW: 9, headH: 9, shoulder: 9, waist: 7, hip: 11, legW: 2, hairStyle: 'pony', outfitStyle: 'dress', skinA: '#F5DEC8', skinB: '#D8B092', eye: '#3E2A38' },
+  heracles: { ...HD_BASE_MALE, height: 61, headW: 12, headH: 10, shoulder: 19, waist: 13, hip: 15, legW: 4, hairStyle: 'spike', outfitStyle: 'armor', facial: 'stubble', skinA: '#E5C6A6', skinB: '#BD936D', eye: '#3E2A21' },
+  selene: { ...HD_BASE_FEMALE, height: 58, headW: 11, headH: 10, shoulder: 11, waist: 7, hip: 13, hairStyle: 'long', outfitStyle: 'gown', skinA: '#F0E2D8', skinB: '#C7B7B8', eye: '#2C365C' },
+  zeus: { ...HD_BASE_MALE, height: 61, headW: 13, headH: 11, shoulder: 18, waist: 12, hip: 14, legW: 4, hairStyle: 'wavy', outfitStyle: 'robe', facial: 'beard', skinA: '#EDD5BC', skinB: '#C9A583', eye: '#3B2E1E' },
+};
+
+const HD_FACE_SPECS: Record<WorkerLikeAvatar, HdFaceSpec> = {
+  athena: { brow: 'stern', mouth: 'line', eyeGap: 3, browLift: 0 },
+  poseidon: { brow: 'stern', mouth: 'frown', eyeGap: 3, browLift: 0 },
+  ares: { brow: 'fierce', mouth: 'frown', eyeGap: 3, browLift: -1 },
+  apollo: { brow: 'arched', mouth: 'smile', eyeGap: 2, browLift: 1 },
+  artemis: { brow: 'stern', mouth: 'smirk', eyeGap: 3, browLift: 0 },
+  hermes: { brow: 'arched', mouth: 'smirk', eyeGap: 2, browLift: 1 },
+  hephaestus: { brow: 'stern', mouth: 'line', eyeGap: 3, browLift: -1 },
+  dionysus: { brow: 'soft', mouth: 'smile', eyeGap: 2, browLift: 1 },
+  demeter: { brow: 'calm', mouth: 'smile', eyeGap: 2, browLift: 1 },
+  aphrodite: { brow: 'arched', mouth: 'smile', eyeGap: 2, browLift: 1 },
+  hera: { brow: 'arched', mouth: 'smirk', eyeGap: 3, browLift: 1 },
+  hades: { brow: 'fierce', mouth: 'line', eyeGap: 3, browLift: -1 },
+  persephone: { brow: 'soft', mouth: 'smile', eyeGap: 2, browLift: 1 },
+  prometheus: { brow: 'stern', mouth: 'smirk', eyeGap: 3, browLift: 0 },
+  helios: { brow: 'arched', mouth: 'smile', eyeGap: 3, browLift: 1 },
+  nike: { brow: 'stern', mouth: 'smirk', eyeGap: 2, browLift: 0 },
+  pan: { brow: 'fierce', mouth: 'smirk', eyeGap: 2, browLift: -1 },
+  hecate: { brow: 'fierce', mouth: 'line', eyeGap: 3, browLift: -1 },
+  iris: { brow: 'soft', mouth: 'smile', eyeGap: 2, browLift: 1 },
+  heracles: { brow: 'fierce', mouth: 'frown', eyeGap: 3, browLift: -1 },
+  selene: { brow: 'calm', mouth: 'line', eyeGap: 2, browLift: 1 },
+  zeus: { brow: 'stern', mouth: 'line', eyeGap: 3, browLift: 0 },
+};
+
+function drawHdPixelAvatar(
+  avatar: WorkerLikeAvatar,
+  profile: SpriteProfile,
+  style: WorkerStyle,
+  tick: number,
+  frame: number,
+  moving: boolean,
+  seated: boolean,
+): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const blink = tick % 60 < 4 ? 1 : 0;
+  const step = moving ? frame % 2 : 0;
+  const pose = seated ? 'sit' : 'stand';
+  const key = `${HD_RENDER_REV}:${avatar}:${pose}:${step}:${blink}`;
+  const cached = HD_SPRITE_CACHE.get(key);
+  if (cached) return cached;
+
+  // 16×32 canvas — drawn at 2× (32×64 CSS px) for clean pixel-art upscale
+  const canvas = document.createElement('canvas');
+  canvas.width = HD_SPRITE_W;  // 16
+  canvas.height = HD_SPRITE_H;
+  const c = canvas.getContext('2d');
+  if (!c) return null;
+  c.imageSmoothingEnabled = false;
+  const px = (x: number, y: number, w: number, h: number, color: string) => {
+    c.fillStyle = color;
+    c.fillRect(x, y, w, h);
+  };
+
+  const spec = HD_AVATAR_SPECS[avatar];
+  // Reference-style proportions: big round head, simple body, short legs
+  const hair = style.hair;
+  const skin = spec.skinA;
+  const skinSh = spec.skinB;
+  const shirt = style.mantle;
+  const trim = style.trim;
+  const pants = '#1E2438';
+  const shoes = '#0C0D18';
+  const isF = spec.gender === 'f';
+
+  // ── Shadow ──────────────────────────────────────────────────────────
+  c.fillStyle = 'rgba(0,0,0,0.28)';
+  c.fillRect(2, 29, 12, 2);
+
+  // ── Feet & Legs (chibi: short legs, y=23..28) ────────────────────────
+  if (!seated) {
+    const lFY = step === 0 ? 27 : 28;
+    const rFY = step === 1 ? 27 : 28;
+    px(3, lFY, 3, 2, shoes);
+    px(10, rFY, 3, 2, shoes);
+    const lLY = step === 0 ? 23 : 24;
+    const rLY = step === 1 ? 23 : 24;
+    px(3, lLY, 3, 4, pants);
+    px(10, rLY, 3, 4, pants);
+  } else {
+    px(3, 25, 3, 2, shoes);
+    px(10, 25, 3, 2, shoes);
+  }
+
+  // ── Body / outfit (style-specific chibi torso y=15..20) ─────────────
+  const bodyY = 15;
+  const bodyH = 6;
+  switch (spec.outfitStyle) {
+    case 'armor':
+      px(3, bodyY, 10, bodyH, shirt);
+      px(4, bodyY + 1, 8, 3, '#B8C4CC');       // chest plate
+      px(4, bodyY + 1, 8, 1, '#D8E4EC');       // plate highlight top
+      px(4, bodyY + 4, 8, 1, '#8A9EAE');       // plate shadow bottom
+      px(4, bodyY + 2, 2, 2, '#9AAEBA');       // left rivet plate
+      px(10, bodyY + 2, 2, 2, '#9AAEBA');      // right rivet plate
+      px(5, bodyY, 6, 1, trim);                // collar
+      break;
+    case 'robe':
+      px(2, bodyY, 12, bodyH + 2, shirt);      // wide flowing robe
+      px(5, bodyY, 6, 1, trim);                // collar
+      px(3, bodyY + 2, 10, 1, trim);           // sash belt
+      px(6, bodyY + 2, 4, 1, '#AA8830');       // belt buckle gold
+      break;
+    case 'tunic':
+      px(3, bodyY, 10, bodyH, shirt);
+      px(5, bodyY, 6, 1, trim);                // collar
+      px(3, bodyY + 3, 10, 1, '#3A2818');      // leather belt
+      px(7, bodyY + 3, 2, 1, '#C8A040');       // buckle
+      px(4, bodyY, 2, 1, trim);               // collar detail L
+      px(10, bodyY, 2, 1, trim);              // collar detail R
+      break;
+    case 'gown':
+      px(3, bodyY, 10, bodyH, shirt);
+      px(2, bodyY + bodyH - 1, 12, 3, shirt);  // wide trailing hem
+      px(3, bodyY, 1, bodyH, trim);            // left trim stripe
+      px(12, bodyY, 1, bodyH, trim);           // right trim stripe
+      px(5, bodyY, 6, 1, trim);               // collar
+      break;
+    case 'dress':
+      px(3, bodyY, 10, bodyH - 1, shirt);
+      px(2, bodyY + bodyH - 1, 12, 2, shirt);  // flared skirt
+      px(5, bodyY, 6, 1, trim);
+      px(4, bodyY + 1, 8, 1, trim);            // yoke stripe
+      break;
+    case 'cloak':
+      px(2, bodyY, 12, bodyH + 3, shirt);       // wide flowing cloak
+      px(1, bodyY + 1, 2, bodyH + 2, '#101828'); // deep left shadow
+      px(13, bodyY + 1, 2, bodyH + 2, '#101828'); // deep right shadow
+      px(5, bodyY, 6, 1, trim);                // inner collar
+      px(5, bodyY + 1, 6, bodyH, skinSh);       // inner body (skin visible)
+      break;
+    default:
+      px(3, bodyY, 10, bodyH, shirt);
+      px(5, bodyY, 6, 1, trim);
+  }
+  px(3, bodyY + 1, 1, bodyH - 1, skinSh);     // left-edge shadow
+
+  // ── Arms (styled by outfit) ──────────────────────────────────────────
+  if (spec.outfitStyle === 'armor') {
+    px(0, bodyY + 1, 3, 5, '#8898A8');         // metal pauldron L
+    px(13, bodyY + 1, 3, 5, '#8898A8');        // metal pauldron R
+    px(0, bodyY + 1, 3, 1, '#A0B4C4');         // pauldron top highlight
+    px(13, bodyY + 1, 3, 1, '#A0B4C4');
+  } else if (spec.outfitStyle === 'cloak' || spec.outfitStyle === 'robe') {
+    px(0, bodyY + 1, 3, 6, shirt);             // wide sleeve L
+    px(13, bodyY + 1, 3, 6, shirt);            // wide sleeve R
+  } else {
+    px(1, bodyY + 1, 2, 5, shirt);
+    px(13, bodyY + 1, 2, 5, shirt);
+    px(1, bodyY + 1, 1, 5, skinSh);
+  }
+
+  // ── Hands ─────────────────────────────────────────────────────────────
+  px(1, bodyY + 6, 2, 2, skin);
+  px(13, bodyY + 6, 2, 2, skin);
+
+  // ── Neck (chibi: 1px, y=14) ───────────────────────────────────────────
+  px(6, 14, 4, 1, skin);
+  px(7, 14, 2, 1, skinSh);
+
+  // ── Face skin — big chibi head (drawn first, hair goes on top) ────────
+  // Head occupies y=0..13 (14px) vs body y=15..28 (14px) = 50% head ratio
+  px(2, 6, 12, 8, skin);          // face interior y=6..13, 12px wide
+  px(3, 14, 10, 1, skin);         // chin overlap with neck
+  px(11, 7, 2, 6, skinSh);        // right-side face shadow
+  px(6, 13, 2, 1, skinSh);        // chin shadow
+
+  // ── Hair — each case draws its FULL shape on top of skin ─────────────
+  switch (spec.hairStyle) {
+    case 'long':
+      // Classic cap + long flowing hair to shoulder level
+      px(4, 0, 8, 1, hair);
+      px(2, 1, 12, 5, hair);
+      px(1, 2, 14, 3, hair);       // widest at y=2..4
+      px(1, 5, 2, 9, hair);        // left long flow y=5..13
+      px(13, 5, 2, 9, hair);       // right long flow y=5..13
+      break;
+    case 'wavy':
+      // Wide cap overflowing head edges + wavy extension below
+      px(4, 0, 8, 1, hair);
+      px(1, 1, 14, 5, hair);
+      px(0, 2, 16, 3, hair);       // full-canvas-width wave y=2..4
+      px(0, 5, 3, 7, hair);        // left wavy side
+      px(13, 5, 3, 7, hair);       // right wavy side
+      break;
+    case 'spike':
+      // Three distinct spike tips at crown, solid base below
+      px(3, 0, 2, 1, hair);        // spike L
+      px(7, 0, 2, 1, hair);        // spike C
+      px(11, 0, 2, 1, hair);       // spike R
+      px(2, 1, 12, 4, hair);
+      px(1, 2, 14, 3, hair);
+      break;
+    case 'bun':
+      // Tight cap with tall top-knot bump at center
+      px(6, 0, 4, 3, hair);        // tall bun knot (3px high)
+      px(3, 2, 10, 1, hair);       // cap crown connects to bun
+      px(2, 3, 12, 3, hair);
+      px(1, 4, 14, 2, hair);       // widest at y=4..5
+      break;
+    case 'curly':
+      // Huge puffy cloud extending well beyond head on both sides
+      px(4, 0, 8, 1, hair);
+      px(0, 1, 16, 5, hair);       // full-width cap
+      px(0, 6, 3, 7, hair);        // left big puff y=6..12
+      px(13, 6, 3, 7, hair);       // right big puff
+      break;
+    case 'pony':
+      // Modest cap + thick ponytail hanging on right side
+      px(4, 0, 8, 1, hair);
+      px(2, 1, 12, 5, hair);
+      px(1, 2, 14, 3, hair);
+      px(13, 4, 3, 13, hair);      // thick ponytail (3px wide, 13px long)
+      break;
+    case 'braid':
+      // Cap + long braid stripe with segmented gap pattern
+      px(4, 0, 8, 1, hair);
+      px(2, 1, 12, 5, hair);
+      px(1, 2, 14, 3, hair);
+      px(13, 5, 2, 16, hair);      // braid runs from y=5 to y=20
+      px(13, 8,  2, 1, skinSh);    // braid gap 1
+      px(13, 11, 2, 1, skinSh);    // braid gap 2
+      px(13, 14, 2, 1, skinSh);    // braid gap 3
+      break;
+    case 'hood':
+      // Full hood (shirt color) with inner face opening
+      px(0, 0, 16, 14, shirt);     // entire head area in hood/cloak color
+      px(3, 6, 10, 8, skin);       // inner face opening
+      px(10, 7, 2, 6, skinSh);     // face shadow inside hood
+      px(6, 13, 2, 1, skinSh);
+      break;
+    default: // 'short' — minimal rounded cap
+      px(4, 0, 8, 1, hair);
+      px(2, 1, 12, 5, hair);
+      px(1, 2, 14, 3, hair);
+      break;
+  }
+
+  // ── Crown / Head Accessory (drawn on top of hair) ─────────────────────
+  switch (profile.crown) {
+    case 'gold':
+      px(4, 0, 8, 1, '#D4AF37');               // crown band
+      px(5, 0, 1, 2, '#F0D060');               // left point
+      px(7, 0, 2, 2, '#FFE070');               // center peak
+      px(11, 0, 1, 2, '#F0D060');              // right point
+      px(6, 1, 1, 1, '#FFF3A0');               // gem sparkle
+      break;
+    case 'silver':
+      px(4, 0, 8, 1, '#B8C8D8');               // silver band
+      px(5, 0, 2, 2, '#D8E8F0');               // left point
+      px(9, 0, 2, 2, '#D8E8F0');               // right point
+      px(7, 0, 2, 1, '#E8F4FF');               // center highlight
+      break;
+    case 'laurel':
+      px(3, 0, 2, 2, '#4A7828');               // L leaf cluster
+      px(5, 0, 6, 1, '#3A6020');               // wreath center
+      px(11, 0, 2, 2, '#4A7828');              // R leaf cluster
+      px(6, 0, 1, 1, '#78B848');               // highlight leaf L
+      px(9, 0, 1, 1, '#78B848');               // highlight leaf R
+      break;
+    case 'horn':
+      px(2, 0, 2, 4, '#8D6E63');               // L horn (curved up)
+      px(3, 0, 1, 2, '#A08060');               // L horn tip
+      px(12, 0, 2, 4, '#8D6E63');              // R horn
+      px(12, 0, 1, 2, '#A08060');              // R horn tip
+      px(2, 3, 3, 1, '#6D4E43');               // L horn base
+      px(11, 3, 3, 1, '#6D4E43');              // R horn base
+      break;
+  }
+
+  // ── Hair crest accent (style.crest color, drawn on hair cap) ──────────
+  if (style.crest) {
+    px(6, 2, 4, 1, style.crest);              // crest stripe in hair
+  }
+
+  // ── Eyes (chibi face: y=6..13, eyes at y=9..10) ───────────────────────
+  const eyeY = 9;
+  // ── Eyes (simple 2-dot style — no expression) ────────────────────────
+  if (!blink) {
+    px(5, eyeY, 2, 2, spec.eye);    // L eye
+    px(10, eyeY, 2, 2, spec.eye);   // R eye
+    px(6, eyeY, 1, 1, '#FFFFFF');   // L highlight
+    px(11, eyeY, 1, 1, '#FFFFFF');  // R highlight
+  } else {
+    px(5, eyeY + 1, 2, 1, skinSh); // blink L
+    px(10, eyeY + 1, 2, 1, skinSh);// blink R
+  }
+
+  // ── Prop (held item drawn in sprite) ─────────────────────────────────
+  switch (style.prop) {
+    case 'spear':
+      px(14, 3, 1, 1, '#E8D878');   // spearhead tip
+      px(13, 4, 2, 1, '#E8D878');   // head barb
+      px(14, 5, 1, 18, '#8B6540');  // shaft
+      break;
+    case 'trident':
+      px(13, 2, 1, 3, '#88DDFF');   // L tine
+      px(14, 1, 1, 4, '#88DDFF');   // center tine (tallest)
+      px(15, 2, 1, 3, '#88DDFF');   // R tine
+      px(14, 5, 1, 17, '#4488CC');  // shaft
+      break;
+    case 'blade':
+      px(14, 5, 1, 4, '#D8E0E8');   // blade
+      px(15, 5, 1, 3, '#F0F4FF');   // shine
+      px(13, 9, 3, 1, '#D0C0A0');   // crossguard
+      px(14, 10, 1, 5, '#9B7A50');  // handle
+      break;
+    case 'sunstaff':
+      px(13, 2, 3, 3, '#FFE878');   // sun orb
+      px(14, 2, 1, 3, '#FFFAC0');   // orb center
+      px(14, 5, 1, 18, '#C8A040');  // staff
+      break;
+    case 'hammer':
+      px(12, 14, 4, 3, '#8D6E63');  // hammerhead
+      px(13, 13, 2, 1, '#A88060');  // top cap
+      px(14, 17, 1, 8, '#B0BEC5');  // handle
+      break;
+    case 'torch':
+      px(13, 4, 3, 3, tick % 18 < 10 ? '#FFB74D' : '#FF8030'); // flame
+      px(14, 7, 1, 1, '#FFEB3B');   // inner flame
+      px(14, 7, 1, 16, '#8D6E63');  // handle
+      break;
+    case 'vine':
+      px(0, 14, 2, 1, '#9CCC65');   // top leaf
+      px(0, 16, 1, 10, '#558844');  // vine stem
+      px(0, 18, 2, 1, '#78CC48');   // leaf mid
+      px(0, 22, 2, 1, '#78CC48');   // leaf lower
+      break;
+    case 'wheat':
+      px(14, 9, 2, 1, '#F2CF6C');   // grain top
+      px(15, 11, 1, 1, '#F2CF6C');  // grain
+      px(14, 13, 2, 1, '#F2CF6C');  // grain
+      px(14, 15, 1, 10, '#C49A30'); // stalk
+      break;
+    case 'mirror':
+      px(13, 14, 3, 4, '#EADCF5');  // mirror glass
+      px(12, 14, 1, 4, '#C8B6E3');  // frame L
+      px(15, 14, 1, 4, '#C8B6E3');  // frame R
+      px(13, 18, 1, 5, '#B8A0D0');  // handle
+      break;
+    case 'obsidian_staff':
+      px(13, 2, 3, 3, '#90A4AE');   // orb top
+      px(14, 2, 1, 3, '#B8C8D0');   // orb shine
+      px(14, 5, 1, 18, '#37474F');  // dark shaft
+      break;
+    case 'rose':
+      px(13, 12, 3, 3, '#EC6C9E');  // rose bloom
+      px(14, 12, 1, 3, '#F898C0');  // rose highlight
+      px(14, 15, 1, 8, '#6FB377');  // green stem
+      break;
+    case 'halo':
+      px(4, 1, 8, 1, '#FDE68A');    // halo top arc
+      px(2, 2, 2, 1, '#FDE68A');    // L arc
+      px(12, 2, 2, 1, '#FDE68A');   // R arc
+      px(3, 3, 1, 1, '#FFF5C0');    // L inner
+      px(12, 3, 1, 1, '#FFF5C0');   // R inner
+      break;
+    case 'laurel':
+      px(3, 1, 2, 2, '#5A8030');    // L leaf branch
+      px(5, 1, 6, 1, '#3A6020');    // crown center
+      px(11, 1, 2, 2, '#5A8030');   // R leaf branch
+      break;
+    case 'flute':
+      px(4, 19, 8, 1, '#C8A878');   // flute body
+      px(5, 20, 1, 1, '#907040');   // finger hole
+      px(7, 20, 1, 1, '#907040');
+      px(9, 20, 1, 1, '#907040');
+      break;
+    case 'lantern':
+      px(14, 16, 2, 1, '#8E7CC3');  // chain link
+      px(13, 17, 3, 4, tick % 30 < 22 ? '#C4B5FD' : '#8060C0'); // lantern glow
+      px(13, 17, 3, 1, '#D0C0FF');  // lantern top
+      break;
+    case 'rainbow_ribbon':
+      px(1, 22, 14, 1, '#FF5252');  // red band
+      px(2, 23, 12, 1, '#FFD740');  // yellow band
+      px(3, 24, 10, 1, '#42A5F5'); // blue band
+      break;
+    case 'club':
+      px(13, 12, 3, 4, '#A88963');  // club head (wide)
+      px(12, 12, 4, 1, '#C0A078');  // top cap
+      px(14, 16, 1, 9, '#8D6E63'); // handle
+      break;
+    case 'crescent':
+      px(14, 7, 2, 5, '#E8EAF6');  // outer arc
+      px(13, 8, 1, 3, '#9FA8DA');  // inner shadow
+      break;
+    case 'bow':
+      px(0, 11, 1, 1, '#A5C38A');  // top nock
+      px(0, 24, 1, 1, '#A5C38A');  // bottom nock
+      px(0, 12, 1, 12, '#7A9A60'); // bow limb
+      px(1, 11, 1, 13, '#D8D8B8'); // bowstring
+      break;
+    case 'wing':
+      px(0, 16, 3, 5, '#E8EEF7');  // L wing
+      px(13, 16, 3, 5, '#E8EEF7'); // R wing
+      px(0, 14, 3, 3, '#D0D8F8');  // L upper feather
+      px(13, 14, 3, 3, '#D0D8F8'); // R upper feather
+      break;
+    case 'obsidian_staff': break; // handled above
+    default: break;
+  }
+
+  if (HD_SPRITE_CACHE.size > 512) HD_SPRITE_CACHE.clear();
+  HD_SPRITE_CACHE.set(key, canvas);
+  return canvas;
+}
+
+
+// ---------------------------------------------------------------------------
+// Divine Symbol — floating glyph above character head (drawn on main canvas)
+// ---------------------------------------------------------------------------
+
+function drawDivineSymbol(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  headTopY: number,
+  glyph: DivineSigil['glyph'],
+  primary: string,
+  ring: string,
+  glow: string,
+  tick: number,
+): void {
+  const S = 1;  // 1 canvas px per symbol pixel
+  const bob = Math.sin(tick * 0.07) * 1.5;
+  const sy = Math.round(headTopY - 7 + bob);
+  const sx = Math.round(cx) - 3;
+
+  const p = (ox: number, oy: number, w: number, h: number, col: string) => {
+    ctx.fillStyle = col;
+    ctx.fillRect(sx + ox * S, sy + oy * S, w * S, h * S);
+  };
+
+  // Pulsing glow background
+  const alpha = 0.22 + Math.sin(tick * 0.05) * 0.1;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = glow;
+  ctx.fillRect(sx - 1, sy - 1, 8 * S, 8 * S);
+  ctx.globalAlpha = 1;
+
+  // Ring border (1px frame)
+  ctx.fillStyle = ring;
+  ctx.fillRect(sx - 1, sy - 1, 8 * S, 1);          // top
+  ctx.fillRect(sx - 1, sy + 6 * S, 8 * S, 1);       // bottom
+  ctx.fillRect(sx - 1, sy - 1, 1, 8 * S);            // left
+  ctx.fillRect(sx + 7 * S, sy - 1, 1, 8 * S);        // right
+
+  // Glyph icon (6×6 grid)
+  switch (glyph) {
+    case 'bolt':    // ⚡ Zeus zigzag
+      p(2, 0, 3, 2, primary);  p(1, 2, 3, 1, primary);  p(2, 3, 3, 2, primary);  p(3, 5, 2, 1, primary);
+      break;
+    case 'trident': // 🔱 Poseidon
+      p(1, 0, 1, 5, primary);  p(3, 0, 1, 6, primary);  p(5, 0, 1, 5, primary);
+      p(1, 5, 5, 1, primary);  p(3, 2, 1, 4, primary);
+      break;
+    case 'shield':  // 🛡 Athena
+      p(1, 0, 4, 1, primary);  p(0, 1, 6, 3, primary);  p(1, 4, 4, 1, primary);  p(2, 5, 2, 1, primary);
+      p(2, 2, 2, 1, ring);     // inner detail
+      break;
+    case 'sword':   // ⚔ Ares
+      p(3, 0, 1, 4, primary);  p(1, 2, 5, 1, primary);  p(3, 4, 1, 2, ring);
+      break;
+    case 'sun':     // ☀ Apollo
+      p(2, 0, 2, 1, primary);  p(0, 2, 1, 2, primary);  p(5, 2, 1, 2, primary);  p(2, 5, 2, 1, primary);
+      p(1, 2, 4, 2, primary);  p(2, 1, 2, 4, primary);  // cross body
+      p(0, 0, 1, 1, primary);  p(5, 0, 1, 1, primary);   // diagonal rays
+      p(0, 5, 1, 1, primary);  p(5, 5, 1, 1, primary);
+      break;
+    case 'moon':    // 🌙 Artemis crescent
+      p(1, 0, 4, 1, primary);  p(0, 1, 2, 4, primary);  p(5, 1, 1, 2, primary);
+      p(1, 5, 4, 1, primary);  p(2, 1, 3, 4, ring);      // inner hollow
+      break;
+    case 'wing':    // 🕊 Hermes
+      p(0, 1, 3, 2, primary);  p(3, 0, 3, 3, primary);  p(1, 3, 5, 2, primary);  p(2, 5, 3, 1, primary);
+      break;
+    case 'hammer':  // 🔨 Hephaestus
+      p(0, 0, 6, 3, primary);  p(2, 3, 2, 3, primary);
+      p(1, 1, 4, 1, ring);     // top highlight
+      break;
+    case 'grape':   // 🍇 Dionysus
+      p(1, 0, 2, 2, primary);  p(4, 0, 2, 2, primary);  p(0, 2, 2, 2, primary);
+      p(2, 2, 2, 2, primary);  p(4, 2, 2, 2, primary);  p(1, 4, 2, 2, primary);  p(3, 4, 2, 2, primary);
+      break;
+    case 'wheat':   // 🌾 Demeter
+      p(3, 0, 1, 1, primary);  p(2, 1, 1, 1, primary);  p(4, 1, 1, 1, primary);
+      p(1, 2, 1, 1, primary);  p(3, 2, 1, 2, primary);  p(5, 2, 1, 1, primary);
+      p(2, 4, 1, 1, primary);  p(4, 4, 1, 1, primary);  p(3, 3, 1, 3, primary);
+      break;
+    case 'heart':   // ❤ Aphrodite
+      p(0, 1, 2, 2, primary);  p(4, 1, 2, 2, primary);  p(0, 3, 6, 2, primary);  p(1, 5, 4, 1, primary);  p(2, 5, 2, 1, primary);
+      break;
+    case 'peacock': // 🦚 Hera fan
+      p(3, 0, 1, 6, primary);  p(0, 1, 1, 4, primary);  p(1, 0, 1, 5, primary);
+      p(5, 0, 1, 5, primary);  p(6, 1, 1, 4, primary);
+      p(2, 3, 3, 2, ring);     // fan body center
+      break;
+    case 'skull':   // 💀 Hades
+      p(1, 0, 4, 3, primary);  p(0, 3, 6, 2, primary);  p(1, 5, 4, 1, primary);
+      p(1, 1, 2, 1, ring);     // eye socket L
+      p(3, 1, 2, 1, ring);     // eye socket R
+      p(2, 4, 1, 1, ring);     // tooth gap
+      p(4, 4, 1, 1, ring);
+      break;
+    case 'flower':  // 🌸 Persephone
+      p(2, 0, 2, 2, primary);  p(0, 2, 2, 2, primary);  p(4, 2, 2, 2, primary);  p(2, 4, 2, 2, primary);
+      p(2, 2, 2, 2, ring);     // center
+      break;
+    case 'flame':   // 🔥 Prometheus
+      p(2, 0, 2, 2, primary);  p(1, 1, 4, 2, primary);  p(0, 3, 6, 2, primary);  p(1, 5, 4, 1, primary);
+      p(2, 2, 2, 2, '#FFE060'); // inner flame
+      break;
+    case 'halo':    // 😇 Helios ring
+      p(1, 0, 4, 1, primary);  p(0, 1, 1, 4, primary);  p(5, 1, 1, 4, primary);  p(1, 5, 4, 1, primary);
+      break;
+    case 'trophy':  // 🏆 Nike
+      p(0, 0, 6, 3, primary);  p(1, 3, 4, 1, primary);  p(2, 4, 2, 1, primary);  p(1, 5, 4, 1, primary);
+      p(1, 1, 4, 1, ring);     // cup inner
+      break;
+    case 'horn':    // Pan horn
+      p(0, 0, 2, 1, primary);  p(0, 1, 3, 2, primary);  p(0, 3, 5, 2, primary);  p(2, 5, 4, 1, primary);
+      break;
+    case 'star':    // ⭐ Hecate
+      p(2, 0, 2, 2, primary);  p(0, 2, 6, 2, primary);  p(2, 4, 2, 2, primary);
+      p(0, 0, 2, 2, primary);  p(4, 0, 2, 2, primary);  p(0, 4, 2, 2, primary);  p(4, 4, 2, 2, primary);
+      break;
+    case 'rainbow': // 🌈 Iris arc
+      p(0, 0, 6, 1, '#FF5050');  p(0, 1, 6, 1, '#FFD040');
+      p(0, 2, 6, 1, '#40D040');  p(0, 3, 6, 1, '#4080FF');
+      p(1, 4, 4, 1, '#8040C0');
+      break;
+    case 'lion':    // 🦁 Heracles paw
+      p(0, 0, 6, 4, primary);   p(0, 4, 2, 2, primary);  p(2, 4, 2, 2, primary);  p(4, 4, 2, 2, primary);
+      p(1, 1, 4, 2, ring);      // mane inner
+      break;
+    case 'crescent': // 🌙 Selene
+      p(1, 0, 4, 1, primary);  p(0, 1, 2, 4, primary);  p(5, 1, 1, 2, primary);
+      p(1, 5, 4, 1, primary);  p(1, 1, 3, 4, ring);      // inner hollow (crescent shape)
+      break;
+    case 'bolt': break; // handled above
+    default: p(1, 1, 4, 4, primary); break; // fallback: colored square
+  }
+
+  ctx.restore();
 }
 
 function drawFallbackFigure(
@@ -293,6 +961,47 @@ function drawCrownAccessory(
   }
 }
 
+function fillPixelEllipse(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  color: string,
+): void {
+  const mx = Math.round(cx);
+  const my = Math.round(cy);
+  const ex = Math.max(1, Math.round(rx));
+  const ey = Math.max(1, Math.round(ry));
+  ctx.fillStyle = color;
+  for (let yy = -ey; yy <= ey; yy++) {
+    const ny = yy / ey;
+    const span = Math.floor(ex * Math.sqrt(Math.max(0, 1 - ny * ny)));
+    ctx.fillRect(mx - span, my + yy, span * 2 + 1, 1);
+  }
+}
+
+function strokePixelEllipse(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  color: string,
+): void {
+  const mx = Math.round(cx);
+  const my = Math.round(cy);
+  const ex = Math.max(1, Math.round(rx));
+  const ey = Math.max(1, Math.round(ry));
+  ctx.fillStyle = color;
+  for (let yy = -ey; yy <= ey; yy++) {
+    const ny = yy / ey;
+    const span = Math.floor(ex * Math.sqrt(Math.max(0, 1 - ny * ny)));
+    ctx.fillRect(mx - span, my + yy, 1, 1);
+    ctx.fillRect(mx + span, my + yy, 1, 1);
+  }
+}
+
 function drawDivineSigil(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -308,20 +1017,12 @@ function drawDivineSigil(
   ctx.shadowColor = sigil.glow;
   ctx.shadowBlur = 4;
   ctx.globalAlpha = pulse;
-  ctx.fillStyle = sigil.glow;
-  ctx.beginPath();
-  ctx.arc(x, sy, 5.5, 0, Math.PI * 2);
-  ctx.fill();
+  fillPixelEllipse(ctx, x, sy, 6, 6, sigil.glow);
   ctx.restore();
 
   ctx.save();
-  ctx.fillStyle = '#F7F2E8';
-  ctx.beginPath();
-  ctx.arc(x, sy, 4.75, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = sigil.ring;
-  ctx.lineWidth = 1.25;
-  ctx.stroke();
+  fillPixelEllipse(ctx, x, sy, 5, 5, '#F7F2E8');
+  strokePixelEllipse(ctx, x, sy, 5, 5, sigil.ring);
   ctx.restore();
 
   drawSigilGlyph(ctx, x, sy, sigil, tick);
@@ -463,7 +1164,7 @@ function drawCharacterFromSheet(
   direction: Direction,
   tick: number,
   profile: SpriteProfile,
-  avatar?: WorkerAvatar,
+  avatar?: WorkerLikeAvatar,
 ): void {
   const frame = resolveFrame(anim, tick);
   const { row, flip } = resolveDirection(direction);
@@ -477,14 +1178,40 @@ function drawCharacterFromSheet(
   const dw = Math.round(FRAME_W * drawScale);
   const dh = Math.round(FRAME_H * drawScale);
   const drawX = Math.round(x - dw / 2);
-  const drawY = Math.round(footY - dh + 3);
+  const drawY = Math.round(footY - dh + 2);
 
   ctx.save();
   ctx.fillStyle = 'rgba(8, 14, 24, 0.34)';
   ctx.fillRect(x - 9, y - 2, 18, 3);
   ctx.restore();
 
-  drawDivineSigil(ctx, x, drawY - 6, tick, profile.sigil);
+  if (HD_PIXEL_CHARACTER_MODE && avatar) {
+    const moving = anim === 'walk_frame1' || anim === 'walk_frame2' || anim === 'run';
+    const seated = anim === 'sit_typing' || anim === 'sit_idle';
+    const style = avatar === 'zeus' ? ZEUS_WORKER_STYLE : WORKER_STYLE_MAP[avatar];
+    const hd = drawHdPixelAvatar(avatar, profile, style, tick, frame, moving, seated);
+    if (hd) {
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      if (flip) {
+        ctx.translate(x * 2, 0);
+        ctx.scale(-1, 1);
+      }
+      // Black pixel-art outline — silhouette drawn at 4 diagonal offsets
+      const sil = getSilhouette(hd);
+      ctx.drawImage(sil, drawX - 1, drawY - 1, dw, dh);
+      ctx.drawImage(sil, drawX + 1, drawY - 1, dw, dh);
+      ctx.drawImage(sil, drawX - 1, drawY + 1, dw, dh);
+      ctx.drawImage(sil, drawX + 1, drawY + 1, dw, dh);
+      ctx.drawImage(hd, drawX, drawY, dw, dh);
+      ctx.restore();
+
+      // Draw divine sigil above head (unflipped coord space restored)
+      drawDivineSymbol(ctx, x, drawY, profile.sigil.glyph, profile.sigil.primary, profile.sigil.ring, profile.sigil.glow, tick);
+
+      return;
+    }
+  }
 
   if (!sheet || !sheet.complete) {
     drawFallbackFigure(ctx, x, y, tick, profile);
@@ -525,25 +1252,28 @@ function drawCharacterFromSheet(
   ctx.restore();
 
   if (avatar) {
-    drawWorkerTraitDetails(ctx, x, drawY, avatar, tick);
+    drawWorkerTraitDetails(ctx, x, drawY, avatar, tick, drawScale);
   }
 
-  ctx.save();
-  drawCrownAccessory(ctx, x, drawY + 10, profile.crown, tick);
-  ctx.restore();
 }
 
 function drawWorkerTraitDetails(
   ctx: CanvasRenderingContext2D,
   x: number,
   drawY: number,
-  avatar: WorkerAvatar,
+  avatar: WorkerLikeAvatar,
   tick: number,
+  drawScale: number,
 ): void {
-  const style = WORKER_STYLE_MAP[avatar];
+  const style = avatar === 'zeus' ? ZEUS_WORKER_STYLE : WORKER_STYLE_MAP[avatar];
   const p = (ox: number, oy: number, w: number, h: number, color: string) => {
     ctx.fillStyle = color;
-    ctx.fillRect(Math.round(x + ox), Math.round(drawY + oy), w, h);
+    ctx.fillRect(
+      Math.round(x + ox * drawScale),
+      Math.round(drawY + oy * drawScale),
+      Math.max(1, Math.round(w * drawScale)),
+      Math.max(1, Math.round(h * drawScale)),
+    );
   };
 
   // Hair/mantle silhouette layer to force visual identity split across 20 workers.
@@ -730,161 +1460,179 @@ function drawWorkerTraitDetails(
       p(2, 6, 2, 1, '#E8EAF6');
       break;
     case 'hera':
-      p(-5, 10, 10, 1, '#7E57C2');
+      // Force Hera silhouette to keep the same regal purple skirt in map/cards.
+      p(-5, 10, 10, 2, '#7E57C2');
+      p(-5, 20, 10, 4, '#7E57C2');
+      p(-4, 22, 8, 3, '#C3A5E6');
+      p(-2, 24, 4, 2, '#F1D37A');
       p(5, 12, 2, 2, '#44B6B6');
+      break;
+    case 'zeus':
+      // Keep Zeus robe strongly golden regardless of context scale.
+      p(-5, 7, 10, 2, '#E3BE63');
+      p(-5, 19, 10, 4, '#CFA93A');
+      p(-4, 21, 8, 3, '#E3BE63');
+      p(-1, 20, 2, 5, '#FFF2A8');
+      p(-1, 6, 2, 1, '#FFF2A8');
+      p(6, 16, 2, 6, '#E0B755');
+      p(7, 14, 1, 1, '#FFF8D2');
+      p(8, 13, 1, 1, '#FFF8D2');
       break;
     default:
       break;
   }
-}
 
-function drawZeusAvatar(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  anim: CharacterAnim,
-  tick: number,
-): void {
-  const moving = anim === 'walk_frame1' || anim === 'walk_frame2' || anim === 'run';
-  const bob = moving ? Math.sin(tick * 0.12) * 1.2 : Math.sin(tick * 0.08) * 0.5;
-  const footY = y + bob;
-  const scale = resolveDrawScale(footY, DIVINE_DRAW_SCALE_MAP, DIVINE_DRAW_SCALE_PANEL);
-  const ox = Math.round(x - 5 * scale);
-  const oy = Math.round(footY - 17 * scale);
-  const step = Math.floor(tick / 8) % 2;
-
-  const p = (gx: number, gy: number, w: number, h: number, color: string) => {
-    ctx.fillStyle = color;
-    ctx.fillRect(
-      Math.round(ox + gx * scale),
-      Math.round(oy + gy * scale),
-      Math.max(1, Math.round(w * scale)),
-      Math.max(1, Math.round(h * scale)),
-    );
-  };
-
-  ctx.save();
-  ctx.fillStyle = 'rgba(8, 14, 24, 0.35)';
-  ctx.fillRect(x - 10, y - 2, 20, 3);
-  ctx.restore();
-
-  drawDivineSigil(ctx, x, Math.round(oy - 4 * scale), tick, ZEUS_SIGIL);
-
-  // Crown + hair
-  p(2, 0, 6, 1, '#E2B64E');
-  p(1, 1, 8, 1, '#F4D67C');
-  p(1, 2, 2, 1, '#67543D');
-  p(7, 2, 2, 1, '#67543D');
-  // Face + beard (face restored to readable Zeus proportion)
-  p(2, 2, 6, 3, '#E9C79F');
-  p(1, 5, 8, 2, '#F2E9DE');
-  p(2, 6, 6, 1, '#D9D0C4');
-  p(3, 3, 1, 1, '#20252F');
-  p(6, 3, 1, 1, '#20252F');
-
-  // Shoulder armor + robe
-  p(0, 7, 10, 2, '#D9CCB8');
-  p(0, 8, 2, 2, '#CFA93A');
-  p(8, 8, 2, 2, '#CFA93A');
-  p(2, 9, 6, 5, '#F5EFE6');
-  p(4, 9, 2, 5, '#D3B35A');
-  p(2, 12, 6, 1, '#CFA93A');
-
-  // Legs + sandals
-  if (moving && step === 0) {
-    p(2, 14, 2, 2, '#C8CBD3');
-    p(6, 14, 2, 3, '#C8CBD3');
-  } else if (moving) {
-    p(2, 14, 2, 3, '#C8CBD3');
-    p(6, 14, 2, 2, '#C8CBD3');
-  } else {
-    p(2, 14, 2, 3, '#C8CBD3');
-    p(6, 14, 2, 3, '#C8CBD3');
+  // Fine per-god pixel detailing so avatars are clearly distinguishable.
+  switch (avatar) {
+    case 'athena':
+      p(-3, 6, 6, 1, '#6D7F95');      // helmet brim
+      p(-1, 5, 2, 1, '#D4AF37');      // crest
+      p(-2, 11, 4, 2, '#E8D2BC');     // skin tone
+      p(-2, 12, 1, 1, '#2E3E52');     // left eye
+      p(1, 12, 1, 1, '#2E3E52');      // right eye
+      break;
+    case 'poseidon':
+      p(-3, 8, 6, 1, '#3E7EA5');      // wet hairline
+      p(-3, 12, 6, 2, '#D7BBA0');     // face
+      p(-2, 14, 4, 2, '#6BAFD6');     // beard
+      p(7, 16, 2, 1, '#B3E5FC');      // trident sparkle
+      break;
+    case 'ares':
+      p(-4, 7, 8, 1, '#702020');      // war helm band
+      p(-2, 11, 4, 2, '#D8B393');     // skin tone
+      p(1, 11, 1, 2, '#C54242');      // scar
+      p(-2, 12, 1, 1, '#2E1C1C');
+      p(1, 12, 1, 1, '#2E1C1C');
+      break;
+    case 'apollo':
+      p(-4, 7, 8, 1, '#E5BD58');      // blond band
+      p(-3, 6, 6, 1, '#FFE08A');      // light highlight
+      p(-2, 11, 4, 2, '#E9C6A6');     // skin tone
+      p(-1, 12, 2, 1, '#7A5530');     // smiling eyes
+      break;
+    case 'artemis':
+      p(-4, 7, 8, 2, '#6A8756');      // hood
+      p(-2, 11, 4, 2, '#E6C9AB');     // skin tone
+      p(-2, 12, 1, 1, '#345038');
+      p(1, 12, 1, 1, '#345038');
+      break;
+    case 'hermes':
+      p(-4, 7, 8, 1, '#8C7555');      // cap line
+      p(-6, 7, 2, 1, '#E8EEF7');      // left wing
+      p(4, 7, 2, 1, '#E8EEF7');       // right wing
+      p(-2, 11, 4, 2, '#DDBA99');     // skin tone
+      p(-1, 12, 2, 1, '#3A2D22');
+      break;
+    case 'hephaestus':
+      p(-4, 7, 8, 1, '#5A4636');      // dark hair band
+      p(-2, 11, 4, 2, '#CDA37E');     // warm skin tone
+      p(-2, 14, 4, 1, '#5E4A3A');     // soot beard/mouth
+      p(0, 13, 1, 1, '#3A2D23');      // nose shadow
+      break;
+    case 'dionysus':
+      p(-4, 6, 8, 1, '#6FAE5D');      // vine wreath
+      p(-3, 7, 1, 1, '#7B1FA2');      // grape
+      p(2, 7, 1, 1, '#7B1FA2');       // grape
+      p(-2, 11, 4, 2, '#E2BF9D');     // skin tone
+      p(-2, 13, 4, 1, '#EC6C9E');     // rosy smile
+      break;
+    case 'demeter':
+      p(-4, 6, 8, 1, '#EACB62');      // wheat crown
+      p(-2, 11, 4, 2, '#DDBA97');     // skin tone
+      p(-2, 12, 1, 1, '#5B4A2A');
+      p(1, 12, 1, 1, '#5B4A2A');
+      break;
+    case 'aphrodite':
+      p(-4, 7, 8, 1, '#A16A74');      // soft hair band
+      p(-2, 11, 4, 2, '#F0D1B8');     // light skin tone
+      p(-3, 13, 1, 1, '#F39DBE');     // blush left
+      p(2, 13, 1, 1, '#F39DBE');      // blush right
+      p(-1, 12, 2, 1, '#8A3558');     // eye/lip accent
+      break;
+    case 'hades':
+      p(-4, 7, 8, 2, '#2E3543');      // dark hood
+      p(-2, 11, 4, 2, '#D6C3B4');     // pale skin
+      p(-2, 12, 1, 1, '#1D2633');
+      p(1, 12, 1, 1, '#1D2633');
+      p(-1, 13, 2, 1, '#5F6D7A');     // cold mouth line
+      break;
+    case 'persephone':
+      p(-4, 6, 8, 1, '#EC6C9E');      // flower crown line
+      p(-3, 7, 1, 1, '#81C784');
+      p(2, 7, 1, 1, '#81C784');
+      p(-2, 11, 4, 2, '#EAC8AE');
+      p(-1, 13, 2, 1, '#B15374');
+      break;
+    case 'prometheus':
+      p(-4, 7, 8, 1, '#734B36');      // rugged hairline
+      p(-2, 11, 4, 2, '#D2AD8A');
+      p(2, 10, 1, 2, '#FF8F00');      // ember reflection
+      p(-1, 13, 2, 1, '#7A3A1D');
+      break;
+    case 'helios':
+      p(-4, 6, 8, 1, '#F2C94C');      // solar circlet
+      p(-3, 5, 1, 1, '#FFE08A');
+      p(2, 5, 1, 1, '#FFE08A');
+      p(-2, 11, 4, 2, '#E5C09A');
+      p(-1, 12, 2, 1, '#7A5530');
+      break;
+    case 'nike':
+      p(-4, 7, 8, 1, '#E9E3C6');      // laurel/feather band
+      p(-2, 11, 4, 2, '#E0BE9B');
+      p(-2, 12, 1, 1, '#4F3F30');
+      p(1, 12, 1, 1, '#4F3F30');
+      break;
+    case 'pan':
+      p(-3, 5, 2, 1, '#8D6E63');      // left horn
+      p(1, 5, 2, 1, '#8D6E63');       // right horn
+      p(-2, 11, 4, 2, '#CFA17C');
+      p(-1, 13, 2, 1, '#6A4F3B');
+      break;
+    case 'hecate':
+      p(-4, 7, 8, 2, '#4B3A73');      // mystic hood
+      p(-2, 11, 4, 2, '#D8C3BD');
+      p(-3, 9, 1, 1, '#C4B5FD');      // side sigil left
+      p(2, 9, 1, 1, '#C4B5FD');       // side sigil right
+      p(-1, 12, 2, 1, '#6F56A4');
+      break;
+    case 'iris':
+      p(-4, 7, 8, 1, '#CE5C8A');      // hair band
+      p(3, 8, 1, 4, '#42A5F5');       // rainbow streak
+      p(-2, 11, 4, 2, '#EBC9AF');
+      p(-3, 13, 1, 1, '#F44336');     // blush/chroma left
+      p(2, 13, 1, 1, '#42A5F5');      // blush/chroma right
+      break;
+    case 'heracles':
+      p(-4, 7, 8, 1, '#6C5843');      // strong hairline
+      p(-2, 11, 4, 2, '#D5AF8D');
+      p(-2, 10, 1, 1, '#3B2A20');     // thick brow left
+      p(1, 10, 1, 1, '#3B2A20');      // thick brow right
+      p(-1, 13, 2, 1, '#5A3F2E');     // strong jaw/mouth
+      break;
+    case 'selene':
+      p(-4, 7, 8, 1, '#9EA7D7');      // moonlit hairline
+      p(2, 6, 2, 1, '#E8EAF6');       // crescent glint
+      p(-2, 11, 4, 2, '#E7D4C8');
+      p(-2, 12, 1, 1, '#3949AB');
+      p(1, 12, 1, 1, '#3949AB');
+      break;
+    case 'hera':
+      p(-4, 6, 8, 1, '#F1D37A');      // tiara line
+      p(-2, 11, 4, 2, '#EACBB7');     // skin tone
+      p(-2, 12, 1, 1, '#452C60');
+      p(1, 12, 1, 1, '#452C60');
+      p(-1, 13, 2, 1, '#9A5E90');     // regal lip
+      break;
+    case 'zeus':
+      p(-4, 6, 8, 1, '#F4D67C');      // crown band
+      p(-2, 11, 4, 2, '#E7C7A8');     // skin tone
+      p(-3, 13, 6, 2, '#EDE4DA');     // beard
+      p(-1, 15, 2, 1, '#D7CEC2');     // beard tail
+      p(2, 10, 1, 2, '#FFE08A');      // lightning glow reflection
+      break;
+    default:
+      break;
   }
-  p(2, 17, 2, 1, '#9A8252');
-  p(6, 17, 2, 1, '#9A8252');
-
-  // Lightning staff (right hand)
-  p(9, 9, 1, 8, '#8E6B3E');
-  p(10, 8, 1, 1, '#FFD95E');
-  p(9, 7, 1, 1, '#FFD95E');
-  p(10, 6, 1, 1, '#FFF2A8');
-
-  drawCrownAccessory(ctx, x, Math.round(oy + 11 * scale), 'gold', tick);
-}
-
-function drawHeraAvatar(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  anim: CharacterAnim,
-  tick: number,
-): void {
-  const moving = anim === 'walk_frame1' || anim === 'walk_frame2' || anim === 'run';
-  const bob = moving ? Math.sin(tick * 0.11) * 1.1 : Math.sin(tick * 0.08) * 0.45;
-  const footY = y + bob;
-  const scale = resolveDrawScale(footY, DIVINE_DRAW_SCALE_MAP, DIVINE_DRAW_SCALE_PANEL);
-  const ox = Math.round(x - 5 * scale);
-  const oy = Math.round(footY - 17 * scale);
-  const step = Math.floor(tick / 8) % 2;
-
-  const p = (gx: number, gy: number, w: number, h: number, color: string) => {
-    ctx.fillStyle = color;
-    ctx.fillRect(
-      Math.round(ox + gx * scale),
-      Math.round(oy + gy * scale),
-      Math.max(1, Math.round(w * scale)),
-      Math.max(1, Math.round(h * scale)),
-    );
-  };
-
-  ctx.save();
-  ctx.fillStyle = 'rgba(8, 14, 24, 0.35)';
-  ctx.fillRect(x - 10, y - 2, 20, 3);
-  ctx.restore();
-
-  drawDivineSigil(ctx, x, Math.round(oy - 4 * scale), tick, HERA_SIGIL);
-
-  // Tiara + hair
-  p(2, 0, 6, 1, '#F1D37A');
-  p(1, 1, 8, 1, '#E4C46C');
-  p(1, 2, 2, 4, '#5C3C70');
-  p(7, 2, 2, 4, '#5C3C70');
-
-  // Face (restored scale + feminine silhouette)
-  p(2, 2, 6, 3, '#F0C9B0');
-  p(3, 3, 1, 1, '#1D2430');
-  p(6, 3, 1, 1, '#1D2430');
-  p(3, 4, 3, 1, '#D494A1');
-
-  // Gown upper
-  p(2, 7, 6, 3, '#EDE3F3');
-  p(1, 8, 8, 1, '#7E57C2');
-  p(3, 9, 4, 1, '#D4C3E7');
-
-  // Long royal dress (feminine silhouette)
-  p(2, 10, 6, 4, '#C3A5E6');
-  p(1, 12, 8, 3, '#9D74D3');
-  p(2, 13, 6, 1, '#F1D37A');
-  p(2, 15, 6, 2, '#C3A5E6');
-
-  // Feet
-  if (moving && step === 0) {
-    p(2, 17, 2, 1, '#6F5697');
-    p(6, 17, 2, 1, '#6F5697');
-  } else {
-    p(3, 17, 2, 1, '#6F5697');
-    p(5, 17, 2, 1, '#6F5697');
-  }
-
-  // Peacock feather fan motif on side
-  p(9, 9, 1, 7, '#5C9E6A');
-  p(10, 8, 1, 1, '#44B6B6');
-  p(10, 9, 1, 1, '#1E88E5');
-  p(10, 10, 1, 1, '#7E57C2');
-  p(10, 11, 1, 1, '#F1D37A');
-
-  drawCrownAccessory(ctx, x, Math.round(oy + 11 * scale), 'gold', tick);
 }
 
 export function drawWorker(
@@ -899,10 +1647,6 @@ export function drawWorker(
   _emoji: string,
   _skinToneIndex?: number,
 ): void {
-  if (avatar === 'hera') {
-    drawHeraAvatar(ctx, x, y, anim, tick);
-    return;
-  }
   drawCharacterFromSheet(ctx, x, y, anim, direction, tick, WORKER_PROFILE_MAP[avatar], avatar);
 }
 
@@ -915,7 +1659,7 @@ export function drawCodex(
   _avatar: CodexAvatar,
   _emoji: string,
 ): void {
-  drawZeusAvatar(ctx, x, y, anim, tick);
+  drawCharacterFromSheet(ctx, x, y, anim, 's', tick, ZEUS_PROFILE, 'zeus');
 }
 
 export function drawGemini(
@@ -926,8 +1670,9 @@ export function drawGemini(
   tick: number,
   _avatar: GeminiAvatar,
   _emoji: string,
+  direction: Direction = 's',
 ): void {
-  drawHeraAvatar(ctx, x, y, anim, tick);
+  drawCharacterFromSheet(ctx, x, y, anim, direction, tick, HERA_PROFILE, 'hera');
 }
 
 export function drawNameTag(
@@ -979,10 +1724,7 @@ export function drawStatusAura(
   ctx.save();
   const pulse = 0.15 + 0.25 * (0.5 + 0.5 * Math.sin(tick * 0.08));
   ctx.globalAlpha = behavior === 'error' ? (tick % 20 < 10 ? 0.5 : 0.1) : pulse;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.ellipse(x, y - 2, 10, 4, 0, 0, Math.PI * 2);
-  ctx.fill();
+  fillPixelEllipse(ctx, x, y - 2, 10, 4, color);
   ctx.restore();
 }
 
@@ -997,52 +1739,29 @@ export function drawUnicorn(
   direction: Direction,
   tick: number,
 ): void {
-  const scale = 2;
-  const ox = x - 12;
-  const oy = y - 22;
-
+  const bob = Math.sin(tick * 0.08) * 0.8;
+  const bodyY = y - 11 + bob;
   ctx.save();
   if (direction === 'w') {
-    ctx.translate(x, 0);
+    ctx.translate(x * 2, 0);
     ctx.scale(-1, 1);
-    ctx.translate(-x, 0);
   }
 
-  const npx = (px: number, py: number, color: string) => {
-    ctx.fillStyle = color;
-    ctx.fillRect(ox + px * scale, oy + py * scale, scale, scale);
-  };
+  fillPixelEllipse(ctx, x, y + 1.5, 9, 3, 'rgba(10, 18, 30, 0.25)');
+  fillPixelEllipse(ctx, x, bodyY, 7, 4, '#FFFFFF');
+  fillPixelEllipse(ctx, x + 5.6, bodyY - 1.7, 3, 3, '#F7FAFF');
 
-  for (let i = 2; i <= 6; i++) npx(i, 5, '#FFFFFF');
-  for (let i = 2; i <= 6; i++) npx(i, 6, '#FAFAFA');
-  npx(7, 4, '#FFFFFF');
-  npx(7, 5, '#FFFFFF');
-  npx(8, 2, '#FFD700');
-  npx(8, 3, '#FFC107');
-  npx(3, 3, '#FF5252');
-  npx(4, 3, '#FFD740');
-  npx(5, 3, '#69F0AE');
-  npx(6, 3, '#40C4FF');
-  npx(1, 6, '#40C4FF');
-  npx(1, 7, '#69F0AE');
+  ctx.fillStyle = '#FFDF7B';
+  ctx.fillRect(Math.round(x + 7), Math.round(bodyY - 8.5), 1, 5);
+  ctx.fillRect(Math.round(x + 8), Math.round(bodyY - 7.3), 1, 3);
+  fillPixelEllipse(ctx, x - 6, bodyY - 1, 2, 1, '#8CD7FF');
+  fillPixelEllipse(ctx, x - 7, bodyY + 1.2, 2, 1, '#8CD7FF');
 
-  const legFrame = Math.floor(tick / 8) % 2;
-  if (legFrame === 0) {
-    npx(3, 7, '#E0E0E0');
-    npx(6, 7, '#E0E0E0');
-  } else {
-    npx(4, 7, '#E0E0E0');
-    npx(5, 7, '#E0E0E0');
-  }
-
-  npx(7, 4, '#333333');
+  ctx.fillStyle = '#E1E8F5';
+  const legFrame = Math.floor(tick / 10) % 2 === 0 ? 0 : 1.2;
+  ctx.fillRect(x - 3.2, bodyY + 2.2, 1.6, 5 + legFrame);
+  ctx.fillRect(x + 1.5, bodyY + 2.2, 1.6, 5 - legFrame * 0.7);
   ctx.restore();
-
-  if (tick % 30 < 20) {
-    ctx.fillStyle = '#FFD70080';
-    ctx.fillRect(x - 10 + (tick % 10), y - 20 - (tick % 8), 2, 2);
-    ctx.fillRect(x + 5 - (tick % 7), y - 18 - (tick % 6), 2, 2);
-  }
 }
 
 export function drawCupid(
@@ -1052,52 +1771,23 @@ export function drawCupid(
   direction: Direction,
   tick: number,
 ): void {
-  const scale = 2;
-  const ox = x - 12;
-  const oy = y - 24;
-
+  const bob = Math.sin(tick * 0.1) * 1.1;
+  const py = y - 12 + bob;
   ctx.save();
   if (direction === 'w') {
-    ctx.translate(x, 0);
+    ctx.translate(x * 2, 0);
     ctx.scale(-1, 1);
-    ctx.translate(-x, 0);
   }
 
-  const npx = (px: number, py: number, color: string) => {
-    ctx.fillStyle = color;
-    ctx.fillRect(ox + px * scale, oy + py * scale, scale, scale);
-  };
+  fillPixelEllipse(ctx, x, y + 1.5, 7, 2, 'rgba(9, 14, 24, 0.22)');
+  fillPixelEllipse(ctx, x - 5.5, py - 1.5, 3, 2, '#FFFFFF');
+  fillPixelEllipse(ctx, x + 5.5, py - 1.5, 3, 2, '#FFFFFF');
 
-  for (let i = 3; i <= 6; i++) npx(i, 6, '#F8BBD0');
-  for (let i = 3; i <= 6; i++) npx(i, 7, '#F48FB1');
-  for (let i = 3; i <= 6; i++) npx(i, 4, '#FFE0B2');
-  for (let i = 3; i <= 6; i++) npx(i, 5, '#FFCC80');
-  npx(4, 5, '#333333');
-  npx(6, 5, '#333333');
-  npx(3, 3, '#FFD740');
-  npx(4, 3, '#FFD740');
-  npx(5, 3, '#FFD740');
-  npx(6, 3, '#FFD740');
-
-  const wingFlutter = Math.floor(tick / 12) % 2 === 0;
-  const wingY = wingFlutter ? 5 : 6;
-  npx(1, wingY, '#FFFFFF');
-  npx(2, wingY + 1, '#F5F5F5');
-  npx(7, wingY, '#FFFFFF');
-  npx(8, wingY + 1, '#F5F5F5');
-
-  npx(8, 6, '#FFD700');
-  npx(9, 6, '#FFC107');
-
+  ctx.fillStyle = '#F48FB1';
+  fillPixelEllipse(ctx, x, py + 3.2, 4, 4, '#F48FB1');
+  ctx.fillStyle = '#FFD7A8';
+  fillPixelEllipse(ctx, x, py - 3.8, 3, 3, '#FFD7A8');
+  ctx.fillStyle = '#FFD740';
+  ctx.fillRect(x - 3, py - 7.2, 6, 1.4);
   ctx.restore();
-
-  if (tick % 40 < 30) {
-    ctx.fillStyle = '#E91E6380';
-    ctx.beginPath();
-    const hx = x + 8 + Math.sin(tick * 0.1) * 3;
-    const hy = y - 15 - (tick % 20);
-    ctx.arc(hx - 1, hy, 2, 0, Math.PI * 2);
-    ctx.arc(hx + 1, hy, 2, 0, Math.PI * 2);
-    ctx.fill();
-  }
 }

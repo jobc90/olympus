@@ -62,6 +62,86 @@ export function drawParticle(ctx: CanvasRenderingContext2D, p: Particle): void {
 
 // --- Individual effects ---
 
+function fillPixelEllipse(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  color: string,
+): void {
+  const mx = Math.round(cx);
+  const my = Math.round(cy);
+  const ex = Math.max(1, Math.round(rx));
+  const ey = Math.max(1, Math.round(ry));
+  ctx.fillStyle = color;
+  for (let yy = -ey; yy <= ey; yy++) {
+    const ny = yy / ey;
+    const span = Math.floor(ex * Math.sqrt(Math.max(0, 1 - ny * ny)));
+    ctx.fillRect(mx - span, my + yy, span * 2 + 1, 1);
+  }
+}
+
+function fillPixelRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+  color: string,
+): void {
+  const ix = Math.round(x);
+  const iy = Math.round(y);
+  const iw = Math.max(1, Math.round(w));
+  const ih = Math.max(1, Math.round(h));
+  const ir = Math.max(0, Math.min(Math.round(r), Math.floor(Math.min(iw, ih) / 2)));
+  ctx.fillStyle = color;
+  if (ir <= 0) {
+    ctx.fillRect(ix, iy, iw, ih);
+    return;
+  }
+  for (let yy = 0; yy < ih; yy++) {
+    const top = yy < ir ? ir - yy - 1 : 0;
+    const bottom = yy >= ih - ir ? yy - (ih - ir) : 0;
+    const inset = Math.max(top, bottom);
+    ctx.fillRect(ix + inset, iy + yy, Math.max(1, iw - inset * 2), 1);
+  }
+}
+
+function drawPixelLine(
+  ctx: CanvasRenderingContext2D,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  color: string,
+): void {
+  let x = Math.round(x0);
+  let y = Math.round(y0);
+  const tx = Math.round(x1);
+  const ty = Math.round(y1);
+  const dx = Math.abs(tx - x);
+  const sx = x < tx ? 1 : -1;
+  const dy = -Math.abs(ty - y);
+  const sy = y < ty ? 1 : -1;
+  let err = dx + dy;
+  ctx.fillStyle = color;
+  while (true) {
+    ctx.fillRect(x, y, 1, 1);
+    if (x === tx && y === ty) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) {
+      err += dy;
+      x += sx;
+    }
+    if (e2 <= dx) {
+      err += dx;
+      y += sy;
+    }
+  }
+}
+
 function drawZzz(ctx: CanvasRenderingContext2D, x: number, y: number, progress: number): void {
   const sizes = [6, 8, 10];
   for (let i = 0; i < 3; i++) {
@@ -121,28 +201,22 @@ function drawCheck(ctx: CanvasRenderingContext2D, x: number, y: number, progress
 }
 
 function drawCoffeeSteam(ctx: CanvasRenderingContext2D, x: number, y: number, progress: number): void {
-  ctx.fillStyle = '#FFFFFF';
   for (let i = 0; i < 3; i++) {
     const sx = x + Math.sin(progress * 4 + i * 2) * 4;
     const sy = y - 10 - progress * 20 - i * 5;
     const size = 2 + (1 - progress) * 2;
     ctx.globalAlpha = Math.max(0, 0.5 - progress * 0.4 - i * 0.1);
-    ctx.beginPath();
-    ctx.arc(sx, sy, size, 0, Math.PI * 2);
-    ctx.fill();
+    fillPixelEllipse(ctx, sx, sy, size, size, '#FFFFFF');
   }
 }
 
 function drawSmoke(ctx: CanvasRenderingContext2D, x: number, y: number, progress: number): void {
-  ctx.fillStyle = '#78909C';
   for (let i = 0; i < 4; i++) {
     const sx = x + Math.sin(progress * 3 + i * 1.5) * 6;
     const sy = y - 5 - progress * 25 - i * 4;
     const size = 3 + progress * 4 + i;
     ctx.globalAlpha = Math.max(0, 0.4 - progress * 0.3 - i * 0.08);
-    ctx.beginPath();
-    ctx.arc(sx, sy, size, 0, Math.PI * 2);
-    ctx.fill();
+    fillPixelEllipse(ctx, sx, sy, size, size, '#78909C');
   }
 }
 
@@ -150,36 +224,18 @@ function drawError(ctx: CanvasRenderingContext2D, x: number, y: number, progress
   const ey = y - 10 - progress * 10;
   const size = 6 + (1 - progress) * 4;
   // Red circle
-  ctx.fillStyle = '#EF5350';
-  ctx.beginPath();
-  ctx.arc(x, ey, size, 0, Math.PI * 2);
-  ctx.fill();
+  fillPixelEllipse(ctx, x, ey, size, size, '#EF5350');
   // X mark
-  ctx.strokeStyle = '#FFFFFF';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(x - 3, ey - 3);
-  ctx.lineTo(x + 3, ey + 3);
-  ctx.moveTo(x + 3, ey - 3);
-  ctx.lineTo(x - 3, ey + 3);
-  ctx.stroke();
+  drawPixelLine(ctx, x - 3, ey - 3, x + 3, ey + 3, '#FFFFFF');
+  drawPixelLine(ctx, x + 3, ey - 3, x - 3, ey + 3, '#FFFFFF');
 }
 
 function drawLightning(ctx: CanvasRenderingContext2D, x: number, y: number, progress: number): void {
   const ly = y - 20 - progress * 5;
-  ctx.strokeStyle = '#FFCA28';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(x, ly - 8);
-  ctx.lineTo(x - 3, ly - 2);
-  ctx.lineTo(x + 1, ly - 2);
-  ctx.lineTo(x - 2, ly + 6);
-  ctx.stroke();
-  // Glow
-  ctx.shadowColor = '#FFCA28';
-  ctx.shadowBlur = 6;
-  ctx.stroke();
-  ctx.shadowBlur = 0;
+  drawPixelLine(ctx, x, ly - 8, x - 3, ly - 2, '#FFCA28');
+  drawPixelLine(ctx, x - 3, ly - 2, x + 1, ly - 2, '#FFCA28');
+  drawPixelLine(ctx, x + 1, ly - 2, x - 2, ly + 6, '#FFCA28');
+  drawPixelLine(ctx, x - 1, ly - 8, x - 4, ly - 2, '#FFE082');
 }
 
 function drawBinary(ctx: CanvasRenderingContext2D, x: number, y: number, progress: number): void {
@@ -197,22 +253,13 @@ function drawLightbulb(ctx: CanvasRenderingContext2D, x: number, y: number, prog
   const ly = y - 15 - progress * 10;
   const size = 4 + (1 - progress) * 3;
   // Glow
-  ctx.fillStyle = '#FFCA28';
   ctx.globalAlpha = Math.max(0, 0.3 - progress * 0.3);
-  ctx.beginPath();
-  ctx.arc(x, ly, size + 4, 0, Math.PI * 2);
-  ctx.fill();
+  fillPixelEllipse(ctx, x, ly, size + 4, size + 4, '#FFCA28');
   // Bulb
   ctx.globalAlpha = Math.max(0, 1 - progress);
-  ctx.fillStyle = '#FFD600';
-  ctx.beginPath();
-  ctx.arc(x, ly, size, 0, Math.PI * 2);
-  ctx.fill();
+  fillPixelEllipse(ctx, x, ly, size, size, '#FFD600');
   // Filament
-  ctx.fillStyle = '#FFF9C4';
-  ctx.beginPath();
-  ctx.arc(x, ly, size * 0.4, 0, Math.PI * 2);
-  ctx.fill();
+  fillPixelEllipse(ctx, x, ly, size * 0.4, size * 0.4, '#FFF9C4');
 }
 
 function drawFire(ctx: CanvasRenderingContext2D, x: number, y: number, progress: number): void {
@@ -261,21 +308,16 @@ export function drawBubble(ctx: CanvasRenderingContext2D, bubble: Bubble): void 
   const by = bubble.y - bh - 8;
 
   // Bubble background
-  ctx.fillStyle = '#FFFFFFEE';
-  roundRect(ctx, bx, by, bw, bh, 4);
-  ctx.fill();
+  fillPixelRoundedRect(ctx, bx, by, bw, bh, 4, '#FFFFFFEE');
   ctx.strokeStyle = '#00000020';
   ctx.lineWidth = 1;
-  roundRect(ctx, bx, by, bw, bh, 4);
-  ctx.stroke();
+  ctx.strokeRect(Math.round(bx), Math.round(by), Math.round(bw), Math.round(bh));
 
   // Tail
   ctx.fillStyle = '#FFFFFFEE';
-  ctx.beginPath();
-  ctx.moveTo(bubble.x - 3, by + bh);
-  ctx.lineTo(bubble.x, by + bh + 5);
-  ctx.lineTo(bubble.x + 3, by + bh);
-  ctx.fill();
+  ctx.fillRect(Math.round(bubble.x - 2), Math.round(by + bh), 5, 1);
+  ctx.fillRect(Math.round(bubble.x - 1), Math.round(by + bh + 1), 3, 1);
+  ctx.fillRect(Math.round(bubble.x), Math.round(by + bh + 2), 1, 2);
 
   // Text
   ctx.fillStyle = '#333333';
@@ -283,25 +325,6 @@ export function drawBubble(ctx: CanvasRenderingContext2D, bubble: Bubble): void 
   ctx.fillText(bubble.text, bubble.x, by + 11);
 
   ctx.restore();
-}
-
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number, y: number,
-  w: number, h: number,
-  r: number,
-): void {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
 }
 
 // ---------------------------------------------------------------------------

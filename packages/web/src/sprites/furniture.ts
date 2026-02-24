@@ -1,5 +1,6 @@
 // ============================================================================
-// Furniture Sprite Drawing — Pixel art isometric furniture (Greek/Olympus Theme)
+// Furniture Sprite Drawing — RPG Maker / Stardew Valley Pixel Art Style
+// Olympus temple concept maintained; visual aesthetic updated to clean top-down pixel art
 // ============================================================================
 
 import type { TileType } from '../engine/pathfinding';
@@ -8,12 +9,6 @@ import { getTileCenter, TILE_PX } from '../engine/topdown';
 // Alias: returns tile center (32×32 tile, center at +16,+16 from top-left)
 function gridToScreen(pos: { col: number; row: number }): { x: number; y: number } {
   return getTileCenter(pos);
-}
-
-// Replaces drawIsometricBlock — draws a flat top-down surface
-function drawFlatSurface(ctx: CanvasRenderingContext2D, x: number, y: number, topColor: string): void {
-  ctx.fillStyle = topColor;
-  ctx.fillRect(x - 12, y - 4, 24, 8);
 }
 
 type FurnitureType = TileType extends string ? (
@@ -57,15 +52,44 @@ type FurnitureType = TileType extends string ? (
   | 'altar'
 ) : never;
 
-const PALETTE = {
-  marbleLight: '#F5F1E8',
-  marbleMid: '#DCCFC0',
-  marbleDark: '#B7A893',
-  marbleShadow: '#8C7D68',
-  gold: '#D4AF37',
-  goldBright: '#F2D675',
-  goldDeep: '#A67C00',
-} as const;
+// ---------------------------------------------------------------------------
+// Color palette — RPG Maker / Pixel art style
+// ---------------------------------------------------------------------------
+const OL  = '#1A1A2E';   // universal dark outline
+
+const WD  = '#7B5530';   // wood dark
+const WM  = '#9B6E45';   // wood mid
+const WL  = '#B8895A';   // wood light
+const WT  = '#D0A870';   // wood top highlight
+
+const MD  = '#5A6472';   // metal/plastic dark
+const MM  = '#7A8A98';   // metal mid
+const ML  = '#A0B0BC';   // metal light
+
+const SC  = '#1E2D40';   // screen bezel / dark
+const SB  = '#4BBAD4';   // screen blue
+const SL  = '#7FD4EA';   // screen light
+
+const PG  = '#2E6B1E';   // plant green dark
+const PM  = '#4D9B2A';   // plant mid
+const PH  = '#78CC48';   // plant highlight
+const PT  = '#B86040';   // pot terracotta
+
+const MBL = '#C8D8E0';   // marble light
+const MBM = '#A8B8C0';   // marble mid
+const MBD = '#7890A0';   // marble dark
+const GLD = '#D4AF37';   // gold
+const GLL = '#F0D060';   // gold light
+const GLD2= '#A07A00';   // gold deep
+
+// Book spine colors — vibrant RPG library feel
+const BOOK_COLORS = ['#C03030','#3060C0','#30A050','#C0A020','#8030B0','#C06020','#20A0A0','#A03060'];
+
+const FURNITURE_SCALE = 1;
+
+// ---------------------------------------------------------------------------
+// Pixel helpers
+// ---------------------------------------------------------------------------
 
 function px(
   ctx: CanvasRenderingContext2D,
@@ -76,717 +100,708 @@ function px(
   ctx.fillRect(Math.round(x), Math.round(y), w, h);
 }
 
-function applyTemplePatina(
+function fillPixelEllipse(
   ctx: CanvasRenderingContext2D,
-  col: number,
-  row: number,
-  tick: number,
+  cx: number, cy: number, rx: number, ry: number, color: string,
 ): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Keep patina subtle: tiny specular glints only (avoid rectangle overlays).
-  ctx.save();
-  ctx.globalAlpha = 0.18;
-  px(ctx, x - 5, y - 18, 10, 1, PALETTE.goldBright);
-  px(ctx, x - 3, y - 14, 6, 1, '#F9E6A0');
-  if (tick % 120 < 64) {
-    px(ctx, x - 1, y - 21, 2, 1, '#FFF3C4');
+  const mx = Math.round(cx); const my = Math.round(cy);
+  const ex = Math.max(1, Math.round(rx)); const ey = Math.max(1, Math.round(ry));
+  ctx.fillStyle = color;
+  for (let yy = -ey; yy <= ey; yy++) {
+    const ny = yy / ey;
+    const span = Math.floor(ex * Math.sqrt(Math.max(0, 1 - ny * ny)));
+    ctx.fillRect(mx - span, my + yy, span * 2 + 1, 1);
   }
+}
+
+function strokePixelEllipse(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number, rx: number, ry: number, color: string,
+): void {
+  const mx = Math.round(cx); const my = Math.round(cy);
+  const ex = Math.max(1, Math.round(rx)); const ey = Math.max(1, Math.round(ry));
+  ctx.fillStyle = color;
+  for (let yy = -ey; yy <= ey; yy++) {
+    const ny = yy / ey;
+    const span = Math.floor(ex * Math.sqrt(Math.max(0, 1 - ny * ny)));
+    ctx.fillRect(mx - span, my + yy, 1, 1);
+    ctx.fillRect(mx + span, my + yy, 1, 1);
+  }
+}
+
+function drawPixelLine(
+  ctx: CanvasRenderingContext2D,
+  x0: number, y0: number, x1: number, y1: number, color: string,
+): void {
+  let x = Math.round(x0); let y = Math.round(y0);
+  const tx = Math.round(x1); const ty = Math.round(y1);
+  const dx = Math.abs(tx - x); const sx = x < tx ? 1 : -1;
+  const dy = -Math.abs(ty - y); const sy = y < ty ? 1 : -1;
+  let err = dx + dy;
+  ctx.fillStyle = color;
+  while (true) {
+    ctx.fillRect(x, y, 1, 1);
+    if (x === tx && y === ty) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x += sx; }
+    if (e2 <= dx) { err += dx; y += sy; }
+  }
+}
+
+/** Draw a flat top-down desk surface with outline */
+function drawDeskSurface(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, top: string, front: string): void {
+  // top surface
+  px(ctx, x - w/2, y - h/2, w, h, top);
+  // front face (lower strip)
+  px(ctx, x - w/2, y + h/2 - 3, w, 3, front);
+  // outline
+  px(ctx, x - w/2 - 1, y - h/2 - 1, w + 2, 1, OL);  // top
+  px(ctx, x - w/2 - 1, y + h/2,     w + 2, 1, OL);  // bottom
+  px(ctx, x - w/2 - 1, y - h/2 - 1, 1, h + 2, OL);  // left
+  px(ctx, x + w/2,     y - h/2 - 1, 1, h + 2, OL);  // right
+}
+
+/** Draw an LCD monitor at (mx, my) = center of screen */
+function drawLCD(ctx: CanvasRenderingContext2D, mx: number, my: number, w: number, h: number, tick: number): void {
+  // Bezel
+  px(ctx, mx - w/2 - 2, my - h/2 - 2, w + 4, h + 4, OL);
+  px(ctx, mx - w/2 - 1, my - h/2 - 1, w + 2, h + 2, SC);
+  // Screen
+  const scrCol = tick % 60 < 55 ? SB : SL;
+  px(ctx, mx - w/2, my - h/2, w, h, scrCol);
+  // Code lines
+  if (tick % 60 < 55) {
+    px(ctx, mx - w/2 + 1, my - h/2 + 1, Math.round(w * 0.65), 1, SL);
+    px(ctx, mx - w/2 + 1, my - h/2 + 3, Math.round(w * 0.45), 1, SL);
+    px(ctx, mx - w/2 + 1, my - h/2 + 5, Math.round(w * 0.55), 1, SL);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Individual furniture draw functions — RPG Maker / Pixel Art style
+// ---------------------------------------------------------------------------
+
+// desk → Wooden Desk with Computer
+function drawDesk(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  drawDeskSurface(ctx, x, y, 24, 12, WT, WD);
+  // Monitor stand
+  px(ctx, x - 1, y - 16, 2, 7, MD);
+  // Monitor
+  drawLCD(ctx, x, y - 22, 12, 8, tick);
+  // Keyboard
+  px(ctx, x - 5, y - 3, 10, 1, OL);
+  px(ctx, x - 5, y,     10, 1, OL);
+  px(ctx, x - 5, y - 3, 1, 4, OL);
+  px(ctx, x + 4, y - 3, 1, 4, OL);
+  px(ctx, x - 4, y - 2, 8, 2, MM);
+  // Mouse
+  px(ctx, x + 7, y - 2, 3, 3, ML);
+  px(ctx, x + 7, y - 2, 3, 1, OL);
+}
+
+// chair → Simple Wooden Chair
+function drawChair(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Legs
+  px(ctx, x - 6, y, 2, 4, WD);
+  px(ctx, x + 4, y, 2, 4, WD);
+  // Seat
+  px(ctx, x - 7, y - 7, 14, 7, WM);
+  px(ctx, x - 7, y - 7, 14, 1, OL);  // seat top edge
+  px(ctx, x - 7, y - 1, 14, 1, OL);  // seat bottom edge (overlaps front)
+  px(ctx, x - 8, y - 7, 1, 7, OL);   // left
+  px(ctx, x + 7, y - 7, 1, 7, OL);   // right
+  // Cushion on seat
+  px(ctx, x - 5, y - 6, 10, 4, '#D0996A');
+  // Back rest
+  px(ctx, x - 7, y - 18, 14, 12, WM);
+  px(ctx, x - 8, y - 18, 1, 12, OL);
+  px(ctx, x + 7, y - 18, 1, 12, OL);
+  px(ctx, x - 7, y - 19, 14, 1, OL);
+  px(ctx, x - 5, y - 17, 10, 8, '#D0996A');  // back cushion
+}
+
+// big_desk → Zeus's Grand Desk
+function drawBigDesk(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  drawDeskSurface(ctx, x, y, 30, 14, '#E8D89A', '#8B6520');
+  // Gold trim on front
+  px(ctx, x - 15, y + 3, 30, 2, GLD);
+  // Monitors (dual)
+  px(ctx, x - 8, y - 16, 2, 8, MD);  // stand L
+  px(ctx, x + 6, y - 16, 2, 8, MD);  // stand R
+  drawLCD(ctx, x - 10, y - 22, 9, 7, tick);
+  drawLCD(ctx, x + 10, y - 22, 9, 7, tick);
+  // Lightning bolt gold accent (Zeus theme)
+  if (tick % 80 < 60) {
+    px(ctx, x - 2, y - 5, 1, 4, GLL);
+    px(ctx, x - 1, y - 7, 2, 3, GLL);
+    px(ctx, x,     y - 9, 2, 3, GLL);
+  }
+}
+
+// monitor → Standalone LCD Monitor
+function drawMonitor(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  px(ctx, x - 1, y - 8, 2, 8, MD);  // stand
+  px(ctx, x - 4, y,     8, 2, MD);  // base
+  drawLCD(ctx, x, y - 18, 14, 10, tick);
+}
+
+// floor_window → Skylight Window
+function drawFloorWindow(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Frame
+  px(ctx, x - 16, y - 36, 32, 32, OL);
+  px(ctx, x - 15, y - 35, 30, 30, MBL);
+  // Sky interior
+  const skyA = tick % 200 < 100 ? '#B8E4FF' : '#D0EEFF';
+  px(ctx, x - 13, y - 33, 26, 26, skyA);
+  // Window cross frame
+  px(ctx, x - 13, y - 20, 26, 2, MBL);  // horizontal
+  px(ctx, x - 1, y - 33, 2, 26, MBL);   // vertical
+  // Cloud puffs
+  fillPixelEllipse(ctx, x + (tick % 80) / 5 - 8, y - 26, 5, 3, '#FFFFFF');
+  fillPixelEllipse(ctx, x - (tick % 60) / 4 + 5, y - 18, 4, 2, '#FFFFFFB0');
+}
+
+// coffee_machine → Modern Coffee Maker
+function drawCoffeeMachine(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Body outline + silver casing
+  px(ctx, x - 7, y - 22, 14, 20, OL);
+  px(ctx, x - 6, y - 21, 12, 18, MM);
+  px(ctx, x - 6, y - 21, 12, 6, ML);   // bright top
+  // Water tank (blue panel on side)
+  px(ctx, x + 3, y - 20, 3, 12, '#4488CC');
+  // Control buttons
+  px(ctx, x - 4, y - 14, 3, 2, '#AA2020');   // power button red
+  px(ctx, x - 4, y - 11, 3, 2, '#2060AA');   // mode button blue
+  // Coffee outlet nozzle
+  px(ctx, x - 2, y - 4, 4, 3, WD);
+  // Steam animation
+  if (tick % 40 < 30) {
+    ctx.fillStyle = '#FFFFFF70';
+    ctx.fillRect(x - 1, y - 26 - (tick % 12), 2, 3);
+    ctx.fillRect(x + 2, y - 28 - ((tick + 6) % 10), 1, 2);
+  }
+}
+
+// snack_shelf → Break Room Shelf
+function drawSnackShelf(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Shelf frame
+  px(ctx, x - 11, y - 32, 22, 28, OL);
+  px(ctx, x - 10, y - 31, 20, 26, WM);
+  // Shelf boards
+  px(ctx, x - 9, y - 22, 18, 2, WD);
+  px(ctx, x - 9, y - 12, 18, 2, WD);
+  // Items on shelves — colorful snack boxes
+  px(ctx, x - 8, y - 30, 5, 6, '#E03030');  // red box
+  px(ctx, x - 2, y - 30, 4, 6, '#2060E0');  // blue box
+  px(ctx, x + 3, y - 30, 5, 6, '#D0A020');  // yellow box
+  px(ctx, x - 7, y - 20, 6, 6, '#30A040');  // green box
+  px(ctx, x + 1, y - 20, 5, 6, '#CC4488');  // pink box
+  px(ctx, x - 8, y - 10, 4, 6, '#8040CC');  // purple box
+  px(ctx, x - 3, y - 10, 5, 6, '#E07020');  // orange box
+  px(ctx, x + 3, y - 10, 5, 6, '#20A8AA');  // teal box
+}
+
+// water_cooler → Blue Water Dispenser
+function drawWaterCooler(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Body outline
+  px(ctx, x - 7, y - 26, 14, 24, OL);
+  // White cabinet
+  px(ctx, x - 6, y - 25, 12, 22, '#E8EAEC');
+  // Blue water jug on top
+  px(ctx, x - 5, y - 28, 10, 6, OL);
+  px(ctx, x - 4, y - 27, 8, 5, '#4488CC');
+  px(ctx, x - 3, y - 26, 6, 3, '#88CCEE');  // water highlight
+  // Dispenser spigots
+  px(ctx, x - 5, y - 14, 3, 3, '#C04040');  // hot (red)
+  px(ctx, x + 2, y - 14, 3, 3, '#4040C0');  // cold (blue)
+  // Cup holder ledge
+  px(ctx, x - 5, y - 10, 10, 2, MD);
+  // Water drip animation
+  if (tick % 50 < 35) {
+    ctx.fillStyle = '#88CCEEBB';
+    ctx.fillRect(x - 4, y - 11 + (tick % 8), 1, 2);
+  }
+}
+
+// small_table → Small Side Table
+function drawSmallTable(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Legs
+  px(ctx, x - 7, y, 2, 4, WD);
+  px(ctx, x + 5, y, 2, 4, WD);
+  // Table top surface
+  drawDeskSurface(ctx, x, y - 4, 18, 8, WT, WM);
+  // Small item on top (coffee cup)
+  px(ctx, x - 2, y - 9, 4, 4, '#E0E0E0');  // cup
+  px(ctx, x - 1, y - 10, 2, 1, OL);         // rim
+}
+
+// round_table → Round Meeting Table
+function drawRoundTable(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Central leg
+  px(ctx, x - 2, y - 4, 4, 4, WD);
+  px(ctx, x - 4, y - 1, 8, 2, WD);  // foot brace
+  // Round tabletop
+  fillPixelEllipse(ctx, x, y - 10, 13, 8, OL);
+  fillPixelEllipse(ctx, x, y - 10, 12, 7, WT);
+  fillPixelEllipse(ctx, x - 3, y - 12, 6, 3, '#E4C890');  // highlight
+}
+
+// long_table → Conference Table
+function drawLongTable(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Legs
+  px(ctx, x - 11, y, 2, 4, WD);
+  px(ctx, x + 9, y, 2, 4, WD);
+  drawDeskSurface(ctx, x, y - 2, 28, 10, WT, WM);
+}
+
+// whiteboard_obj → Clean Whiteboard
+function drawWhiteboard(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Frame
+  px(ctx, x - 17, y - 36, 34, 28, OL);
+  px(ctx, x - 16, y - 35, 32, 26, '#E0E0E0');  // aluminum frame
+  // White board surface
+  px(ctx, x - 14, y - 33, 28, 22, '#F8F8F6');
+  // Marker lines (colored)
+  drawPixelLine(ctx, x - 11, y - 28, x + 8, y - 28, '#E03030');
+  drawPixelLine(ctx, x - 11, y - 24, x + 4, y - 24, '#3050C0');
+  drawPixelLine(ctx, x - 11, y - 20, x + 6, y - 20, '#208040');
+  // Animated marker dot
+  if (tick % 60 < 40) {
+    px(ctx, x + 8, y - 24, 2, 2, '#E03030');
+  }
+  // Tray at bottom
+  px(ctx, x - 14, y - 11, 28, 4, '#B0B0B0');
+  // Marker on tray
+  px(ctx, x - 6, y - 10, 4, 2, '#E03030');
+  px(ctx, x - 1, y - 10, 4, 2, '#3050C0');
+}
+
+// bookshelf → Bookshelf with Colorful Books
+function drawBookshelf(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Shelf frame (dark wood)
+  px(ctx, x - 13, y - 36, 26, 32, OL);
+  px(ctx, x - 12, y - 35, 24, 30, WD);
+  // Back panel
+  px(ctx, x - 11, y - 34, 22, 28, '#6A4A28');
+  // Shelf boards (horizontal)
+  px(ctx, x - 12, y - 24, 24, 2, WM);
+  px(ctx, x - 12, y - 14, 24, 2, WM);
+  px(ctx, x - 12, y - 36, 24, 2, WM);  // top shelf
+
+  // Books — 3 rows, each with colored spines
+  const drawBookRow = (startY: number, count: number, offset: number) => {
+    let bx = x - 11;
+    for (let i = 0; i < count; i++) {
+      const col = BOOK_COLORS[(i + offset) % BOOK_COLORS.length];
+      const w = 3 + (i % 2);
+      const h = 8 + (i % 3);
+      px(ctx, bx, startY - h, w, h, col);
+      px(ctx, bx, startY - h, w, 1, '#FFFFFF40');  // top highlight
+      px(ctx, bx + w - 1, startY - h, 1, h, '#00000030');  // right shadow
+      bx += w + 1;
+      if (bx > x + 10) break;
+    }
+  };
+  drawBookRow(y - 24, 6, 0);  // top shelf books
+  drawBookRow(y - 14, 5, 3);  // mid shelf books
+  drawBookRow(y - 4,  6, 5);  // bottom shelf books
+}
+
+// reading_chair → Cozy Reading Armchair
+function drawReadingChair(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Frame
+  px(ctx, x - 11, y - 22, 22, 20, OL);
+  px(ctx, x - 10, y - 21, 20, 18, WM);
+  // Seat cushion
+  px(ctx, x - 8, y - 7, 16, 5, '#C08858');
+  // Back cushion
+  px(ctx, x - 8, y - 18, 16, 12, '#C08858');
+  // Armrests
+  px(ctx, x - 11, y - 14, 3, 8, '#9B6E45');
+  px(ctx, x + 8, y - 14, 3, 8, '#9B6E45');
+  // Armrest caps
+  px(ctx, x - 12, y - 15, 5, 2, WT);
+  px(ctx, x + 7, y - 15, 5, 2, WT);
+  // Cushion buttons
+  px(ctx, x - 2, y - 14, 2, 2, '#8B5535');
+  px(ctx, x + 2, y - 14, 2, 2, '#8B5535');
+}
+
+// sofa → Stylish Office Sofa
+function drawSofa(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Frame outline
+  px(ctx, x - 17, y - 20, 34, 18, OL);
+  // Sofa base (warm pink/cream)
+  px(ctx, x - 16, y - 19, 32, 16, '#E08898');
+  // Cushion divide line
+  px(ctx, x, y - 19, 1, 16, '#C06878');
+  // Cushion highlights
+  px(ctx, x - 14, y - 18, 12, 6, '#ECA0A8');
+  px(ctx, x + 2, y - 18, 12, 6, '#ECA0A8');
+  // Back rest
+  px(ctx, x - 16, y - 20, 32, 1, '#C06878');
+  px(ctx, x - 16, y - 19, 32, 4, '#ECA0A8');
+  // Armrests
+  px(ctx, x - 19, y - 16, 4, 12, OL);
+  px(ctx, x - 18, y - 15, 3, 10, '#E08898');
+  px(ctx, x + 15, y - 16, 4, 12, OL);
+  px(ctx, x + 16, y - 15, 3, 10, '#E08898');
+  // Legs
+  px(ctx, x - 13, y - 2, 3, 3, WD);
+  px(ctx, x + 10, y - 2, 3, 3, WD);
+}
+
+// coffee_table → Low Glass Coffee Table
+function drawCoffeeTable(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Legs
+  px(ctx, x - 9, y, 2, 4, MD);
+  px(ctx, x + 7, y, 2, 4, MD);
+  // Table frame + glass top
+  px(ctx, x - 10, y - 6, 20, 7, OL);
+  px(ctx, x - 9,  y - 5, 18, 5, '#B8D8E8');  // glass
+  px(ctx, x - 8,  y - 5, 8, 2, '#D8EEFA');   // glass highlight
+}
+
+// server_rack → Black Server Rack
+function drawServerRack(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Main body
+  px(ctx, x - 11, y - 38, 22, 36, OL);
+  px(ctx, x - 10, y - 37, 20, 34, '#1A1A28');
+  // Rack top cap
+  px(ctx, x - 11, y - 38, 22, 3, MD);
+  // Server units (1U rows)
+  for (let i = 0; i < 5; i++) {
+    const uy = y - 34 + i * 6;
+    px(ctx, x - 9, uy, 18, 5, '#252535');       // unit body
+    px(ctx, x - 8, uy + 1, 3, 3, '#303040');    // drive bay
+    // Status LEDs
+    const onA = ((tick + i * 11) % 24) < 18;
+    const onB = ((tick + i *  7) % 30) < 22;
+    px(ctx, x + 4, uy + 1, 2, 2, onA ? '#30FF70' : '#104020');  // green HDD
+    px(ctx, x + 7, uy + 1, 2, 2, onB ? '#3080FF' : '#101840');  // blue net
+    // Activity blink
+    if (onA && tick % 8 < 4) {
+      px(ctx, x + 4, uy + 1, 2, 2, '#80FFAA');
+    }
+  }
+  // Vents at bottom
+  for (let vx = x - 8; vx < x + 9; vx += 3) {
+    px(ctx, vx, y - 4, 2, 2, '#303040');
+  }
+}
+
+// potted_plant → Leafy Office Plant
+function drawPottedPlant(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Pot outline + body
+  px(ctx, x - 6, y - 10, 12, 10, OL);
+  px(ctx, x - 5, y - 9, 10, 8, PT);
+  px(ctx, x - 4, y - 9, 8, 3, '#C87850');  // pot highlight
+  // Soil
+  px(ctx, x - 4, y - 2, 8, 3, '#4A3020');
+  // Stem
+  px(ctx, x - 1, y - 18, 2, 9, '#3A5520');
+  // Leaves — swaying with tick
+  const sway = Math.sin(tick * 0.04) * 1.5;
+  fillPixelEllipse(ctx, x + sway, y - 22, 6, 4, PG);
+  fillPixelEllipse(ctx, x - 4 + sway * 0.5, y - 26, 5, 3, PM);
+  fillPixelEllipse(ctx, x + 3 - sway * 0.5, y - 24, 4, 3, PM);
+  fillPixelEllipse(ctx, x + sway * 0.3, y - 28, 3, 2, PH);
+}
+
+// carpet → Decorative Rug
+function drawCarpet(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  const half = TILE_PX / 2 - 2;
+  // Base rug
+  ctx.fillStyle = '#7060A860';
+  ctx.fillRect(x - half, y - half, half * 2, half * 2);
+  // Border
+  ctx.strokeStyle = '#5048789C';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x - half + 2, y - half + 2, half * 2 - 4, half * 2 - 4);
+  // Inner diamond pattern
+  ctx.strokeStyle = '#8878C060';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x - half + 5, y - half + 5, half * 2 - 10, half * 2 - 10);
+  // Center dot
+  fillPixelEllipse(ctx, x, y, 3, 3, '#A898E050');
+}
+
+// wall_clock → Round Wall Clock
+function drawWallClock(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Clock face
+  fillPixelEllipse(ctx, x, y - 18, 9, 9, OL);
+  fillPixelEllipse(ctx, x, y - 18, 8, 8, '#F0EEE8');
+  // Hour markers
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const mx = x + Math.cos(a) * 7; const my = y - 18 + Math.sin(a) * 7;
+    ctx.fillStyle = OL;
+    ctx.fillRect(Math.round(mx), Math.round(my), 1, 1);
+  }
+  // Hands
+  const hAngle = (tick * 0.002) % (Math.PI * 2);
+  const mAngle = (tick * 0.01) % (Math.PI * 2);
+  drawPixelLine(ctx, x, y - 18, x + Math.cos(hAngle - Math.PI/2) * 4, y - 18 + Math.sin(hAngle - Math.PI/2) * 4, OL);
+  drawPixelLine(ctx, x, y - 18, x + Math.cos(mAngle - Math.PI/2) * 6, y - 18 + Math.sin(mAngle - Math.PI/2) * 6, '#C03030');
+  // Center dot
+  ctx.fillStyle = OL;
+  ctx.fillRect(x, y - 18, 1, 1);
+}
+
+// poster → Framed Art Print
+function drawPoster(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Frame
+  px(ctx, x - 9, y - 30, 18, 22, OL);
+  px(ctx, x - 8, y - 29, 16, 20, GLD);   // gold frame
+  // Mat
+  px(ctx, x - 7, y - 28, 14, 18, '#F5F5F0');
+  // Art content — abstract geometric
+  px(ctx, x - 5, y - 26, 10, 8, '#B0C8E0');  // sky blue bg
+  px(ctx, x - 3, y - 22, 6, 6, '#E8A050');   // orange mountain
+  px(ctx, x - 5, y - 20, 10, 4, '#4878C0');  // blue accent
+  px(ctx, x - 5, y - 18, 10, 2, '#204898');  // darker blue
+}
+
+// meeting_chair → Office Meeting Chair
+function drawMeetingChair(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Legs
+  px(ctx, x - 5, y, 2, 4, MD);
+  px(ctx, x + 3, y, 2, 4, MD);
+  // Seat
+  px(ctx, x - 6, y - 7, 12, 7, OL);
+  px(ctx, x - 5, y - 6, 10, 5, '#6080C0');  // blue fabric seat
+  px(ctx, x - 4, y - 6, 8, 2, '#80A0D8');   // seat highlight
+  // Back rest
+  px(ctx, x - 6, y - 16, 12, 10, OL);
+  px(ctx, x - 5, y - 15, 10, 8, '#6080C0');
+  px(ctx, x - 4, y - 14, 8, 4, '#80A0D8');  // back highlight
+}
+
+// door_mat → Welcome Mat
+function drawDoorMat(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  const hw = 12; const hh = 7;
+  // Mat outline
+  px(ctx, x - hw - 1, y - hh - 1, hw*2 + 2, hh*2 + 2, OL);
+  // Mat body
+  px(ctx, x - hw, y - hh, hw*2, hh*2, '#5A4A38');
+  // Stripe pattern
+  px(ctx, x - hw + 2, y - hh + 2, hw*2 - 4, 2, '#7A6A58');
+  px(ctx, x - hw + 2, y - hh + 6, hw*2 - 4, 2, '#7A6A58');
+  px(ctx, x - hw + 2, y - hh + 10, hw*2 - 4, 2, '#7A6A58');
+  // Edge fringe dots
+  for (let fx = x - hw; fx < x + hw; fx += 3) {
+    px(ctx, fx, y + hh, 1, 2, '#3A2A20');
+    px(ctx, fx, y - hh - 2, 1, 2, '#3A2A20');
+  }
+}
+
+// standing_desk → Height-Adjustable Standing Desk
+function drawStandingDesk(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Metal legs
+  px(ctx, x - 10, y - 18, 3, 18, MM);
+  px(ctx, x + 7,  y - 18, 3, 18, MM);
+  // Desk surface (elevated)
+  drawDeskSurface(ctx, x, y - 18, 24, 10, WT, WM);
+  // Monitor
+  px(ctx, x - 1, y - 28, 2, 8, MD);
+  drawLCD(ctx, x, y - 34, 12, 8, tick);
+  // Keyboard on standing desk
+  px(ctx, x - 5, y - 23, 10, 1, OL);
+  px(ctx, x - 5, y - 20, 10, 1, OL);
+  px(ctx, x - 5, y - 23, 1, 4, OL);
+  px(ctx, x + 4, y - 23, 1, 4, OL);
+  px(ctx, x - 4, y - 22, 8, 2, MM);
+}
+
+// dual_monitor → Dual Monitor Setup
+function drawDualMonitor(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Stands
+  px(ctx, x - 9, y - 12, 2, 8, MD);
+  px(ctx, x + 7, y - 12, 2, 8, MD);
+  // Left monitor
+  drawLCD(ctx, x - 11, y - 20, 11, 9, tick);
+  // Right monitor
+  drawLCD(ctx, x + 11, y - 20, 11, 9, (tick + 15) % 60);
+  // Center base plate
+  px(ctx, x - 3, y - 4, 6, 2, MD);
+}
+
+// arcade_machine → Retro Arcade Cabinet
+function drawArcadeMachine(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Cabinet body
+  px(ctx, x - 9, y - 36, 18, 34, OL);
+  px(ctx, x - 8, y - 35, 16, 32, '#1A1A30');
+  // Cabinet top
+  px(ctx, x - 7, y - 35, 14, 4, '#2A2A40');
+  // Screen
+  const scrC = tick % 30 < 20 ? '#40C070' : '#60E090';
+  px(ctx, x - 6, y - 30, 12, 10, OL);
+  px(ctx, x - 5, y - 29, 10, 8, SC);
+  px(ctx, x - 4, y - 28, 8, 6, scrC);  // green gaming screen
+  // Joystick + buttons
+  px(ctx, x - 5, y - 17, 3, 3, '#808090');   // joystick base
+  px(ctx, x - 4, y - 19, 2, 3, MM);           // joystick stick
+  px(ctx, x, y - 18, 3, 3, '#E03030');        // red button
+  px(ctx, x + 4, y - 18, 3, 3, '#3030E0');   // blue button
+  // Coin slot
+  px(ctx, x - 2, y - 8, 4, 2, '#505060');
+  // Base
+  px(ctx, x - 9, y - 2, 18, 2, '#252535');
+}
+
+// vending_machine → Modern Vending Machine
+function drawVendingMachine(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Body outline + casing
+  px(ctx, x - 11, y - 38, 22, 36, OL);
+  px(ctx, x - 10, y - 37, 20, 34, '#1848A8');  // blue body
+  px(ctx, x - 10, y - 37, 20, 6, '#1438888');  // top darker
+  // Glass display panel
+  px(ctx, x - 8, y - 30, 16, 20, OL);
+  px(ctx, x - 7, y - 29, 14, 18, '#6898D8');   // glass panel
+  // Items visible behind glass (colored slots)
+  const items = ['#E03030','#E0A020','#30C050','#3060E0','#C030A0'];
+  for (let row2 = 0; row2 < 3; row2++) {
+    for (let col2 = 0; col2 < 4; col2++) {
+      px(ctx, x - 6 + col2 * 4, y - 27 + row2 * 6, 3, 4,
+        items[(row2 * 4 + col2) % items.length]);
+    }
+  }
+  // Payment panel
+  px(ctx, x - 8, y - 9, 7, 6, '#102070');
+  px(ctx, x - 6, y - 8, 5, 2, '#4468B0');   // buttons
+  px(ctx, x - 6, y - 5, 5, 1, '#304888');
+  // Coin slot
+  px(ctx, x - 1, y - 9, 4, 3, '#102070');
+  px(ctx, x, y - 8, 2, 1, '#000000');
+  // Dispense tray
+  px(ctx, x - 8, y - 2, 16, 4, '#1030A0');
+  // Glow animation
+  if (tick % 60 < 45) {
+    ctx.fillStyle = '#6898D850';
+    ctx.fillRect(x - 7, y - 28, 14, 16);
+  }
+}
+
+// trophy_shelf → Awards & Trophy Shelf
+function drawTrophyShelf(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Frame
+  px(ctx, x - 11, y - 28, 22, 24, OL);
+  px(ctx, x - 10, y - 27, 20, 22, WD);
+  px(ctx, x - 9, y - 26, 18, 20, '#6A4A28');
+  // Shelf board
+  px(ctx, x - 9, y - 15, 18, 2, WM);
+  // Gold trophy top
+  fillPixelEllipse(ctx, x - 5, y - 24, 3, 2, GLD);
+  px(ctx, x - 6, y - 23, 2, 1, GLL);
+  px(ctx, x - 6, y - 22, 6, 4, GLD);
+  px(ctx, x - 5, y - 18, 4, 3, WD);  // trophy base
+  // Silver trophy
+  fillPixelEllipse(ctx, x + 2, y - 24, 3, 2, '#C0C0C0');
+  px(ctx, x + 1, y - 23, 2, 1, '#E0E0E0');
+  px(ctx, x + 1, y - 22, 5, 4, '#C0C0C0');
+  px(ctx, x + 2, y - 18, 3, 3, WD);
+  // Small medals/ribbons on lower shelf
+  px(ctx, x - 7, y - 12, 4, 4, GLD);
+  px(ctx, x - 2, y - 12, 4, 4, '#C0C0C0');
+  px(ctx, x + 4, y - 12, 4, 4, '#CD8032');
+}
+
+// aquarium → Office Fish Tank
+function drawAquarium(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Tank frame (metal)
+  px(ctx, x - 13, y - 24, 26, 20, OL);
+  px(ctx, x - 12, y - 23, 24, 18, MM);
+  // Water interior
+  px(ctx, x - 11, y - 22, 22, 16, '#1A4A7A');
+  // Water surface shimmer
+  px(ctx, x - 11, y - 22, 22, 3, '#2A6AA8');
+  if (tick % 30 < 20) {
+    px(ctx, x - 8, y - 22, 6, 1, '#4A88C8');
+    px(ctx, x + 2, y - 22, 5, 1, '#4A88C8');
+  }
+  // Fish animation
+  const fx = x + Math.round(Math.sin(tick * 0.03) * 8);
+  px(ctx, fx - 2, y - 16, 5, 3, '#FF8030');  // fish body
+  px(ctx, fx + 3, y - 16, 2, 3, '#FF6010');  // tail
+  px(ctx, fx - 2, y - 15, 1, 1, '#FFFFFF');  // fish eye
+  // Second fish
+  const fx2 = x + Math.round(Math.cos(tick * 0.04) * 7);
+  px(ctx, fx2 - 2, y - 10, 4, 2, '#30C0FF');
+  px(ctx, fx2 + 2, y - 10, 2, 2, '#20A0E0');
+  // Gravel bottom
+  for (let gx = x - 10; gx < x + 10; gx += 3) {
+    px(ctx, gx, y - 7, 2, 2, '#7A8A6A');
+  }
+  // Bubbles
+  if (tick % 20 < 14) {
+    ctx.fillStyle = '#88CCEE70';
+    ctx.fillRect(x - 5, y - 8 - (tick % 10), 2, 2);
+    ctx.fillRect(x + 4, y - 6 - (tick % 12), 1, 1);
+  }
+}
+
+// marble_round_table → Marble Meeting Table
+function drawMarbleRoundTable(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Central pedestal
+  px(ctx, x - 3, y - 4, 6, 4, MBD);
+  px(ctx, x - 5, y - 1, 10, 2, MBD);
+  // Round marble top (outlined)
+  fillPixelEllipse(ctx, x, y - 12, 14, 8, OL);
+  fillPixelEllipse(ctx, x, y - 12, 13, 7, MBL);
+  // Marble surface sheen
+  fillPixelEllipse(ctx, x - 4, y - 14, 5, 3, '#E8F2F5');
+}
+
+// cloud_seat → Floating Cloud Pillow
+function drawCloudSeat(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  const floatY = y - 8 + Math.sin(tick * 0.03) * 1.5;
+  ctx.save();
+  // Shadow
+  fillPixelEllipse(ctx, x, y + 2, 7, 3, 'rgba(12, 20, 35, 0.2)');
+  // Cloud body
+  ctx.globalAlpha = 0.9;
+  fillPixelEllipse(ctx, x, floatY, 9, 5, '#E8EEFF');
+  fillPixelEllipse(ctx, x - 5, floatY - 1, 5, 4, '#F0F2FF');
+  fillPixelEllipse(ctx, x + 5, floatY - 1, 5, 4, '#F0F2FF');
+  fillPixelEllipse(ctx, x, floatY - 4, 6, 4, '#FFFFFF');
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
 // ---------------------------------------------------------------------------
-// Individual furniture draw functions — Greek/Olympus Theme
+// Greek Thematic Items — kept as Olympus concept, cleaner pixel art style
 // ---------------------------------------------------------------------------
-
-// desk → Marble Table
-function drawDesk(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Marble table top
-  drawFlatSurface(ctx, x, y, PALETTE.marbleLight);
-  // Oracle Mirror (monitor)
-  const monY = y - 26;
-  px(ctx, x - 8, monY - 12, 16, 12, PALETTE.gold);
-  px(ctx, x - 6, monY - 10, 12, 8, '#DDE8F2');
-  // Mystic flicker
-  if (tick % 60 < 55) {
-    px(ctx, x - 4, monY - 8, 8, 4, PALETTE.goldDeep);
-  }
-  // Gold stand
-  px(ctx, x - 2, monY, 4, 3, PALETTE.gold);
-  // Stone tablet (keyboard)
-  px(ctx, x - 6, y - 10, 12, 4, PALETTE.marbleDark);
-  px(ctx, x - 5, y - 9, 10, 2, PALETTE.marbleShadow);
-}
-
-// chair → Small Throne
-function drawChair(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Marble seat
-  px(ctx, x - 8, y - 6, 16, 4, '#F5F5F5');
-  // Marble back
-  px(ctx, x - 8, y - 16, 3, 12, '#E0E0E0');
-  px(ctx, x + 5, y - 16, 3, 12, '#E0E0E0');
-  px(ctx, x - 8, y - 16, 16, 3, '#E0E0E0');
-  // Gold trim on back top
-  px(ctx, x - 8, y - 17, 16, 1, '#FFD700');
-  // Stone legs
-  px(ctx, x - 6, y - 2, 2, 4, '#CFD8DC');
-  px(ctx, x + 4, y - 2, 2, 4, '#CFD8DC');
-  // Stone base
-  px(ctx, x - 7, y + 2, 3, 2, '#B0BEC5');
-  px(ctx, x + 4, y + 2, 3, 2, '#B0BEC5');
-}
-
-// big_desk → Zeus's Grand Throne
-function drawBigDesk(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Golden marble surface
-  drawFlatSurface(ctx, x, y, '#FFF8E1');
-  // Tall gold back panel
-  px(ctx, x - 16, y - 34, 32, 16, '#FFD700');
-  px(ctx, x - 14, y - 32, 28, 12, '#FFC107');
-  // Lightning accent on back
-  px(ctx, x - 2, y - 30, 4, 8, '#FFEB3B');
-  px(ctx, x - 1, y - 32, 2, 2, '#FFEB3B');
-  px(ctx, x, y - 22, 2, 2, '#FFEB3B');
-  // Lightning bolt flicker
-  if (tick % 80 < 60) {
-    px(ctx, x - 1, y - 28, 2, 4, '#FFF9C4');
-  }
-  // Gold armrests
-  px(ctx, x - 16, y - 18, 3, 6, '#DAA520');
-  px(ctx, x + 13, y - 18, 3, 6, '#DAA520');
-}
-
-// monitor → Oracle Mirror
-function drawMonitor(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Gold frame
-  px(ctx, x - 10, y - 22, 20, 14, PALETTE.gold);
-  // Marble-vision screen
-  px(ctx, x - 8, y - 20, 16, 10, tick % 90 < 85 ? '#DDE8F2' : '#EEF4F8');
-  // Gold rune lines
-  if (tick % 90 < 85) {
-    for (let i = 0; i < 4; i++) {
-      const w = 4 + Math.floor(Math.random() * 8);
-      px(ctx, x - 6, y - 18 + i * 2, w, 1, PALETTE.goldDeep);
-    }
-  }
-  // Gold stand
-  px(ctx, x - 2, y - 8, 4, 4, PALETTE.gold);
-}
-
-// floor_window → Temple Opening
-function drawFloorWindow(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Marble archway frame
-  px(ctx, x - 18, y - 40, 36, 36, '#ECEFF1');
-  // Sky inside
-  const skyColor = tick % 200 < 100 ? '#E1F5FE' : '#B3E5FC';
-  px(ctx, x - 16, y - 38, 32, 32, skyColor);
-  // Arch top (rounded marble)
-  px(ctx, x - 14, y - 38, 28, 4, '#F5F5F5');
-  // Cloud ellipse
-  ctx.fillStyle = '#FFFFFFC0';
-  ctx.beginPath();
-  ctx.ellipse(x + (tick % 80) / 4 - 10, y - 28, 8, 3, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Second cloud
-  ctx.fillStyle = '#FFFFFF90';
-  ctx.beginPath();
-  ctx.ellipse(x - (tick % 60) / 3 + 6, y - 20, 6, 2, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Marble columns on sides
-  px(ctx, x - 18, y - 36, 3, 32, '#CFD8DC');
-  px(ctx, x + 15, y - 36, 3, 32, '#CFD8DC');
-}
-
-// coffee_machine → Ambrosia Fountain
-function drawCoffeeMachine(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Gold base pillar
-  px(ctx, x - 4, y - 8, 8, 8, '#DAA520');
-  // Gold bowl
-  px(ctx, x - 8, y - 14, 16, 6, '#FFD700');
-  px(ctx, x - 6, y - 12, 12, 2, '#FFC107');
-  // Upper tier
-  px(ctx, x - 4, y - 22, 8, 8, '#FFD700');
-  px(ctx, x - 3, y - 20, 6, 4, '#B3E5FC');
-  // Divine water drops
-  if (tick % 20 < 14) {
-    px(ctx, x - 5, y - 14 - (tick % 6), 2, 2, '#B3E5FC');
-    px(ctx, x + 3, y - 12 - (tick % 8), 2, 2, '#B3E5FC');
-  }
-  // Golden sparkles instead of steam
-  if (tick % 30 < 20) {
-    ctx.fillStyle = '#FFD70080';
-    ctx.fillRect(x - 1, y - 26 - (tick % 10), 2, 2);
-    ctx.fillRect(x + 2, y - 28 - (tick % 8), 1, 1);
-  }
-}
-
-// snack_shelf → Offering Shelf
-function drawSnackShelf(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Stone shelf frame
-  px(ctx, x - 10, y - 30, 20, 26, '#9E9E9E');
-  // Stone shelves
-  px(ctx, x - 8, y - 20, 16, 2, '#757575');
-  px(ctx, x - 8, y - 12, 16, 2, '#757575');
-  // Offering items — fruits
-  px(ctx, x - 6, y - 28, 4, 4, '#FF7043'); // Orange fruit
-  px(ctx, x, y - 26, 4, 4, '#7CB342');     // Green fruit
-  px(ctx, x + 4, y - 28, 3, 4, '#FFD54F'); // Gold offering
-  px(ctx, x - 6, y - 18, 5, 4, '#FF7043'); // Orange
-  px(ctx, x + 2, y - 18, 4, 4, '#FFD54F'); // Gold item
-}
-
-// water_cooler → Sacred Spring
-function drawWaterCooler(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Stone body
-  px(ctx, x - 6, y - 20, 12, 16, '#757575');
-  // Stone bowl on top
-  px(ctx, x - 5, y - 24, 10, 4, '#9E9E9E');
-  px(ctx, x - 4, y - 22, 8, 2, '#9E9E9E');
-  // Clear blue water
-  const level = 4 + Math.sin(tick * 0.05) * 1;
-  px(ctx, x - 3, y - 20 - level, 6, level, '#4FC3F7');
-  // Water surface shimmer
-  if (tick % 40 < 30) {
-    px(ctx, x - 2, y - 20 - level, 4, 1, '#81D4FA');
-  }
-  // Stone spout
-  px(ctx, x + 4, y - 10, 3, 3, '#9E9E9E');
-}
-
-// small_table → Stone Pedestal
-function drawSmallTable(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  drawFlatSurface(ctx, x, y, '#ECEFF1');
-}
-
-// round_table → Amphora
-function drawRoundTable(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Amphora body (terracotta)
-  ctx.fillStyle = '#FFCC80';
-  ctx.beginPath();
-  ctx.ellipse(x, y - 10, 7, 5, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Gold rim
-  ctx.strokeStyle = '#DAA520';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  // Narrow neck
-  px(ctx, x - 3, y - 18, 6, 5, '#FFCC80');
-  // Lip/rim
-  px(ctx, x - 4, y - 19, 8, 2, '#DAA520');
-  // Dark terracotta stripe pattern
-  px(ctx, x - 5, y - 9, 10, 1, '#8D6E63');
-  // Base
-  px(ctx, x - 3, y - 5, 6, 2, '#FFCC80');
-}
-
-// long_table → Stone Bench/Table
-function drawLongTable(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  drawFlatSurface(ctx, x, y, '#ECEFF1');
-  // Stone supports visible
-  px(ctx, x - 8, y - 4, 3, 4, '#CFD8DC');
-  px(ctx, x + 5, y - 4, 3, 4, '#CFD8DC');
-}
-
-// whiteboard_obj → Stone Tablet
-function drawWhiteboard(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Stone frame
-  px(ctx, x - 18, y - 36, 36, 28, '#757575');
-  // Stone surface
-  px(ctx, x - 16, y - 34, 32, 24, '#9E9E9E');
-  // Carved text lines (lighter stone)
-  ctx.strokeStyle = '#B0BEC5';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(x - 12, y - 28);
-  ctx.lineTo(x + 12, y - 28);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(x - 12, y - 24);
-  ctx.lineTo(x + 8, y - 24);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(x - 12, y - 20);
-  ctx.lineTo(x + 10, y - 20);
-  ctx.stroke();
-  // Golden dot (animated)
-  if (tick % 60 < 40) {
-    ctx.fillStyle = '#FFD700';
-    ctx.beginPath();
-    ctx.arc(x + 10, y - 28, 2, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  // Stone base/tray
-  px(ctx, x - 14, y - 8, 28, 3, '#616161');
-}
-
-// bookshelf → Scroll Shelf
-function drawBookshelf(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Dark wood frame
-  px(ctx, x - 12, y - 34, 24, 30, '#8D6E63');
-  // Shelves
-  px(ctx, x - 10, y - 22, 20, 2, '#6D4C41');
-  px(ctx, x - 10, y - 12, 20, 2, '#6D4C41');
-  // Scrolls instead of books
-  const scrollColors = ['#FFCC80', '#D7CCC8', '#FFF8E1', '#FFCC80', '#D7CCC8', '#FFF8E1', '#FFCC80', '#D7CCC8'];
-  for (let shelf = 0; shelf < 3; shelf++) {
-    const shelfY = y - 32 + shelf * 10;
-    let bx = x - 9;
-    for (let i = 0; i < 4 + shelf; i++) {
-      const w = 2 + Math.floor(i * 0.5);
-      const h = 6 + (i % 2);
-      px(ctx, bx, shelfY + (8 - h), w, h, scrollColors[(shelf * 4 + i) % scrollColors.length]);
-      // Scroll end cap (small circle look)
-      px(ctx, bx, shelfY + (8 - h), w, 1, '#DAA520');
-      bx += w + 1;
-      if (bx > x + 8) break;
-    }
-  }
-}
-
-// reading_chair → Reading Kline (Greek reclining couch)
-function drawReadingChair(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Marble cushion
-  px(ctx, x - 10, y - 10, 20, 8, '#EFE7DA');
-  px(ctx, x - 8, y - 8, 16, 4, '#F8F2E9');
-  // Marble frame
-  px(ctx, x - 10, y - 22, 20, 14, PALETTE.marbleMid);
-  px(ctx, x - 8, y - 20, 16, 10, PALETTE.marbleLight);
-  // Gold headrest stripe
-  px(ctx, x - 10, y - 20, 4, 8, PALETTE.gold);
-  // Side supports
-  px(ctx, x - 12, y - 14, 3, 8, PALETTE.marbleDark);
-  px(ctx, x + 9, y - 14, 3, 8, PALETTE.marbleDark);
-}
-
-// sofa → Greek Kline
-function drawSofa(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Marble frame seat
-  px(ctx, x - 16, y - 8, 32, 8, PALETTE.marbleLight);
-  // Ivory cushion
-  px(ctx, x - 14, y - 6, 28, 4, '#EFE7DA');
-  // Marble back
-  px(ctx, x - 16, y - 20, 32, 14, PALETTE.marbleLight);
-  // Ivory back cushion
-  px(ctx, x - 14, y - 18, 28, 10, '#F8F2E9');
-  // Marble armrests
-  px(ctx, x - 18, y - 16, 4, 12, PALETTE.marbleMid);
-  px(ctx, x + 14, y - 16, 4, 12, PALETTE.marbleMid);
-  // Gold accent throw
-  px(ctx, x - 1, y - 6, 2, 4, PALETTE.gold);
-}
-
-// coffee_table → Low Stone Table
-function drawCoffeeTable(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  drawFlatSurface(ctx, x, y, '#ECEFF1');
-  // Stone legs visible
-  px(ctx, x - 6, y - 2, 2, 4, '#CFD8DC');
-  px(ctx, x + 4, y - 2, 2, 4, '#CFD8DC');
-}
-
-// server_rack → Oracle Pillar
-function drawServerRack(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Marble base
-  px(ctx, x - 10, y - 4, 20, 4, PALETTE.marbleDark);
-  // Marble column
-  px(ctx, x - 8, y - 36, 16, 32, PALETTE.marbleLight);
-  px(ctx, x - 6, y - 34, 12, 28, '#ECE3D6');
-  // Column capital (top)
-  px(ctx, x - 10, y - 38, 20, 4, PALETTE.gold);
-  // Glowing runes instead of LEDs
-  for (let i = 0; i < 4; i++) {
-    const uy = y - 32 + i * 7;
-    const runeOn = ((tick + i * 7) % 20) < 14;
-    px(ctx, x - 4, uy + 1, 3, 2, runeOn ? PALETTE.goldBright : '#6E5A2C');
-    px(ctx, x + 1, uy + 1, 3, 2, ((tick + i * 3) % 30) < 25 ? '#D8C07D' : '#7D6A36');
-    // Rune glow shimmer
-    if (runeOn && tick % 10 < 6) {
-      ctx.fillStyle = '#F2D67555';
-      ctx.fillRect(x - 5, uy, 10, 4);
-    }
-  }
-}
-
-// potted_plant → Olive Tree
-function drawPottedPlant(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Stone base (pot)
-  px(ctx, x - 5, y - 8, 10, 8, '#9E9E9E');
-  px(ctx, x - 6, y - 8, 12, 2, '#757575');
-  // Soil/earth
-  px(ctx, x - 4, y - 10, 8, 3, '#5D4037');
-  // Brown trunk
-  px(ctx, x - 1, y - 16, 2, 7, '#5D4037');
-  // Olive leaves (swaying)
-  const sway = Math.sin(tick * 0.04) * 1.5;
-  ctx.fillStyle = '#558B2F';
-  ctx.beginPath();
-  ctx.ellipse(x + sway, y - 18, 6, 4, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#7CB342';
-  ctx.beginPath();
-  ctx.ellipse(x - 3 + sway * 0.5, y - 22, 5, 3, -0.3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#689F38';
-  ctx.beginPath();
-  ctx.ellipse(x + 3 - sway * 0.5, y - 20, 4, 3, 0.3, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-// carpet → Greek Mosaic (top-down rectangular)
-function drawCarpet(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  const half = TILE_PX / 2 - 2;
-  // Cream base rectangle
-  ctx.fillStyle = '#FFF8E180';
-  ctx.fillRect(x - half, y - half, half * 2, half * 2);
-  // Gold border
-  ctx.strokeStyle = '#DAA52080';
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(x - half, y - half, half * 2, half * 2);
-  // Inner geometric pattern — gold inset
-  const inner = TILE_PX / 4;
-  ctx.fillStyle = '#DAA52050';
-  ctx.fillRect(x - inner, y - inner, inner * 2, inner * 2);
-  // Blue accent center
-  ctx.fillStyle = '#4FC3F740';
-  ctx.beginPath();
-  ctx.arc(x, y, 3, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-// wall_clock → Sundial
-function drawWallClock(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Gold sundial disc
-  ctx.fillStyle = '#FFD700';
-  ctx.beginPath();
-  ctx.arc(x, y - 20, 8, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#DAA520';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  // Hour markings
-  for (let i = 0; i < 8; i++) {
-    const angle = (i / 8) * Math.PI * 2;
-    const mx = x + Math.cos(angle) * 6;
-    const my = y - 20 + Math.sin(angle) * 6;
-    ctx.fillStyle = '#DAA520';
-    ctx.fillRect(Math.round(mx), Math.round(my), 1, 1);
-  }
-  // Shadow pointer (gnomon)
-  const shadowAngle = (tick * 0.003) % (Math.PI * 2);
-  ctx.strokeStyle = '#5D4037';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(x, y - 20);
-  ctx.lineTo(x + Math.cos(shadowAngle) * 5, y - 20 + Math.sin(shadowAngle) * 5);
-  ctx.stroke();
-  // Center gold dot
-  ctx.fillStyle = '#DAA520';
-  ctx.beginPath();
-  ctx.arc(x, y - 20, 1, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-// poster → Greek Mural
-function drawPoster(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Frame
-  px(ctx, x - 8, y - 30, 16, 20, '#DAA520');
-  // Cream background
-  px(ctx, x - 6, y - 28, 12, 16, '#FFF8E1');
-  // Greek meander/key pattern (simplified gold lines)
-  ctx.strokeStyle = '#DAA520';
-  ctx.lineWidth = 1;
-  // Top meander
-  ctx.beginPath();
-  ctx.moveTo(x - 4, y - 24);
-  ctx.lineTo(x - 4, y - 22);
-  ctx.lineTo(x - 2, y - 22);
-  ctx.lineTo(x - 2, y - 24);
-  ctx.lineTo(x, y - 24);
-  ctx.lineTo(x, y - 22);
-  ctx.lineTo(x + 2, y - 22);
-  ctx.lineTo(x + 2, y - 24);
-  ctx.lineTo(x + 4, y - 24);
-  ctx.stroke();
-  // Bottom meander
-  ctx.beginPath();
-  ctx.moveTo(x - 4, y - 18);
-  ctx.lineTo(x - 4, y - 16);
-  ctx.lineTo(x - 2, y - 16);
-  ctx.lineTo(x - 2, y - 18);
-  ctx.lineTo(x, y - 18);
-  ctx.lineTo(x, y - 16);
-  ctx.lineTo(x + 2, y - 16);
-  ctx.lineTo(x + 2, y - 18);
-  ctx.lineTo(x + 4, y - 18);
-  ctx.stroke();
-}
-
-// meeting_chair → Marble Bench
-function drawMeetingChair(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Marble seat
-  px(ctx, x - 6, y - 6, 12, 4, '#ECEFF1');
-  // Marble back
-  px(ctx, x - 6, y - 14, 12, 10, '#E0E0E0');
-  // Gold trim
-  px(ctx, x - 6, y - 14, 12, 1, '#FFD700');
-  // Stone legs
-  px(ctx, x - 4, y - 2, 2, 4, '#CFD8DC');
-  px(ctx, x + 2, y - 2, 2, 4, '#CFD8DC');
-}
-
-// door_mat → Temple Steps (top-down circular)
-function drawDoorMat(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  const r = TILE_PX / 3;
-  // Light gray marble step
-  ctx.fillStyle = '#CFD8DC';
-  ctx.beginPath();
-  ctx.ellipse(x, y, r, r, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Step edge
-  ctx.strokeStyle = '#B0BEC5';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  // Inner step
-  ctx.fillStyle = '#E0E0E0';
-  ctx.beginPath();
-  ctx.ellipse(x, y, r * 0.7, r * 0.7, 0, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-// standing_desk → Marble Column Desk
-function drawStandingDesk(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Marble column desk surface (higher)
-  drawFlatSurface(ctx, x, y, PALETTE.marbleLight);
-  // Gold rim on top
-  px(ctx, x - 10, y - 18, 20, 1, PALETTE.gold);
-  // Marble pillar legs
-  px(ctx, x - 8, y - 4, 3, 6, PALETTE.marbleMid);
-  px(ctx, x + 5, y - 4, 3, 6, PALETTE.marbleMid);
-  // Oracle Mirror on stand
-  const monY = y - 30;
-  px(ctx, x - 8, monY - 12, 16, 12, PALETTE.gold);
-  px(ctx, x - 6, monY - 10, 12, 8, '#DDE8F2');
-  if (tick % 60 < 55) {
-    px(ctx, x - 4, monY - 8, 8, 4, PALETTE.goldDeep);
-  }
-  // Gold stand
-  px(ctx, x - 2, monY, 4, 5, PALETTE.gold);
-  // Stone tablet (keyboard)
-  px(ctx, x - 6, y - 14, 12, 4, PALETTE.marbleDark);
-  px(ctx, x - 5, y - 13, 10, 2, PALETTE.marbleShadow);
-}
-
-// dual_monitor → Double Oracle Mirror
-function drawDualMonitor(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Left Oracle Mirror
-  px(ctx, x - 16, y - 24, 14, 10, PALETTE.gold);
-  px(ctx, x - 14, y - 22, 10, 6, tick % 80 < 75 ? '#E5EDF5' : '#F3F7FB');
-  // Right Oracle Mirror
-  px(ctx, x + 2, y - 24, 14, 10, PALETTE.gold);
-  px(ctx, x + 4, y - 22, 10, 6, tick % 80 < 70 ? '#DBE6F0' : '#EEF3F8');
-  // Gold rune lines on left
-  if (tick % 80 < 75) {
-    for (let i = 0; i < 3; i++) {
-      const w = 3 + ((tick + i * 7) % 5);
-      px(ctx, x - 13, y - 21 + i * 2, w, 1, PALETTE.goldDeep);
-    }
-  }
-  // Gold stands
-  px(ctx, x - 10, y - 14, 3, 4, PALETTE.gold);
-  px(ctx, x + 7, y - 14, 3, 4, PALETTE.gold);
-}
-
-// arcade_machine → Lyre (Musical Instrument)
-function drawArcadeMachine(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Wood base
-  px(ctx, x - 8, y - 8, 16, 8, '#8D6E63');
-  // Gold frame — lyre arms curving up
-  px(ctx, x - 10, y - 36, 3, 28, '#DAA520');
-  px(ctx, x + 7, y - 36, 3, 28, '#DAA520');
-  // Top crossbar
-  px(ctx, x - 10, y - 38, 20, 3, '#DAA520');
-  // Gold strings (vertical lines)
-  const stringShades = ['#FFD700', '#FFC107', '#FFD700', '#FFEB3B', '#FFD700'];
-  for (let i = 0; i < 5; i++) {
-    // Strings glow — alternate gold shades per tick
-    const shade = stringShades[(i + Math.floor(tick / 8)) % stringShades.length];
-    px(ctx, x - 6 + i * 3, y - 35, 1, 26, shade);
-  }
-  // Decorative base curve
-  px(ctx, x - 6, y - 10, 12, 2, '#6D4C41');
-}
-
-// vending_machine → Offering Altar
-function drawVendingMachine(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Dark stone base
-  px(ctx, x - 10, y - 12, 20, 12, '#757575');
-  // Stone top platform
-  px(ctx, x - 12, y - 16, 24, 4, '#9E9E9E');
-  // Gold offerings on altar
-  px(ctx, x - 6, y - 18, 3, 2, '#FFD700');
-  px(ctx, x + 3, y - 18, 3, 2, '#FFD700');
-  // Sacred flame on top (animated)
-  const flameH = 6 + Math.sin(tick * 0.1) * 2;
-  // Outer flame
-  ctx.fillStyle = '#FFAB00';
-  ctx.beginPath();
-  ctx.ellipse(x, y - 20 - flameH / 2, 4, flameH / 2, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Inner flame
-  ctx.fillStyle = '#FF6D00';
-  ctx.beginPath();
-  ctx.ellipse(x, y - 20 - flameH / 2 + 1, 2, flameH / 3, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Flame tip
-  if (tick % 10 < 7) {
-    px(ctx, x - 1, y - 22 - flameH, 2, 2, '#FFEB3B');
-  }
-  // Stone pillars on sides
-  px(ctx, x - 10, y - 30, 3, 18, '#616161');
-  px(ctx, x + 7, y - 30, 3, 18, '#616161');
-}
-
-// trophy_shelf → Laurel Display
-function drawTrophyShelf(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Wood shelf frame
-  px(ctx, x - 10, y - 24, 20, 20, '#8D6E63');
-  // Shelf
-  px(ctx, x - 8, y - 14, 16, 2, '#6D4C41');
-  // Gold laurel wreath
-  ctx.strokeStyle = '#FFD700';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(x - 4, y - 20, 3, 0, Math.PI * 2);
-  ctx.stroke();
-  px(ctx, x - 5, y - 24, 2, 1, '#FFD700');
-  // Silver laurel
-  ctx.strokeStyle = '#B0BEC5';
-  ctx.beginPath();
-  ctx.arc(x + 1, y - 20, 3, 0, Math.PI * 2);
-  ctx.stroke();
-  px(ctx, x, y - 24, 2, 1, '#B0BEC5');
-  // Bronze laurel
-  ctx.strokeStyle = '#CD8032';
-  ctx.beginPath();
-  ctx.arc(x + 6, y - 20, 3, 0, Math.PI * 2);
-  ctx.stroke();
-  px(ctx, x + 5, y - 24, 2, 1, '#CD8032');
-  // Lower shelf items
-  px(ctx, x - 5, y - 12, 3, 3, '#FFD700');
-  px(ctx, x + 3, y - 12, 3, 3, '#B0BEC5');
-}
-
-// aquarium → Sacred Pool
-function drawAquarium(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Stone rim
-  px(ctx, x - 12, y - 22, 24, 18, '#CFD8DC');
-  // Water interior
-  px(ctx, x - 10, y - 20, 20, 14, '#BBDEFB');
-  // Water surface shimmer
-  px(ctx, x - 10, y - 20, 20, 2, '#E3F2FD');
-  // Gentle ripple animation
-  const ripple = Math.sin(tick * 0.04) * 2;
-  ctx.strokeStyle = '#90CAF940';
-  ctx.lineWidth = 0.5;
-  ctx.beginPath();
-  ctx.moveTo(x - 8, y - 18 + ripple * 0.3);
-  ctx.quadraticCurveTo(x, y - 17 + ripple, x + 8, y - 18 + ripple * 0.3);
-  ctx.stroke();
-  // Lotus flowers on surface
-  ctx.fillStyle = '#F8BBD0';
-  ctx.beginPath();
-  ctx.ellipse(x - 4 + ripple * 0.5, y - 19, 2.5, 1.5, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#F48FB1';
-  ctx.beginPath();
-  ctx.ellipse(x + 4 - ripple * 0.3, y - 18, 2, 1, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Stone bottom
-  px(ctx, x - 10, y - 8, 20, 2, '#B0BEC5');
-}
-
-// marble_round_table → Marble Round Table
-function drawMarbleRoundTable(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Marble round table top (ellipse)
-  ctx.fillStyle = '#F5F5F5';
-  ctx.beginPath();
-  ctx.ellipse(x, y - 14, 12, 7, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Gold border
-  ctx.strokeStyle = '#FFD700';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  // Shadow edge
-  ctx.fillStyle = '#E0E0E0';
-  ctx.beginPath();
-  ctx.ellipse(x, y - 13, 11, 6, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Central marble pillar leg
-  px(ctx, x - 2, y - 10, 4, 10, '#ECEFF1');
-  px(ctx, x - 3, y - 10, 6, 1, '#CFD8DC'); // top cap
-  px(ctx, x - 3, y, 6, 2, '#B0BEC5'); // base
-}
-
-// cloud_seat → Cloud Seat
-function drawCloudSeat(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  const { x, y } = gridToScreen({ col, row });
-  // Cloud floating animation
-  const floatOffset = Math.sin(tick * 0.03) * 1;
-  const cloudY = y - 8 + floatOffset;
-  // Draw cloud shape (multiple overlapping circles)
-  ctx.globalAlpha = 0.8;
-  ctx.fillStyle = '#FFFFFF';
-  // Main body
-  ctx.beginPath();
-  ctx.ellipse(x, cloudY, 8, 4, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Left puff
-  ctx.beginPath();
-  ctx.ellipse(x - 5, cloudY - 1, 4, 3, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Right puff
-  ctx.beginPath();
-  ctx.ellipse(x + 5, cloudY - 1, 4, 3, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Top puff
-  ctx.beginPath();
-  ctx.ellipse(x, cloudY - 3, 5, 3, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  // Shadow underneath
-  ctx.fillStyle = '#E0E0E040';
-  ctx.beginPath();
-  ctx.ellipse(x, y + 2, 6, 2, 0, 0, Math.PI * 2);
-  ctx.fill();
-}
 
 interface ColumnSpec {
   baseWidth: number;
@@ -808,35 +823,40 @@ function drawColumnCore(
 ): { topY: number } {
   const shaftTop = y - (spec.baseDepth + spec.shaftHeight);
 
-  // Base
-  px(ctx, x - Math.floor(spec.baseWidth / 2), y - spec.baseDepth, spec.baseWidth, spec.baseDepth, PALETTE.marbleShadow);
-  px(ctx, x - Math.floor((spec.baseWidth - 4) / 2), y - spec.baseDepth - 3, spec.baseWidth - 4, 3, PALETTE.marbleDark);
-  px(ctx, x - Math.floor((spec.baseWidth - 6) / 2), y - spec.baseDepth - 5, spec.baseWidth - 6, 2, PALETTE.goldDeep);
+  // Base with outline
+  px(ctx, x - Math.floor(spec.baseWidth/2) - 1, y - spec.baseDepth - 1, spec.baseWidth + 2, spec.baseDepth + 2, OL);
+  px(ctx, x - Math.floor(spec.baseWidth/2), y - spec.baseDepth, spec.baseWidth, spec.baseDepth, MBD);
+  px(ctx, x - Math.floor((spec.baseWidth-4)/2), y - spec.baseDepth - 3, spec.baseWidth - 4, 3, MBM);
 
-  // Shaft + side depth
-  px(ctx, x - Math.floor(spec.shaftWidth / 2), shaftTop, spec.shaftWidth, spec.shaftHeight, PALETTE.marbleLight);
-  px(ctx, x - Math.floor(spec.shaftWidth / 2), shaftTop, 2, spec.shaftHeight, PALETTE.marbleMid);
-  px(ctx, x + Math.floor(spec.shaftWidth / 2) - 2, shaftTop, 2, spec.shaftHeight, '#FFF9F0');
+  // Gold base ring
+  px(ctx, x - Math.floor((spec.baseWidth-6)/2), y - spec.baseDepth - 5, spec.baseWidth - 6, 2, GLD);
 
-  // Fluting
-  for (let fx = x - Math.floor(spec.shaftWidth / 2) + 2; fx < x + Math.floor(spec.shaftWidth / 2) - 2; fx += spec.fluteStep) {
-    px(ctx, fx, shaftTop + 2, 1, spec.shaftHeight - 3, '#D0C1AD');
+  // Shaft (outlined)
+  px(ctx, x - Math.floor(spec.shaftWidth/2) - 1, shaftTop - 1, spec.shaftWidth + 2, spec.shaftHeight + 2, OL);
+  px(ctx, x - Math.floor(spec.shaftWidth/2), shaftTop, spec.shaftWidth, spec.shaftHeight, MBL);
+  px(ctx, x - Math.floor(spec.shaftWidth/2), shaftTop, 2, spec.shaftHeight, MBM);  // left shadow
+  px(ctx, x + Math.floor(spec.shaftWidth/2) - 2, shaftTop, 2, spec.shaftHeight, '#F5F9FC');  // right highlight
+
+  // Fluting grooves
+  for (let fx = x - Math.floor(spec.shaftWidth/2) + 2; fx < x + Math.floor(spec.shaftWidth/2) - 2; fx += spec.fluteStep) {
+    px(ctx, fx, shaftTop + 2, 1, spec.shaftHeight - 4, MBM);
   }
 
-  // Capital
-  px(ctx, x - Math.floor(spec.capWidth / 2), shaftTop - spec.capHeight, spec.capWidth, spec.capHeight, '#F6EDDF');
-  px(ctx, x - Math.floor((spec.capWidth + 4) / 2), shaftTop - spec.capHeight - 3, spec.capWidth + 4, 3, '#E7D8C5');
+  // Capital (top)
+  px(ctx, x - Math.floor(spec.capWidth/2) - 1, shaftTop - spec.capHeight - 1, spec.capWidth + 2, spec.capHeight + 2, OL);
+  px(ctx, x - Math.floor(spec.capWidth/2), shaftTop - spec.capHeight, spec.capWidth, spec.capHeight, '#EEE8DC');
+  px(ctx, x - Math.floor((spec.capWidth+4)/2), shaftTop - spec.capHeight - 3, spec.capWidth + 4, 3, MBM);
 
   // Gold bands
   for (let i = 0; i < spec.goldBands; i++) {
     const bandY = shaftTop - spec.capHeight - 4 - i * 2;
-    px(ctx, x - Math.floor((spec.capWidth + 6) / 2), bandY, spec.capWidth + 6, 1, i % 2 === 0 ? PALETTE.gold : PALETTE.goldDeep);
+    px(ctx, x - Math.floor((spec.capWidth+6)/2), bandY, spec.capWidth + 6, 1, i % 2 === 0 ? GLD : GLD2);
   }
 
-  // Moving glint
+  // Moving glint on shaft
   if (tick % 110 < 72) {
     const gx = x + (tick % 14) - 7;
-    px(ctx, gx, shaftTop + 6, 1, Math.max(8, spec.shaftHeight - 18), '#FFF8DC');
+    px(ctx, gx, shaftTop + 6, 1, Math.max(8, spec.shaftHeight - 18), '#FFFCF0');
   }
 
   return { topY: shaftTop };
@@ -846,14 +866,8 @@ function drawColumnCore(
 function drawDoricColumn(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
   const { x, y } = gridToScreen({ col, row });
   drawColumnCore(ctx, x, y, tick, {
-    baseWidth: 16,
-    baseDepth: 5,
-    shaftWidth: 8,
-    shaftHeight: 20,
-    fluteStep: 3,
-    goldBands: 0,
-    capWidth: 12,
-    capHeight: 3,
+    baseWidth: 16, baseDepth: 5, shaftWidth: 8, shaftHeight: 20,
+    fluteStep: 3, goldBands: 0, capWidth: 12, capHeight: 3,
   });
 }
 
@@ -861,32 +875,20 @@ function drawDoricColumn(ctx: CanvasRenderingContext2D, col: number, row: number
 function drawTempleColumn(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
   const { x, y } = gridToScreen({ col, row });
   const { topY } = drawColumnCore(ctx, x, y, tick, {
-    baseWidth: 34,
-    baseDepth: 10,
-    shaftWidth: 18,
-    shaftHeight: 58,
-    fluteStep: 2,
-    goldBands: 6,
-    capWidth: 32,
-    capHeight: 7,
+    baseWidth: 34, baseDepth: 10, shaftWidth: 18, shaftHeight: 58,
+    fluteStep: 2, goldBands: 6, capWidth: 32, capHeight: 7,
   });
 
-  // Dramatic temple ornamentation
-  ctx.fillStyle = '#F4E8D6';
-  ctx.beginPath();
-  ctx.moveTo(x - 12, topY - 9);
-  ctx.lineTo(x, topY - 20);
-  ctx.lineTo(x + 12, topY - 9);
-  ctx.closePath();
-  ctx.fill();
-  px(ctx, x - 2, topY - 15, 4, 2, PALETTE.goldBright);
-  px(ctx, x - 14, topY - 2, 28, 2, PALETTE.gold);
-  px(ctx, x - 8, topY - 6, 3, 2, PALETTE.gold);
-  px(ctx, x + 5, topY - 6, 3, 2, PALETTE.gold);
-
+  // Dramatic pediment ornament
+  for (let yy = 0; yy <= 11; yy++) {
+    const half = 12 - yy;
+    px(ctx, x - half, topY - 9 - yy, half * 2 + 1, 1, '#F4E8D6');
+  }
+  px(ctx, x - 2, topY - 15, 4, 2, GLL);
+  px(ctx, x - 14, topY - 2, 28, 2, GLD);
   if (tick % 90 < 50) {
     px(ctx, x - 10, topY - 13, 2, 1, '#FFF3BF');
-    px(ctx, x + 8, topY - 11, 2, 1, '#FFF3BF');
+    px(ctx, x + 8,  topY - 11, 2, 1, '#FFF3BF');
   }
 }
 
@@ -894,22 +896,14 @@ function drawTempleColumn(ctx: CanvasRenderingContext2D, col: number, row: numbe
 function drawMarbleColumn(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
   const { x, y } = gridToScreen({ col, row });
   const { topY } = drawColumnCore(ctx, x, y, tick, {
-    baseWidth: 20,
-    baseDepth: 6,
-    shaftWidth: 10,
-    shaftHeight: 34,
-    fluteStep: 3,
-    goldBands: 1,
-    capWidth: 16,
-    capHeight: 3,
+    baseWidth: 20, baseDepth: 6, shaftWidth: 10, shaftHeight: 34,
+    fluteStep: 3, goldBands: 1, capWidth: 16, capHeight: 3,
   });
-
-  // Polished marble stripe + restrained gilding
+  // Polish stripe
   px(ctx, x - 1, topY + 2, 1, 34, '#FFFDF8');
   px(ctx, x + 2, topY + 5, 1, 10, '#F1E2CA');
-  px(ctx, x + 2, topY + 20, 1, 10, '#F1E2CA');
   if (tick % 120 < 84) {
-    px(ctx, x + 1, topY + 10 + (tick % 12), 1, 4, PALETTE.goldBright);
+    px(ctx, x + 1, topY + 10 + (tick % 12), 1, 4, GLL);
   }
 }
 
@@ -917,63 +911,70 @@ function drawMarbleColumn(ctx: CanvasRenderingContext2D, col: number, row: numbe
 function drawSacredBrazier(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
   const { x, y } = gridToScreen({ col, row });
   // Stone stand
-  px(ctx, x - 4, y - 12, 8, 10, '#9E9E9E');
+  px(ctx, x - 5, y - 14, 10, 12, OL);
+  px(ctx, x - 4, y - 13, 8, 10, MBM);
   // Bronze bowl
+  px(ctx, x - 9, y - 17, 18, 1, OL);
   px(ctx, x - 9, y - 16, 18, 4, '#CD8032');
-  px(ctx, x - 7, y - 14, 14, 2, '#DAA520');
-  // Flame
+  px(ctx, x - 7, y - 14, 14, 2, '#E0A050');  // bowl highlight
+  // Flame (animated)
   const flameH = 6 + Math.sin(tick * 0.11) * 2;
-  ctx.fillStyle = '#FFAB00';
-  ctx.beginPath();
-  ctx.ellipse(x, y - 18 - flameH / 2, 4, flameH / 2, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#FF6D00';
-  ctx.beginPath();
-  ctx.ellipse(x, y - 18 - flameH / 2 + 1, 2, flameH / 3, 0, 0, Math.PI * 2);
-  ctx.fill();
+  fillPixelEllipse(ctx, x, y - 18 - flameH * 0.5, 4, Math.round(flameH * 0.5), '#FFAB00');
+  fillPixelEllipse(ctx, x, y - 18 - flameH * 0.5 + 1, 2, Math.round(flameH * 0.3), '#FF6D00');
   if (tick % 12 < 8) {
-    px(ctx, x - 1, y - 20 - flameH, 2, 2, '#FFEB3B');
+    px(ctx, x - 1, y - 20 - Math.round(flameH), 2, 2, '#FFEB3B');
   }
 }
 
-// god_statue → Olympian Statue
+// god_statue → Olympian Deity Statue
 function drawGodStatue(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
   const { x, y } = gridToScreen({ col, row });
-  // Pedestal (double tier)
-  px(ctx, x - 10, y - 8, 20, 8, '#BEB3A3');
-  px(ctx, x - 8, y - 11, 16, 3, '#DED5C7');
-  px(ctx, x - 9, y - 12, 18, 1, PALETTE.goldDeep);
-  // Torso + drape
-  px(ctx, x - 4, y - 31, 8, 20, '#EEE7DB');
-  px(ctx, x - 3, y - 22, 1, 10, '#D7CBBB');
-  px(ctx, x + 2, y - 22, 1, 10, '#D7CBBB');
-  // Head + shoulders
-  px(ctx, x - 3, y - 36, 6, 5, '#F5F1EA');
-  px(ctx, x - 7, y - 27, 3, 2, '#DFD4C5');
-  px(ctx, x + 4, y - 27, 3, 2, '#DFD4C5');
-  // Gold laurel
-  px(ctx, x - 2, y - 37, 4, 1, PALETTE.gold);
-  px(ctx, x - 1, y - 38, 2, 1, PALETTE.goldBright);
+  // Pedestal (outlined)
+  px(ctx, x - 11, y - 9, 22, 9, OL);
+  px(ctx, x - 10, y - 8, 20, 8, MBD);
+  px(ctx, x - 9,  y - 11, 18, 3, MBM);
+  px(ctx, x - 10, y - 12, 20, 1, GLD2);
+  // Statue body
+  px(ctx, x - 5, y - 32, 10, 22, OL);
+  px(ctx, x - 4, y - 31, 8, 20, MBL);
+  px(ctx, x - 3, y - 22, 1, 10, MBM);  // robe fold
+  px(ctx, x + 2, y - 22, 1, 10, MBM);
+  // Head
+  px(ctx, x - 4, y - 37, 8, 6, OL);
+  px(ctx, x - 3, y - 36, 6, 5, MBL);
+  // Shoulders
+  px(ctx, x - 8, y - 28, 4, 2, MBM);
+  px(ctx, x + 4, y - 28, 4, 2, MBM);
+  // Gold laurel crown
+  px(ctx, x - 2, y - 38, 4, 1, GLD);
+  px(ctx, x - 1, y - 39, 2, 1, GLL);
+  // Halo glow
   if (tick % 120 < 60) {
-    px(ctx, x - 11, y - 38, 2, 2, '#FFE7A3');
-    px(ctx, x + 9, y - 36, 2, 2, '#FFE7A3');
+    ctx.fillStyle = '#FFE7A330';
+    for (let r = 0; r < 3; r++) {
+      ctx.fillRect(x - 12 + r, y - 39 + r, 2, 2);
+      ctx.fillRect(x + 10 - r, y - 37 + r, 2, 2);
+    }
   }
 }
 
 // altar → Sacred Altar
 function drawAltar(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
   const { x, y } = gridToScreen({ col, row });
-  drawFlatSurface(ctx, x, y, '#F4EEE2');
-  // Gold trim and crest
-  px(ctx, x - 10, y - 14, 20, 1, PALETTE.gold);
-  px(ctx, x - 6, y - 18, 12, 3, '#E9DBC8');
-  px(ctx, x - 4, y - 17, 8, 1, PALETTE.goldDeep);
-  px(ctx, x - 1, y - 19, 2, 1, PALETTE.goldBright);
+  // Altar block (outlined)
+  px(ctx, x - 13, y - 15, 26, 13, OL);
+  px(ctx, x - 12, y - 14, 24, 12, MBL);
+  px(ctx, x - 11, y - 12, 22, 8, '#F2ECE0');
+  // Top platform + gold trim
+  px(ctx, x - 12, y - 15, 24, 2, MBM);
+  px(ctx, x - 10, y - 16, 20, 1, GLD);
   // Central flame bowl
-  px(ctx, x - 3, y - 21, 6, 2, '#C57E38');
+  px(ctx, x - 4, y - 19, 8, 4, '#C47838');
+  px(ctx, x - 3, y - 18, 6, 2, '#E0A060');
+  // Flame
   if (tick % 24 < 18) {
-    px(ctx, x - 1, y - 24, 2, 3, '#FFAB00');
-    px(ctx, x, y - 26, 1, 2, '#FFEB3B');
+    px(ctx, x - 1, y - 22, 2, 3, '#FFAB00');
+    px(ctx, x,     y - 24, 1, 2, '#FFEB3B');
   }
 }
 
@@ -988,12 +989,17 @@ export function drawFurniture(
   row: number,
   tick: number,
 ): void {
-  let rendered = true;
+  const { x, y } = gridToScreen({ col, row });
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(FURNITURE_SCALE, FURNITURE_SCALE);
+  ctx.translate(-x, -y);
+
   switch (type) {
     case 'desk': drawDesk(ctx, col, row, tick); break;
     case 'chair': drawChair(ctx, col, row); break;
     case 'monitor': drawMonitor(ctx, col, row, tick); break;
-    case 'keyboard': rendered = false; break; // drawn as part of desk
+    case 'keyboard': break; // drawn as part of desk
     case 'big_desk': drawBigDesk(ctx, col, row, tick); break;
     case 'floor_window': drawFloorWindow(ctx, col, row, tick); break;
     case 'coffee_machine': drawCoffeeMachine(ctx, col, row, tick); break;
@@ -1028,18 +1034,14 @@ export function drawFurniture(
     case 'sacred_brazier': drawSacredBrazier(ctx, col, row, tick); break;
     case 'god_statue': drawGodStatue(ctx, col, row, tick); break;
     case 'altar': drawAltar(ctx, col, row, tick); break;
-    default:
-      rendered = false;
-      break;
+    default: break;
   }
 
-  if (rendered) {
-    applyTemplePatina(ctx, col, row, tick);
-  }
+  ctx.restore();
 }
 
 // ---------------------------------------------------------------------------
-// Oracle Vision Screen — drawn on top of desk monitors
+// Monitor Screen Overlay — drawn on top of desk monitors
 // ---------------------------------------------------------------------------
 
 export function drawMonitorScreen(
@@ -1049,7 +1051,7 @@ export function drawMonitorScreen(
   tick: number,
   state?: string,
 ): void {
-  // Screen area: small rectangle on the desk monitor
+  // Screen area on the desk monitor (positioned relative to desk center)
   const sx = x - 6;
   const sy = y - 36;
   const sw = 12;
@@ -1057,62 +1059,53 @@ export function drawMonitorScreen(
 
   switch (state) {
     case 'working': {
-      // Gold rune lines scrolling
-      ctx.fillStyle = '#2F2A20';
+      ctx.fillStyle = '#0A1520';
       ctx.fillRect(sx, sy, sw, sh);
-      ctx.fillStyle = PALETTE.goldBright;
-      for (let i = 0; i < 4; i++) {
+      // Animated code lines (gold/amber)
+      for (let i = 0; i < 3; i++) {
         const w = 3 + ((tick + i * 5) % 6);
-        ctx.fillRect(sx + 1, sy + 1 + i * 2, w, 1);
+        ctx.fillStyle = '#88CCFF';
+        ctx.fillRect(sx + 1, sy + 2 + i * 2, w, 1);
       }
       break;
     }
     case 'error': {
-      // Red flame screen with white X
-      ctx.fillStyle = '#B71C1C';
+      ctx.fillStyle = '#1A0808';
       ctx.fillRect(sx, sy, sw, sh);
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(sx + 3, sy + 2);
-      ctx.lineTo(sx + sw - 3, sy + sh - 2);
-      ctx.moveTo(sx + sw - 3, sy + 2);
-      ctx.lineTo(sx + 3, sy + sh - 2);
-      ctx.stroke();
+      ctx.fillStyle = '#FF4040';
+      ctx.fillRect(sx + 3, sy + 2, 1, 4);
+      ctx.fillRect(sx + sw - 4, sy + 2, 1, 4);
+      ctx.fillRect(sx + 3, sy + 2, sw - 6, 1);
+      ctx.fillRect(sx + 3, sy + sh - 2, sw - 6, 1);
       break;
     }
     case 'idle': {
-      // Golden bouncing dot
       const bx = sx + 2 + Math.abs(Math.sin(tick * 0.05)) * (sw - 6);
       const by = sy + 2 + Math.abs(Math.cos(tick * 0.04)) * (sh - 4);
-      ctx.fillStyle = '#3C3323';
+      ctx.fillStyle = '#08101C';
       ctx.fillRect(sx, sy, sw, sh);
-      ctx.fillStyle = PALETTE.gold;
-      ctx.fillRect(Math.round(bx), Math.round(by), 2, 2);
+      fillPixelEllipse(ctx, Math.round(bx), Math.round(by), 2, 2, SB);
       break;
     }
     case 'thinking': {
-      // Amber glowing dots
-      ctx.fillStyle = '#2E2A1F';
+      ctx.fillStyle = '#0A1020';
       ctx.fillRect(sx, sy, sw, sh);
       const dotCount = 3;
       for (let i = 0; i < dotCount; i++) {
         const alpha = ((tick * 0.08 + i * 0.8) % 2) < 1 ? 1 : 0.3;
         ctx.globalAlpha = alpha;
-        ctx.fillStyle = PALETTE.goldBright;
-        ctx.fillRect(sx + 2 + i * 3, sy + 3, 2, 2);
+        fillPixelEllipse(ctx, sx + 3 + i * 3, sy + 4, 1, 1, SL);
       }
       ctx.globalAlpha = 1;
       break;
     }
     default:
-      // No overlay for unknown states
       break;
   }
 }
 
 // ---------------------------------------------------------------------------
-// Pegasus — tiny flying horse that moves on the floor
+// Pegasus — tiny floating mascot (formerly Roomba)
 // ---------------------------------------------------------------------------
 
 export function drawRoomba(
@@ -1121,27 +1114,13 @@ export function drawRoomba(
   y: number,
   tick: number,
 ): void {
-  // White body (3-4px)
-  ctx.fillStyle = '#FFFFFF';
-  ctx.beginPath();
-  ctx.ellipse(x, y, 3, 2, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Wings (flutter with tick)
-  const wingUp = tick % 12 < 6;
-  const wingY = wingUp ? -2 : -1;
-  // Left wing
-  px(ctx, x - 4, y + wingY, 2, 1, '#E0E0E0');
-  // Right wing
-  px(ctx, x + 2, y + wingY, 2, 1, '#E0E0E0');
-  // Tail
-  px(ctx, x - 4, y + 1, 1, 1, '#B0BEC5');
-  // Head
-  px(ctx, x + 3, y - 1, 1, 1, '#FAFAFA');
-  // Golden sparkle trail
-  if (tick % 8 < 4) {
-    ctx.fillStyle = '#FFD70060';
-    ctx.fillRect(x - 5, y + 1, 1, 1);
-    ctx.fillRect(x - 3, y + 2, 1, 1);
-    ctx.fillRect(x + 4, y, 1, 1);
-  }
+  const floatY = y + Math.sin(tick * 0.09) * 0.8;
+  ctx.save();
+  fillPixelEllipse(ctx, x, y + 2, 4, 2, 'rgba(12, 20, 35, 0.2)');
+  // White body
+  fillPixelEllipse(ctx, x, floatY, 4, 3, '#FFFFFF');
+  // Wings
+  fillPixelEllipse(ctx, x - 4, floatY - 1, 2, 1, '#E8EEF7');
+  fillPixelEllipse(ctx, x + 4, floatY - 1, 2, 1, '#E8EEF7');
+  ctx.restore();
 }
