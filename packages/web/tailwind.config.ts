@@ -87,4 +87,7 @@ export default {
     },
   },
   plugins: [],
+  // Prevent log message strings like '[cli:complete]' from being
+  // mistakenly treated as Tailwind arbitrary-property classes.
+  blocklist: ['[cli:complete]'],
 } satisfies Config;

@@ -216,7 +216,7 @@ export ALLOWED_USERS="123456789"          # 내 Telegram User ID
 olympus server start
 ```
 
-브라우저에서 `http://localhost:5173` 접속 시 실시간 대시보드가 열립니다.
+브라우저에서 `http://localhost:8201` 접속 시 실시간 대시보드가 열립니다.
 
 ---
 

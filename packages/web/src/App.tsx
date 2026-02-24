@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { useOlympus } from './hooks/useOlympus';
 import { useOlympusMountain } from './hooks/useOlympusMountain';
 
@@ -27,11 +27,13 @@ import { MiniOlympusMountain } from './components/olympus-mountain/MiniOlympusMo
 import { OlympusTempleMonitor } from './components/monitor/OlympusTempleMonitor';
 import ChatWindow from './components/chat/ChatWindow';
 import SettingsPanel from './components/settings/SettingsPanel';
-import { WorkerLogPanel } from './components/dashboard/WorkerLogPanel';
+const WorkerLogPanel = lazy(() =>
+  import('./components/dashboard/WorkerLogPanel').then(m => ({ default: m.WorkerLogPanel }))
+);
 
 import type { WorkerConfig, WorkerDashboardState, CodexConfig, GeminiConfig, WorkerAvatar } from './lib/types';
 import { DEFAULT_GEMINI } from './lib/config';
-import { WORKER_AVATAR_POOL } from './lib/avatar-pool';
+import { assignWorkerAvatars, WORKER_AVATAR_POOL } from './lib/avatar-pool';
 import { BEHAVIOR_INFO, formatTokens, formatRelativeTime } from './lib/state-mapper';
 
 // ---------------------------------------------------------------------------
@@ -267,13 +269,18 @@ export default function App() {
   }, [activeTab, workerTasks.length, polledWorkerConfigs.length, polledActivityEvents.length]);
 
   // Build WorkerConfig[] and WorkerDashboardState map for new components
+  const assignedAvatars = assignWorkerAvatars(polledWorkerConfigs.map((w) => w.id));
+
   const workerConfigs: WorkerConfig[] = (connected && polledWorkerConfigs.length > 0)
     ? polledWorkerConfigs.map((w, i) => ({
         id: w.id,
         name: w.name,
         emoji: w.emoji ?? '',
         color: w.color,
-        avatar: (w.avatar || WORKER_AVATAR_POOL[i % WORKER_AVATAR_POOL.length]) as WorkerAvatar,
+        // Enforce Olympus avatar policy:
+        // - First 20 workers: unique, randomized avatar assignment (no duplicates)
+        // - Beyond 20 workers: pool reuse allowed
+        avatar: (assignedAvatars.get(w.id) || w.avatar || WORKER_AVATAR_POOL[i % WORKER_AVATAR_POOL.length]) as WorkerAvatar,
         behavior: polledWorkerStates[w.id]?.behavior,
         skinToneIndex: i,
         projectPath: w.projectPath,
@@ -720,18 +727,20 @@ export default function App() {
         </span>
       </footer>
 
-      {/* Worker Log Panel */}
+      {/* Worker Log Panel — lazy loaded so xterm.js is not in the main chunk */}
       {selectedWorkerId && (
-        <WorkerLogPanel
-          key={selectedWorkerId}
-          workerId={selectedWorkerId}
-          workerConfig={workerConfigs.find(w => w.id === selectedWorkerId)}
-          liveOutput={workers.get(selectedWorkerId)?.output ?? ''}
-          connected={connected}
-          onTerminalInput={handleWorkerTerminalInput}
-          onTerminalResize={handleWorkerTerminalResize}
-          onClose={() => setSelectedWorkerId(null)}
-        />
+        <Suspense fallback={null}>
+          <WorkerLogPanel
+            key={selectedWorkerId}
+            workerId={selectedWorkerId}
+            workerConfig={workerConfigs.find(w => w.id === selectedWorkerId)}
+            liveOutput={workers.get(selectedWorkerId)?.output ?? ''}
+            connected={connected}
+            onTerminalInput={handleWorkerTerminalInput}
+            onTerminalResize={handleWorkerTerminalResize}
+            onClose={() => setSelectedWorkerId(null)}
+          />
+        </Suspense>
       )}
 
       {/* ChatWindow */}
