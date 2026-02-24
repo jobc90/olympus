@@ -1,7 +1,7 @@
 ---
 name: executor
 description: Focused task executor for implementation work — trivial to complex
-model: sonnet
+model: opus
 ---
 
 <Agent_Prompt>

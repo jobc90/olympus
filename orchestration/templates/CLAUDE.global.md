@@ -60,7 +60,7 @@ You work **directly** by default — reading, editing, and executing code yourse
 
 - Work on tasks directly using Read/Edit/Write/Bash tools
 - Use `explore` agent (Haiku) for codebase search when helpful
-- Use `executor` agent (Sonnet) only when explicitly beneficial and the task is clear
+- Use `executor` agent (Opus) only when explicitly beneficial and the task is clear
 - Do NOT create TODO lists unless the task is genuinely complex (5+ steps)
 - Do NOT auto-delegate to subagents — only delegate when explicitly asked or when a slash command activates team mode
 
@@ -129,8 +129,8 @@ Only these 3 agents are **always** available:
 | Agent | Model | Purpose |
 |-------|-------|---------|
 | `explore` | Haiku | Fast codebase search |
-| `executor` | Sonnet | Focused execution, direct implementation |
-| `writer` | Haiku | Technical documentation writing |
+| `executor` | Opus | Focused execution, direct implementation |
+| `writer` | Sonnet | Technical documentation writing |
 
 **All other agents are 🔴 BLOCKED by default.**
 
@@ -148,16 +148,16 @@ These 16 agents are **only** available under the following conditions:
 | `designer` | Sonnet | Team mode OR `/agents --enable designer` |
 | `researcher` | Sonnet | Team mode OR `/agents --enable researcher` |
 | `code-reviewer` | Opus | Team mode OR `/agents --enable code-reviewer` |
-| `verifier` | Opus | Team mode OR `/agents --enable verifier` |
+| `verifier` | Sonnet | Team mode OR `/agents --enable verifier` |
 | `qa-tester` | Sonnet | Team mode OR `/agents --enable qa-tester` |
 | `vision` | Sonnet | Team mode OR `/agents --enable vision` |
 | `test-engineer` | Sonnet | Team mode OR `/agents --enable test-engineer` |
 | `build-fixer` | Sonnet | Team mode OR `/agents --enable build-fixer` |
 | `git-master` | Sonnet | Team mode OR `/agents --enable git-master` |
-| `api-reviewer` | Opus | Team mode OR `/agents --enable api-reviewer` |
-| `performance-reviewer` | Opus | Team mode OR `/agents --enable performance-reviewer` |
+| `api-reviewer` | Sonnet | Team mode OR `/agents --enable api-reviewer` |
+| `performance-reviewer` | Sonnet | Team mode OR `/agents --enable performance-reviewer` |
 | `security-reviewer` | Opus | Team mode OR `/agents --enable security-reviewer` |
-| `style-reviewer` | Sonnet | Team mode OR `/agents --enable style-reviewer` |
+| `style-reviewer` | Haiku | Team mode OR `/agents --enable style-reviewer` |
 
 **⚠️ Attempting to use without these conditions = VIOLATION**
 
@@ -299,8 +299,8 @@ Before using any agent, **always** verify:
 | Agent | Model | Purpose |
 |-------|-------|---------|
 | `explore` | Haiku | Fast codebase search — file/pattern/relationship exploration |
-| `executor` | Sonnet | Focused execution — precise code changes within assigned scope |
-| `writer` | Haiku | Technical documentation — README, API docs, code comments |
+| `executor` | Opus | Focused execution — precise code changes within assigned scope |
+| `writer` | Sonnet | Technical documentation — README, API docs, code comments |
 
 ### 🟡 On-Demand (Requires Team mode or `/agents --enable`)
 
@@ -312,16 +312,16 @@ Before using any agent, **always** verify:
 | `designer` | Sonnet | UI/UX design — components, pages, styles, interactions |
 | `researcher` | Sonnet | Documentation & research — codebase understanding |
 | `code-reviewer` | Opus | 2-stage code review (Spec Compliance → Quality) |
-| `verifier` | Opus | Implementation verification — automated checks |
+| `verifier` | Sonnet | Implementation verification — automated checks |
 | `qa-tester` | Sonnet | Evidence-based CLI testing via tmux sessions |
 | `vision` | Sonnet | Visual analysis — screenshots, diagrams, images |
 | `test-engineer` | Sonnet | Test creation — unit, integration, E2E tests |
 | `build-fixer` | Sonnet | Build/lint error diagnosis and fix |
 | `git-master` | Sonnet | Git operations — atomic commits, rebasing, conflict resolution |
-| `api-reviewer` | Opus | API design review — endpoints, contracts, versioning |
-| `performance-reviewer` | Opus | Performance analysis — bottlenecks, optimization |
+| `api-reviewer` | Sonnet | API design review — endpoints, contracts, versioning |
+| `performance-reviewer` | Sonnet | Performance analysis — bottlenecks, optimization |
 | `security-reviewer` | Opus | Security audit — vulnerabilities, OWASP, best practices |
-| `style-reviewer` | Sonnet | Code style review — conventions, formatting, naming |
+| `style-reviewer` | Haiku | Code style review — conventions, formatting, naming |
 
 ### Agent Key Rules
 
