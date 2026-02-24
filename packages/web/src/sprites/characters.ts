@@ -1,68 +1,47 @@
 // ============================================================================
-// Generic Character Sprite System
+// Character Sprites — pixel-agents inspired sheet renderer + divine sigils
 // ============================================================================
 
 import type { CharacterAnim, Direction, WorkerAvatar, CodexAvatar, GeminiAvatar } from '../engine/canvas';
 
-interface CharPalette {
-  skin: string;
-  skinShadow: string;
-  hair: string;
-  hairLight: string;
-  top: string;
-  topLight: string;
-  accent: string;
-  accentFrame: string;
-  pants: string;
-  shoes: string;
-  eyes: string;
-}
-
-const SKIN_TONES: Array<{ skin: string; shadow: string }> = [
-  { skin: '#FFDAB9', shadow: '#E8C4A0' },  // light
-  { skin: '#F5CBA7', shadow: '#D4A574' },  // warm light
-  { skin: '#DEB887', shadow: '#C49A6C' },  // medium
-  { skin: '#C68642', shadow: '#A0663A' },  // tan
-  { skin: '#8D5524', shadow: '#6B3F1C' },  // brown
-  { skin: '#4A2C17', shadow: '#3A2010' },  // dark
-];
-
-const BASE_SKIN = '#FFDAB9';
-const BASE_SKIN_SHADOW = '#E8C4A0';
-
-type GodFeature = 'warrior_helmet' | 'trident_crown' | 'war_helmet' | 'laurel' | 'silver_tiara' | 'winged_helm' | 'soot' | 'vine_crown' | 'wheat_crown' | 'rose_tiara' | 'royal_crown' | 'dark_helm' | 'flower_crown' | 'torch' | 'solar_crown' | 'wings' | 'horns' | 'mystic_aura' | 'rainbow' | 'lion_mane' | 'golden_crown' | 'peacock_crown' | 'crescent_diadem' | 'none';
-
-type SigilGlyph =
-  | 'shield'
-  | 'trident'
-  | 'sword'
-  | 'sun'
-  | 'moon'
-  | 'wing'
-  | 'hammer'
-  | 'grape'
-  | 'wheat'
-  | 'heart'
-  | 'crown'
-  | 'skull'
-  | 'flower'
-  | 'flame'
-  | 'halo'
-  | 'trophy'
-  | 'horn'
-  | 'star'
-  | 'rainbow'
-  | 'lion'
-  | 'crescent'
-  | 'bolt'
-  | 'peacock';
-
 interface DivineSigil {
-  glyph: SigilGlyph;
+  glyph:
+    | 'shield'
+    | 'trident'
+    | 'sword'
+    | 'sun'
+    | 'moon'
+    | 'wing'
+    | 'hammer'
+    | 'grape'
+    | 'wheat'
+    | 'heart'
+    | 'crown'
+    | 'skull'
+    | 'flower'
+    | 'flame'
+    | 'halo'
+    | 'trophy'
+    | 'horn'
+    | 'star'
+    | 'rainbow'
+    | 'lion'
+    | 'crescent'
+    | 'bolt'
+    | 'peacock';
   ring: string;
   glow: string;
   primary: string;
   secondary: string;
+}
+
+interface SpriteProfile {
+  sheet: number;
+  hue: number;
+  saturation: number;
+  brightness: number;
+  sigil: DivineSigil;
+  crown?: 'gold' | 'silver' | 'laurel' | 'horn';
 }
 
 const WORKER_SIGIL_MAP: Record<WorkerAvatar, DivineSigil> = {
@@ -92,102 +71,169 @@ const WORKER_SIGIL_MAP: Record<WorkerAvatar, DivineSigil> = {
 const ZEUS_SIGIL: DivineSigil = { glyph: 'bolt', ring: '#FFC107', glow: '#FFD700', primary: '#FFD700', secondary: '#FFF59D' };
 const HERA_SIGIL: DivineSigil = { glyph: 'peacock', ring: '#7B1FA2', glow: '#FFD700', primary: '#7B1FA2', secondary: '#00ACC1' };
 
-function workerPalette(avatar: WorkerAvatar, color: string, skinToneIndex?: number): CharPalette {
-  const tone = SKIN_TONES[(skinToneIndex ?? 0) % SKIN_TONES.length];
-  switch (avatar) {
-    // Athena — Goddess of Wisdom & War (vivid steel blue + crimson crest)
-    case 'athena':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#2C1810', hairLight: '#4A3728', top: '#5C7A99', topLight: '#7B9DBB', accent: '#C62828', accentFrame: '#8E0000', pants: '#3E5871', shoes: '#37474F', eyes: '#263238' };
-    // Poseidon — God of the Sea (deep ocean + seafoam)
-    case 'poseidon':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#1A3B4D', hairLight: '#2B5B73', top: '#0277BD', topLight: '#039BE5', accent: '#80DEEA', accentFrame: '#4DD0E1', pants: '#01579B', shoes: '#006064', eyes: '#00838F' };
-    // Ares — God of War (deep crimson + dark bronze)
-    case 'ares':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#1A1A1A', hairLight: '#333333', top: '#C62828', topLight: '#E53935', accent: '#FF5252', accentFrame: '#FF1744', pants: '#880E4F', shoes: '#212121', eyes: '#B71C1C' };
-    // Apollo — God of Sun & Music (warm gold + ivory)
-    case 'apollo':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#E65100', hairLight: '#FF6D00', top: '#FFFDE7', topLight: '#FFFFFF', accent: '#FFD600', accentFrame: '#FFAB00', pants: '#FFF8E1', shoes: '#F57F17', eyes: '#E65100' };
-    // Artemis — Goddess of the Hunt (deep forest + moonlight silver)
-    case 'artemis':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#3E2723', hairLight: '#5D4037', top: '#1B5E20', topLight: '#2E7D32', accent: '#E0E0E0', accentFrame: '#BDBDBD', pants: '#33691E', shoes: '#2E7D32', eyes: '#1B5E20' };
-    // Hermes — Messenger God (vivid sky blue + winged gold)
-    case 'hermes':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#6D4C41', hairLight: '#8D6E63', top: '#1E88E5', topLight: '#42A5F5', accent: '#FFD700', accentFrame: '#FFC107', pants: '#ECEFF1', shoes: '#1565C0', eyes: '#0D47A1' };
-    // Hephaestus — God of the Forge (volcanic brown + forge fire)
-    case 'hephaestus':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#3E2723', hairLight: '#4E342E', top: '#5D4037', topLight: '#795548', accent: '#FF6D00', accentFrame: '#E65100', pants: '#3E2723', shoes: '#4E342E', eyes: '#BF360C' };
-    // Dionysus — God of Wine (rich grape + amethyst)
-    case 'dionysus':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#4A148C', hairLight: '#6A1B9A', top: '#8E24AA', topLight: '#AB47BC', accent: '#CE93D8', accentFrame: '#BA68C8', pants: '#6A1B9A', shoes: '#4A148C', eyes: '#AA00FF' };
-    // Demeter — Goddess of Harvest (warm earth + harvest gold)
-    case 'demeter':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#6D4C41', hairLight: '#8D6E63', top: '#558B2F', topLight: '#7CB342', accent: '#FFD600', accentFrame: '#FFAB00', pants: '#4E342E', shoes: '#3E2723', eyes: '#33691E' };
-    // Aphrodite — Goddess of Love (vivid rose + pearl)
-    case 'aphrodite':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#FFAB91', hairLight: '#FFCCBC', top: '#EC407A', topLight: '#F48FB1', accent: '#FF1744', accentFrame: '#F50057', pants: '#FCE4EC', shoes: '#AD1457', eyes: '#C2185B' };
-    // Hera — Queen of Gods (royal purple + regal gold)
-    case 'hera':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#2C1810', hairLight: '#3E2723', top: '#6A1B9A', topLight: '#8E24AA', accent: '#FFD700', accentFrame: '#FFC107', pants: '#4A148C', shoes: '#FFD700', eyes: '#1B5E20' };
-    // Hades — God of the Underworld (obsidian + ghostly blue)
-    case 'hades':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#0D0D0D', hairLight: '#1A1A1A', top: '#1A1A2E', topLight: '#263238', accent: '#546E7A', accentFrame: '#455A64', pants: '#0D0D0D', shoes: '#1A1A1A', eyes: '#64B5F6' };
-    // Persephone — Goddess of Spring (spring green + blossom pink)
-    case 'persephone':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#4E342E', hairLight: '#6D4C41', top: '#43A047', topLight: '#66BB6A', accent: '#F06292', accentFrame: '#EC407A', pants: '#2E7D32', shoes: '#1B5E20', eyes: '#2E7D32' };
-    // Prometheus — Titan of Fire (fiery bronze + ember)
-    case 'prometheus':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#BF360C', hairLight: '#E65100', top: '#6D4C41', topLight: '#8D6E63', accent: '#FF6D00', accentFrame: '#FF9100', pants: '#3E2723', shoes: '#4E342E', eyes: '#DD2C00' };
-    // Helios — Titan of the Sun (blazing gold + ivory)
-    case 'helios':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#FF8F00', hairLight: '#FFA000', top: '#FFF8E1', topLight: '#FFFFFF', accent: '#FFD600', accentFrame: '#FFAB00', pants: '#F57F17', shoes: '#FF8F00', eyes: '#E65100' };
-    // Nike — Goddess of Victory (radiant white + victory gold)
-    case 'nike':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#FFD54F', hairLight: '#FFE082', top: '#FAFAFA', topLight: '#FFFFFF', accent: '#FFD700', accentFrame: '#FFC107', pants: '#F5F5F5', shoes: '#FFD700', eyes: '#F57F17' };
-    // Pan — God of the Wild (rustic brown + forest green)
-    case 'pan':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#4E342E', hairLight: '#6D4C41', top: '#5D4037', topLight: '#795548', accent: '#43A047', accentFrame: '#2E7D32', pants: '#4E342E', shoes: '#33691E', eyes: '#2E7D32' };
-    // Hecate — Goddess of Magic (deep midnight + violet flame)
-    case 'hecate':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#1A1A2E', hairLight: '#16213E', top: '#4A148C', topLight: '#6A1B9A', accent: '#D500F9', accentFrame: '#AA00FF', pants: '#1A237E', shoes: '#0D0D0D', eyes: '#D500F9' };
-    // Iris — Goddess of Rainbow (vivid prismatic spectrum)
-    case 'iris':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#FF1744', hairLight: '#FF5252', top: '#D500F9', topLight: '#E040FB', accent: '#00E5FF', accentFrame: '#18FFFF', pants: '#2979FF', shoes: '#AA00FF', eyes: '#D500F9' };
-    // Heracles — Greatest Hero (lion pelt + heroic gold)
-    case 'heracles':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#3E2723', hairLight: '#5D4037', top: '#C49A6C', topLight: '#DEB887', accent: '#FFD700', accentFrame: '#FFC107', pants: '#795548', shoes: '#4E342E', eyes: '#5D4037' };
-    // Selene — Goddess of the Moon (silver + lunar blue)
-    case 'selene':
-      return { skin: tone.skin, skinShadow: tone.shadow, hair: '#B0BEC5', hairLight: '#CFD8DC', top: '#283593', topLight: '#3949AB', accent: '#E0E0E0', accentFrame: '#BDBDBD', pants: '#1A237E', shoes: '#303F9F', eyes: '#7986CB' };
+const WORKER_PROFILE_MAP: Record<WorkerAvatar, SpriteProfile> = {
+  athena: { sheet: 0, hue: 205, saturation: 105, brightness: 102, sigil: WORKER_SIGIL_MAP.athena, crown: 'silver' },
+  poseidon: { sheet: 1, hue: 190, saturation: 125, brightness: 102, sigil: WORKER_SIGIL_MAP.poseidon, crown: 'laurel' },
+  ares: { sheet: 2, hue: 350, saturation: 120, brightness: 95, sigil: WORKER_SIGIL_MAP.ares, crown: 'horn' },
+  apollo: { sheet: 3, hue: 45, saturation: 130, brightness: 110, sigil: WORKER_SIGIL_MAP.apollo, crown: 'gold' },
+  artemis: { sheet: 4, hue: 95, saturation: 105, brightness: 100, sigil: WORKER_SIGIL_MAP.artemis, crown: 'silver' },
+  hermes: { sheet: 5, hue: 220, saturation: 110, brightness: 102, sigil: WORKER_SIGIL_MAP.hermes, crown: 'gold' },
+  hephaestus: { sheet: 0, hue: 18, saturation: 110, brightness: 90, sigil: WORKER_SIGIL_MAP.hephaestus },
+  dionysus: { sheet: 1, hue: 280, saturation: 120, brightness: 98, sigil: WORKER_SIGIL_MAP.dionysus, crown: 'laurel' },
+  demeter: { sheet: 2, hue: 78, saturation: 108, brightness: 100, sigil: WORKER_SIGIL_MAP.demeter, crown: 'laurel' },
+  aphrodite: { sheet: 3, hue: 330, saturation: 118, brightness: 106, sigil: WORKER_SIGIL_MAP.aphrodite, crown: 'gold' },
+  hera: { sheet: 4, hue: 275, saturation: 120, brightness: 98, sigil: WORKER_SIGIL_MAP.hera, crown: 'gold' },
+  hades: { sheet: 5, hue: 235, saturation: 72, brightness: 78, sigil: WORKER_SIGIL_MAP.hades, crown: 'horn' },
+  persephone: { sheet: 0, hue: 140, saturation: 108, brightness: 104, sigil: WORKER_SIGIL_MAP.persephone, crown: 'laurel' },
+  prometheus: { sheet: 1, hue: 20, saturation: 125, brightness: 96, sigil: WORKER_SIGIL_MAP.prometheus, crown: 'silver' },
+  helios: { sheet: 2, hue: 52, saturation: 132, brightness: 112, sigil: WORKER_SIGIL_MAP.helios, crown: 'gold' },
+  nike: { sheet: 3, hue: 58, saturation: 95, brightness: 114, sigil: WORKER_SIGIL_MAP.nike, crown: 'silver' },
+  pan: { sheet: 4, hue: 36, saturation: 102, brightness: 88, sigil: WORKER_SIGIL_MAP.pan, crown: 'horn' },
+  hecate: { sheet: 5, hue: 292, saturation: 126, brightness: 94, sigil: WORKER_SIGIL_MAP.hecate, crown: 'silver' },
+  iris: { sheet: 0, hue: 320, saturation: 125, brightness: 104, sigil: WORKER_SIGIL_MAP.iris, crown: 'gold' },
+  heracles: { sheet: 1, hue: 28, saturation: 108, brightness: 95, sigil: WORKER_SIGIL_MAP.heracles, crown: 'horn' },
+  selene: { sheet: 2, hue: 238, saturation: 100, brightness: 105, sigil: WORKER_SIGIL_MAP.selene, crown: 'silver' },
+};
+
+const ZEUS_PROFILE: SpriteProfile = {
+  sheet: 5,
+  hue: 45,
+  saturation: 130,
+  brightness: 112,
+  sigil: ZEUS_SIGIL,
+  crown: 'gold',
+};
+
+const HERA_PROFILE: SpriteProfile = {
+  sheet: 3,
+  hue: 280,
+  saturation: 122,
+  brightness: 102,
+  sigil: HERA_SIGIL,
+  crown: 'gold',
+};
+
+const SHEET_URLS = [
+  '/pixel-agents/char_0.png',
+  '/pixel-agents/char_1.png',
+  '/pixel-agents/char_2.png',
+  '/pixel-agents/char_3.png',
+  '/pixel-agents/char_4.png',
+  '/pixel-agents/char_5.png',
+] as const;
+
+const FRAME_W = 16;
+const FRAME_H = 32;
+const DRAW_SCALE = 1.85;
+
+const SHEET_CACHE: Array<HTMLImageElement | null> = [null, null, null, null, null, null];
+const SHEET_LOADING = new Set<number>();
+
+function getCharacterSheet(index: number): HTMLImageElement | null {
+  if (index < 0 || index >= SHEET_URLS.length) return null;
+  const cached = SHEET_CACHE[index];
+  if (cached && cached.complete) return cached;
+  if (typeof Image === 'undefined') return null;
+  if (!SHEET_LOADING.has(index)) {
+    SHEET_LOADING.add(index);
+    const img = new Image();
+    img.src = SHEET_URLS[index];
+    img.onload = () => {
+      SHEET_CACHE[index] = img;
+      SHEET_LOADING.delete(index);
+    };
+    img.onerror = () => {
+      SHEET_LOADING.delete(index);
+    };
+    SHEET_CACHE[index] = img;
   }
+  return SHEET_CACHE[index];
 }
 
-function codexPalette(_avatar: CodexAvatar): CharPalette {
-  // Zeus — King of the Gods (Divine Golden Aura)
-  return {
-    skin: '#FFE0B2', skinShadow: '#FFCC80',
-    hair: '#FFD54F', hairLight: '#FFE082',
-    top: '#FFC107', topLight: '#FFD54F',
-    accent: '#FFD700', accentFrame: '#FF8F00',
-    pants: '#F57F17', shoes: '#FFB300', eyes: '#FF6F00',
-  };
+function resolveFrame(anim: CharacterAnim, tick: number): number {
+  if (anim === 'walk_frame1' || anim === 'walk_frame2' || anim === 'run') {
+    return Math.floor(tick / 6) % 3; // walk_1..3
+  }
+  if (anim === 'sit_typing' || anim === 'keyboard_mash' || anim === 'hand_task') {
+    return 3 + (Math.floor(tick / 10) % 2); // type_1..2
+  }
+  if (anim === 'thinking' || anim === 'point' || anim === 'nod') {
+    return 5 + (Math.floor(tick / 12) % 2); // read_1..2
+  }
+  return 1;
 }
 
-function px(
+function resolveDirection(direction: Direction): { row: number; flip: boolean } {
+  if (direction === 's') return { row: 0, flip: false };
+  if (direction === 'n') return { row: 1, flip: false };
+  if (direction === 'e') return { row: 2, flip: false };
+  return { row: 2, flip: true };
+}
+
+function drawFallbackFigure(
   ctx: CanvasRenderingContext2D,
-  x: number, y: number,
-  color: string,
-  scale: number, ox: number, oy: number,
+  x: number,
+  y: number,
+  tick: number,
+  profile: SpriteProfile,
 ): void {
-  ctx.fillStyle = color;
-  ctx.fillRect(ox + x * scale, oy + y * scale, scale, scale);
+  ctx.save();
+  const bob = Math.sin(tick * 0.09) * 0.8;
+  const py = Math.round(y - 26 + bob);
+  ctx.fillStyle = 'rgba(9,14,22,0.35)';
+  ctx.fillRect(x - 8, y - 2, 16, 3);
+  ctx.fillStyle = '#F0DFCA';
+  ctx.fillRect(x - 4, py, 8, 8);
+  ctx.fillStyle = '#334155';
+  ctx.fillRect(x - 5, py + 8, 10, 10);
+  ctx.fillStyle = '#111827';
+  ctx.fillRect(x - 4, py + 18, 3, 4);
+  ctx.fillRect(x + 1, py + 18, 3, 4);
+  drawCrownAccessory(ctx, x, py, profile.crown, tick);
+  ctx.restore();
 }
 
-function lighten(hex: string, pct: number): string {
-  const n = parseInt(hex.replace('#', ''), 16);
-  const r = Math.min(255, ((n >> 16) & 0xff) + pct);
-  const g = Math.min(255, ((n >> 8) & 0xff) + pct);
-  const b = Math.min(255, (n & 0xff) + pct);
-  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+function drawCrownAccessory(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  topY: number,
+  crown: SpriteProfile['crown'],
+  tick: number,
+): void {
+  if (!crown) return;
+  const y = topY - 5;
+  if (crown === 'gold') {
+    ctx.fillStyle = '#F7C948';
+    ctx.fillRect(x - 4, y, 8, 2);
+    ctx.fillStyle = '#FFE08A';
+    ctx.fillRect(x - 2, y - 1, 1, 1);
+    ctx.fillRect(x, y - 2, 1, 1);
+    ctx.fillRect(x + 2, y - 1, 1, 1);
+    if (tick % 24 < 10) {
+      ctx.fillStyle = '#FFF7D6';
+      ctx.fillRect(x, y - 3, 1, 1);
+    }
+    return;
+  }
+  if (crown === 'silver') {
+    ctx.fillStyle = '#D6DEE8';
+    ctx.fillRect(x - 4, y, 8, 2);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(x, y - 1, 1, 1);
+    return;
+  }
+  if (crown === 'laurel') {
+    ctx.fillStyle = '#6FA65C';
+    ctx.fillRect(x - 4, y, 8, 1);
+    ctx.fillRect(x - 3, y - 1, 2, 1);
+    ctx.fillRect(x + 1, y - 1, 2, 1);
+    return;
+  }
+  if (crown === 'horn') {
+    ctx.fillStyle = '#9A7450';
+    ctx.fillRect(x - 4, y - 1, 2, 1);
+    ctx.fillRect(x + 2, y - 1, 2, 1);
+  }
 }
 
 function drawDivineSigil(
@@ -352,325 +398,121 @@ function drawSigilGlyph(
   }
 }
 
-function drawCharacter(
+function drawCharacterFromSheet(
   ctx: CanvasRenderingContext2D,
-  x: number, y: number,
+  x: number,
+  y: number,
   anim: CharacterAnim,
   direction: Direction,
   tick: number,
-  palette: CharPalette,
-  sigil: DivineSigil,
-  feature: GodFeature,
+  profile: SpriteProfile,
 ): void {
-  const scale = 2;
-  const ox = Math.round(x - 18);
-  const baseY = Math.round(y - 46);
-  const frame = Math.floor(tick / 9) % 2;
-  const blink = tick % 110 > 100;
-  const sit = anim === 'sit_typing' || anim === 'sit_idle' || anim === 'keyboard_mash';
-  const run = anim === 'run' || anim === 'walk_frame1' || anim === 'walk_frame2';
-  const bob = sit ? 0 : Math.floor(Math.sin(tick * 0.14) * 1);
-  const jump = anim === 'celebrate' && frame === 0 ? -2 : 0;
-  const bodyY = baseY + bob + jump;
+  const frame = resolveFrame(anim, tick);
+  const { row, flip } = resolveDirection(direction);
+  const sheet = getCharacterSheet(profile.sheet);
 
-  const tint = (hex: string, delta: number): string => {
-    const n = parseInt(hex.replace('#', ''), 16);
-    const r = Math.max(0, Math.min(255, ((n >> 16) & 0xff) + delta));
-    const g = Math.max(0, Math.min(255, ((n >> 8) & 0xff) + delta));
-    const b = Math.max(0, Math.min(255, (n & 0xff) + delta));
-    return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
-  };
+  const bob = anim === 'sit_typing' || anim === 'sit_idle' ? 0 : Math.sin(tick * 0.1) * 0.9;
+  const lift = anim === 'celebrate' ? (tick % 18 < 8 ? -2.5 : 0) : 0;
+  const footY = y + bob + lift;
 
-  const p = (gx: number, gy: number, c: string) => px(ctx, gx, gy, c, scale, ox, bodyY);
+  const dw = Math.round(FRAME_W * DRAW_SCALE);
+  const dh = Math.round(FRAME_H * DRAW_SCALE);
+  const drawX = Math.round(x - dw / 2);
+  const drawY = Math.round(footY - dh + 4);
 
-  const drawAccessory = (): void => {
-    const a = palette.accent;
-    const af = palette.accentFrame;
-    switch (feature) {
-      case 'golden_crown':
-      case 'royal_crown':
-      case 'solar_crown':
-      case 'peacock_crown':
-        p(6, 0, '#FFD54F'); p(7, -1, '#FFF59D'); p(8, 0, '#FFD54F');
-        p(5, 1, '#FFC107'); p(9, 1, '#FFC107');
-        p(7, 1, feature === 'peacock_crown' && tick % 28 < 14 ? '#00BCD4' : '#E040FB');
-        break;
-      case 'warrior_helmet':
-      case 'war_helmet':
-        for (let i = 5; i <= 9; i++) p(i, 1, '#8A9AA9');
-        p(7, -1, '#C62828');
-        break;
-      case 'trident_crown':
-        p(6, 0, a); p(7, -1, a); p(8, 0, a); p(7, 1, af);
-        break;
-      case 'laurel':
-      case 'vine_crown':
-      case 'wheat_crown':
-      case 'flower_crown':
-      case 'rose_tiara':
-        p(5, 1, a); p(6, 0, a); p(7, 0, af); p(8, 0, a); p(9, 1, a);
-        break;
-      case 'silver_tiara':
-      case 'crescent_diadem':
-        p(6, 0, '#CFD8DC'); p(7, -1, '#FFFFFF'); p(8, 0, '#CFD8DC');
-        break;
-      case 'winged_helm':
-        p(4, 1, '#ECEFF1'); p(10, 1, '#ECEFF1'); p(3, 1, '#FFFFFF'); p(11, 1, '#FFFFFF');
-        break;
-      case 'dark_helm':
-        for (let i = 5; i <= 9; i++) p(i, 1, '#232833');
-        p(6, 1, '#7EC8FF'); p(8, 1, '#7EC8FF');
-        break;
-      case 'torch':
-        p(12, 10, '#8D6E63'); p(12, 9, '#FF9800'); p(12, 8, tick % 16 < 8 ? '#FFD54F' : '#FF6D00');
-        break;
-      case 'wings':
-        p(3, 11, '#FFFFFF'); p(3, 12, '#ECEFF1'); p(11, 11, '#FFFFFF'); p(11, 12, '#ECEFF1');
-        break;
-      case 'horns':
-        p(5, 0, '#8D6E63'); p(9, 0, '#8D6E63');
-        break;
-      case 'mystic_aura':
-        if (tick % 24 < 8) { p(3, 3, '#B388FF'); p(11, 4, '#CE93D8'); }
-        else if (tick % 24 < 16) { p(11, 3, '#B388FF'); p(3, 4, '#CE93D8'); }
-        else { p(2, 4, '#B388FF'); p(12, 4, '#CE93D8'); }
-        break;
-      case 'rainbow':
-        p(5, 0, '#FF5252'); p(6, 0, '#FFEB3B'); p(7, 0, '#4CAF50'); p(8, 0, '#2196F3'); p(9, 0, '#9C27B0');
-        break;
-      case 'lion_mane':
-        p(4, 1, '#C49A6C'); p(5, 0, '#DEB887'); p(9, 0, '#DEB887'); p(10, 1, '#C49A6C');
-        break;
-      case 'soot':
-        p(6, 8, '#5D4037'); p(8, 9, '#4E342E');
-        break;
-      case 'none':
-      default:
-        break;
-    }
-  };
-
-  const drawChestSigil = (): void => {
-    const a = sigil.primary;
-    const b = sigil.secondary;
-    switch (sigil.glyph) {
-      case 'trident':
-        p(7, 14, a); p(7, 15, a); p(6, 14, b); p(8, 14, b);
-        break;
-      case 'bolt':
-      case 'flame':
-        p(7, 14, a); p(6, 15, b); p(7, 15, a);
-        break;
-      case 'moon':
-      case 'crescent':
-        p(7, 14, a); p(6, 15, a); p(7, 15, b);
-        break;
-      default:
-        p(7, 14, a); p(8, 14, b);
-        break;
-    }
-  };
-
-  // Ground shadow
   ctx.save();
   ctx.fillStyle = 'rgba(8, 14, 24, 0.34)';
-  ctx.fillRect(x - 10, y - 2, 20, 3);
+  ctx.fillRect(x - 9, y - 2, 18, 3);
   ctx.restore();
 
-  drawDivineSigil(ctx, x, bodyY - 6, tick, sigil);
+  drawDivineSigil(ctx, x, drawY - 6, tick, profile.sigil);
+
+  if (!sheet || !sheet.complete) {
+    drawFallbackFigure(ctx, x, y, tick, profile);
+    return;
+  }
 
   ctx.save();
-  if (direction === 'w') {
-    ctx.translate(x, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.filter = `hue-rotate(${profile.hue}deg) saturate(${profile.saturation}%) brightness(${profile.brightness}%)`;
+
+  if (flip) {
+    ctx.translate(x * 2, 0);
     ctx.scale(-1, 1);
-    ctx.translate(-x, 0);
   }
 
-  const legBase = sit ? 18 : 17;
-  const stride = run ? (frame === 0 ? -1 : 1) : 0;
-  // Legs / boots (voxel-style)
-  p(6 + Math.min(0, stride), legBase, palette.pants);
-  p(6 + Math.min(0, stride), legBase + 1, palette.shoes);
-  p(8 + Math.max(0, stride), legBase, tint(palette.pants, 8));
-  p(8 + Math.max(0, stride), legBase + 1, palette.shoes);
-  if (sit) {
-    p(6, legBase + 1, palette.shoes);
-    p(8, legBase + 1, palette.shoes);
-  }
+  ctx.drawImage(
+    sheet,
+    frame * FRAME_W,
+    row * FRAME_H,
+    FRAME_W,
+    FRAME_H,
+    drawX,
+    drawY,
+    dw,
+    dh,
+  );
 
-  // Back cloak
-  for (let r = 0; r < 8; r++) {
-    for (let c = 5; c <= 10; c++) {
-      p(c, 10 + r, tint(palette.top, -26));
-    }
-  }
+  ctx.restore();
 
-  // Torso front with pseudo-3D side shading
-  for (let r = 0; r < 7; r++) {
-    for (let c = 6; c <= 9; c++) {
-      let fill = palette.top;
-      if (r === 0) fill = palette.topLight;
-      if (c <= 6) fill = tint(fill, -16);
-      if (c >= 9) fill = tint(fill, 12);
-      p(c, 11 + r, fill);
-    }
-  }
-  p(6, 12, palette.accentFrame);
-  p(9, 12, palette.accentFrame);
-  p(7, 15, palette.accent);
-  p(8, 15, palette.accentFrame);
-
-  // Arms
-  const armY = sit ? 13 : 12;
-  p(5, armY, tint(palette.top, -10));
-  p(5, armY + 1, palette.skin);
-  p(10, armY, tint(palette.top, 8));
-  p(10, armY + 1, palette.skin);
-  if (anim === 'raise_hand' || anim === 'wave' || anim === 'celebrate' || anim === 'stretch') {
-    p(10, armY - 1, palette.top);
-    p(10, armY - 2, palette.top);
-    p(frame === 0 ? 11 : 9, armY - 3, palette.skin);
-  }
-  if (anim === 'point' || anim === 'hand_task') {
-    p(11, armY, palette.top);
-    p(12, armY, palette.skin);
-    if (anim === 'hand_task') {
-      p(13, armY, '#FFFFFF');
-      p(13, armY + 1, '#FFFFFF');
-    }
-  }
-  if (anim === 'drink_coffee') {
-    p(11, armY - 1, '#8B6914');
-    p(11, armY - 2, '#8B6914');
-    p(11 + frame, armY - 3, '#FFFFFF');
-  }
-
-  // Neck
-  p(7, 10, palette.skinShadow);
-  p(8, 10, palette.skin);
-
-  // Hair band
-  for (let c = 5; c <= 9; c++) {
-    p(c, 3, c >= 8 ? palette.hairLight : palette.hair);
-  }
-  p(6, 2, palette.hairLight);
-  p(7, 2, palette.hair);
-  p(8, 2, palette.hairLight);
-
-  // Head cube (top / left / right faces)
-  for (let c = 6; c <= 8; c++) {
-    p(c, 4, tint(palette.skin, 10));
-  }
-  for (let r = 0; r < 4; r++) {
-    p(5, 5 + r, palette.skinShadow);
-    p(6, 5 + r, palette.skin);
-    p(7, 5 + r, palette.skin);
-    p(8, 5 + r, tint(palette.skin, 14));
-  }
-
-  if (!blink) {
-    p(6, 6, palette.eyes);
-    p(7, 6, palette.eyes);
-  } else {
-    p(6, 6, palette.skinShadow);
-    p(7, 6, palette.skinShadow);
-  }
-  p(7, 8, palette.skinShadow);
-
-  drawAccessory();
-  drawChestSigil();
-
+  ctx.save();
+  drawCrownAccessory(ctx, x, drawY + 10, profile.crown, tick);
   ctx.restore();
 }
 
 export function drawWorker(
   ctx: CanvasRenderingContext2D,
-  x: number, y: number,
+  x: number,
+  y: number,
   anim: CharacterAnim,
   direction: Direction,
   tick: number,
   avatar: WorkerAvatar,
-  color: string,
+  _color: string,
   _emoji: string,
-  skinToneIndex?: number,
+  _skinToneIndex?: number,
 ): void {
-  const pal = workerPalette(avatar, color, skinToneIndex);
-  const featureMap: Record<WorkerAvatar, GodFeature> = {
-    athena: 'warrior_helmet',
-    poseidon: 'trident_crown',
-    ares: 'war_helmet',
-    apollo: 'laurel',
-    artemis: 'silver_tiara',
-    hermes: 'winged_helm',
-    hephaestus: 'soot',
-    dionysus: 'vine_crown',
-    demeter: 'wheat_crown',
-    aphrodite: 'rose_tiara',
-    hera: 'royal_crown',
-    hades: 'dark_helm',
-    persephone: 'flower_crown',
-    prometheus: 'torch',
-    helios: 'solar_crown',
-    nike: 'wings',
-    pan: 'horns',
-    hecate: 'mystic_aura',
-    iris: 'rainbow',
-    heracles: 'lion_mane',
-    selene: 'crescent_diadem',
-  };
-  drawCharacter(ctx, x, y, anim, direction, tick, pal, WORKER_SIGIL_MAP[avatar], featureMap[avatar]);
+  drawCharacterFromSheet(ctx, x, y, anim, direction, tick, WORKER_PROFILE_MAP[avatar]);
 }
 
 export function drawCodex(
   ctx: CanvasRenderingContext2D,
-  x: number, y: number,
+  x: number,
+  y: number,
   anim: CharacterAnim,
   tick: number,
   _avatar: CodexAvatar,
   _emoji: string,
 ): void {
-  const pal = codexPalette(_avatar);
-  drawCharacter(ctx, x, y, anim, 's', tick, pal, ZEUS_SIGIL, 'golden_crown');
-}
-
-function geminiPalette(_avatar: GeminiAvatar): CharPalette {
-  // Hera — Queen of the Gods
-  return {
-    skin: '#F5E6D3', skinShadow: '#D4C4B0',
-    hair: '#3E2723', hairLight: '#5D4037',
-    top: '#7B1FA2', topLight: '#AB47BC',
-    accent: '#FFD700', accentFrame: '#FFC107',
-    pants: '#4A148C', shoes: '#5D4037', eyes: '#1B5E20',
-  };
+  drawCharacterFromSheet(ctx, x, y, anim, 's', tick, ZEUS_PROFILE);
 }
 
 export function drawGemini(
   ctx: CanvasRenderingContext2D,
-  x: number, y: number,
+  x: number,
+  y: number,
   anim: CharacterAnim,
   tick: number,
   _avatar: GeminiAvatar,
   _emoji: string,
 ): void {
-  const pal = geminiPalette(_avatar);
-  drawCharacter(ctx, x, y, anim, 's', tick, pal, HERA_SIGIL, 'peacock_crown');
+  drawCharacterFromSheet(ctx, x, y, anim, 's', tick, HERA_PROFILE);
 }
 
 export function drawNameTag(
   ctx: CanvasRenderingContext2D,
-  x: number, y: number,
+  x: number,
+  y: number,
   name: string,
   _color: string,
 ): void {
   ctx.save();
   ctx.font = 'bold 10px monospace';
   ctx.textAlign = 'center';
-  // Text only (no rectangle) to avoid map occlusion
   ctx.fillStyle = '#000000';
-  for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+  for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
     ctx.fillText(name, x + dx, y + 4 + dy);
   }
-  // Bright text with slight gold tint
   ctx.fillStyle = '#FFFFFF';
   ctx.fillText(name, x, y + 4);
   ctx.restore();
@@ -678,7 +520,8 @@ export function drawNameTag(
 
 export function drawStatusAura(
   ctx: CanvasRenderingContext2D,
-  x: number, y: number,
+  x: number,
+  y: number,
   behavior: string,
   tick: number,
 ): void {
@@ -699,22 +542,16 @@ export function drawStatusAura(
       color = '#66BB6A';
       break;
     default:
-      return; // No aura for idle/offline/etc
+      return;
   }
 
   ctx.save();
-
-  // Pulse effect: oscillate alpha between 0.15 and 0.4
   const pulse = 0.15 + 0.25 * (0.5 + 0.5 * Math.sin(tick * 0.08));
   ctx.globalAlpha = behavior === 'error' ? (tick % 20 < 10 ? 0.5 : 0.1) : pulse;
-
-  // Draw elliptical glow under character's feet
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.ellipse(x, y - 2, 10, 4, 0, 0, Math.PI * 2);
   ctx.fill();
-
-  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
@@ -724,7 +561,8 @@ export function drawStatusAura(
 
 export function drawUnicorn(
   ctx: CanvasRenderingContext2D,
-  x: number, y: number,
+  x: number,
+  y: number,
   direction: Direction,
   tick: number,
 ): void {
@@ -739,34 +577,24 @@ export function drawUnicorn(
     ctx.translate(-x, 0);
   }
 
-  function npx(px: number, py: number, color: string): void {
+  const npx = (px: number, py: number, color: string) => {
     ctx.fillStyle = color;
     ctx.fillRect(ox + px * scale, oy + py * scale, scale, scale);
-  }
+  };
 
-  // Body (white)
   for (let i = 2; i <= 6; i++) npx(i, 5, '#FFFFFF');
   for (let i = 2; i <= 6; i++) npx(i, 6, '#FAFAFA');
-
-  // Head
   npx(7, 4, '#FFFFFF');
   npx(7, 5, '#FFFFFF');
-
-  // Horn (golden)
   npx(8, 2, '#FFD700');
   npx(8, 3, '#FFC107');
-
-  // Mane (rainbow)
   npx(3, 3, '#FF5252');
   npx(4, 3, '#FFD740');
   npx(5, 3, '#69F0AE');
   npx(6, 3, '#40C4FF');
-
-  // Tail (rainbow curve)
   npx(1, 6, '#40C4FF');
   npx(1, 7, '#69F0AE');
 
-  // Legs (animated)
   const legFrame = Math.floor(tick / 8) % 2;
   if (legFrame === 0) {
     npx(3, 7, '#E0E0E0');
@@ -776,12 +604,9 @@ export function drawUnicorn(
     npx(5, 7, '#E0E0E0');
   }
 
-  // Eye
   npx(7, 4, '#333333');
-
   ctx.restore();
 
-  // Sparkle particles
   if (tick % 30 < 20) {
     ctx.fillStyle = '#FFD70080';
     ctx.fillRect(x - 10 + (tick % 10), y - 20 - (tick % 8), 2, 2);
@@ -791,11 +616,12 @@ export function drawUnicorn(
 
 export function drawCupid(
   ctx: CanvasRenderingContext2D,
-  x: number, y: number,
+  x: number,
+  y: number,
   direction: Direction,
   tick: number,
 ): void {
-  const scale = 2; // Smaller than workers
+  const scale = 2;
   const ox = x - 12;
   const oy = y - 24;
 
@@ -806,46 +632,34 @@ export function drawCupid(
     ctx.translate(-x, 0);
   }
 
-  function npx(px: number, py: number, color: string): void {
+  const npx = (px: number, py: number, color: string) => {
     ctx.fillStyle = color;
     ctx.fillRect(ox + px * scale, oy + py * scale, scale, scale);
-  }
+  };
 
-  // Body (pink)
   for (let i = 3; i <= 6; i++) npx(i, 6, '#F8BBD0');
   for (let i = 3; i <= 6; i++) npx(i, 7, '#F48FB1');
-
-  // Head (peach skin)
   for (let i = 3; i <= 6; i++) npx(i, 4, '#FFE0B2');
   for (let i = 3; i <= 6; i++) npx(i, 5, '#FFCC80');
-
-  // Eyes
   npx(4, 5, '#333333');
   npx(6, 5, '#333333');
-
-  // Hair (golden curls)
   npx(3, 3, '#FFD740');
   npx(4, 3, '#FFD740');
   npx(5, 3, '#FFD740');
   npx(6, 3, '#FFD740');
 
-  // Wings (animated flutter)
   const wingFlutter = Math.floor(tick / 12) % 2 === 0;
   const wingY = wingFlutter ? 5 : 6;
-  // Left wing
   npx(1, wingY, '#FFFFFF');
   npx(2, wingY + 1, '#F5F5F5');
-  // Right wing
   npx(7, wingY, '#FFFFFF');
   npx(8, wingY + 1, '#F5F5F5');
 
-  // Bow (golden)
   npx(8, 6, '#FFD700');
   npx(9, 6, '#FFC107');
 
   ctx.restore();
 
-  // Heart particles
   if (tick % 40 < 30) {
     ctx.fillStyle = '#E91E6380';
     ctx.beginPath();
