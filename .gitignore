@@ -53,3 +53,6 @@ coverage/
 # Demo files
 !orchestration/plugins/claude-dashboard/demo.gif
 .team/
+
+# Local reference caches (cloned repos for design reference)
+.cache_refs/
