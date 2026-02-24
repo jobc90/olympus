@@ -37,11 +37,38 @@ interface DivineSigil {
 
 interface SpriteProfile {
   sheet: number;
-  hue: number;
-  saturation: number;
-  brightness: number;
+  accent: string;
+  trim: string;
   sigil: DivineSigil;
   crown?: 'gold' | 'silver' | 'laurel' | 'horn';
+}
+
+interface WorkerStyle {
+  hair: string;
+  mantle: string;
+  trim: string;
+  crest?: string;
+  prop:
+    | 'spear'
+    | 'trident'
+    | 'blade'
+    | 'sunstaff'
+    | 'bow'
+    | 'wing'
+    | 'hammer'
+    | 'vine'
+    | 'wheat'
+    | 'mirror'
+    | 'obsidian_staff'
+    | 'rose'
+    | 'torch'
+    | 'halo'
+    | 'laurel'
+    | 'flute'
+    | 'lantern'
+    | 'rainbow_ribbon'
+    | 'club'
+    | 'crescent';
 }
 
 const WORKER_SIGIL_MAP: Record<WorkerAvatar, DivineSigil> = {
@@ -72,45 +99,67 @@ const ZEUS_SIGIL: DivineSigil = { glyph: 'bolt', ring: '#FFC107', glow: '#FFD700
 const HERA_SIGIL: DivineSigil = { glyph: 'peacock', ring: '#7B1FA2', glow: '#FFD700', primary: '#7B1FA2', secondary: '#00ACC1' };
 
 const WORKER_PROFILE_MAP: Record<WorkerAvatar, SpriteProfile> = {
-  athena: { sheet: 0, hue: 205, saturation: 105, brightness: 102, sigil: WORKER_SIGIL_MAP.athena, crown: 'silver' },
-  poseidon: { sheet: 1, hue: 190, saturation: 125, brightness: 102, sigil: WORKER_SIGIL_MAP.poseidon, crown: 'laurel' },
-  ares: { sheet: 2, hue: 350, saturation: 120, brightness: 95, sigil: WORKER_SIGIL_MAP.ares, crown: 'horn' },
-  apollo: { sheet: 3, hue: 45, saturation: 130, brightness: 110, sigil: WORKER_SIGIL_MAP.apollo, crown: 'gold' },
-  artemis: { sheet: 4, hue: 95, saturation: 105, brightness: 100, sigil: WORKER_SIGIL_MAP.artemis, crown: 'silver' },
-  hermes: { sheet: 5, hue: 220, saturation: 110, brightness: 102, sigil: WORKER_SIGIL_MAP.hermes, crown: 'gold' },
-  hephaestus: { sheet: 0, hue: 18, saturation: 110, brightness: 90, sigil: WORKER_SIGIL_MAP.hephaestus },
-  dionysus: { sheet: 1, hue: 280, saturation: 120, brightness: 98, sigil: WORKER_SIGIL_MAP.dionysus, crown: 'laurel' },
-  demeter: { sheet: 2, hue: 78, saturation: 108, brightness: 100, sigil: WORKER_SIGIL_MAP.demeter, crown: 'laurel' },
-  aphrodite: { sheet: 3, hue: 330, saturation: 118, brightness: 106, sigil: WORKER_SIGIL_MAP.aphrodite, crown: 'gold' },
-  hera: { sheet: 4, hue: 275, saturation: 120, brightness: 98, sigil: WORKER_SIGIL_MAP.hera, crown: 'gold' },
-  hades: { sheet: 5, hue: 235, saturation: 72, brightness: 78, sigil: WORKER_SIGIL_MAP.hades, crown: 'horn' },
-  persephone: { sheet: 0, hue: 140, saturation: 108, brightness: 104, sigil: WORKER_SIGIL_MAP.persephone, crown: 'laurel' },
-  prometheus: { sheet: 1, hue: 20, saturation: 125, brightness: 96, sigil: WORKER_SIGIL_MAP.prometheus, crown: 'silver' },
-  helios: { sheet: 2, hue: 52, saturation: 132, brightness: 112, sigil: WORKER_SIGIL_MAP.helios, crown: 'gold' },
-  nike: { sheet: 3, hue: 58, saturation: 95, brightness: 114, sigil: WORKER_SIGIL_MAP.nike, crown: 'silver' },
-  pan: { sheet: 4, hue: 36, saturation: 102, brightness: 88, sigil: WORKER_SIGIL_MAP.pan, crown: 'horn' },
-  hecate: { sheet: 5, hue: 292, saturation: 126, brightness: 94, sigil: WORKER_SIGIL_MAP.hecate, crown: 'silver' },
-  iris: { sheet: 0, hue: 320, saturation: 125, brightness: 104, sigil: WORKER_SIGIL_MAP.iris, crown: 'gold' },
-  heracles: { sheet: 1, hue: 28, saturation: 108, brightness: 95, sigil: WORKER_SIGIL_MAP.heracles, crown: 'horn' },
-  selene: { sheet: 2, hue: 238, saturation: 100, brightness: 105, sigil: WORKER_SIGIL_MAP.selene, crown: 'silver' },
+  athena: { sheet: 0, accent: '#6F89A8', trim: '#D6E4F5', sigil: WORKER_SIGIL_MAP.athena, crown: 'silver' },
+  poseidon: { sheet: 1, accent: '#1E88E5', trim: '#9ED8FF', sigil: WORKER_SIGIL_MAP.poseidon, crown: 'laurel' },
+  ares: { sheet: 2, accent: '#B71C1C', trim: '#F28B82', sigil: WORKER_SIGIL_MAP.ares, crown: 'horn' },
+  apollo: { sheet: 3, accent: '#E8A317', trim: '#FFE08A', sigil: WORKER_SIGIL_MAP.apollo, crown: 'gold' },
+  artemis: { sheet: 4, accent: '#8FA1B2', trim: '#E7EEF7', sigil: WORKER_SIGIL_MAP.artemis, crown: 'silver' },
+  hermes: { sheet: 5, accent: '#1D4ED8', trim: '#BFDBFE', sigil: WORKER_SIGIL_MAP.hermes, crown: 'gold' },
+  hephaestus: { sheet: 0, accent: '#8D4A23', trim: '#D9A066', sigil: WORKER_SIGIL_MAP.hephaestus },
+  dionysus: { sheet: 1, accent: '#7B1FA2', trim: '#D4A7E6', sigil: WORKER_SIGIL_MAP.dionysus, crown: 'laurel' },
+  demeter: { sheet: 2, accent: '#6B8E23', trim: '#DCEB9B', sigil: WORKER_SIGIL_MAP.demeter, crown: 'laurel' },
+  aphrodite: { sheet: 3, accent: '#C2185B', trim: '#F8BBD0', sigil: WORKER_SIGIL_MAP.aphrodite, crown: 'gold' },
+  hera: { sheet: 4, accent: '#6A1B9A', trim: '#D7C3EF', sigil: WORKER_SIGIL_MAP.hera, crown: 'gold' },
+  hades: { sheet: 5, accent: '#263238', trim: '#90A4AE', sigil: WORKER_SIGIL_MAP.hades, crown: 'horn' },
+  persephone: { sheet: 0, accent: '#2E7D32', trim: '#B9E4BC', sigil: WORKER_SIGIL_MAP.persephone, crown: 'laurel' },
+  prometheus: { sheet: 1, accent: '#C2410C', trim: '#FDBA74', sigil: WORKER_SIGIL_MAP.prometheus, crown: 'silver' },
+  helios: { sheet: 2, accent: '#F59E0B', trim: '#FDE68A', sigil: WORKER_SIGIL_MAP.helios, crown: 'gold' },
+  nike: { sheet: 3, accent: '#8A6D3B', trim: '#F5E5B6', sigil: WORKER_SIGIL_MAP.nike, crown: 'silver' },
+  pan: { sheet: 4, accent: '#4E342E', trim: '#C8A27A', sigil: WORKER_SIGIL_MAP.pan, crown: 'horn' },
+  hecate: { sheet: 5, accent: '#5B21B6', trim: '#C4B5FD', sigil: WORKER_SIGIL_MAP.hecate, crown: 'silver' },
+  iris: { sheet: 0, accent: '#E11D48', trim: '#FDB4C7', sigil: WORKER_SIGIL_MAP.iris, crown: 'gold' },
+  heracles: { sheet: 1, accent: '#8D6E63', trim: '#E6CCAE', sigil: WORKER_SIGIL_MAP.heracles, crown: 'horn' },
+  selene: { sheet: 2, accent: '#3949AB', trim: '#C5CAE9', sigil: WORKER_SIGIL_MAP.selene, crown: 'silver' },
 };
 
 const ZEUS_PROFILE: SpriteProfile = {
   sheet: 5,
-  hue: 45,
-  saturation: 130,
-  brightness: 112,
+  accent: '#CFA93A',
+  trim: '#FFE08A',
   sigil: ZEUS_SIGIL,
   crown: 'gold',
 };
 
 const HERA_PROFILE: SpriteProfile = {
   sheet: 3,
-  hue: 280,
-  saturation: 122,
-  brightness: 102,
+  accent: '#7E57C2',
+  trim: '#D1C4E9',
   sigil: HERA_SIGIL,
   crown: 'gold',
+};
+
+const WORKER_STYLE_MAP: Record<WorkerAvatar, WorkerStyle> = {
+  athena: { hair: '#6E7F95', mantle: '#5D728B', trim: '#D6E4F5', crest: '#D4AF37', prop: 'spear' },
+  poseidon: { hair: '#2C78C4', mantle: '#2273B0', trim: '#9ED8FF', crest: '#B3E5FC', prop: 'trident' },
+  ares: { hair: '#5A2A2A', mantle: '#8E2020', trim: '#F28B82', crest: '#C62828', prop: 'blade' },
+  apollo: { hair: '#D8A540', mantle: '#C18A2A', trim: '#FFE08A', crest: '#FFF3B0', prop: 'sunstaff' },
+  artemis: { hair: '#7D8A72', mantle: '#6B8A59', trim: '#DCE8C8', crest: '#BFD6B3', prop: 'bow' },
+  hermes: { hair: '#8C7555', mantle: '#355DA8', trim: '#BFDBFE', crest: '#F7EED7', prop: 'wing' },
+  hephaestus: { hair: '#5A4636', mantle: '#885A3C', trim: '#D9A066', crest: '#CFD8DC', prop: 'hammer' },
+  dionysus: { hair: '#5B3A67', mantle: '#7B1FA2', trim: '#D4A7E6', crest: '#9CCC65', prop: 'vine' },
+  demeter: { hair: '#A68C53', mantle: '#7A9640', trim: '#E8D79B', crest: '#EACB62', prop: 'wheat' },
+  aphrodite: { hair: '#8A5A63', mantle: '#C2185B', trim: '#F8BBD0', crest: '#F48FB1', prop: 'mirror' },
+  hera: { hair: '#5C3C70', mantle: '#7E57C2', trim: '#D4C3E7', crest: '#F1D37A', prop: 'mirror' },
+  hades: { hair: '#2C2F3C', mantle: '#313843', trim: '#90A4AE', crest: '#607D8B', prop: 'obsidian_staff' },
+  persephone: { hair: '#7A5565', mantle: '#2E7D32', trim: '#B9E4BC', crest: '#EC6C9E', prop: 'rose' },
+  prometheus: { hair: '#5E4638', mantle: '#B45B26', trim: '#FDBA74', crest: '#FFD54F', prop: 'torch' },
+  helios: { hair: '#B4862C', mantle: '#D28F1E', trim: '#FDE68A', crest: '#FFF2A8', prop: 'halo' },
+  nike: { hair: '#8F7652', mantle: '#9A7B45', trim: '#F5E5B6', crest: '#FFFFFF', prop: 'laurel' },
+  pan: { hair: '#4C3C30', mantle: '#5D4535', trim: '#C8A27A', crest: '#9A7450', prop: 'flute' },
+  hecate: { hair: '#463A5B', mantle: '#5B21B6', trim: '#C4B5FD', crest: '#E1BEE7', prop: 'lantern' },
+  iris: { hair: '#7A5A70', mantle: '#C23F6A', trim: '#FDB4C7', crest: '#7BC7FF', prop: 'rainbow_ribbon' },
+  heracles: { hair: '#6C5843', mantle: '#7B5B47', trim: '#E6CCAE', crest: '#C49A6C', prop: 'club' },
+  selene: { hair: '#6D7299', mantle: '#4A57A8', trim: '#C5CAE9', crest: '#E8EAF6', prop: 'crescent' },
 };
 
 const SHEET_URLS = [
@@ -124,7 +173,11 @@ const SHEET_URLS = [
 
 const FRAME_W = 16;
 const FRAME_H = 32;
-const DRAW_SCALE = 1.85;
+const WORKER_DRAW_SCALE_MAP = 2;
+const WORKER_DRAW_SCALE_PANEL = 1.2;
+const DIVINE_DRAW_SCALE_MAP = 2;
+const DIVINE_DRAW_SCALE_PANEL = 1.6;
+const PANEL_AVATAR_Y_THRESHOLD = 96;
 
 const SHEET_CACHE: Array<HTMLImageElement | null> = [null, null, null, null, null, null];
 const SHEET_LOADING = new Set<number>();
@@ -157,7 +210,7 @@ function resolveFrame(anim: CharacterAnim, tick: number): number {
   if (anim === 'sit_typing' || anim === 'keyboard_mash' || anim === 'hand_task') {
     return 3 + (Math.floor(tick / 10) % 2); // type_1..2
   }
-  if (anim === 'thinking' || anim === 'point' || anim === 'nod') {
+  if (anim === 'point' || anim === 'nod' || anim === 'raise_hand') {
     return 5 + (Math.floor(tick / 12) % 2); // read_1..2
   }
   return 1;
@@ -168,6 +221,10 @@ function resolveDirection(direction: Direction): { row: number; flip: boolean } 
   if (direction === 'n') return { row: 1, flip: false };
   if (direction === 'e') return { row: 2, flip: false };
   return { row: 2, flip: true };
+}
+
+function resolveDrawScale(footY: number, mapScale: number, panelScale: number): number {
+  return footY <= PANEL_AVATAR_Y_THRESHOLD ? panelScale : mapScale;
 }
 
 function drawFallbackFigure(
@@ -406,6 +463,7 @@ function drawCharacterFromSheet(
   direction: Direction,
   tick: number,
   profile: SpriteProfile,
+  avatar?: WorkerAvatar,
 ): void {
   const frame = resolveFrame(anim, tick);
   const { row, flip } = resolveDirection(direction);
@@ -414,11 +472,12 @@ function drawCharacterFromSheet(
   const bob = anim === 'sit_typing' || anim === 'sit_idle' ? 0 : Math.sin(tick * 0.1) * 0.9;
   const lift = anim === 'celebrate' ? (tick % 18 < 8 ? -2.5 : 0) : 0;
   const footY = y + bob + lift;
+  const drawScale = resolveDrawScale(footY, WORKER_DRAW_SCALE_MAP, WORKER_DRAW_SCALE_PANEL);
 
-  const dw = Math.round(FRAME_W * DRAW_SCALE);
-  const dh = Math.round(FRAME_H * DRAW_SCALE);
+  const dw = Math.round(FRAME_W * drawScale);
+  const dh = Math.round(FRAME_H * drawScale);
   const drawX = Math.round(x - dw / 2);
-  const drawY = Math.round(footY - dh + 4);
+  const drawY = Math.round(footY - dh + 3);
 
   ctx.save();
   ctx.fillStyle = 'rgba(8, 14, 24, 0.34)';
@@ -434,7 +493,6 @@ function drawCharacterFromSheet(
 
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.filter = `hue-rotate(${profile.hue}deg) saturate(${profile.saturation}%) brightness(${profile.brightness}%)`;
 
   if (flip) {
     ctx.translate(x * 2, 0);
@@ -455,9 +513,378 @@ function drawCharacterFromSheet(
 
   ctx.restore();
 
+  // Divine accent sash/cape to differentiate 20 workers without sprite distortion.
+  ctx.save();
+  ctx.globalAlpha = 0.92;
+  ctx.fillStyle = profile.accent;
+  ctx.fillRect(Math.round(x - 5), Math.round(drawY + 24), 10, 3);
+  ctx.fillRect(Math.round(x - 3), Math.round(drawY + 27), 6, 2);
+  ctx.fillStyle = profile.trim;
+  ctx.fillRect(Math.round(x - 4), Math.round(drawY + 24), 8, 1);
+  ctx.fillRect(Math.round(x - 1), Math.round(drawY + 28), 2, 1);
+  ctx.restore();
+
+  if (avatar) {
+    drawWorkerTraitDetails(ctx, x, drawY, avatar, tick);
+  }
+
   ctx.save();
   drawCrownAccessory(ctx, x, drawY + 10, profile.crown, tick);
   ctx.restore();
+}
+
+function drawWorkerTraitDetails(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  drawY: number,
+  avatar: WorkerAvatar,
+  tick: number,
+): void {
+  const style = WORKER_STYLE_MAP[avatar];
+  const p = (ox: number, oy: number, w: number, h: number, color: string) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.round(x + ox), Math.round(drawY + oy), w, h);
+  };
+
+  // Hair/mantle silhouette layer to force visual identity split across 20 workers.
+  p(-4, 8, 8, 2, style.hair);
+  p(-5, 22, 10, 3, style.mantle);
+  p(-4, 25, 8, 2, style.trim);
+  if (style.crest) {
+    p(-1, 9, 2, 1, style.crest);
+  }
+
+  switch (style.prop) {
+    case 'spear':
+      p(7, 15, 1, 11, '#D4AF37');
+      p(6, 15, 3, 1, '#E8D8A6');
+      break;
+    case 'trident':
+      p(7, 14, 1, 12, '#8BD4F2');
+      p(6, 14, 3, 1, '#B3E5FC');
+      p(6, 16, 3, 1, '#B3E5FC');
+      break;
+    case 'blade':
+      p(7, 16, 1, 9, '#C0C4CC');
+      p(6, 16, 2, 1, '#F28B82');
+      break;
+    case 'sunstaff':
+      p(7, 14, 1, 11, '#FFCA55');
+      p(6, 13, 3, 2, '#FFE08A');
+      break;
+    case 'bow':
+      p(7, 14, 1, 10, '#A5C38A');
+      p(6, 14, 1, 1, '#C7DDB4');
+      p(6, 22, 1, 1, '#C7DDB4');
+      break;
+    case 'wing':
+      p(-7, 22, 2, 2, '#E8EEF7');
+      p(5, 22, 2, 2, '#E8EEF7');
+      break;
+    case 'hammer':
+      p(7, 19, 1, 7, '#B0BEC5');
+      p(6, 19, 3, 2, '#8D6E63');
+      break;
+    case 'vine':
+      p(-7, 20, 1, 8, '#6BAF5E');
+      p(-8, 21, 2, 1, '#9CCC65');
+      break;
+    case 'wheat':
+      p(7, 15, 1, 10, '#D7B04B');
+      p(6, 16, 2, 1, '#F2CF6C');
+      p(6, 18, 2, 1, '#F2CF6C');
+      break;
+    case 'mirror':
+      p(7, 17, 2, 2, '#EADCF5');
+      p(7, 19, 1, 5, '#C8B6E3');
+      break;
+    case 'obsidian_staff':
+      p(7, 14, 1, 12, '#37474F');
+      p(6, 14, 3, 1, '#90A4AE');
+      break;
+    case 'rose':
+      p(7, 17, 1, 8, '#6FB377');
+      p(6, 17, 2, 2, '#EC6C9E');
+      break;
+    case 'torch':
+      p(7, 16, 1, 9, '#8D6E63');
+      p(6, 14, 2, 3, tick % 18 < 10 ? '#FFB74D' : '#FFD54F');
+      break;
+    case 'halo':
+      p(-4, 6, 8, 1, '#FDE68A');
+      p(-2, 5, 4, 1, '#FFF2A8');
+      break;
+    case 'laurel':
+      p(-4, 7, 8, 1, '#D6D0B3');
+      p(-3, 6, 2, 1, '#E9E3C6');
+      p(1, 6, 2, 1, '#E9E3C6');
+      break;
+    case 'flute':
+      p(6, 20, 3, 1, '#A78867');
+      p(6, 22, 3, 1, '#A78867');
+      break;
+    case 'lantern':
+      p(7, 17, 1, 8, '#8E7CC3');
+      p(6, 17, 3, 3, '#C4B5FD');
+      break;
+    case 'rainbow_ribbon':
+      p(-6, 21, 12, 1, '#FF5252');
+      p(-5, 22, 10, 1, '#FFEB3B');
+      p(-4, 23, 8, 1, '#42A5F5');
+      break;
+    case 'club':
+      p(7, 16, 1, 9, '#8D6E63');
+      p(6, 15, 3, 2, '#A88963');
+      break;
+    case 'crescent':
+      p(5, 8, 2, 1, '#E8EAF6');
+      p(6, 9, 1, 1, '#C5CAE9');
+      break;
+    default:
+      break;
+  }
+
+  switch (avatar) {
+    case 'athena':
+      p(-3, 8, 6, 1, '#5A6E86');
+      p(-1, 6, 2, 2, '#D4AF37');
+      break;
+    case 'poseidon':
+      p(8, 18, 1, 8, '#49A4D4');
+      p(7, 18, 3, 1, '#8BD4F2');
+      p(7, 20, 3, 1, '#8BD4F2');
+      break;
+    case 'ares':
+      p(-6, 17, 3, 3, '#B71C1C');
+      p(4, 17, 3, 3, '#7F1010');
+      break;
+    case 'apollo':
+      p(-4, 6, 8, 1, '#F2C94C');
+      p(-1, 5, 2, 1, '#FFE08A');
+      break;
+    case 'artemis':
+      p(6, 15, 2, 6, '#7A8F57');
+      p(5, 14, 4, 1, '#A6BC78');
+      break;
+    case 'hermes':
+      p(-6, 24, 3, 1, '#E8EEF7');
+      p(3, 24, 3, 1, '#E8EEF7');
+      break;
+    case 'hephaestus':
+      p(6, 22, 3, 2, '#8D6E63');
+      p(7, 20, 1, 2, '#B0BEC5');
+      break;
+    case 'dionysus':
+      p(-4, 9, 8, 1, '#7B1FA2');
+      p(-3, 10, 2, 1, '#6BAF5E');
+      p(1, 10, 2, 1, '#6BAF5E');
+      break;
+    case 'demeter':
+      p(6, 11, 1, 6, '#C49A3A');
+      p(5, 12, 2, 1, '#E0B85C');
+      p(5, 14, 2, 1, '#E0B85C');
+      break;
+    case 'aphrodite':
+      p(-5, 18, 3, 3, '#E91E63');
+      p(-4, 19, 1, 1, '#F8BBD0');
+      break;
+    case 'hades':
+      p(-6, 12, 2, 10, '#263238');
+      p(4, 12, 2, 10, '#263238');
+      break;
+    case 'persephone':
+      p(-4, 26, 2, 2, '#EC6C9E');
+      p(2, 26, 2, 2, '#EC6C9E');
+      break;
+    case 'prometheus':
+      p(7, 15, 2, 3, '#FF8F00');
+      if (tick % 18 < 10) p(8, 13, 1, 2, '#FFD54F');
+      break;
+    case 'helios':
+      p(-5, 10, 10, 1, '#F2C94C');
+      p(-1, 9, 2, 1, '#FFE08A');
+      break;
+    case 'nike':
+      p(-6, 16, 2, 4, '#E9E3C6');
+      p(4, 16, 2, 4, '#E9E3C6');
+      break;
+    case 'pan':
+      p(-3, 6, 2, 1, '#8D6E63');
+      p(1, 6, 2, 1, '#8D6E63');
+      break;
+    case 'hecate':
+      p(-4, 11, 8, 1, '#5B21B6');
+      p(-1, 9, 2, 2, '#C4B5FD');
+      break;
+    case 'iris':
+      p(-5, 20, 10, 1, '#F44336');
+      p(-4, 21, 8, 1, '#FFEB3B');
+      p(-3, 22, 6, 1, '#42A5F5');
+      break;
+    case 'heracles':
+      p(-6, 12, 3, 4, '#8D6E63');
+      p(3, 12, 3, 4, '#8D6E63');
+      break;
+    case 'selene':
+      p(-4, 7, 8, 1, '#C5CAE9');
+      p(2, 6, 2, 1, '#E8EAF6');
+      break;
+    case 'hera':
+      p(-5, 10, 10, 1, '#7E57C2');
+      p(5, 12, 2, 2, '#44B6B6');
+      break;
+    default:
+      break;
+  }
+}
+
+function drawZeusAvatar(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  anim: CharacterAnim,
+  tick: number,
+): void {
+  const moving = anim === 'walk_frame1' || anim === 'walk_frame2' || anim === 'run';
+  const bob = moving ? Math.sin(tick * 0.12) * 1.2 : Math.sin(tick * 0.08) * 0.5;
+  const footY = y + bob;
+  const scale = resolveDrawScale(footY, DIVINE_DRAW_SCALE_MAP, DIVINE_DRAW_SCALE_PANEL);
+  const ox = Math.round(x - 5 * scale);
+  const oy = Math.round(footY - 17 * scale);
+  const step = Math.floor(tick / 8) % 2;
+
+  const p = (gx: number, gy: number, w: number, h: number, color: string) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(
+      Math.round(ox + gx * scale),
+      Math.round(oy + gy * scale),
+      Math.max(1, Math.round(w * scale)),
+      Math.max(1, Math.round(h * scale)),
+    );
+  };
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(8, 14, 24, 0.35)';
+  ctx.fillRect(x - 10, y - 2, 20, 3);
+  ctx.restore();
+
+  drawDivineSigil(ctx, x, Math.round(oy - 4 * scale), tick, ZEUS_SIGIL);
+
+  // Crown + hair
+  p(2, 0, 6, 1, '#E2B64E');
+  p(1, 1, 8, 1, '#F4D67C');
+  p(1, 2, 2, 1, '#67543D');
+  p(7, 2, 2, 1, '#67543D');
+  // Face + beard (face restored to readable Zeus proportion)
+  p(2, 2, 6, 3, '#E9C79F');
+  p(1, 5, 8, 2, '#F2E9DE');
+  p(2, 6, 6, 1, '#D9D0C4');
+  p(3, 3, 1, 1, '#20252F');
+  p(6, 3, 1, 1, '#20252F');
+
+  // Shoulder armor + robe
+  p(0, 7, 10, 2, '#D9CCB8');
+  p(0, 8, 2, 2, '#CFA93A');
+  p(8, 8, 2, 2, '#CFA93A');
+  p(2, 9, 6, 5, '#F5EFE6');
+  p(4, 9, 2, 5, '#D3B35A');
+  p(2, 12, 6, 1, '#CFA93A');
+
+  // Legs + sandals
+  if (moving && step === 0) {
+    p(2, 14, 2, 2, '#C8CBD3');
+    p(6, 14, 2, 3, '#C8CBD3');
+  } else if (moving) {
+    p(2, 14, 2, 3, '#C8CBD3');
+    p(6, 14, 2, 2, '#C8CBD3');
+  } else {
+    p(2, 14, 2, 3, '#C8CBD3');
+    p(6, 14, 2, 3, '#C8CBD3');
+  }
+  p(2, 17, 2, 1, '#9A8252');
+  p(6, 17, 2, 1, '#9A8252');
+
+  // Lightning staff (right hand)
+  p(9, 9, 1, 8, '#8E6B3E');
+  p(10, 8, 1, 1, '#FFD95E');
+  p(9, 7, 1, 1, '#FFD95E');
+  p(10, 6, 1, 1, '#FFF2A8');
+
+  drawCrownAccessory(ctx, x, Math.round(oy + 11 * scale), 'gold', tick);
+}
+
+function drawHeraAvatar(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  anim: CharacterAnim,
+  tick: number,
+): void {
+  const moving = anim === 'walk_frame1' || anim === 'walk_frame2' || anim === 'run';
+  const bob = moving ? Math.sin(tick * 0.11) * 1.1 : Math.sin(tick * 0.08) * 0.45;
+  const footY = y + bob;
+  const scale = resolveDrawScale(footY, DIVINE_DRAW_SCALE_MAP, DIVINE_DRAW_SCALE_PANEL);
+  const ox = Math.round(x - 5 * scale);
+  const oy = Math.round(footY - 17 * scale);
+  const step = Math.floor(tick / 8) % 2;
+
+  const p = (gx: number, gy: number, w: number, h: number, color: string) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(
+      Math.round(ox + gx * scale),
+      Math.round(oy + gy * scale),
+      Math.max(1, Math.round(w * scale)),
+      Math.max(1, Math.round(h * scale)),
+    );
+  };
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(8, 14, 24, 0.35)';
+  ctx.fillRect(x - 10, y - 2, 20, 3);
+  ctx.restore();
+
+  drawDivineSigil(ctx, x, Math.round(oy - 4 * scale), tick, HERA_SIGIL);
+
+  // Tiara + hair
+  p(2, 0, 6, 1, '#F1D37A');
+  p(1, 1, 8, 1, '#E4C46C');
+  p(1, 2, 2, 4, '#5C3C70');
+  p(7, 2, 2, 4, '#5C3C70');
+
+  // Face (restored scale + feminine silhouette)
+  p(2, 2, 6, 3, '#F0C9B0');
+  p(3, 3, 1, 1, '#1D2430');
+  p(6, 3, 1, 1, '#1D2430');
+  p(3, 4, 3, 1, '#D494A1');
+
+  // Gown upper
+  p(2, 7, 6, 3, '#EDE3F3');
+  p(1, 8, 8, 1, '#7E57C2');
+  p(3, 9, 4, 1, '#D4C3E7');
+
+  // Long royal dress (feminine silhouette)
+  p(2, 10, 6, 4, '#C3A5E6');
+  p(1, 12, 8, 3, '#9D74D3');
+  p(2, 13, 6, 1, '#F1D37A');
+  p(2, 15, 6, 2, '#C3A5E6');
+
+  // Feet
+  if (moving && step === 0) {
+    p(2, 17, 2, 1, '#6F5697');
+    p(6, 17, 2, 1, '#6F5697');
+  } else {
+    p(3, 17, 2, 1, '#6F5697');
+    p(5, 17, 2, 1, '#6F5697');
+  }
+
+  // Peacock feather fan motif on side
+  p(9, 9, 1, 7, '#5C9E6A');
+  p(10, 8, 1, 1, '#44B6B6');
+  p(10, 9, 1, 1, '#1E88E5');
+  p(10, 10, 1, 1, '#7E57C2');
+  p(10, 11, 1, 1, '#F1D37A');
+
+  drawCrownAccessory(ctx, x, Math.round(oy + 11 * scale), 'gold', tick);
 }
 
 export function drawWorker(
@@ -472,7 +899,11 @@ export function drawWorker(
   _emoji: string,
   _skinToneIndex?: number,
 ): void {
-  drawCharacterFromSheet(ctx, x, y, anim, direction, tick, WORKER_PROFILE_MAP[avatar]);
+  if (avatar === 'hera') {
+    drawHeraAvatar(ctx, x, y, anim, tick);
+    return;
+  }
+  drawCharacterFromSheet(ctx, x, y, anim, direction, tick, WORKER_PROFILE_MAP[avatar], avatar);
 }
 
 export function drawCodex(
@@ -484,7 +915,7 @@ export function drawCodex(
   _avatar: CodexAvatar,
   _emoji: string,
 ): void {
-  drawCharacterFromSheet(ctx, x, y, anim, 's', tick, ZEUS_PROFILE);
+  drawZeusAvatar(ctx, x, y, anim, tick);
 }
 
 export function drawGemini(
@@ -496,7 +927,7 @@ export function drawGemini(
   _avatar: GeminiAvatar,
   _emoji: string,
 ): void {
-  drawCharacterFromSheet(ctx, x, y, anim, 's', tick, HERA_PROFILE);
+  drawHeraAvatar(ctx, x, y, anim, tick);
 }
 
 export function drawNameTag(

@@ -4,7 +4,7 @@
 
 import { useRef, useEffect, useState, useCallback, type MouseEvent } from 'react';
 import type { WorkerConfig, CodexConfig, GeminiConfig, WorkerAvatar, CodexAvatar, GeminiAvatar } from '../../lib/types';
-import { gridToScreen } from '../../engine/isometric';
+import { getTileCenter as gridToScreen } from '../../engine/topdown';
 import {
   renderFrame,
   type OlympusMountainState,

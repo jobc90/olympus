@@ -1,16 +1,16 @@
 // ============================================================================
-// Canvas Rendering Engine - Multi-worker Olympus Mountain scene
+// Canvas Rendering Engine — Top-Down Olympus Mountain scene
 // ============================================================================
 
-import type { GridPos } from './isometric';
-import { drawIsometricTile, drawIsometricBlock, gridToScreen, TILE_W, TILE_H } from './isometric';
-import { drawWalls, drawDividerWall, drawZoneLabel, drawBackground, drawNightOverlay, drawMarbleVeins } from '../sprites/decorations';
-import { drawFurniture, drawMonitorScreen, drawRoomba } from '../sprites/furniture';
+import type { GridPos } from './topdown';
+import { gridToScreen, getFootPos, TILE_PX, MAP_OFFSET_X, MAP_OFFSET_Y, drawFloorTile, depthOf } from './topdown';
+import { drawBackground, drawNightOverlay, drawZoneLabel } from '../sprites/decorations';
+import { drawFurniture, drawRoomba } from '../sprites/furniture';
 import { drawWorker, drawCodex, drawGemini, drawNameTag, drawStatusAura, drawUnicorn, drawCupid } from '../sprites/characters';
 import { drawBubble, drawParticle } from '../sprites/effects';
 
 // ---------------------------------------------------------------------------
-// Types used by the renderer (mirrored from Olympus Mountain layout / behavior)
+// Types used by the renderer
 // ---------------------------------------------------------------------------
 
 export type Direction = 'n' | 's' | 'e' | 'w';
@@ -132,10 +132,6 @@ export interface Zone {
   maxRow: number;
 }
 
-// ---------------------------------------------------------------------------
-// Layout hooks — these must be provided by the olympus-mountain/layout module
-// ---------------------------------------------------------------------------
-
 export interface LayoutProvider {
   MAP_COLS: number;
   MAP_ROWS: number;
@@ -158,65 +154,50 @@ interface RenderConfig {
   layout: LayoutProvider;
 }
 
+// ---------------------------------------------------------------------------
+// Active behavior check
+// ---------------------------------------------------------------------------
+
 const ACTIVE_WORK_BEHAVIORS = new Set([
-  'working',
-  'thinking',
-  'reviewing',
-  'deploying',
-  'collaborating',
-  'chatting',
-  'analyzing',
-  'directing',
-  'meeting',
-  'starting',
-  'error',
+  'working', 'thinking', 'reviewing', 'deploying', 'collaborating',
+  'chatting', 'analyzing', 'directing', 'meeting', 'starting', 'error',
 ]);
 
-function isInZone(pos: GridPos, zone: Zone): boolean {
-  return (
-    pos.col >= zone.minCol &&
-    pos.col <= zone.maxCol &&
-    pos.row >= zone.minRow &&
-    pos.row <= zone.maxRow
-  );
+// ---------------------------------------------------------------------------
+// Codex (Zeus) position in top-down grid
+// ---------------------------------------------------------------------------
+
+function getCodexPos(anim: CharacterAnim, tick: number): GridPos {
+  if (anim === 'raise_hand' || anim === 'wave' || anim === 'nod') {
+    const patrol = [
+      { col: 15, row: 2 }, { col: 16, row: 2 }, { col: 16, row: 3 }, { col: 15, row: 3 },
+    ];
+    return patrol[Math.floor(tick / 90) % patrol.length];
+  }
+  if (anim === 'point' || anim === 'hand_task') return { col: 17, row: 2 };
+  if (anim === 'sit_typing' || anim === 'keyboard_mash') return { col: 16, row: 2 };
+  return { col: 16, row: 2 }; // Zeus throne
 }
 
-function drawIsoOverlayTile(
-  ctx: CanvasRenderingContext2D,
-  col: number,
-  row: number,
-  color: string,
-  alpha: number,
-): void {
-  const { x, y } = gridToScreen({ col, row });
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.beginPath();
-  ctx.moveTo(x, y - TILE_H / 2);
-  ctx.lineTo(x + TILE_W / 2, y);
-  ctx.lineTo(x, y + TILE_H / 2);
-  ctx.lineTo(x - TILE_W / 2, y);
-  ctx.closePath();
-  ctx.fillStyle = color;
-  ctx.fill();
-  ctx.restore();
-}
+// ---------------------------------------------------------------------------
+// Zone overlay tinting
+// ---------------------------------------------------------------------------
 
-function drawFunctionalZoneOverlays(
+function drawZoneOverlays(
   ctx: CanvasRenderingContext2D,
   zones: Record<string, Zone>,
-  walkGrid: string[][],
   state: OlympusMountainState,
   config: RenderConfig,
 ): void {
   const activeZoneIds = new Set<string>();
   for (const runtime of state.workers) {
     const workerCfg = config.workers.find((w) => w.id === runtime.id);
-    const behavior = workerCfg?.behavior ?? 'idle';
-    if (!ACTIVE_WORK_BEHAVIORS.has(behavior)) continue;
-
+    if (!workerCfg || !ACTIVE_WORK_BEHAVIORS.has(workerCfg.behavior ?? '')) continue;
     for (const [zoneId, zone] of Object.entries(zones)) {
-      if (isInZone(runtime.pos, zone)) {
+      if (
+        runtime.pos.col >= zone.minCol && runtime.pos.col <= zone.maxCol &&
+        runtime.pos.row >= zone.minRow && runtime.pos.row <= zone.maxRow
+      ) {
         activeZoneIds.add(zoneId);
         break;
       }
@@ -225,408 +206,127 @@ function drawFunctionalZoneOverlays(
 
   for (const [zoneId, zone] of Object.entries(zones)) {
     let color = '#FBC02D';
-    let alpha = 0.06;
+    let alpha = 0.0;
 
     if (zoneId.startsWith('sanctuary_')) {
-      color = '#6FA8DC';
-      alpha = activeZoneIds.has(zoneId) ? 0.2 : 0.1;
-    } else if (zoneId === 'gods_plaza' || zoneId === 'ambrosia_hall' || zoneId === 'olympus_garden') {
-      color = '#E3C28A';
-      alpha = 0.1;
-    } else if (zoneId === 'zeus_temple' || zoneId === 'agora') {
-      color = '#F2D48C';
-      alpha = 0.12;
+      color = '#4FC3F7';
+      alpha = activeZoneIds.has(zoneId) ? 0.22 : 0.08;
+    } else if (zoneId === 'zeus_temple') {
+      color = '#FFD700';
+      alpha = 0.10;
+    } else if (zoneId === 'agora') {
+      color = '#F5E6C8';
+      alpha = 0.08;
+    } else if (zoneId === 'hephaestus_forge') {
+      color = '#FF6D00';
+      alpha = activeZoneIds.has(zoneId) ? 0.18 : 0.05;
+    } else if (zoneId === 'celestial_observatory') {
+      color = '#B49FE1';
+      alpha = 0.08;
     }
 
-    for (let row = zone.minRow; row <= zone.maxRow; row++) {
-      for (let col = zone.minCol; col <= zone.maxCol; col++) {
-        const tile = walkGrid[row]?.[col];
-        if (tile === 'wall') continue;
-        drawIsoOverlayTile(ctx, col, row, color, alpha);
-      }
-    }
+    if (alpha <= 0) continue;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    const x = MAP_OFFSET_X + zone.minCol * TILE_PX;
+    const y = MAP_OFFSET_Y + zone.minRow * TILE_PX;
+    const w = (zone.maxCol - zone.minCol + 1) * TILE_PX;
+    const h = (zone.maxRow - zone.minRow + 1) * TILE_PX;
+    ctx.fillRect(x, y, w, h);
+    ctx.restore();
   }
 }
 
-function drawZoneBoundaries(
+// ---------------------------------------------------------------------------
+// Processional path shimmer
+// ---------------------------------------------------------------------------
+
+function drawProcessionalPath(ctx: CanvasRenderingContext2D, mapRows: number, tick: number): void {
+  const pathCol = 16;
+  for (let r = 5; r <= 13; r++) {
+    const pulse = 0.04 + 0.02 * Math.sin((tick + r * 12) * 0.07);
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#F7C948';
+    ctx.fillRect(MAP_OFFSET_X + pathCol * TILE_PX, MAP_OFFSET_Y + r * TILE_PX, TILE_PX, TILE_PX);
+    ctx.restore();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Selected worker highlight
+// ---------------------------------------------------------------------------
+
+function drawSelectedHighlight(
   ctx: CanvasRenderingContext2D,
-  zones: Record<string, Zone>,
-  walkGrid: string[][],
-): void {
-  const zoneColor = (zoneId: string): string => {
-    if (zoneId.startsWith('sanctuary_')) return '#7DA6D9';
-    if (zoneId === 'zeus_temple') return '#E7BE6D';
-    if (zoneId === 'agora') return '#CBAA6B';
-    if (zoneId === 'olympus_garden') return '#9CBC8F';
-    if (zoneId === 'ambrosia_hall') return '#D8A96B';
-    return '#C8B08A';
-  };
-
-  for (const [zoneId, zone] of Object.entries(zones)) {
-    const border = zoneColor(zoneId);
-    for (let row = zone.minRow; row <= zone.maxRow; row++) {
-      for (let col = zone.minCol; col <= zone.maxCol; col++) {
-        const tile = walkGrid[row]?.[col];
-        if (tile === 'wall') continue;
-        const inZone = (c: number, r: number): boolean =>
-          c >= zone.minCol && c <= zone.maxCol && r >= zone.minRow && r <= zone.maxRow && walkGrid[r]?.[c] !== 'wall';
-        const edge =
-          !inZone(col - 1, row) ||
-          !inZone(col + 1, row) ||
-          !inZone(col, row - 1) ||
-          !inZone(col, row + 1);
-        if (!edge) continue;
-        drawIsoOverlayTile(ctx, col, row, border, 0.18);
-      }
-    }
-  }
-}
-
-function getCodexPositionByAnim(anim: CharacterAnim, tick: number): GridPos {
-  if (anim === 'raise_hand' || anim === 'wave' || anim === 'nod') {
-    const patrol = [
-      { col: 11, row: 4 },
-      { col: 12, row: 4 },
-      { col: 13, row: 4 },
-      { col: 12, row: 5 },
-    ];
-    return patrol[Math.floor(tick / 90) % patrol.length];
-  }
-  if (anim === 'point' || anim === 'hand_task') {
-    return { col: 13, row: 4 };
-  }
-  if (anim === 'sit_typing' || anim === 'keyboard_mash') {
-    return { col: 12, row: 2 };
-  }
-  return { col: 12, row: 3 };
-}
-
-function drawSacredRoutes(ctx: CanvasRenderingContext2D, tick: number): void {
-  const processionalPath: GridPos[] = [
-    { col: 11, row: 18 }, { col: 11, row: 17 }, { col: 12, row: 16 }, { col: 12, row: 15 },
-    { col: 11, row: 14 }, { col: 11, row: 13 }, { col: 12, row: 12 }, { col: 12, row: 11 },
-    { col: 11, row: 10 }, { col: 11, row: 9 }, { col: 12, row: 8 }, { col: 12, row: 7 },
-    { col: 11, row: 6 }, { col: 11, row: 5 }, { col: 12, row: 4 }, { col: 12, row: 3 },
-  ];
-  for (let i = 0; i < processionalPath.length; i++) {
-    const p = processionalPath[i];
-    const pulse = 0.05 + (0.03 * ((Math.sin((tick + i * 8) * 0.08) + 1) / 2));
-    drawIsoOverlayTile(ctx, p.col, p.row, '#F5C76B', pulse);
-  }
-}
-
-function drawBrazier(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number, sacred = false): void {
-  const base = sacred ? '#D6B171' : '#B18A59';
-  const left = sacred ? '#A57A44' : '#8A653C';
-  const right = sacred ? '#966A35' : '#75512F';
-  drawIsometricBlock(ctx, { col, row }, sacred ? 11 : 9, base, left, right);
-
-  const sp = gridToScreen({ col, row });
-  const flameJitter = Math.floor(Math.sin((tick + col * 13 + row * 7) * 0.22) * 2);
-  const flameH = sacred ? 16 : 12;
-  ctx.fillStyle = '#FFCC68';
-  ctx.fillRect(sp.x - 3, sp.y - flameH - 10 + flameJitter, 6, flameH);
-  ctx.fillStyle = '#FF7A2F';
-  ctx.fillRect(sp.x - 2, sp.y - flameH - 8 + flameJitter, 4, flameH - 4);
-  if ((tick + col + row) % 5 !== 0) {
-    ctx.fillStyle = '#FFF5B1';
-    ctx.fillRect(sp.x - 1, sp.y - flameH - 6 + flameJitter, 2, flameH - 8);
-  }
-}
-
-function drawIsoDiamond(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  halfW: number,
-  halfH: number,
-  fill: string,
-  stroke?: string,
-): void {
-  ctx.beginPath();
-  ctx.moveTo(x, y - halfH);
-  ctx.lineTo(x + halfW, y);
-  ctx.lineTo(x, y + halfH);
-  ctx.lineTo(x - halfW, y);
-  ctx.closePath();
-  ctx.fillStyle = fill;
-  ctx.fill();
-  if (stroke) {
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
-}
-
-function drawTempleColumn(
-  ctx: CanvasRenderingContext2D,
-  col: number,
-  row: number,
-  height: number,
-  tick: number,
-): void {
-  const sp = gridToScreen({ col, row });
-
-  // Stepped base (stylobate + plinth)
-  drawIsometricBlock(ctx, { col, row }, 8, '#DCC6A1', '#B89D79', '#A98A64');
-  drawIsometricBlock(ctx, { col, row }, 12, '#E7D4B3', '#C6AB84', '#B6946D');
-
-  const shaftTopY = sp.y - height + 14;
-  const shaftBottomY = sp.y - 10;
-  const shaftHalfWTop = 9;
-  const shaftHalfWBottom = 11;
-  const shaftHalfH = 4;
-
-  const top = {
-    n: { x: sp.x, y: shaftTopY - shaftHalfH },
-    e: { x: sp.x + shaftHalfWTop, y: shaftTopY },
-    s: { x: sp.x, y: shaftTopY + shaftHalfH },
-    w: { x: sp.x - shaftHalfWTop, y: shaftTopY },
-  };
-  const bottom = {
-    n: { x: sp.x, y: shaftBottomY - shaftHalfH },
-    e: { x: sp.x + shaftHalfWBottom, y: shaftBottomY },
-    s: { x: sp.x, y: shaftBottomY + shaftHalfH },
-    w: { x: sp.x - shaftHalfWBottom, y: shaftBottomY },
-  };
-
-  // Shaft faces
-  ctx.beginPath();
-  ctx.moveTo(top.w.x, top.w.y);
-  ctx.lineTo(top.s.x, top.s.y);
-  ctx.lineTo(bottom.s.x, bottom.s.y);
-  ctx.lineTo(bottom.w.x, bottom.w.y);
-  ctx.closePath();
-  ctx.fillStyle = '#D6BE97';
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(top.s.x, top.s.y);
-  ctx.lineTo(top.e.x, top.e.y);
-  ctx.lineTo(bottom.e.x, bottom.e.y);
-  ctx.lineTo(bottom.s.x, bottom.s.y);
-  ctx.closePath();
-  ctx.fillStyle = '#C4A57D';
-  ctx.fill();
-
-  // Soft back face hint
-  ctx.beginPath();
-  ctx.moveTo(top.n.x, top.n.y);
-  ctx.lineTo(top.e.x, top.e.y);
-  ctx.lineTo(bottom.e.x, bottom.e.y);
-  ctx.lineTo(bottom.n.x, bottom.n.y);
-  ctx.closePath();
-  ctx.fillStyle = 'rgba(112, 88, 58, 0.25)';
-  ctx.fill();
-
-  // Fluting lines (vertical grooves)
-  ctx.strokeStyle = 'rgba(243, 233, 214, 0.42)';
-  ctx.lineWidth = 1;
-  for (let i = -3; i <= 3; i++) {
-    const t = i / 3;
-    const x = sp.x + t * 6.5 + (t > 0 ? 1.2 : -1.2);
-    ctx.beginPath();
-    ctx.moveTo(x, shaftTopY + 1);
-    ctx.lineTo(x, shaftBottomY + 1);
-    ctx.stroke();
-  }
-
-  // Bottom ring (torus)
-  drawIsoDiamond(ctx, sp.x, shaftBottomY + 2, 13, 5, '#D8C09A', '#9F815B');
-  // Capital (echinus + abacus)
-  drawIsoDiamond(ctx, sp.x, shaftTopY - 2, 13, 5, '#EAD8B7', '#A98B63');
-  drawIsoDiamond(ctx, sp.x, shaftTopY - 8, 16, 6, '#F1E4C8', '#B19673');
-  ctx.fillStyle = '#F7EED8';
-  ctx.fillRect(sp.x - 8, shaftTopY - 15, 16, 3);
-
-  // Sacred trim accent (subtle pulse)
-  const pulse = 0.42 + 0.22 * ((Math.sin((tick + col * 9 + row * 7) * 0.08) + 1) / 2);
-  ctx.fillStyle = `rgba(241, 204, 118, ${pulse.toFixed(3)})`;
-  ctx.fillRect(sp.x - 7, shaftTopY - 11, 14, 2);
-}
-
-function drawTempleSetPieces(
-  ctx: CanvasRenderingContext2D,
-  drawables: Array<{ depth: number; draw: () => void }>,
-  tick: number,
-): void {
-  const outerColumns: Array<{ col: number; row: number; h: number }> = [
-    { col: 14, row: 2, h: 30 },
-    { col: 16, row: 2, h: 30 },
-    { col: 18, row: 2, h: 30 },
-    { col: 20, row: 2, h: 30 },
-    { col: 14, row: 4, h: 26 },
-    { col: 20, row: 4, h: 26 },
-  ];
-
-  for (const c of outerColumns) {
-    drawables.push({
-      depth: c.col + c.row - 0.6,
-      draw: () => {
-        drawTempleColumn(ctx, c.col, c.row, c.h, tick);
-      },
-    });
-  }
-
-  const braziers: Array<{ col: number; row: number; sacred?: boolean }> = [
-    { col: 15, row: 5, sacred: true },
-    { col: 19, row: 5, sacred: true },
-    { col: 13, row: 11 },
-    { col: 21, row: 11 },
-    { col: 13, row: 17 },
-    { col: 21, row: 17 },
-    { col: 6, row: 13 },
-    { col: 8, row: 4 },
-  ];
-  for (const b of braziers) {
-    drawables.push({
-      depth: b.col + b.row - 0.2,
-      draw: () => drawBrazier(ctx, b.col, b.row, tick, !!b.sacred),
-    });
-  }
-}
-
-function drawWorkerBehaviorProp(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  behavior: string | undefined,
-  tick: number,
-  _color: string,
-): void {
-  if (!behavior) return;
-
-  const px = (ox: number, oy: number, w: number, h: number, fill: string) => {
-    ctx.fillStyle = fill;
-    ctx.fillRect(x + ox, y + oy, w, h);
-  };
-  const iconX = -2;
-  const iconY = -28;
-  const p = (gx: number, gy: number, fill: string) => {
-    ctx.fillStyle = fill;
-    ctx.fillRect(x + iconX + gx, y + iconY + gy, 1, 1);
-  };
-
-  // Minimal shadow-only marker (no occluding boxes)
-  px(iconX - 1, iconY + 6, 8, 1, 'rgba(10, 14, 24, 0.42)');
-
-  if (behavior === 'working' || behavior === 'analyzing' || behavior === 'reviewing') {
-    p(1, 1, '#66E0FF'); p(2, 1, '#66E0FF'); p(3, 1, '#66E0FF');
-    p(0, 2, '#3FA7D6'); p(1, 2, '#3FA7D6'); p(2, 2, '#3FA7D6'); p(3, 2, '#3FA7D6'); p(4, 2, '#3FA7D6');
-    p(1, 3, '#5BC0EB'); p(2, 3, '#5BC0EB'); p(3, 3, '#5BC0EB');
-    return;
-  }
-  if (behavior === 'deploying') {
-    p(2, 0, '#FFD180'); p(1, 1, '#FF8F3A'); p(2, 1, '#FFB74D'); p(3, 1, '#FF8F3A');
-    p(2, 2, '#FFE082'); p(2, 3, '#FF6D00');
-    return;
-  }
-  if (behavior === 'thinking') {
-    const blink = (tick % 24) < 18;
-    p(2, 0, blink ? '#FFE082' : '#C8A94E');
-    p(1, 1, '#FFD54F'); p(2, 1, '#FFD54F'); p(3, 1, '#FFD54F');
-    p(2, 2, '#FFD54F');
-    p(2, 4, '#FFD54F');
-    return;
-  }
-  if (behavior === 'chatting' || behavior === 'collaborating' || behavior === 'meeting' || behavior === 'directing') {
-    p(0, 1, '#D7B8FF'); p(1, 1, '#D7B8FF'); p(2, 1, '#D7B8FF'); p(3, 1, '#D7B8FF'); p(4, 1, '#D7B8FF');
-    p(0, 2, '#C7A3F4'); p(4, 2, '#C7A3F4');
-    p(2, 3, '#C7A3F4');
-    return;
-  }
-  if (behavior === 'resting' || behavior === 'idle') {
-    p(1, 1, '#EAD9BB'); p(2, 1, '#EAD9BB'); p(3, 1, '#EAD9BB');
-    p(1, 2, '#C7AA7F'); p(2, 2, '#C7AA7F'); p(3, 2, '#C7AA7F');
-    p(4, 1, '#B79468');
-    return;
-  }
-  if (behavior === 'error') {
-    const blink = (tick % 20) < 10;
-    p(2, 0, blink ? '#FF6B6B' : '#8E1D1D');
-    p(2, 1, blink ? '#FF4E4E' : '#8E1D1D');
-    p(2, 2, blink ? '#FF4E4E' : '#8E1D1D');
-    p(2, 4, blink ? '#FFB6B6' : '#6D1C1C');
-    return;
-  }
-  if (behavior === 'offline') {
-    p(0, 1, '#95A3B6'); p(1, 1, '#95A3B6'); p(2, 1, '#95A3B6'); p(3, 1, '#95A3B6'); p(4, 1, '#95A3B6');
-    p(1, 2, '#C7D2E2'); p(2, 2, '#C7D2E2'); p(3, 2, '#C7D2E2');
-    return;
-  }
-  if (behavior === 'starting') {
-    p(2, 0, '#7DDB84'); p(1, 1, '#A2E7A8'); p(2, 1, '#7DDB84'); p(3, 1, '#A2E7A8');
-    p(2, 2, '#7DDB84'); p(2, 3, '#7DDB84');
-  }
-}
-
-function drawSelectedWorkerHighlight(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
+  footX: number,
+  footY: number,
   tick: number,
   accentColor: string,
 ): void {
+  // sprite dims: 32×64 at ZOOM=2
+  const sw = 32;
+  const sh = 64;
+  const sx = Math.round(footX - sw / 2);
+  const sy = Math.round(footY - sh);
   const pulse = 0.5 + 0.5 * Math.sin(tick * 0.18);
-  const left = Math.round(x - 16 - pulse * 1.5);
-  const top = Math.round(y - 55 - pulse * 1.2);
-  const width = Math.round(32 + pulse * 3);
-  const height = Math.round(44 + pulse * 2);
 
   ctx.save();
-
-  // Dark border base (high contrast on any tile)
+  // Dark border base
   ctx.globalAlpha = 0.96;
   ctx.strokeStyle = 'rgba(6, 10, 20, 0.95)';
   ctx.lineWidth = 4;
-  ctx.strokeRect(left - 1, top - 1, width + 2, height + 2);
+  ctx.strokeRect(sx - 3, sy - 3, sw + 6, sh + 6);
 
   // Gold outer stroke
-  ctx.globalAlpha = 0.92;
+  ctx.globalAlpha = 0.9;
   ctx.strokeStyle = '#FFE082';
-  ctx.lineWidth = 2.5;
-  ctx.strokeRect(left, top, width, height);
+  ctx.lineWidth = 2;
+  ctx.strokeRect(sx - 1, sy - 1, sw + 2, sh + 2);
 
-  // Accent inner stroke (worker color)
-  ctx.globalAlpha = 0.85;
+  // Accent inner stroke
+  ctx.globalAlpha = 0.8;
   ctx.strokeStyle = accentColor;
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(left + 2, top + 2, width - 4, height - 4);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(sx + 1, sy + 1, sw - 2, sh - 2);
 
-  // Corner pixels for stronger "selected" feedback
+  // Corner pixels
   ctx.globalAlpha = 1;
   ctx.fillStyle = '#FFF3C1';
-  ctx.fillRect(left - 2, top - 2, 6, 2);
-  ctx.fillRect(left - 2, top - 2, 2, 6);
-  ctx.fillRect(left + width - 2, top - 2, 6, 2);
-  ctx.fillRect(left + width + 2, top - 2, 2, 6);
-  ctx.fillRect(left - 2, top + height + 2, 6, 2);
-  ctx.fillRect(left - 2, top + height - 2, 2, 6);
-  ctx.fillRect(left + width - 2, top + height + 2, 6, 2);
-  ctx.fillRect(left + width + 2, top + height - 2, 2, 6);
+  const corners = [
+    [sx - 3, sy - 3], [sx + sw - 1, sy - 3],
+    [sx - 3, sy + sh - 1], [sx + sw - 1, sy + sh - 1],
+  ];
+  for (const [cx, cy] of corners) {
+    ctx.fillRect(cx, cy, 4, 2);
+    ctx.fillRect(cx, cy, 2, 4);
+  }
 
-  // Beacon above head
-  const beaconY = top - 12 - pulse * 2;
+  // Beacon arrow above head
+  const beaconY = sy - 14 - pulse * 3;
   ctx.fillStyle = 'rgba(6, 10, 20, 0.95)';
   ctx.beginPath();
-  ctx.moveTo(x, beaconY - 2);
-  ctx.lineTo(x - 6, beaconY + 8);
-  ctx.lineTo(x + 6, beaconY + 8);
+  ctx.moveTo(footX, beaconY - 2);
+  ctx.lineTo(footX - 7, beaconY + 8);
+  ctx.lineTo(footX + 7, beaconY + 8);
   ctx.closePath();
   ctx.fill();
+
   ctx.fillStyle = '#FFE082';
   ctx.beginPath();
-  ctx.moveTo(x, beaconY);
-  ctx.lineTo(x - 4, beaconY + 6);
-  ctx.lineTo(x + 4, beaconY + 6);
+  ctx.moveTo(footX, beaconY);
+  ctx.lineTo(footX - 5, beaconY + 6);
+  ctx.lineTo(footX + 5, beaconY + 6);
   ctx.closePath();
   ctx.fill();
+
   ctx.fillStyle = accentColor;
-  ctx.fillRect(x - 1, beaconY + 2, 2, 2);
+  ctx.fillRect(footX - 1, beaconY + 2, 2, 2);
 
   ctx.restore();
 }
-
 
 // ---------------------------------------------------------------------------
 // Main render
@@ -645,51 +345,50 @@ export function renderFrame(
   const layout = config.layout;
   const zones = layout.buildZones(workerCount);
 
+  // 1. Background sky
   drawBackground(ctx, width, height, state.dayNightPhase, state.tick);
-  drawWalls(ctx, layout.MAP_COLS, layout.MAP_ROWS);
 
-  const walkGrid = layout.createWalkGrid(workerCount);
-
+  // 2. Floor tiles — all tiles, row by row (no Z-sort needed for flat floor)
   for (let row = 0; row < layout.MAP_ROWS; row++) {
     for (let col = 0; col < layout.MAP_COLS; col++) {
-      const tile = walkGrid[row]?.[col];
-      if (tile === 'wall') {
-        if (row > 0 && row < layout.MAP_ROWS - 1 && col > 0 && col < layout.MAP_COLS - 1) {
-          drawDividerWall(ctx, col, row);
-        }
-        continue;
-      }
       const color = layout.getFloorColor(col, row);
-      drawIsometricTile(ctx, { col, row }, color, '#B0956E40');
-      drawMarbleVeins(ctx, col, row);
+      // Subtle grid line only on walkable interior tiles
+      const isBorder = col === 0 || col === layout.MAP_COLS - 1 || row === 0 || row === layout.MAP_ROWS - 1;
+      const borderColor = isBorder ? undefined : 'rgba(0,0,0,0.06)';
+      drawFloorTile(ctx, col, row, color, borderColor);
     }
   }
 
-  drawFunctionalZoneOverlays(ctx, zones, walkGrid, state, config);
-  drawZoneBoundaries(ctx, zones, walkGrid);
-  drawSacredRoutes(ctx, state.tick);
+  // 3. Zone tint overlays
+  drawZoneOverlays(ctx, zones, state, config);
 
+  // 4. Processional path shimmer
+  drawProcessionalPath(ctx, layout.MAP_ROWS, state.tick);
+
+  // 5. Collect all Z-sorted drawables (furniture + characters + NPCs)
   interface Drawable {
     depth: number;
     draw: () => void;
   }
   const drawables: Drawable[] = [];
-  drawTempleSetPieces(ctx, drawables, state.tick);
 
+  // Furniture
   const furniture = layout.buildFurnitureLayout(workerCount);
   for (const item of furniture) {
     drawables.push({
-      depth: item.row + item.col,
-      draw: () => drawFurniture(ctx, item.type, item.col, item.row, state.tick),
+      depth: depthOf(item.col, item.row),
+      draw: () => {
+        const sp = gridToScreen({ col: item.col, row: item.row });
+        drawFurniture(ctx, item.type, sp.x, sp.y, state.tick);
+      },
     });
   }
 
-  // Sanctuary positions for monitor screen state overlay
+  // Monitor screen state overlay on worker desks
   const deskPositions = [
-    { col: 17, row: 11 }, { col: 17, row: 14 }, { col: 17, row: 17 },
-    { col: 21, row: 11 }, { col: 21, row: 14 }, { col: 21, row: 17 },
+    { col: 18, row: 6 }, { col: 18, row: 9 }, { col: 18, row: 12 },
+    { col: 26, row: 6 }, { col: 26, row: 9 }, { col: 26, row: 12 },
   ];
-
   for (let i = 0; i < config.workers.length && i < deskPositions.length; i++) {
     const workerCfg = config.workers[i];
     const deskPos = deskPositions[i];
@@ -702,147 +401,137 @@ export function renderFrame(
       };
       const screenState = behaviorToScreen[workerCfg.behavior];
       if (screenState) {
+        const capturedDeskPos = { ...deskPos };
+        const capturedScreenState = screenState;
         drawables.push({
-          depth: deskPos.row + deskPos.col + 0.1,
+          depth: depthOf(deskPos.col, deskPos.row) + 0.001,
           draw: () => {
-            const sp = gridToScreen(deskPos);
-            drawMonitorScreen(ctx, sp.x, sp.y, state.tick, screenState);
+            const sp = gridToScreen(capturedDeskPos);
+            const cx = sp.x + TILE_PX / 2;
+            const cy = sp.y + TILE_PX / 2;
+            drawMonitorScreenOverlay(ctx, cx, cy, state.tick, capturedScreenState);
           },
         });
       }
     }
   }
 
+  // Workers
   for (const runtime of state.workers) {
-    const workerCfg = config.workers.find(w => w.id === runtime.id);
+    const workerCfg = config.workers.find((w) => w.id === runtime.id);
     if (!workerCfg) continue;
+    const capturedRuntime = { ...runtime };
+    const capturedCfg = { ...workerCfg };
     drawables.push({
-      depth: runtime.pos.row + runtime.pos.col,
+      depth: depthOf(runtime.pos.col, runtime.pos.row) + 0.01,
       draw: () => {
-        const sp = gridToScreen(runtime.pos);
-        if (workerCfg.behavior) {
-          drawStatusAura(ctx, sp.x, sp.y, workerCfg.behavior, state.tick);
-        }
-        drawWorker(
-          ctx, sp.x, sp.y,
-          runtime.anim,
-          runtime.direction,
-          state.tick,
-          workerCfg.avatar,
-          workerCfg.color,
-          workerCfg.emoji,
-          workerCfg.skinToneIndex,
-        );
-        drawWorkerBehaviorProp(ctx, sp.x, sp.y, workerCfg.behavior, state.tick, workerCfg.color);
-        if (config.selectedWorkerId === workerCfg.id) {
-          drawNameTag(ctx, sp.x, sp.y + 2, workerCfg.name, workerCfg.color);
+        const foot = getFootPos(capturedRuntime.pos);
+        drawStatusAura(ctx, foot.x, foot.y, capturedCfg.behavior ?? '', state.tick);
+        drawWorker(ctx, foot.x, foot.y, capturedRuntime.anim, capturedRuntime.direction, state.tick, capturedCfg.avatar, capturedCfg.color, capturedCfg.emoji, capturedCfg.skinToneIndex);
+        if (config.selectedWorkerId === capturedCfg.id) {
+          drawNameTag(ctx, foot.x, foot.y, capturedCfg.name, capturedCfg.color);
         }
       },
     });
   }
 
-  // NPCs (Unicorn, Cupid)
+  // NPCs (unicorn, cupid)
   for (const npc of state.npcs) {
+    const capturedNpc = { ...npc };
     drawables.push({
-      depth: npc.pos.row + npc.pos.col,
+      depth: depthOf(npc.pos.col, npc.pos.row) + 0.01,
       draw: () => {
-        const sp = gridToScreen(npc.pos);
-        if (npc.type === 'unicorn') {
-          drawUnicorn(ctx, sp.x, sp.y, npc.direction, state.tick);
-        } else if (npc.type === 'cupid') {
-          drawCupid(ctx, sp.x, sp.y, npc.direction, state.tick);
+        const foot = getFootPos(capturedNpc.pos);
+        if (capturedNpc.type === 'unicorn') {
+          drawUnicorn(ctx, foot.x, foot.y, capturedNpc.direction, state.tick);
+        } else {
+          drawCupid(ctx, foot.x, foot.y, capturedNpc.direction, state.tick);
         }
       },
     });
   }
 
-  // Roomba pet — moves on a deterministic path based on tick
+  // Roomba (Pegasus) — wanders in the agora
   const roombaPath = [
-    { col: 5, row: 12 }, { col: 6, row: 12 }, { col: 7, row: 12 },
-    { col: 8, row: 13 }, { col: 8, row: 14 }, { col: 7, row: 15 },
-    { col: 6, row: 16 }, { col: 5, row: 16 }, { col: 4, row: 15 },
-    { col: 4, row: 14 }, { col: 4, row: 13 }, { col: 5, row: 12 },
+    { col: 4, row: 6 }, { col: 5, row: 6 }, { col: 6, row: 7 },
+    { col: 7, row: 8 }, { col: 7, row: 9 }, { col: 6, row: 10 },
+    { col: 5, row: 11 }, { col: 4, row: 11 }, { col: 3, row: 10 },
+    { col: 3, row: 9 }, { col: 3, row: 8 }, { col: 4, row: 6 },
   ];
   const roombaIdx = Math.floor(state.tick / 60) % roombaPath.length;
   const roombaPos = roombaPath[roombaIdx];
   drawables.push({
-    depth: roombaPos.row + roombaPos.col,
+    depth: depthOf(roombaPos.col, roombaPos.row) + 0.01,
     draw: () => {
-      const sp = gridToScreen(roombaPos);
-      drawRoomba(ctx, sp.x, sp.y, state.tick);
+      const foot = getFootPos(roombaPos);
+      drawRoomba(ctx, foot.x, foot.y, state.tick);
     },
   });
 
-  const codexPos = getCodexPositionByAnim(state.codex.anim, state.tick);
+  // Codex (Zeus)
+  const codexPos = getCodexPos(state.codex.anim, state.tick);
   drawables.push({
-    depth: codexPos.row + codexPos.col,
+    depth: depthOf(codexPos.col, codexPos.row) + 0.01,
     draw: () => {
-      const sp = gridToScreen(codexPos);
-      drawCodex(
-        ctx, sp.x, sp.y,
-        state.codex.anim,
-        state.tick,
-        config.codex.avatar,
-        config.codex.emoji,
-      );
+      const foot = getFootPos(codexPos);
+      drawCodex(ctx, foot.x, foot.y, state.codex.anim, state.tick, config.codex.avatar, config.codex.emoji);
       if (config.selectedWorkerId === 'codex') {
-        drawNameTag(ctx, sp.x, sp.y + 2, config.codex.name, '#FFD700');
+        drawNameTag(ctx, foot.x, foot.y, config.codex.name, '#FFD700');
       }
     },
   });
 
-  // Gemini (Hera) — positioned dynamically
+  // Gemini (Hera) — agora area
   if (config.gemini && state.gemini && state.gemini.pos) {
     const geminiPos = state.gemini.pos;
+    const capturedGeminiPos = { ...geminiPos };
     drawables.push({
-      depth: geminiPos.row + geminiPos.col,
+      depth: depthOf(geminiPos.col, geminiPos.row) + 0.01,
       draw: () => {
-        const sp = gridToScreen(geminiPos);
-        drawGemini(
-          ctx, sp.x, sp.y,
-          state.gemini.anim,
-          state.tick,
-          config.gemini!.avatar,
-          config.gemini!.emoji,
-        );
+        const foot = getFootPos(capturedGeminiPos);
+        drawGemini(ctx, foot.x, foot.y, state.gemini.anim, state.tick, config.gemini!.avatar, config.gemini!.emoji);
         if (config.selectedWorkerId === 'gemini') {
-          drawNameTag(ctx, sp.x, sp.y + 2, config.gemini!.name, '#9C27B0');
+          drawNameTag(ctx, foot.x, foot.y, config.gemini!.name, '#9C27B0');
         }
       },
     });
   }
 
+  // Sort by depth (painter's algorithm — lower row draws first)
   drawables.sort((a, b) => a.depth - b.depth);
   for (const d of drawables) d.draw();
 
-  // Reduce visual clutter: only show selected worker's sanctuary label.
+  // Zone labels — only show selected worker's sanctuary
   if (config.selectedWorkerId) {
     for (const zone of Object.values(zones)) {
       if (!zone.id.startsWith('sanctuary_')) continue;
       const idx = parseInt(zone.id.replace('sanctuary_', ''), 10);
       const workerCfg = config.workers[idx];
       if (workerCfg?.id !== config.selectedWorkerId) continue;
-      drawZoneLabel(ctx, `${workerCfg.name}'s Sanctuary`, workerCfg.emoji, zone.center.col, zone.center.row, 0.46);
+      const cx = zone.center.col;
+      const cy = zone.center.row;
+      drawZoneLabel(ctx, `${workerCfg.name}'s Sanctuary`, workerCfg.emoji, cx, cy, 0.5);
       break;
     }
   }
 
+  // Particles + bubbles
   for (const particle of state.particles) drawParticle(ctx, particle);
   for (const bubble of state.bubbles) drawBubble(ctx, bubble);
 
-  // Collect glow spots from monitors/servers for night overlay
+  // Night overlay
   const glowSpots: Array<{ x: number; y: number; color: string }> = [];
   if (state.dayNightPhase > 0.5) {
     for (const item of furniture) {
-      if (item.type === 'monitor' || item.type === 'dual_monitor' || item.type === 'desk' || item.type === 'standing_desk') {
+      if (['monitor', 'dual_monitor', 'desk', 'standing_desk'].includes(item.type)) {
         const sp = gridToScreen({ col: item.col, row: item.row });
-        glowSpots.push({ x: sp.x, y: sp.y - 20, color: '#4FC3F7' });
+        glowSpots.push({ x: sp.x + TILE_PX / 2, y: sp.y, color: '#4FC3F7' });
       } else if (item.type === 'server_rack') {
         const sp = gridToScreen({ col: item.col, row: item.row });
-        glowSpots.push({ x: sp.x, y: sp.y - 20, color: '#4CAF50' });
+        glowSpots.push({ x: sp.x + TILE_PX / 2, y: sp.y, color: '#4CAF50' });
       } else if (item.type === 'arcade_machine') {
         const sp = gridToScreen({ col: item.col, row: item.row });
-        glowSpots.push({ x: sp.x, y: sp.y - 24, color: '#FF1744' });
+        glowSpots.push({ x: sp.x + TILE_PX / 2, y: sp.y, color: '#FF1744' });
       }
     }
   }
@@ -851,34 +540,86 @@ export function renderFrame(
     mapRows: layout.MAP_ROWS,
   });
 
-  // Title
+  // Title bar
   ctx.save();
-  ctx.font = 'bold 14px monospace';
+  ctx.font = 'bold 13px monospace';
   ctx.fillStyle = state.dayNightPhase > 0.5 ? '#FFD700' : '#DAA520';
   ctx.textAlign = 'left';
-  ctx.fillText('\u26F0\uFE0F Mount Olympus', 16, 24);
+  ctx.fillText('\u26F0\uFE0F Mount Olympus', 12, 22);
   ctx.restore();
 
   // Connection status
   ctx.save();
   ctx.font = '10px monospace';
   ctx.textAlign = 'right';
-  if (config.connected) {
-    ctx.fillStyle = '#4CAF50';
-    ctx.fillText('Connected', width - 16, 24);
-  } else {
-    ctx.fillStyle = '#F44336';
-    ctx.fillText('Disconnected', width - 16, 24);
-  }
+  ctx.fillStyle = config.connected ? '#4CAF50' : '#F44336';
+  ctx.fillText(config.connected ? 'Connected' : 'Disconnected', width - 12, 22);
   ctx.restore();
 
-  // Selected worker highlight (top-most overlay to keep beacon always visible)
+  // Selected worker highlight — drawn last (always on top)
   if (config.selectedWorkerId) {
     const selectedRuntime = state.workers.find((w) => w.id === config.selectedWorkerId);
     const selectedCfg = config.workers.find((w) => w.id === config.selectedWorkerId);
     if (selectedRuntime) {
-      const sp = gridToScreen(selectedRuntime.pos);
-      drawSelectedWorkerHighlight(ctx, sp.x, sp.y, state.tick, selectedCfg?.color ?? '#4FC3F7');
+      const foot = getFootPos(selectedRuntime.pos);
+      drawSelectedHighlight(ctx, foot.x, foot.y, state.tick, selectedCfg?.color ?? '#4FC3F7');
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Inline monitor screen overlay (top-down view — drawn on desk surface)
+// ---------------------------------------------------------------------------
+
+function drawMonitorScreenOverlay(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  tick: number,
+  state: string,
+): void {
+  const sw = 12;
+  const sh = 8;
+  const sx = cx - sw / 2;
+  const sy = cy - TILE_PX / 2 - sh;
+
+  switch (state) {
+    case 'working': {
+      ctx.fillStyle = '#2F2A20';
+      ctx.fillRect(sx, sy, sw, sh);
+      ctx.fillStyle = '#F2D675';
+      for (let i = 0; i < 3; i++) {
+        const w = 3 + ((tick + i * 5) % 6);
+        ctx.fillRect(sx + 1, sy + 1 + i * 2, w, 1);
+      }
+      break;
+    }
+    case 'error': {
+      ctx.fillStyle = tick % 20 < 10 ? '#B71C1C' : '#3A0000';
+      ctx.fillRect(sx, sy, sw, sh);
+      break;
+    }
+    case 'idle': {
+      ctx.fillStyle = '#3C3323';
+      ctx.fillRect(sx, sy, sw, sh);
+      const bx = sx + 2 + Math.abs(Math.sin(tick * 0.05)) * (sw - 4);
+      ctx.fillStyle = '#D4AF37';
+      ctx.fillRect(Math.round(bx), sy + 3, 2, 2);
+      break;
+    }
+    case 'thinking': {
+      ctx.fillStyle = '#2E2A1F';
+      ctx.fillRect(sx, sy, sw, sh);
+      for (let i = 0; i < 3; i++) {
+        const alpha = ((tick * 0.08 + i * 0.8) % 2) < 1 ? 1 : 0.3;
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = '#F2D675';
+        ctx.fillRect(sx + 2 + i * 3, sy + 3, 2, 2);
+      }
+      ctx.globalAlpha = 1;
+      break;
+    }
+    default:
+      break;
   }
 }

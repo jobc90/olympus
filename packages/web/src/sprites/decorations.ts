@@ -1,8 +1,8 @@
 // ============================================================================
-// Decoration Sprites — Walls, backgrounds, zone labels, night overlay
+// Decoration Sprites — Backgrounds, zone labels, night overlay (top-down)
 // ============================================================================
 
-import { gridToScreen, TILE_W, TILE_H } from '../engine/isometric';
+import { getTileCenter, TILE_PX } from '../engine/topdown';
 
 // ---------------------------------------------------------------------------
 // Background / Sky
@@ -116,160 +116,7 @@ export function drawBackground(
 }
 
 // ---------------------------------------------------------------------------
-// Walls — Marble Columns
-// ---------------------------------------------------------------------------
-
-function drawTemplePillar(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  opts?: { width?: number; height?: number; grand?: boolean },
-): void {
-  const width = opts?.width ?? 10;
-  const height = opts?.height ?? 38;
-  const half = width / 2;
-  const shaftTop = y - height;
-  const shaftBottom = y - 2;
-
-  // Stylobate base
-  ctx.fillStyle = '#AFA08B';
-  ctx.fillRect(x - half - 3, y - 2, width + 6, 4);
-  ctx.fillStyle = '#D9CCBC';
-  ctx.fillRect(x - half - 2, y - 4, width + 4, 2);
-  ctx.fillStyle = '#D4AF37';
-  ctx.fillRect(x - half - 3, y - 5, width + 6, 1);
-
-  // Shaft core
-  ctx.fillStyle = '#EEE4D6';
-  ctx.fillRect(x - half, shaftTop, width, shaftBottom - shaftTop);
-  // Side depth
-  ctx.fillStyle = '#D1C2AD';
-  ctx.fillRect(x - half, shaftTop, 2, shaftBottom - shaftTop);
-  ctx.fillStyle = '#F8F1E7';
-  ctx.fillRect(x + half - 2, shaftTop, 2, shaftBottom - shaftTop);
-
-  // Fluting (pixel stripes)
-  ctx.fillStyle = '#DACBB8';
-  for (let fx = x - half + 2; fx <= x + half - 3; fx += 2) {
-    ctx.fillRect(fx, shaftTop + 2, 1, shaftBottom - shaftTop - 4);
-  }
-
-  // Capital
-  ctx.fillStyle = '#F6ECDD';
-  ctx.fillRect(x - half - 3, shaftTop - 5, width + 6, 5);
-  ctx.fillStyle = '#E8DACA';
-  ctx.fillRect(x - half - 5, shaftTop - 8, width + 10, 3);
-  ctx.fillStyle = '#D4AF37';
-  ctx.fillRect(x - half - 6, shaftTop - 9, width + 12, 2);
-
-  if (opts?.grand) {
-    // Pediment ornament for the temple-grade wall columns
-    ctx.fillStyle = '#F1E4D1';
-    ctx.beginPath();
-    ctx.moveTo(x - half - 2, shaftTop - 5);
-    ctx.lineTo(x, shaftTop - 13);
-    ctx.lineTo(x + half + 2, shaftTop - 5);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#D4AF37';
-    ctx.fillRect(x - 1, shaftTop - 10, 2, 2);
-  }
-}
-
-export function drawWalls(
-  ctx: CanvasRenderingContext2D,
-  mapCols: number,
-  mapRows: number,
-): void {
-  // Draw outer wall base along the top & left edges of the map
-  ctx.strokeStyle = '#CFD8DC';
-  ctx.lineWidth = 3;
-
-  // Top-left wall edge
-  const topLeft = gridToScreen({ col: 0, row: 0 });
-  const topRight = gridToScreen({ col: mapCols - 1, row: 0 });
-  const bottomLeft = gridToScreen({ col: 0, row: mapRows - 1 });
-
-  // Marble wall stroke
-  ctx.beginPath();
-  ctx.moveTo(bottomLeft.x - TILE_W / 2, bottomLeft.y);
-  ctx.lineTo(topLeft.x, topLeft.y - TILE_H / 2);
-  ctx.lineTo(topRight.x + TILE_W / 2, topRight.y);
-  ctx.stroke();
-
-  // Gold trim at the top of the wall
-  ctx.strokeStyle = '#FFD700';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(bottomLeft.x - TILE_W / 2, bottomLeft.y);
-  ctx.lineTo(topLeft.x, topLeft.y - TILE_H / 2);
-  ctx.lineTo(topRight.x + TILE_W / 2, topRight.y);
-  ctx.stroke();
-
-  // 도리아식 기둥 (모서리)
-  const corners = [
-    gridToScreen({ col: 0, row: 0 }),
-    gridToScreen({ col: mapCols - 1, row: 0 }),
-    gridToScreen({ col: 0, row: mapRows - 1 }),
-  ];
-  for (const c of corners) {
-    drawTemplePillar(ctx, c.x, c.y, { width: 12, height: 40, grand: true });
-  }
-
-  // 상단 벽을 따라 도리아 기둥 (col 0~mapCols-1, row 0 라인)
-  const pillarCount = 8;
-  for (let i = 1; i <= pillarCount; i++) {
-    const pillarCol = Math.floor((mapCols - 1) * i / (pillarCount + 1));
-    const p = gridToScreen({ col: pillarCol, row: 0 });
-    drawTemplePillar(ctx, p.x, p.y, { width: 10, height: 38, grand: true });
-  }
-
-  // 좌측 벽을 따라 도리아 기둥 (col 0, row 0~mapRows-1)
-  for (let i = 1; i <= 6; i++) {
-    const pillarRow = Math.floor((mapRows - 1) * i / 7);
-    const p = gridToScreen({ col: 0, row: pillarRow });
-    drawTemplePillar(ctx, p.x, p.y, { width: 10, height: 38, grand: false });
-  }
-}
-
-export function drawDividerWall(
-  ctx: CanvasRenderingContext2D,
-  col: number,
-  row: number,
-): void {
-  const { x, y } = gridToScreen({ col, row });
-  const isVerticalDivider = col === 12;
-  const isMainHorizontalDivider = row === 10;
-  const isTempleHorizontalDivider = row === 4;
-  const isDoorGap = (isVerticalDivider && (row === 7 || row === 8 || row === 14 || row === 15))
-    || (isMainHorizontalDivider && (col === 17 || col === 18))
-    || (isTempleHorizontalDivider && (col === 17 || col === 18));
-  if (isDoorGap) return;
-
-  // Low divider rail keeps zone separation readable without blocking map/avatars.
-  ctx.fillStyle = '#DCCFBD';
-  ctx.fillRect(x - 9, y - 10, 18, 4);
-  ctx.fillStyle = '#BDAE98';
-  ctx.fillRect(x - 9, y - 6, 18, 3);
-  ctx.fillStyle = '#D4AF37';
-  ctx.fillRect(x - 9, y - 11, 18, 1);
-
-  const drawAccentColumn = (
-    (isVerticalDivider && row % 3 === 1)
-    || (isMainHorizontalDivider && col % 3 === 2)
-    || (isTempleHorizontalDivider && col % 2 === 0)
-  );
-  if (drawAccentColumn) {
-    drawTemplePillar(ctx, x, y, {
-      width: isTempleHorizontalDivider ? 10 : 8,
-      height: isTempleHorizontalDivider ? 30 : 22,
-      grand: isTempleHorizontalDivider,
-    });
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Zone Labels
+// Zone Labels — top-down tile-center positioning
 // ---------------------------------------------------------------------------
 
 export function drawZoneLabel(
@@ -280,15 +127,15 @@ export function drawZoneLabel(
   row: number,
   alpha: number,
 ): void {
-  const { x, y } = gridToScreen({ col, row });
+  const { x, y } = getTileCenter({ col, row });
   ctx.save();
   ctx.globalAlpha = alpha * 0.72;
 
   const text = `${emoji} ${label}`;
   ctx.font = 'bold 8px monospace';
   ctx.textAlign = 'center';
-  // Text only (no label box)
-  const ty = y + TILE_H + 9;
+  // Draw text centered on the tile, slightly below center
+  const ty = y + TILE_PX / 4 + 9;
   ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
   ctx.fillText(text, x + 1, ty + 1);
   ctx.fillStyle = '#F6E9D2';
@@ -297,7 +144,7 @@ export function drawZoneLabel(
 }
 
 // ---------------------------------------------------------------------------
-// Night Overlay — Divine Purple Night
+// Night Overlay — top-down flat darkening
 // ---------------------------------------------------------------------------
 
 export function drawNightOverlay(
@@ -306,134 +153,32 @@ export function drawNightOverlay(
   height: number,
   dayNightPhase: number,
   glowSpots?: Array<{ x: number; y: number; color: string }>,
-  mapMask?: { mapCols: number; mapRows: number },
+  _mapMask?: { mapCols: number; mapRows: number },
 ): void {
   const nightStrength = Math.max(0, Math.min(1, (dayNightPhase - 0.45) / 0.55));
   if (nightStrength <= 0.01) return;
 
-  const mapCols = mapMask?.mapCols ?? 24;
-  const mapRows = mapMask?.mapRows ?? 20;
-  const top = gridToScreen({ col: 0, row: 0 });
-  const right = gridToScreen({ col: mapCols - 1, row: 0 });
-  const bottom = gridToScreen({ col: mapCols - 1, row: mapRows - 1 });
-  const left = gridToScreen({ col: 0, row: mapRows - 1 });
-  const margin = 34;
-
-  // Darken only sky/outside-map area (not temple interior / characters).
+  // Darken the whole canvas with a semi-transparent overlay
   ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, width, height);
-  ctx.moveTo(top.x, top.y - TILE_H / 2 - margin);
-  ctx.lineTo(right.x + TILE_W / 2 + margin, right.y);
-  ctx.lineTo(bottom.x, bottom.y + TILE_H / 2 + margin);
-  ctx.lineTo(left.x - TILE_W / 2 - margin, left.y);
-  ctx.closePath();
-  ctx.clip('evenodd');
-
-  const skyDark = ctx.createLinearGradient(0, 0, 0, height * 0.7);
-  skyDark.addColorStop(0, `rgba(14, 10, 36, ${0.72 * nightStrength})`);
-  skyDark.addColorStop(0.6, `rgba(20, 14, 46, ${0.42 * nightStrength})`);
-  skyDark.addColorStop(1, `rgba(16, 10, 40, ${0.12 * nightStrength})`);
-  ctx.fillStyle = skyDark;
+  ctx.globalAlpha = 0.52 * nightStrength;
+  ctx.fillStyle = '#08091A';
   ctx.fillRect(0, 0, width, height);
+  ctx.globalAlpha = 1;
 
+  // Radial glow spots for braziers / light sources
   if (glowSpots && glowSpots.length > 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
     for (const spot of glowSpots) {
-      const g = ctx.createRadialGradient(spot.x, spot.y, 0, spot.x, spot.y, 48);
-      g.addColorStop(0, `${spot.color}66`);
+      const g = ctx.createRadialGradient(spot.x, spot.y, 0, spot.x, spot.y, 52);
+      g.addColorStop(0, `${spot.color}44`);
       g.addColorStop(1, `${spot.color}00`);
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(spot.x, spot.y, 48, 0, Math.PI * 2);
+      ctx.arc(spot.x, spot.y, 52, 0, Math.PI * 2);
       ctx.fill();
     }
-  }
-
-  ctx.restore();
-}
-
-// ---------------------------------------------------------------------------
-// Floor Marble Veining — subtle temple floor detail
-// ---------------------------------------------------------------------------
-
-export function drawMarbleVeins(
-  ctx: CanvasRenderingContext2D,
-  col: number,
-  row: number,
-): void {
-  const { x, y } = gridToScreen({ col, row });
-  const hash = (col * 17 + row * 31) % 23;
-  const isTemple = col >= 13 && row <= 5;
-  const isAgora = col >= 13 && row > 5 && row <= 9;
-  const isSanctuary = col >= 13 && row >= 10;
-  const isGarden = col <= 7 && row <= 7;
-  const isAmbrosia = col <= 7 && row >= 12;
-  const isProcession = (col === 11 || col === 12 || col === 13) && row >= 2 && row <= 18;
-
-  if (hash > (isProcession ? 19 : 16)) return;
-
-  let veinMain = '#C8C1B5';
-  let veinAlt = '#AFA69A';
-  let sparkle = '#F2D675';
-  let alpha = 0.13;
-
-  if (isTemple) {
-    veinMain = '#D7C29E';
-    veinAlt = '#B79764';
-    sparkle = '#FFD86A';
-    alpha = 0.18;
-  } else if (isAgora || isSanctuary) {
-    veinMain = '#B6C4D6';
-    veinAlt = '#8FA1B8';
-    sparkle = '#DDE8F6';
-    alpha = 0.16;
-  } else if (isGarden) {
-    veinMain = '#B7C6B0';
-    veinAlt = '#8EA48A';
-    sparkle = '#D7E7CC';
-    alpha = 0.14;
-  } else if (isAmbrosia) {
-    veinMain = '#D2B892';
-    veinAlt = '#B59467';
-    sparkle = '#F1D2A7';
-    alpha = 0.16;
-  }
-
-  ctx.save();
-  ctx.globalAlpha = alpha;
-
-  if (hash % 5 === 0) {
-    ctx.fillStyle = veinMain;
-    ctx.fillRect(x - 4, y - 1, 8, 1);
-    ctx.fillRect(x - 2, y, 4, 1);
-  } else if (hash % 5 === 1) {
-    ctx.fillStyle = veinAlt;
-    ctx.fillRect(x - 1, y - 2, 1, 3);
-    ctx.fillRect(x, y - 1, 1, 3);
-  } else if (hash % 5 === 2) {
-    ctx.fillStyle = veinMain;
-    ctx.fillRect(x - 3, y + 1, 6, 1);
-    ctx.fillStyle = veinAlt;
-    ctx.fillRect(x - 1, y, 2, 1);
-  } else if (hash % 5 === 3) {
-    ctx.fillStyle = veinAlt;
-    ctx.fillRect(x - 2, y - 1, 5, 1);
-    ctx.fillRect(x - 1, y, 3, 1);
-  } else {
-    ctx.fillStyle = sparkle;
-    ctx.fillRect(x - 1, y - 1, 1, 1);
-    ctx.fillRect(x + 1, y + 1, 1, 1);
-    if (hash % 2 === 0) {
-      ctx.fillRect(x + 2, y - 1, 1, 1);
-    }
-  }
-
-  // Strong lane separators for central sacred procession
-  if (isProcession && (col === 11 || col === 13)) {
-    ctx.globalAlpha = 0.22;
-    ctx.fillStyle = '#E4BF70';
-    ctx.fillRect(x - 1, y - 2, 2, 1);
-    ctx.fillRect(x - 1, y + 1, 2, 1);
+    ctx.restore();
   }
 
   ctx.restore();

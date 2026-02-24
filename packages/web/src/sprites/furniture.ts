@@ -3,7 +3,18 @@
 // ============================================================================
 
 import type { TileType } from '../engine/pathfinding';
-import { gridToScreen, TILE_W, TILE_H, drawIsometricBlock } from '../engine/isometric';
+import { getTileCenter, TILE_PX } from '../engine/topdown';
+
+// Alias: returns tile center (32×32 tile, center at +16,+16 from top-left)
+function gridToScreen(pos: { col: number; row: number }): { x: number; y: number } {
+  return getTileCenter(pos);
+}
+
+// Replaces drawIsometricBlock — draws a flat top-down surface
+function drawFlatSurface(ctx: CanvasRenderingContext2D, x: number, y: number, topColor: string): void {
+  ctx.fillStyle = topColor;
+  ctx.fillRect(x - 12, y - 4, 24, 8);
+}
 
 type FurnitureType = TileType extends string ? (
   | 'desk'
@@ -91,7 +102,7 @@ function applyTemplePatina(
 function drawDesk(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
   const { x, y } = gridToScreen({ col, row });
   // Marble table top
-  drawIsometricBlock(ctx, { col, row }, 14, PALETTE.marbleLight, PALETTE.marbleMid, PALETTE.marbleDark);
+  drawFlatSurface(ctx, x, y, PALETTE.marbleLight);
   // Oracle Mirror (monitor)
   const monY = y - 26;
   px(ctx, x - 8, monY - 12, 16, 12, PALETTE.gold);
@@ -130,7 +141,7 @@ function drawChair(ctx: CanvasRenderingContext2D, col: number, row: number): voi
 function drawBigDesk(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
   const { x, y } = gridToScreen({ col, row });
   // Golden marble surface
-  drawIsometricBlock(ctx, { col, row }, 14, '#FFF8E1', '#FFD700', '#DAA520');
+  drawFlatSurface(ctx, x, y, '#FFF8E1');
   // Tall gold back panel
   px(ctx, x - 16, y - 34, 32, 16, '#FFD700');
   px(ctx, x - 14, y - 32, 28, 12, '#FFC107');
@@ -251,7 +262,8 @@ function drawWaterCooler(ctx: CanvasRenderingContext2D, col: number, row: number
 
 // small_table → Stone Pedestal
 function drawSmallTable(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  drawIsometricBlock(ctx, { col, row }, 10, '#ECEFF1', '#CFD8DC', '#B0BEC5');
+  const { x, y } = gridToScreen({ col, row });
+  drawFlatSurface(ctx, x, y, '#ECEFF1');
 }
 
 // round_table → Amphora
@@ -278,8 +290,8 @@ function drawRoundTable(ctx: CanvasRenderingContext2D, col: number, row: number)
 
 // long_table → Stone Bench/Table
 function drawLongTable(ctx: CanvasRenderingContext2D, col: number, row: number): void {
-  drawIsometricBlock(ctx, { col, row }, 12, '#ECEFF1', '#CFD8DC', '#B0BEC5');
   const { x, y } = gridToScreen({ col, row });
+  drawFlatSurface(ctx, x, y, '#ECEFF1');
   // Stone supports visible
   px(ctx, x - 8, y - 4, 3, 4, '#CFD8DC');
   px(ctx, x + 5, y - 4, 3, 4, '#CFD8DC');
@@ -380,7 +392,7 @@ function drawSofa(ctx: CanvasRenderingContext2D, col: number, row: number): void
 // coffee_table → Low Stone Table
 function drawCoffeeTable(ctx: CanvasRenderingContext2D, col: number, row: number): void {
   const { x, y } = gridToScreen({ col, row });
-  drawIsometricBlock(ctx, { col, row }, 6, '#ECEFF1', '#CFD8DC', '#B0BEC5');
+  drawFlatSurface(ctx, x, y, '#ECEFF1');
   // Stone legs visible
   px(ctx, x - 6, y - 2, 2, 4, '#CFD8DC');
   px(ctx, x + 4, y - 2, 2, 4, '#CFD8DC');
@@ -436,46 +448,26 @@ function drawPottedPlant(ctx: CanvasRenderingContext2D, col: number, row: number
   ctx.fill();
 }
 
-// carpet → Greek Mosaic
+// carpet → Greek Mosaic (top-down rectangular)
 function drawCarpet(ctx: CanvasRenderingContext2D, col: number, row: number): void {
   const { x, y } = gridToScreen({ col, row });
-  // Cream base diamond
+  const half = TILE_PX / 2 - 2;
+  // Cream base rectangle
   ctx.fillStyle = '#FFF8E180';
-  ctx.beginPath();
-  ctx.moveTo(x, y - TILE_H / 2);
-  ctx.lineTo(x + TILE_W / 2, y);
-  ctx.lineTo(x, y + TILE_H / 2);
-  ctx.lineTo(x - TILE_W / 2, y);
-  ctx.closePath();
-  ctx.fill();
+  ctx.fillRect(x - half, y - half, half * 2, half * 2);
   // Gold border
   ctx.strokeStyle = '#DAA52080';
   ctx.lineWidth = 1.5;
-  ctx.stroke();
-  // Inner geometric pattern — gold diamond
+  ctx.strokeRect(x - half, y - half, half * 2, half * 2);
+  // Inner geometric pattern — gold inset
+  const inner = TILE_PX / 4;
   ctx.fillStyle = '#DAA52050';
-  ctx.beginPath();
-  ctx.moveTo(x, y - TILE_H / 4);
-  ctx.lineTo(x + TILE_W / 4, y);
-  ctx.lineTo(x, y + TILE_H / 4);
-  ctx.lineTo(x - TILE_W / 4, y);
-  ctx.closePath();
-  ctx.fill();
+  ctx.fillRect(x - inner, y - inner, inner * 2, inner * 2);
   // Blue accent center
   ctx.fillStyle = '#4FC3F740';
   ctx.beginPath();
   ctx.arc(x, y, 3, 0, Math.PI * 2);
   ctx.fill();
-  // Gray border lines
-  ctx.strokeStyle = '#B0BEC540';
-  ctx.lineWidth = 0.5;
-  ctx.beginPath();
-  ctx.moveTo(x, y - TILE_H / 3);
-  ctx.lineTo(x + TILE_W / 3, y);
-  ctx.lineTo(x, y + TILE_H / 3);
-  ctx.lineTo(x - TILE_W / 3, y);
-  ctx.closePath();
-  ctx.stroke();
 }
 
 // wall_clock → Sundial
@@ -562,13 +554,14 @@ function drawMeetingChair(ctx: CanvasRenderingContext2D, col: number, row: numbe
   px(ctx, x + 2, y - 2, 2, 4, '#CFD8DC');
 }
 
-// door_mat → Temple Steps
+// door_mat → Temple Steps (top-down circular)
 function drawDoorMat(ctx: CanvasRenderingContext2D, col: number, row: number): void {
   const { x, y } = gridToScreen({ col, row });
+  const r = TILE_PX / 3;
   // Light gray marble step
   ctx.fillStyle = '#CFD8DC';
   ctx.beginPath();
-  ctx.ellipse(x, y, TILE_W / 3, TILE_H / 4, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, y, r, r, 0, 0, Math.PI * 2);
   ctx.fill();
   // Step edge
   ctx.strokeStyle = '#B0BEC5';
@@ -577,7 +570,7 @@ function drawDoorMat(ctx: CanvasRenderingContext2D, col: number, row: number): v
   // Inner step
   ctx.fillStyle = '#E0E0E0';
   ctx.beginPath();
-  ctx.ellipse(x, y, TILE_W / 4, TILE_H / 5, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, y, r * 0.7, r * 0.7, 0, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -585,7 +578,7 @@ function drawDoorMat(ctx: CanvasRenderingContext2D, col: number, row: number): v
 function drawStandingDesk(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
   const { x, y } = gridToScreen({ col, row });
   // Marble column desk surface (higher)
-  drawIsometricBlock(ctx, { col, row }, 17, PALETTE.marbleLight, PALETTE.marbleMid, PALETTE.marbleDark);
+  drawFlatSurface(ctx, x, y, PALETTE.marbleLight);
   // Gold rim on top
   px(ctx, x - 10, y - 18, 20, 1, PALETTE.gold);
   // Marble pillar legs
@@ -969,8 +962,8 @@ function drawGodStatue(ctx: CanvasRenderingContext2D, col: number, row: number, 
 
 // altar → Sacred Altar
 function drawAltar(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
-  drawIsometricBlock(ctx, { col, row }, 13, '#F4EEE2', '#CEC2B0', '#B8AB96');
   const { x, y } = gridToScreen({ col, row });
+  drawFlatSurface(ctx, x, y, '#F4EEE2');
   // Gold trim and crest
   px(ctx, x - 10, y - 14, 20, 1, PALETTE.gold);
   px(ctx, x - 6, y - 18, 12, 3, '#E9DBC8');
@@ -988,158 +981,6 @@ function drawAltar(ctx: CanvasRenderingContext2D, col: number, row: number, tick
 // Main dispatcher
 // ---------------------------------------------------------------------------
 
-function drawV2Workstation(
-  ctx: CanvasRenderingContext2D,
-  col: number,
-  row: number,
-  tick: number,
-  opts?: { grand?: boolean; standing?: boolean; dual?: boolean },
-): void {
-  const top = opts?.grand ? '#F7E8CF' : '#EEE2CF';
-  const left = opts?.grand ? '#C8B08C' : '#BAA289';
-  const right = opts?.grand ? '#B38F62' : '#A78D73';
-  const h = opts?.standing ? 18 : 14;
-  drawIsometricBlock(ctx, { col, row }, h, top, left, right);
-  const { x, y } = gridToScreen({ col, row });
-  const sy = y - (opts?.standing ? 31 : 27);
-  // Pixel monitor(s)
-  px(ctx, x - 8, sy, 7, 5, '#2F3948');
-  px(ctx, x - 7, sy + 1, 5, 3, '#79C4F2');
-  if (opts?.dual) {
-    px(ctx, x + 1, sy - 1, 7, 5, '#2F3948');
-    px(ctx, x + 2, sy, 5, 3, tick % 40 < 28 ? '#9DE6FF' : '#5FA1CA');
-  }
-  // Marble keyboard slab
-  px(ctx, x - 6, y - 12, 12, 2, '#D7CEC2');
-  px(ctx, x - 5, y - 11, 10, 1, '#B7AB9C');
-  // Gold trim
-  px(ctx, x - 10, y - h - 2, 20, 1, PALETTE.gold);
-}
-
-function drawV2Seat(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number, opts?: { cloud?: boolean; throne?: boolean }): void {
-  const { x, y } = gridToScreen({ col, row });
-  if (opts?.cloud) {
-    const floatOffset = Math.sin(tick * 0.04) * 1;
-    const cy = y - 8 + floatOffset;
-    px(ctx, x - 8, cy - 2, 16, 4, '#FFFFFF');
-    px(ctx, x - 10, cy - 1, 4, 3, '#F1F7FF');
-    px(ctx, x + 6, cy - 1, 4, 3, '#F1F7FF');
-    px(ctx, x - 4, cy - 4, 8, 3, '#FFFFFF');
-    px(ctx, x - 6, y + 1, 12, 1, '#C7D7E5');
-    return;
-  }
-
-  drawIsometricBlock(
-    ctx,
-    { col, row },
-    opts?.throne ? 13 : 10,
-    opts?.throne ? '#F7E6C8' : '#E4DACE',
-    opts?.throne ? '#C7A875' : '#BAAA95',
-    opts?.throne ? '#B88A4F' : '#A6947D',
-  );
-  px(ctx, x - 5, y - 17, 10, 8, '#EDE5DA');
-  px(ctx, x - 6, y - 18, 12, 1, opts?.throne ? PALETTE.gold : '#D2C2AD');
-  px(ctx, x - 3, y - 7, 2, 5, '#BDAF9C');
-  px(ctx, x + 1, y - 7, 2, 5, '#BDAF9C');
-}
-
-function drawV2Cabinet(
-  ctx: CanvasRenderingContext2D,
-  col: number,
-  row: number,
-  tick: number,
-  opts?: { server?: boolean; trophy?: boolean; shelf?: boolean },
-): void {
-  const { x, y } = gridToScreen({ col, row });
-  drawIsometricBlock(ctx, { col, row }, 15, '#DDD1BF', '#B7A790', '#A08D76');
-  px(ctx, x - 7, y - 28, 14, 20, '#D9CEBC');
-  px(ctx, x - 6, y - 27, 12, 18, '#C6B8A1');
-  for (let i = 0; i < 3; i++) {
-    px(ctx, x - 5, y - 24 + i * 5, 10, 1, '#8F7C64');
-  }
-  if (opts?.server) {
-    for (let i = 0; i < 4; i++) {
-      px(ctx, x - 4 + (i % 2) * 6, y - 22 + Math.floor(i / 2) * 5, 2, 2, tick % 30 < 15 ? '#66E0FF' : '#3F6B88');
-    }
-  }
-  if (opts?.trophy) {
-    px(ctx, x - 1, y - 25, 2, 3, '#FFD54F');
-    px(ctx, x - 3, y - 22, 6, 1, '#C99B2E');
-  }
-  if (opts?.shelf) {
-    px(ctx, x - 5, y - 19, 2, 3, '#7E57C2');
-    px(ctx, x - 2, y - 19, 2, 3, '#42A5F5');
-    px(ctx, x + 1, y - 19, 2, 3, '#EF5350');
-  }
-}
-
-function drawV2Feature(
-  ctx: CanvasRenderingContext2D,
-  col: number,
-  row: number,
-  tick: number,
-  type: string,
-): void {
-  const { x, y } = gridToScreen({ col, row });
-  if (type === 'potted_plant') {
-    drawIsometricBlock(ctx, { col, row }, 8, '#D8CCB8', '#BCA991', '#A79279');
-    px(ctx, x - 4, y - 18, 8, 6, '#B06A3A');
-    px(ctx, x - 1, y - 24, 2, 6, '#3E8A42');
-    px(ctx, x - 5, y - 22, 4, 4, '#53A95A');
-    px(ctx, x + 1, y - 23, 4, 4, '#4C9D53');
-    return;
-  }
-  if (type === 'aquarium' || type === 'water_cooler') {
-    drawIsometricBlock(ctx, { col, row }, 10, '#E5DCCB', '#BAAC96', '#A5947B');
-    px(ctx, x - 6, y - 20, 12, 10, '#7BC7EE');
-    px(ctx, x - 5, y - 19, 10, 8, '#A5E4FF');
-    px(ctx, x - 4, y - 15, 2, 2, '#4CAF50');
-    px(ctx, x + 2, y - 13, 2, 2, '#FF7043');
-    return;
-  }
-  if (type === 'coffee_machine') {
-    drawIsometricBlock(ctx, { col, row }, 10, '#E8DDC8', '#C3B197', '#AE9A7D');
-    px(ctx, x - 5, y - 20, 10, 8, '#C3A25A');
-    px(ctx, x - 3, y - 18, 6, 4, '#79C4F2');
-    px(ctx, x - 1, y - 24, 2, 3, tick % 16 < 9 ? '#FFAB00' : '#FF6D00');
-    return;
-  }
-}
-
-function drawV2SurfaceDecal(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number, type: string): void {
-  const { x, y } = gridToScreen({ col, row });
-  if (type === 'carpet' || type === 'door_mat') {
-    px(ctx, x - 10, y - 2, 20, 3, type === 'door_mat' ? '#C9A46D' : '#D7B985');
-    px(ctx, x - 8, y - 1, 16, 1, '#EED8B4');
-    return;
-  }
-  if (type === 'floor_window') {
-    drawIsometricBlock(ctx, { col, row }, 7, '#D9D3C8', '#B7AAA0', '#9F9185');
-    px(ctx, x - 10, y - 10, 20, 6, '#A6D6F4');
-    px(ctx, x - 9, y - 9, 18, 4, '#CDEBFF');
-    return;
-  }
-  if (type === 'wall_clock' || type === 'poster' || type === 'whiteboard_obj') {
-    drawIsometricBlock(ctx, { col, row }, 9, '#E2D7C6', '#BDAE98', '#A89680');
-    px(ctx, x - 7, y - 18, 14, 9, '#F4EEE3');
-    px(ctx, x - 6, y - 17, 12, 7, type === 'poster' ? '#E5C9A1' : '#DDE8F2');
-    if (type === 'wall_clock') {
-      px(ctx, x - 1, y - 14, 2, 2, '#5C4A2E');
-      px(ctx, x, y - 16, 1, 2, '#5C4A2E');
-    }
-    if (type === 'whiteboard_obj') {
-      px(ctx, x - 4, y - 14, 8, 1, '#9BBAD0');
-      px(ctx, x - 4, y - 12, 6, 1, '#9BBAD0');
-    }
-    return;
-  }
-  // Fallback small altar stone
-  drawIsometricBlock(ctx, { col, row }, 8, '#E2D8C8', '#C1B29D', '#A8947A');
-  if (tick % 100 < 70) {
-    px(ctx, x - 2, y - 13, 4, 1, PALETTE.gold);
-  }
-}
-
 export function drawFurniture(
   ctx: CanvasRenderingContext2D,
   type: FurnitureType | string,
@@ -1149,38 +990,38 @@ export function drawFurniture(
 ): void {
   let rendered = true;
   switch (type) {
-    case 'desk': drawV2Workstation(ctx, col, row, tick); break;
-    case 'chair': drawV2Seat(ctx, col, row, tick); break;
-    case 'monitor': drawV2Workstation(ctx, col, row, tick); break;
+    case 'desk': drawDesk(ctx, col, row, tick); break;
+    case 'chair': drawChair(ctx, col, row); break;
+    case 'monitor': drawMonitor(ctx, col, row, tick); break;
     case 'keyboard': rendered = false; break; // drawn as part of desk
-    case 'big_desk': drawV2Workstation(ctx, col, row, tick, { grand: true }); break;
-    case 'floor_window': drawV2SurfaceDecal(ctx, col, row, tick, type); break;
-    case 'coffee_machine': drawV2Feature(ctx, col, row, tick, type); break;
-    case 'snack_shelf': drawV2Cabinet(ctx, col, row, tick, { shelf: true }); break;
-    case 'water_cooler': drawV2Feature(ctx, col, row, tick, type); break;
-    case 'small_table': drawV2Workstation(ctx, col, row, tick); break;
-    case 'round_table': drawV2Workstation(ctx, col, row, tick); break;
-    case 'long_table': drawV2Workstation(ctx, col, row, tick, { grand: true }); break;
-    case 'whiteboard_obj': drawV2SurfaceDecal(ctx, col, row, tick, type); break;
-    case 'bookshelf': drawV2Cabinet(ctx, col, row, tick, { shelf: true }); break;
-    case 'reading_chair': drawV2Seat(ctx, col, row, tick); break;
-    case 'sofa': drawV2Seat(ctx, col, row, tick, { throne: true }); break;
-    case 'coffee_table': drawV2Workstation(ctx, col, row, tick); break;
-    case 'server_rack': drawV2Cabinet(ctx, col, row, tick, { server: true }); break;
-    case 'potted_plant': drawV2Feature(ctx, col, row, tick, type); break;
-    case 'carpet': drawV2SurfaceDecal(ctx, col, row, tick, type); break;
-    case 'wall_clock': drawV2SurfaceDecal(ctx, col, row, tick, type); break;
-    case 'poster': drawV2SurfaceDecal(ctx, col, row, tick, type); break;
-    case 'meeting_chair': drawV2Seat(ctx, col, row, tick); break;
-    case 'door_mat': drawV2SurfaceDecal(ctx, col, row, tick, type); break;
-    case 'standing_desk': drawV2Workstation(ctx, col, row, tick, { standing: true }); break;
-    case 'dual_monitor': drawV2Workstation(ctx, col, row, tick, { dual: true }); break;
-    case 'arcade_machine': drawV2Cabinet(ctx, col, row, tick, { server: true }); break;
-    case 'vending_machine': drawV2Cabinet(ctx, col, row, tick, { server: true }); break;
-    case 'trophy_shelf': drawV2Cabinet(ctx, col, row, tick, { trophy: true }); break;
-    case 'aquarium': drawV2Feature(ctx, col, row, tick, type); break;
-    case 'marble_round_table': drawV2Workstation(ctx, col, row, tick); break;
-    case 'cloud_seat': drawV2Seat(ctx, col, row, tick, { cloud: true }); break;
+    case 'big_desk': drawBigDesk(ctx, col, row, tick); break;
+    case 'floor_window': drawFloorWindow(ctx, col, row, tick); break;
+    case 'coffee_machine': drawCoffeeMachine(ctx, col, row, tick); break;
+    case 'snack_shelf': drawSnackShelf(ctx, col, row); break;
+    case 'water_cooler': drawWaterCooler(ctx, col, row, tick); break;
+    case 'small_table': drawSmallTable(ctx, col, row); break;
+    case 'round_table': drawRoundTable(ctx, col, row); break;
+    case 'long_table': drawLongTable(ctx, col, row); break;
+    case 'whiteboard_obj': drawWhiteboard(ctx, col, row, tick); break;
+    case 'bookshelf': drawBookshelf(ctx, col, row); break;
+    case 'reading_chair': drawReadingChair(ctx, col, row); break;
+    case 'sofa': drawSofa(ctx, col, row); break;
+    case 'coffee_table': drawCoffeeTable(ctx, col, row); break;
+    case 'server_rack': drawServerRack(ctx, col, row, tick); break;
+    case 'potted_plant': drawPottedPlant(ctx, col, row, tick); break;
+    case 'carpet': drawCarpet(ctx, col, row); break;
+    case 'wall_clock': drawWallClock(ctx, col, row, tick); break;
+    case 'poster': drawPoster(ctx, col, row); break;
+    case 'meeting_chair': drawMeetingChair(ctx, col, row); break;
+    case 'door_mat': drawDoorMat(ctx, col, row); break;
+    case 'standing_desk': drawStandingDesk(ctx, col, row, tick); break;
+    case 'dual_monitor': drawDualMonitor(ctx, col, row, tick); break;
+    case 'arcade_machine': drawArcadeMachine(ctx, col, row, tick); break;
+    case 'vending_machine': drawVendingMachine(ctx, col, row, tick); break;
+    case 'trophy_shelf': drawTrophyShelf(ctx, col, row); break;
+    case 'aquarium': drawAquarium(ctx, col, row, tick); break;
+    case 'marble_round_table': drawMarbleRoundTable(ctx, col, row); break;
+    case 'cloud_seat': drawCloudSeat(ctx, col, row, tick); break;
     case 'doric_column': drawDoricColumn(ctx, col, row, tick); break;
     case 'temple_column': drawTempleColumn(ctx, col, row, tick); break;
     case 'marble_column': drawMarbleColumn(ctx, col, row, tick); break;

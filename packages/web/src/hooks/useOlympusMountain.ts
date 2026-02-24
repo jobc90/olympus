@@ -21,7 +21,7 @@ import type {
 } from '../lib/types';
 import type { Particle } from '../engine/canvas';
 import { findPath, type WalkGrid } from '../engine/pathfinding';
-import { gridToScreen } from '../engine/isometric';
+import { getTileCenter as gridToScreen } from '../engine/topdown';
 import { createWalkGrid } from '../olympus-mountain/layout';
 import { BEHAVIOR_MAP, GEMINI_BEHAVIOR_MAP, resolveZone, getAnimForTick, getBubbleText, getParticleType } from '../olympus-mountain/behaviors';
 import { getZone, getRandomPointInZone } from '../olympus-mountain/zones';

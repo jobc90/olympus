@@ -1,29 +1,150 @@
 // ============================================================================
-// Zone Definitions — Named areas in the Olympus Mountain temple
+// Zone Definitions — Named areas in the Olympus Mountain top-down map
+// MAP: 34 cols × 19 rows, TILE_PX=32px → renders in 1088×608px (centered in 1100×620)
 // ============================================================================
 
 import type { Zone, ZoneId } from '../lib/types';
 
 // ---------------------------------------------------------------------------
-// Zone templates
+// Zone layout (top-down grid)
 // ---------------------------------------------------------------------------
+//
+//   Col:  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33
+//   Row 0:  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W
+//   Row 1:  W  G  G  G  G  G  G  G  G  G  G  W  T  T  T  T  T  T  T  T  T  W  O  O  O  O  O  O  O  O  O  O  O  W
+//   Row 2:  W  G  G  G  G  G  G  G  G  G  G  W  T  T  T  T  T  T  T  T  T  W  O  O  O  O  O  O  O  O  O  O  O  W
+//   Row 3:  W  G  G  G  G  G  G  G  G  G  G  W  T  T  T  T  T  T  T  T  T  W  O  O  O  O  O  O  O  O  O  O  O  W
+//   Row 4:  W  G  G  G  G  G  G  G  G  G  G  W  T  T  T  T  T  T  T  T  T  W  O  O  O  O  O  O  O  O  O  O  O  W
+//   Row 5:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S0 S0 S0 S0 S0  S3 S3 S3 S3 S3 S3 S3 S3 S3 S3  W
+//   Row 6:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S0 S0 S0 S0 S0  S3 S3 S3 S3 S3 S3 S3 S3 S3 S3  W
+//   Row 7:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S0 S0 S0 S0 S0  S3 S3 S3 S3 S3 S3 S3 S3 S3 S3  W
+//   Row 8:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S1 S1 S1 S1 S1  S4 S4 S4 S4 S4 S4 S4 S4 S4 S4  W
+//   Row 9:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S1 S1 S1 S1 S1  S4 S4 S4 S4 S4 S4 S4 S4 S4 S4  W
+//   Row10:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S1 S1 S1 S1 S1  S4 S4 S4 S4 S4 S4 S4 S4 S4 S4  W
+//   Row11:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S2 S2 S2 S2 S2  S5 S5 S5 S5 S5 S5 S5 S5 S5 S5  W
+//   Row12:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S2 S2 S2 S2 S2  S5 S5 S5 S5 S5 S5 S5 S5 S5 S5  W
+//   Row13:  W  B  B  B  B  B  B  B  B  B  W  L  L  L  L  L  P  S2 S2 S2 S2 S2  S5 S5 S5 S5 S5 S5 S5 S5 S5 S5  W
+//   Row14:  W  B  B  B  B  B  B  B  B  B  W  L  L  L  L  L  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
+//   Row15:  W  B  B  B  B  B  B  B  B  B  W  L  L  L  L  L  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
+//   Row16:  W  B  B  B  B  B  B  B  B  B  W  L  L  L  L  L  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
+//   Row17:  W  B  B  B  B  B  B  B  B  B  W  L  L  L  L  L  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
+//   Row18:  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W
+//
+//  G=garden, T=zeus_temple, O=observatory, A=agora, P=processional_path,
+//  S0-S5=sanctuary_0..5, B=ambrosia_hall, L=athenas_library, F=hephaestus_forge
 
 export const ZONES_TEMPLATE: Record<ZoneId, Omit<Zone, 'id'>> = {
-  sanctuary_0: { label: 'Sanctuary 0', emoji: '⚒️', center: { col: 17, row: 11 }, minCol: 16, maxCol: 18, minRow: 10, maxRow: 12 },
-  sanctuary_1: { label: 'Sanctuary 1', emoji: '⚒️', center: { col: 17, row: 14 }, minCol: 16, maxCol: 18, minRow: 13, maxRow: 15 },
-  sanctuary_2: { label: 'Sanctuary 2', emoji: '⚒️', center: { col: 17, row: 17 }, minCol: 16, maxCol: 18, minRow: 16, maxRow: 18 },
-  sanctuary_3: { label: 'Sanctuary 3', emoji: '⚒️', center: { col: 21, row: 11 }, minCol: 20, maxCol: 22, minRow: 10, maxRow: 12 },
-  sanctuary_4: { label: 'Sanctuary 4', emoji: '⚒️', center: { col: 21, row: 14 }, minCol: 20, maxCol: 22, minRow: 13, maxRow: 15 },
-  sanctuary_5: { label: 'Sanctuary 5', emoji: '⚒️', center: { col: 21, row: 17 }, minCol: 20, maxCol: 22, minRow: 16, maxRow: 18 },
-  zeus_temple: { label: "Zeus's Temple", emoji: '⚡', center: { col: 12, row: 3 }, minCol: 9, maxCol: 15, minRow: 1, maxRow: 5 },
-  ambrosia_hall: { label: 'Ambrosia Hall', emoji: '🍷', center: { col: 4, row: 16 }, minCol: 1, maxCol: 8, minRow: 13, maxRow: 18 },
-  agora: { label: 'Agora', emoji: '🏛️', center: { col: 7, row: 8 }, minCol: 3, maxCol: 12, minRow: 6, maxRow: 11 },
-  oracle_stone: { label: 'Oracle Stone', emoji: '📜', center: { col: 3, row: 10 }, minCol: 1, maxCol: 5, minRow: 9, maxRow: 11 },
-  athenas_library: { label: "Athena's Library", emoji: '📚', center: { col: 9, row: 13 }, minCol: 8, maxCol: 11, minRow: 12, maxRow: 15 },
-  olympus_garden: { label: 'Olympus Garden', emoji: '🌿', center: { col: 4, row: 3 }, minCol: 1, maxCol: 8, minRow: 1, maxRow: 5 },
-  oracle_chamber: { label: 'Oracle Chamber', emoji: '🔮', center: { col: 9, row: 17 }, minCol: 7, maxCol: 11, minRow: 16, maxRow: 18 },
-  propylaea: { label: 'Propylaea', emoji: '🏛️', center: { col: 12, row: 18 }, minCol: 10, maxCol: 13, minRow: 17, maxRow: 19 },
-  gods_plaza: { label: 'Agora of Gods', emoji: '🏛️', center: { col: 8, row: 10 }, minCol: 1, maxCol: 14, minRow: 6, maxRow: 18 },
+  // ── Upper tier (rows 1-4) ──────────────────────────────────────────────
+  olympus_garden: {
+    label: 'Olympus Garden',
+    emoji: '🌿',
+    center: { col: 6, row: 2 },
+    minCol: 1, maxCol: 10, minRow: 1, maxRow: 4,
+  },
+  zeus_temple: {
+    label: "Zeus's Temple",
+    emoji: '⚡',
+    center: { col: 16, row: 2 },
+    minCol: 12, maxCol: 20, minRow: 1, maxRow: 4,
+  },
+  celestial_observatory: {
+    label: 'Celestial Observatory',
+    emoji: '🔭',
+    center: { col: 27, row: 2 },
+    minCol: 22, maxCol: 32, minRow: 1, maxRow: 4,
+  },
+
+  // ── Middle tier left — Agora (rows 5-12) ──────────────────────────────
+  agora: {
+    label: 'Agora',
+    emoji: '🏛️',
+    center: { col: 8, row: 9 },
+    minCol: 1, maxCol: 15, minRow: 5, maxRow: 12,
+  },
+
+  // ── Middle tier right — Sanctuaries (rows 5-13) ───────────────────────
+  sanctuary_0: {
+    label: 'Sanctuary 0',
+    emoji: '⚒️',
+    center: { col: 19, row: 6 },
+    minCol: 17, maxCol: 21, minRow: 5, maxRow: 7,
+  },
+  sanctuary_1: {
+    label: 'Sanctuary 1',
+    emoji: '⚒️',
+    center: { col: 19, row: 9 },
+    minCol: 17, maxCol: 21, minRow: 8, maxRow: 10,
+  },
+  sanctuary_2: {
+    label: 'Sanctuary 2',
+    emoji: '⚒️',
+    center: { col: 19, row: 12 },
+    minCol: 17, maxCol: 21, minRow: 11, maxRow: 13,
+  },
+  sanctuary_3: {
+    label: 'Sanctuary 3',
+    emoji: '⚒️',
+    center: { col: 27, row: 6 },
+    minCol: 23, maxCol: 32, minRow: 5, maxRow: 7,
+  },
+  sanctuary_4: {
+    label: 'Sanctuary 4',
+    emoji: '⚒️',
+    center: { col: 27, row: 9 },
+    minCol: 23, maxCol: 32, minRow: 8, maxRow: 10,
+  },
+  sanctuary_5: {
+    label: 'Sanctuary 5',
+    emoji: '⚒️',
+    center: { col: 27, row: 12 },
+    minCol: 23, maxCol: 32, minRow: 11, maxRow: 13,
+  },
+
+  // ── Lower tier (rows 13-17) ───────────────────────────────────────────
+  ambrosia_hall: {
+    label: 'Ambrosia Hall',
+    emoji: '🍷',
+    center: { col: 5, row: 15 },
+    minCol: 1, maxCol: 9, minRow: 13, maxRow: 17,
+  },
+  athenas_library: {
+    label: "Athena's Library",
+    emoji: '📚',
+    center: { col: 13, row: 15 },
+    minCol: 11, maxCol: 15, minRow: 13, maxRow: 17,
+  },
+  hephaestus_forge: {
+    label: 'Hephaestus Forge',
+    emoji: '🔥',
+    center: { col: 25, row: 15 },
+    minCol: 17, maxCol: 32, minRow: 14, maxRow: 17,
+  },
+
+  // ── Alias zones (mapped to existing areas) ────────────────────────────
+  oracle_stone: {
+    label: 'Oracle Stone',
+    emoji: '📜',
+    center: { col: 13, row: 15 },
+    minCol: 11, maxCol: 15, minRow: 13, maxRow: 15,
+  },
+  oracle_chamber: {
+    label: 'Oracle Chamber',
+    emoji: '🔮',
+    center: { col: 13, row: 16 },
+    minCol: 11, maxCol: 15, minRow: 15, maxRow: 17,
+  },
+  propylaea: {
+    label: 'Propylaea',
+    emoji: '🏛️',
+    center: { col: 16, row: 5 },
+    minCol: 15, maxCol: 17, minRow: 4, maxRow: 6,
+  },
+  gods_plaza: {
+    label: 'Agora of Gods',
+    emoji: '🏛️',
+    center: { col: 8, row: 9 },
+    minCol: 1, maxCol: 15, minRow: 5, maxRow: 12,
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -34,7 +155,6 @@ export function buildZoneMap(workerCount: number): Record<ZoneId, Zone> {
   const zones: Partial<Record<ZoneId, Zone>> = {};
   for (const [id, tmpl] of Object.entries(ZONES_TEMPLATE)) {
     const zoneId = id as ZoneId;
-    // Only include sanctuaries that have workers
     if (zoneId.startsWith('sanctuary_')) {
       const idx = parseInt(zoneId.replace('sanctuary_', ''), 10);
       if (idx >= workerCount) continue;
@@ -44,18 +164,9 @@ export function buildZoneMap(workerCount: number): Record<ZoneId, Zone> {
   return zones as Record<ZoneId, Zone>;
 }
 
-// ---------------------------------------------------------------------------
-// Get zone by id
-// ---------------------------------------------------------------------------
-
 export function getZone(id: ZoneId, workerCount: number): Zone | undefined {
-  const zones = buildZoneMap(workerCount);
-  return zones[id];
+  return buildZoneMap(workerCount)[id];
 }
-
-// ---------------------------------------------------------------------------
-// Get a random walkable point within a zone
-// ---------------------------------------------------------------------------
 
 export function getRandomPointInZone(zone: Zone): { col: number; row: number } {
   const col = zone.minCol + Math.floor(Math.random() * (zone.maxCol - zone.minCol + 1));

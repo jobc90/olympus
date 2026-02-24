@@ -1,5 +1,5 @@
 // ============================================================================
-// Olympus Mountain Layout — Map dimensions, furniture placement, floor colors, walk grid
+// Olympus Mountain Layout — Top-down map (34×19 tiles, TILE_PX=32)
 // ============================================================================
 
 import type { FurnitureItem, Zone, ZoneId, TileType } from '../lib/types';
@@ -9,145 +9,243 @@ import { buildZoneMap } from './zones';
 // Map Dimensions
 // ---------------------------------------------------------------------------
 
-export const MAP_COLS = 24;
-export const MAP_ROWS = 20;
+export const MAP_COLS = 34;
+export const MAP_ROWS = 19;
 
 // ---------------------------------------------------------------------------
-// Floor color helper
+// Floor color per tile — zone-based checkerboard
 // ---------------------------------------------------------------------------
 
 export function getFloorColor(col: number, row: number): string {
-  const parity = (col + row) % 2 === 0;
-  const isTemple = col >= 9 && col <= 15 && row >= 1 && row <= 5;
-  const isAgora = col >= 3 && col <= 12 && row >= 6 && row <= 11;
-  const isSanctuary = col >= 16 && col <= 22 && row >= 10 && row <= 18;
-  const isGarden = col >= 1 && col <= 8 && row >= 1 && row <= 5;
-  const isAmbrosia = col >= 1 && col <= 8 && row >= 13 && row <= 18;
-  const isProcession = (col === 11 || col === 12) && row >= 4 && row <= 18;
+  // Border tiles → dark wall
+  if (col === 0 || col === MAP_COLS - 1 || row === 0 || row === MAP_ROWS - 1) {
+    return '#1A1F2E';
+  }
 
-  // Sacred road from gate to temple.
-  if (isProcession) {
-    return parity ? '#F5D89C' : '#B97D3F';
+  // Processional path (col 16, rows 5-17)
+  if (col === 16 && row >= 5 && row <= 17) {
+    const parity = (col + row) % 2 === 0;
+    return parity ? '#F9D48A' : '#C49830';
   }
-  if (isTemple) {
-    return parity ? '#FFF1D8' : '#D3AC72';
+
+  // ── Upper tier ────────────────────────────────────────────────────────
+  // Column divider walls at 11 and 21
+  if ((col === 11 || col === 21) && row >= 1 && row <= 4) return '#1A1F2E';
+
+  // Olympus Garden (cols 1-10, rows 1-4)
+  if (col >= 1 && col <= 10 && row >= 1 && row <= 4) {
+    const parity = (col + row) % 2 === 0;
+    return parity ? '#C8E6A0' : '#5A8C38';
   }
-  if (isAgora) {
-    return parity ? '#EFE8DC' : '#C9B79B';
+
+  // Zeus Temple (cols 12-20, rows 1-4)
+  if (col >= 12 && col <= 20 && row >= 1 && row <= 4) {
+    const parity = (col + row) % 2 === 0;
+    return parity ? '#FFF8E1' : '#D4A820';
   }
-  if (isSanctuary) {
-    return parity ? '#DFE9F5' : '#A3B4CB';
+
+  // Celestial Observatory (cols 22-32, rows 1-4)
+  if (col >= 22 && col <= 32 && row >= 1 && row <= 4) {
+    const parity = (col + row) % 2 === 0;
+    return parity ? '#EDE0FF' : '#7A55CC';
   }
-  if (isGarden) {
-    return parity ? '#DDE9D7' : '#A8BE9B';
+
+  // ── Horizontal divider between upper and middle (row 5 top boundary)
+  if (row === 5) {
+    // Sanctuary cols have no wall at row 5 (open)
+    // Agora cols open at row 5 too
+    // Just treat it as zone floor (fall through below)
   }
-  if (isAmbrosia) {
-    return parity ? '#F3DEC2' : '#CDA479';
+
+  // ── Middle tier ───────────────────────────────────────────────────────
+  // Vertical divider between Agora and Sanctuaries at col 16 (processional path handled above)
+  // We also add a thin wall col at 22 between sanctuary cols A and B
+  if (col === 22 && row >= 5 && row <= 13) {
+    const parity = (col + row) % 2 === 0;
+    return parity ? '#2A3050' : '#1A1F2E';
   }
-  return parity ? '#EEE5D8' : '#C9B79E';
+
+  // Agora (cols 1-15, rows 5-12)
+  if (col >= 1 && col <= 15 && row >= 5 && row <= 12) {
+    const parity = (col + row) % 2 === 0;
+    return parity ? '#EEE0CC' : '#A07848';
+  }
+
+  // Sanctuary sub-zones (cols 17-21, rows 5-13)
+  if (col >= 17 && col <= 21 && row >= 5 && row <= 13) {
+    // Divider rows between sanctuary sub-zones
+    if (row === 8 || row === 11) {
+      const parity = (col + row) % 2 === 0;
+      return parity ? '#3A4060' : '#2A3050';
+    }
+    const parity = (col + row) % 2 === 0;
+    return parity ? '#D8EEFF' : '#5A8AC0';
+  }
+
+  // Sanctuary sub-zones (cols 23-32, rows 5-13)
+  if (col >= 23 && col <= 32 && row >= 5 && row <= 13) {
+    if (row === 8 || row === 11) {
+      const parity = (col + row) % 2 === 0;
+      return parity ? '#3A4060' : '#2A3050';
+    }
+    const parity = (col + row) % 2 === 0;
+    return parity ? '#C8E0F8' : '#4A7AAE';
+  }
+
+  // ── Lower tier horizontal divider at row 13 (between agora and ambrosia)
+  if (row === 13 && col >= 1 && col <= 15) {
+    return '#1A1F2E'; // wall
+  }
+
+  // Vertical divider between ambrosia and library (col 10)
+  if (col === 10 && row >= 13 && row <= 17) {
+    return '#1A1F2E';
+  }
+
+  // ── Lower tier ────────────────────────────────────────────────────────
+  // Ambrosia Hall (cols 1-9, rows 13-17)
+  if (col >= 1 && col <= 9 && row >= 14 && row <= 17) {
+    const parity = (col + row) % 2 === 0;
+    return parity ? '#F8DFC0' : '#C07840';
+  }
+
+  // Athena's Library / Oracle (cols 11-15, rows 14-17)
+  if (col >= 11 && col <= 15 && row >= 14 && row <= 17) {
+    const parity = (col + row) % 2 === 0;
+    return parity ? '#D8E8FF' : '#5070A8';
+  }
+
+  // Hephaestus Forge (cols 17-32, rows 14-17)
+  if (col >= 17 && col <= 32 && row >= 14 && row <= 17) {
+    const parity = (col + row) % 2 === 0;
+    return parity ? '#FFD8B0' : '#B85828';
+  }
+
+  // Default floor (generic marble)
+  const parity = (col + row) % 2 === 0;
+  return parity ? '#DDCFC0' : '#AA9080';
 }
 
 // ---------------------------------------------------------------------------
-// Furniture layout builder
+// Furniture layout builder (top-down coordinates)
 // ---------------------------------------------------------------------------
 
 export function buildFurnitureLayout(workerCount: number): FurnitureItem[] {
   const items: FurnitureItem[] = [];
 
-  // Processional gate (center-bottom)
-  items.push({ type: 'door_mat', col: 11, row: 18 });
-  items.push({ type: 'carpet', col: 11, row: 17 });
-  items.push({ type: 'carpet', col: 12, row: 16 });
-  items.push({ type: 'temple_column', col: 10, row: 18 });
-  items.push({ type: 'temple_column', col: 13, row: 18 });
-  items.push({ type: 'sacred_brazier', col: 9, row: 17 });
-  items.push({ type: 'sacred_brazier', col: 14, row: 17 });
+  // ── Zeus Temple (cols 12-20, rows 1-4) ──────────────────────────────
+  items.push({ type: 'big_desk', col: 16, row: 2 });
+  items.push({ type: 'chair', col: 16, row: 3 });
+  items.push({ type: 'altar', col: 14, row: 1 });
+  items.push({ type: 'altar', col: 18, row: 1 });
+  items.push({ type: 'god_statue', col: 12, row: 1 });
+  items.push({ type: 'god_statue', col: 20, row: 1 });
+  items.push({ type: 'sacred_brazier', col: 13, row: 3 });
+  items.push({ type: 'sacred_brazier', col: 19, row: 3 });
+  items.push({ type: 'temple_column', col: 12, row: 2 });
+  items.push({ type: 'temple_column', col: 20, row: 2 });
 
-  // Olympus garden (top-left)
-  items.push({ type: 'potted_plant', col: 2, row: 2 });
+  // ── Olympus Garden (cols 1-10, rows 1-4) ────────────────────────────
+  items.push({ type: 'potted_plant', col: 2, row: 1 });
   items.push({ type: 'potted_plant', col: 4, row: 2 });
-  items.push({ type: 'potted_plant', col: 6, row: 3 });
-  items.push({ type: 'aquarium', col: 5, row: 4 });
-  items.push({ type: 'altar', col: 3, row: 4 });
-  items.push({ type: 'marble_column', col: 8, row: 2 });
+  items.push({ type: 'potted_plant', col: 7, row: 3 });
+  items.push({ type: 'potted_plant', col: 9, row: 1 });
+  items.push({ type: 'aquarium', col: 3, row: 3 });
+  items.push({ type: 'altar', col: 6, row: 2 });
+  items.push({ type: 'marble_column', col: 1, row: 2 });
+  items.push({ type: 'marble_column', col: 10, row: 3 });
 
-  // Zeus temple (top-center, highest class)
-  items.push({ type: 'big_desk', col: 12, row: 2 });
-  items.push({ type: 'chair', col: 12, row: 3 });
-  items.push({ type: 'altar', col: 12, row: 4 });
-  items.push({ type: 'god_statue', col: 10, row: 2 });
-  items.push({ type: 'god_statue', col: 14, row: 2 });
-  items.push({ type: 'temple_column', col: 9, row: 1 });
-  items.push({ type: 'temple_column', col: 15, row: 1 });
-  items.push({ type: 'temple_column', col: 9, row: 4 });
-  items.push({ type: 'temple_column', col: 15, row: 4 });
-  items.push({ type: 'sacred_brazier', col: 10, row: 4 });
-  items.push({ type: 'sacred_brazier', col: 14, row: 4 });
+  // ── Celestial Observatory (cols 22-32, rows 1-4) ─────────────────────
+  items.push({ type: 'floor_window', col: 25, row: 2 });
+  items.push({ type: 'floor_window', col: 29, row: 1 });
+  items.push({ type: 'round_table', col: 24, row: 3 });
+  items.push({ type: 'round_table', col: 30, row: 3 });
+  items.push({ type: 'marble_column', col: 22, row: 1 });
+  items.push({ type: 'marble_column', col: 32, row: 1 });
+  items.push({ type: 'wall_clock', col: 27, row: 2 });
+  items.push({ type: 'poster', col: 31, row: 2 });
 
-  // Agora (left-middle, middle class)
-  items.push({ type: 'long_table', col: 7, row: 8 });
+  // ── Agora (cols 1-15, rows 5-12) ─────────────────────────────────────
+  items.push({ type: 'long_table', col: 8, row: 8 });
   items.push({ type: 'meeting_chair', col: 6, row: 8 });
-  items.push({ type: 'meeting_chair', col: 8, row: 8 });
-  items.push({ type: 'meeting_chair', col: 7, row: 7 });
-  items.push({ type: 'meeting_chair', col: 7, row: 9 });
-  items.push({ type: 'marble_column', col: 4, row: 7 });
-  items.push({ type: 'marble_column', col: 10, row: 9 });
-  items.push({ type: 'god_statue', col: 11, row: 8 });
-  items.push({ type: 'carpet', col: 8, row: 9 });
+  items.push({ type: 'meeting_chair', col: 10, row: 8 });
+  items.push({ type: 'meeting_chair', col: 8, row: 7 });
+  items.push({ type: 'meeting_chair', col: 8, row: 9 });
+  items.push({ type: 'marble_column', col: 3, row: 6 });
+  items.push({ type: 'marble_column', col: 13, row: 6 });
+  items.push({ type: 'marble_column', col: 3, row: 11 });
+  items.push({ type: 'marble_column', col: 13, row: 11 });
+  items.push({ type: 'god_statue', col: 8, row: 5 });
+  items.push({ type: 'whiteboard_obj', col: 15, row: 9 });
+  items.push({ type: 'carpet', col: 8, row: 8 });
 
-  // Oracle and library strip
-  items.push({ type: 'whiteboard_obj', col: 3, row: 10 });
-  items.push({ type: 'small_table', col: 4, row: 10 });
-  items.push({ type: 'bookshelf', col: 8, row: 13 });
-  items.push({ type: 'bookshelf', col: 9, row: 13 });
-  items.push({ type: 'reading_chair', col: 10, row: 13 });
-  items.push({ type: 'marble_column', col: 11, row: 12 });
-
-  // Ambrosia hall (bottom-left)
+  // ── Ambrosia Hall (cols 1-9, rows 14-17) ─────────────────────────────
   items.push({ type: 'coffee_machine', col: 2, row: 14 });
-  items.push({ type: 'snack_shelf', col: 2, row: 17 });
-  items.push({ type: 'sofa', col: 5, row: 16 });
-  items.push({ type: 'coffee_table', col: 6, row: 17 });
-  items.push({ type: 'altar', col: 7, row: 15 });
-  items.push({ type: 'potted_plant', col: 3, row: 17 });
+  items.push({ type: 'sofa', col: 6, row: 15 });
+  items.push({ type: 'coffee_table', col: 6, row: 16 });
+  items.push({ type: 'water_cooler', col: 8, row: 14 });
+  items.push({ type: 'snack_shelf', col: 1, row: 16 });
+  items.push({ type: 'potted_plant', col: 4, row: 17 });
 
-  // Worker sanctuaries (right side, low class)
-  const sanctuaryDesks = [
-    { col: 17, row: 11 }, { col: 17, row: 14 }, { col: 17, row: 17 },
-    { col: 21, row: 11 }, { col: 21, row: 14 }, { col: 21, row: 17 },
+  // ── Athena's Library (cols 11-15, rows 14-17) ─────────────────────────
+  items.push({ type: 'bookshelf', col: 12, row: 14 });
+  items.push({ type: 'bookshelf', col: 14, row: 14 });
+  items.push({ type: 'reading_chair', col: 13, row: 16 });
+  items.push({ type: 'small_table', col: 11, row: 15 });
+
+  // ── Hephaestus Forge (cols 17-32, rows 14-17) ──────────────────────
+  items.push({ type: 'server_rack', col: 18, row: 15 });
+  items.push({ type: 'server_rack', col: 20, row: 15 });
+  items.push({ type: 'arcade_machine', col: 28, row: 15 });
+  items.push({ type: 'vending_machine', col: 30, row: 16 });
+  items.push({ type: 'trophy_shelf', col: 32, row: 15 });
+  items.push({ type: 'sacred_brazier', col: 25, row: 14 });
+  items.push({ type: 'altar', col: 23, row: 17 });
+
+  // ── Worker Sanctuaries (right side) ──────────────────────────────────
+  // sanctuary_0 (rows 5-7, cols 17-21): desk at col 19, row 6
+  // sanctuary_1 (rows 8-10, cols 17-21): desk at col 19, row 9
+  // sanctuary_2 (rows 11-13, cols 17-21): desk at col 19, row 12
+  // sanctuary_3 (rows 5-7, cols 23-32): desk at col 27, row 6
+  // sanctuary_4 (rows 8-10, cols 23-32): desk at col 27, row 9
+  // sanctuary_5 (rows 11-13, cols 23-32): desk at col 27, row 12
+
+  const sanctuaryDesks: Array<{ col: number; row: number }> = [
+    { col: 19, row: 6 },
+    { col: 19, row: 9 },
+    { col: 19, row: 12 },
+    { col: 27, row: 6 },
+    { col: 27, row: 9 },
+    { col: 27, row: 12 },
   ];
-  const sanctuaryChairs = [
-    { col: 18, row: 11 }, { col: 18, row: 14 }, { col: 18, row: 17 },
-    { col: 22, row: 11 }, { col: 22, row: 14 }, { col: 22, row: 17 },
+  const sanctuaryChairs: Array<{ col: number; row: number }> = [
+    { col: 19, row: 7 },
+    { col: 19, row: 10 },
+    { col: 19, row: 13 },
+    { col: 27, row: 7 },
+    { col: 27, row: 10 },
+    { col: 27, row: 13 },
   ];
+
   for (let i = 0; i < Math.min(workerCount, 6); i++) {
-    items.push({ type: i % 2 === 1 ? 'standing_desk' : 'marble_round_table', ...sanctuaryDesks[i] });
-    items.push({ type: 'cloud_seat', ...sanctuaryChairs[i] });
-    items.push({ type: 'monitor', ...sanctuaryDesks[i] });
-    items.push({ type: 'carpet', col: sanctuaryDesks[i].col, row: sanctuaryDesks[i].row - 1 });
+    const desk = sanctuaryDesks[i];
+    const chair = sanctuaryChairs[i];
+    items.push({ type: i % 2 === 0 ? 'desk' : 'standing_desk', col: desk.col, row: desk.row });
+    items.push({ type: i % 2 === 0 ? 'monitor' : 'dual_monitor', col: desk.col - 1, row: desk.row });
+    items.push({ type: i % 2 === 0 ? 'chair' : 'cloud_seat', col: chair.col, row: chair.row });
   }
 
-  items.push({ type: 'doric_column', col: 16, row: 10 });
-  items.push({ type: 'doric_column', col: 16, row: 13 });
-  items.push({ type: 'doric_column', col: 16, row: 16 });
-  items.push({ type: 'doric_column', col: 22, row: 10 });
-  items.push({ type: 'doric_column', col: 22, row: 13 });
-  items.push({ type: 'doric_column', col: 22, row: 16 });
-
-  items.push({ type: 'server_rack', col: 16, row: 11 });
-  items.push({ type: 'server_rack', col: 20, row: 11 });
-  items.push({ type: 'altar', col: 19, row: 11 });
-  items.push({ type: 'altar', col: 19, row: 14 });
-  items.push({ type: 'altar', col: 19, row: 17 });
-  items.push({ type: 'carpet', col: 19, row: 10 });
-  items.push({ type: 'carpet', col: 19, row: 13 });
-  items.push({ type: 'carpet', col: 19, row: 16 });
+  // Doric columns at sanctuary zone entrances
+  items.push({ type: 'doric_column', col: 17, row: 5 });
+  items.push({ type: 'doric_column', col: 21, row: 5 });
+  items.push({ type: 'doric_column', col: 23, row: 5 });
+  items.push({ type: 'doric_column', col: 32, row: 5 });
 
   return items;
 }
 
 // ---------------------------------------------------------------------------
-// Walk grid (pathfinding)
+// Walk grid (pathfinding) — top-down
 // ---------------------------------------------------------------------------
 
 export function createWalkGrid(workerCount: number): TileType[][] {
@@ -155,42 +253,43 @@ export function createWalkGrid(workerCount: number): TileType[][] {
   for (let r = 0; r < MAP_ROWS; r++) {
     grid[r] = [];
     for (let c = 0; c < MAP_COLS; c++) {
+      // Border tiles are walls
       if (r === 0 || c === 0 || r === MAP_ROWS - 1 || c === MAP_COLS - 1) {
         grid[r][c] = 'wall';
-      } else {
+      }
+      // Column dividers between upper zones
+      else if ((c === 11 || c === 21) && r >= 1 && r <= 4) {
+        grid[r][c] = 'wall';
+      }
+      // Divider between agora and lower tier
+      else if (r === 13 && c >= 1 && c <= 15) {
+        grid[r][c] = 'wall';
+      }
+      // Divider between ambrosia and library
+      else if (c === 10 && r >= 13 && r <= 17) {
+        grid[r][c] = 'wall';
+      }
+      // Separator between sanctuary cols A and B
+      else if (c === 22 && r >= 5 && r <= 13) {
+        grid[r][c] = 'wall';
+      }
+      // Sanctuary row dividers
+      else if ((r === 8 || r === 11) && (c >= 17 && c <= 21 || c >= 23 && c <= 32)) {
+        grid[r][c] = 'wall';
+      }
+      else {
         grid[r][c] = 'floor';
       }
     }
   }
 
-  // Temple retaining wall (horizontal) with central processional gate.
-  for (let c = 8; c <= 16; c++) {
-    if (c === 11 || c === 12) {
-      grid[6][c] = 'door';
-    } else {
-      grid[6][c] = 'wall';
-    }
-  }
+  // Open processional gates
+  if (grid[8]?.[16]) grid[8][16] = 'door';  // processional path at row 8
+  if (grid[11]?.[16]) grid[11][16] = 'door'; // processional path at row 11
+  if (grid[13]?.[8]) grid[13][8] = 'door';   // agora→ambrosia gate
+  if (grid[13]?.[13]) grid[13][13] = 'door'; // agora→library gate
 
-  // Garden/agora divider.
-  for (let c = 1; c <= 5; c++) {
-    if (c === 3) {
-      grid[8][c] = 'door';
-    } else {
-      grid[8][c] = 'wall';
-    }
-  }
-
-  // Sanctuary divider (vertical).
-  for (let r = 9; r <= 18; r++) {
-    if (r === 11 || r === 14 || r === 17) {
-      grid[r][15] = 'door';
-    } else {
-      grid[r][15] = 'wall';
-    }
-  }
-
-  // Mark furniture tiles
+  // Mark furniture tiles as blocked
   const furniture = buildFurnitureLayout(workerCount);
   for (const item of furniture) {
     if (item.type !== 'carpet' && item.type !== 'door_mat') {
@@ -204,7 +303,7 @@ export function createWalkGrid(workerCount: number): TileType[][] {
 }
 
 // ---------------------------------------------------------------------------
-// Zone builder (re-export from zones.ts for convenience)
+// Zone builder (re-export)
 // ---------------------------------------------------------------------------
 
 export function buildZones(workerCount: number): Record<ZoneId, Zone> {
