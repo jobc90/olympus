@@ -56,6 +56,26 @@ describe('WorktreeManager', () => {
     expect(status).not.toContain('README.md');
   });
 
+  it('should stash untracked files on initialize', async () => {
+    // Create an untracked file (not git-added)
+    await writeFile(join(tempDir, 'untracked-file.txt'), 'untracked content\n');
+    await manager.initialize();
+
+    // The untracked file should be stashed (removed from working dir)
+    try {
+      await stat(join(tempDir, 'untracked-file.txt'));
+      expect.fail('untracked file should be stashed');
+    } catch (err) {
+      expect((err as NodeJS.ErrnoException).code).toBe('ENOENT');
+    }
+
+    await manager.cleanup();
+
+    // After cleanup, untracked file should be restored
+    const content = await readFile(join(tempDir, 'untracked-file.txt'), 'utf-8');
+    expect(content).toBe('untracked content\n');
+  });
+
   it('should create worktree with branch', async () => {
     await manager.initialize();
     const info = await manager.createWorktree('wi-1');
@@ -240,5 +260,95 @@ describe('WorktreeManager', () => {
     await manager.initialize();
     const gitignore = await readFile(join(tempDir, '.gitignore'), 'utf-8');
     expect(gitignore).toContain('.team/');
+  });
+
+  it('should get changed files for a worktree', async () => {
+    await manager.initialize();
+    const info = await manager.createWorktree('wi-1');
+
+    // Make changes in worktree
+    await writeFile(join(info.path, 'new-file.ts'), 'export const x = 1;');
+    await writeFile(join(info.path, 'another.ts'), 'export const y = 2;');
+    await git(['add', '-A'], info.path);
+    await git(['commit', '-m', 'add files'], info.path);
+
+    const changedFiles = await manager.getChangedFiles('wi-1');
+    expect(changedFiles).toContain('new-file.ts');
+    expect(changedFiles).toContain('another.ts');
+    expect(changedFiles).toHaveLength(2);
+  });
+
+  it('should return empty array when no files changed', async () => {
+    await manager.initialize();
+    await manager.createWorktree('wi-1');
+
+    const changedFiles = await manager.getChangedFiles('wi-1');
+    expect(changedFiles).toEqual([]);
+  });
+
+  it('should throw for unknown worktree on getChangedFiles', async () => {
+    await manager.initialize();
+    await expect(manager.getChangedFiles('nonexistent'))
+      .rejects.toThrow('Worktree not found: nonexistent');
+  });
+
+  it('should stage and commit merge resolution', async () => {
+    await manager.initialize();
+
+    const info1 = await manager.createWorktree('wi-1');
+    const info2 = await manager.createWorktree('wi-2');
+
+    // Both modify the same file to create a conflict
+    await writeFile(join(info1.path, 'README.md'), '# From wi-1\n');
+    await git(['add', '-A'], info1.path);
+    await git(['commit', '-m', 'wi-1'], info1.path);
+
+    await writeFile(join(info2.path, 'README.md'), '# From wi-2\n');
+    await git(['add', '-A'], info2.path);
+    await git(['commit', '-m', 'wi-2'], info2.path);
+
+    // Merge setup
+    await manager.createMergeBranch();
+    await manager.mergeWorkItem('wi-1');
+    const result = await manager.mergeWorkItem('wi-2');
+    expect(result.success).toBe(false);
+
+    // Manually resolve the conflict
+    await writeFile(join(tempDir, 'README.md'), '# Resolved\n');
+
+    // Stage and commit
+    await manager.stageAndCommitMerge(['README.md']);
+
+    // Verify the resolution was committed
+    const log = await git(['log', '--oneline', '-1'], tempDir);
+    expect(log).toBeTruthy();
+  });
+
+  it('should detect remaining conflict markers', async () => {
+    await manager.initialize();
+
+    const info1 = await manager.createWorktree('wi-1');
+    const info2 = await manager.createWorktree('wi-2');
+
+    await writeFile(join(info1.path, 'README.md'), '# From wi-1\n');
+    await git(['add', '-A'], info1.path);
+    await git(['commit', '-m', 'wi-1'], info1.path);
+
+    await writeFile(join(info2.path, 'README.md'), '# From wi-2\n');
+    await git(['add', '-A'], info2.path);
+    await git(['commit', '-m', 'wi-2'], info2.path);
+
+    await manager.createMergeBranch();
+    await manager.mergeWorkItem('wi-1');
+    await manager.mergeWorkItem('wi-2');
+
+    // File should still have conflict markers
+    const remaining = await manager.hasConflictMarkers(['README.md']);
+    expect(remaining).toContain('README.md');
+
+    // After resolution, should be clean
+    await writeFile(join(tempDir, 'README.md'), '# Resolved\n');
+    const after = await manager.hasConflictMarkers(['README.md']);
+    expect(after).toEqual([]);
   });
 });

@@ -129,7 +129,9 @@ export class Gateway {
     const teamEvents = [
       'team:started', 'team:phase', 'team:plan:ready',
       'team:wi:started', 'team:wi:completed', 'team:wi:failed',
+      'team:wi:ownership-violation',
       'team:merge:progress', 'team:completed', 'team:failed',
+      'team:plan:review', 'team:verify:review',
     ];
     for (const eventName of teamEvents) {
       this.teamOrchestrator.on(eventName, (payload: unknown) => {

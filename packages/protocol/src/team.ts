@@ -5,7 +5,8 @@
  * DAG-based execution, and sequential merge.
  */
 
-import type { CliRunResult } from './cli-runner.js';
+import type { CliRunResult, CliProvider } from './cli-runner.js';
+import type { ExtractedContext } from './local-context.js';
 
 // ──────────────────────────────────────────────
 // Phase & Status
@@ -45,6 +46,9 @@ export interface TeamWorkItem {
   durationMs?: number;
   error?: string;
   cliResult?: CliRunResult;
+  ownershipViolations?: string[];
+  provider?: CliProvider;
+  extractedContext?: ExtractedContext;
 }
 
 export interface TeamPlan {
@@ -56,6 +60,13 @@ export interface TeamPlan {
 // ──────────────────────────────────────────────
 // Session
 // ──────────────────────────────────────────────
+
+export interface TeamSessionOptions {
+  defaultProvider?: CliProvider;
+  runLint?: boolean;   // default: true
+  runTests?: boolean;  // default: false
+  llmReview?: boolean; // default: false
+}
 
 export interface TeamSession {
   id: string;
@@ -72,6 +83,8 @@ export interface TeamSession {
   totalCost?: number;
   error?: string;
   summary?: string;
+  defaultProvider?: CliProvider;
+  options?: TeamSessionOptions;
 }
 
 // ──────────────────────────────────────────────

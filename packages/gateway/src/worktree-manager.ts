@@ -84,7 +84,7 @@ export class WorktreeManager {
     // Stash dirty changes if any
     const status = await this.git(['status', '--porcelain']);
     if (status.length > 0) {
-      await this.git(['stash', 'push', '-m', `team-${this.sessionId}-auto-stash`]);
+      await this.git(['stash', 'push', '--include-untracked', '-m', `team-${this.sessionId}-auto-stash`]);
       this.stashed = true;
     }
 
@@ -175,6 +175,18 @@ export class WorktreeManager {
     return true;
   }
 
+  /**
+   * Get list of files changed in a worktree (compared to base branch).
+   */
+  async getChangedFiles(wiId: string): Promise<string[]> {
+    const info = this.worktrees.get(wiId);
+    if (!info) throw new Error(`Worktree not found: ${wiId}`);
+
+    const output = await this.git(['diff', '--name-only', this.baseBranch + '...' + info.branch]);
+    if (!output) return [];
+    return output.split('\n').filter(Boolean);
+  }
+
   // ──────────────────────────────────────────────
   // Phase: Merge
   // ──────────────────────────────────────────────
@@ -248,6 +260,46 @@ export class WorktreeManager {
   /** @deprecated Use resolveConflictsTheirs or writeResolvedFiles */
   async resolveConflicts(files: string[]): Promise<void> {
     return this.resolveConflictsTheirs(files);
+  }
+
+  /**
+   * Stage specified files (or all) and commit the merge resolution.
+   */
+  async stageAndCommitMerge(files?: string[]): Promise<void> {
+    if (files && files.length > 0) {
+      await this.git(['add', ...files]);
+    } else {
+      await this.git(['add', '-A']);
+    }
+    await this.git(['commit', '--no-edit']);
+  }
+
+  /**
+   * Check if any files still contain conflict markers.
+   */
+  async hasConflictMarkers(files: string[]): Promise<string[]> {
+    const remaining: string[] = [];
+    for (const file of files) {
+      try {
+        const content = await readFile(join(this.projectPath, file), 'utf-8');
+        if (content.includes('<<<<<<<') || content.includes('>>>>>>>')) {
+          remaining.push(file);
+        }
+      } catch {
+        // File may have been deleted during resolution
+      }
+    }
+    return remaining;
+  }
+
+  /**
+   * Get list of files changed since merge started (uncommitted changes in projectPath).
+   */
+  async getUncommittedChanges(): Promise<string[]> {
+    const output = await this.git(['diff', '--name-only']);
+    const staged = await this.git(['diff', '--name-only', '--cached']);
+    const all = new Set([...output.split('\n').filter(Boolean), ...staged.split('\n').filter(Boolean)]);
+    return Array.from(all);
   }
 
   async abortMerge(): Promise<void> {

@@ -354,6 +354,13 @@ export class GeminiAdvisor extends EventEmitter {
     this.onProjectUpdate(projectPath);
   }
 
+  // ── Text Review (generic prompt) ──
+
+  async reviewText(prompt: string, timeoutMs = 30_000): Promise<string | null> {
+    if (!this.pty?.isAlive()) return null;
+    return this.promptQueue.enqueue(prompt, 1, timeoutMs);
+  }
+
   // ── Active Advisor: Post-Task Review ──
 
   async reviewWorkerResult(params: {

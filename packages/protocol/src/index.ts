@@ -226,6 +226,7 @@ export type {
   TeamWorkItem,
   TeamPlan,
   TeamSession,
+  TeamSessionOptions,
   TeamStartedEvent,
   TeamPhaseEvent,
   TeamPlanReadyEvent,

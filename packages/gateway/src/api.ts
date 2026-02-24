@@ -335,6 +335,9 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     if (parts[2] === 'start') {
       return { path: '/api/team/start', query };
     }
+    if (parts[2] === 'list') {
+      return { path: '/api/team/list', query };
+    }
     if (parts[2] && parts[3] === 'status') {
       return { path: '/api/team/:id/status', id: parts[2], query };
     }
@@ -2385,14 +2388,50 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${workerRegistry 
           sendJson(res, 503, { error: 'Service Unavailable', message: 'Team orchestrator not available' });
           return;
         }
-        const body = await parseBody<{ prompt?: string; projectPath?: string; chatId?: number }>(req);
+        const body = await parseBody<{
+          prompt?: string;
+          projectPath?: string;
+          chatId?: number;
+          defaultProvider?: string;
+          runLint?: boolean;
+          runTests?: boolean;
+          llmReview?: boolean;
+        }>(req);
         if (!body.prompt) {
           sendJson(res, 400, { error: 'Bad Request', message: 'prompt is required' });
           return;
         }
         const projectPath = body.projectPath || workspaceRoot;
-        const teamId = await teamOrchestrator.start(body.prompt, projectPath, body.chatId);
+        const options = {
+          defaultProvider: body.defaultProvider === 'claude' || body.defaultProvider === 'codex'
+            ? body.defaultProvider as 'claude' | 'codex' : undefined,
+          runLint: body.runLint,
+          runTests: body.runTests,
+          llmReview: body.llmReview,
+        };
+        const teamId = await teamOrchestrator.start(body.prompt, projectPath, body.chatId, options);
         sendJson(res, 202, { teamId });
+        return;
+      }
+
+      // GET /api/team/list — list all team sessions
+      if (path === '/api/team/list' && method === 'GET') {
+        if (!teamOrchestrator) {
+          sendJson(res, 503, { error: 'Service Unavailable', message: 'Team orchestrator not available' });
+          return;
+        }
+        const sessions = teamOrchestrator.getAllSessions().map(s => ({
+          teamId: s.id,
+          phase: s.phase,
+          prompt: s.prompt.slice(0, 200),
+          projectPath: s.projectPath,
+          workItemCount: s.workItems.length,
+          startedAt: s.startedAt,
+          completedAt: s.completedAt,
+          totalCost: s.totalCost,
+          error: s.error,
+        }));
+        sendJson(res, 200, { sessions });
         return;
       }
 

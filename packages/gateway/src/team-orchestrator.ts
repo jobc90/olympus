@@ -9,22 +9,29 @@ import { EventEmitter } from 'node:events';
 import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 import type {
   TeamPhase,
   TeamSession,
+  TeamSessionOptions,
   TeamWorkItem,
   TeamPlan,
   TeamWiStatus,
+  CliProvider,
 } from '@olympus-dev/protocol';
 import { runCli } from './cli-runner.js';
 import { WorktreeManager } from './worktree-manager.js';
 import type { GeminiAdvisor } from './gemini-advisor.js';
+import { extractContextWithLlm } from './llm-context-extractor.js';
 
 const execFile = promisify(execFileCb);
 
 const MAX_RETRIES = 2;
 const PLAN_TIMEOUT_MS = 120_000;
 const WI_TIMEOUT_MS = 900_000;
+const SESSION_MAX_AGE_MS = 3_600_000; // 1 hour
 
 // ──────────────────────────────────────────────
 // Helper functions (exported for testing)
@@ -133,6 +140,9 @@ export function validatePlan(raw: unknown): TeamPlan {
     const ownedFiles = Array.isArray(w.ownedFiles) ? w.ownedFiles.map(String) : [];
     const readOnlyFiles = Array.isArray(w.readOnlyFiles) ? w.readOnlyFiles.map(String) : [];
     const blockedBy = Array.isArray(w.blockedBy) ? w.blockedBy.map(String) : [];
+    const rawProvider = typeof w.provider === 'string' ? w.provider : undefined;
+    const provider: CliProvider | undefined =
+      rawProvider === 'claude' || rawProvider === 'codex' ? rawProvider : undefined;
 
     // Check file ownership uniqueness
     for (const file of ownedFiles) {
@@ -153,6 +163,7 @@ export function validatePlan(raw: unknown): TeamPlan {
       prompt: String(w.prompt),
       status: 'pending',
       retryCount: 0,
+      provider,
     });
   }
 
@@ -180,6 +191,15 @@ export function validatePlan(raw: unknown): TeamPlan {
     workItems,
     sharedFiles,
   };
+}
+
+/**
+ * Check file ownership: returns list of files changed that are NOT in ownedFiles.
+ * Empty ownedFiles means "can create new files freely" — skip check.
+ */
+export function checkFileOwnership(changedFiles: string[], ownedFiles: string[]): string[] {
+  if (ownedFiles.length === 0) return []; // No restrictions when ownedFiles is empty
+  return changedFiles.filter(f => !ownedFiles.includes(f));
 }
 
 /**
@@ -215,17 +235,20 @@ export class TeamOrchestrator extends EventEmitter {
   private abortControllers = new Map<string, AbortController>();
   private worktreeManagers = new Map<string, WorktreeManager>();
   private options: TeamOrchestratorOptions;
+  private sessionsFilePath: string;
 
   constructor(options: TeamOrchestratorOptions) {
     super();
     this.options = options;
+    this.sessionsFilePath = join(homedir(), '.olympus', 'active-teams.json');
+    this.loadSessionsFromFile().catch(() => {});
   }
 
   // ──────────────────────────────────────────────
   // Public API
   // ──────────────────────────────────────────────
 
-  async start(prompt: string, projectPath: string, chatId?: number): Promise<string> {
+  async start(prompt: string, projectPath: string, chatId?: number, options?: TeamSessionOptions): Promise<string> {
     const teamId = randomUUID().slice(0, 8);
     const session: TeamSession = {
       id: teamId,
@@ -236,6 +259,8 @@ export class TeamOrchestrator extends EventEmitter {
       workItems: [],
       baseBranch: '',
       startedAt: Date.now(),
+      defaultProvider: options?.defaultProvider,
+      options,
     };
 
     this.sessions.set(teamId, session);
@@ -394,6 +419,8 @@ export class TeamOrchestrator extends EventEmitter {
       }
 
       this.emit('team:failed', { teamId, error: session.error, phase: session.phase });
+    } finally {
+      this.saveSessionsToFile().catch(() => {});
     }
   }
 
@@ -426,7 +453,8 @@ Output ONLY valid JSON (no markdown, no explanation):
     "ownedFiles": ["src/path/to/file.ts"],
     "readOnlyFiles": ["src/types/index.ts"],
     "blockedBy": [],
-    "prompt": "Complete implementation instructions with full context..."
+    "prompt": "Complete implementation instructions with full context...",
+    "provider": "claude|codex — claude for complex/architectural, codex for mechanical/repetitive"
   }]
 }
 
@@ -471,7 +499,54 @@ Rules:
       parsed = extractJson(retryResult.text);
     }
 
-    return validatePlan(parsed);
+    const plan = validatePlan(parsed);
+
+    // Gemini plan review (non-blocking, informational only)
+    await this.geminiPlanReview(session, plan);
+
+    return plan;
+  }
+
+  private async geminiPlanReview(session: TeamSession, plan: TeamPlan): Promise<void> {
+    const advisor = this.options.geminiAdvisor;
+    if (!advisor) return;
+
+    try {
+      const planJson = JSON.stringify({
+        requirements: plan.requirements,
+        workItems: plan.workItems.map(wi => ({
+          id: wi.id, title: wi.title, ownedFiles: wi.ownedFiles,
+          blockedBy: wi.blockedBy, provider: wi.provider,
+        })),
+      });
+
+      const reviewPrompt = `Review this team work plan. Respond with JSON only.
+
+Plan:
+${planJson.slice(0, 3000)}
+
+Task: ${session.prompt.slice(0, 500)}
+
+Evaluate: completeness, file ownership conflicts, dependency correctness, risk areas.
+JSON: {"approved":true|false,"issues":["..."]}`;
+
+      const response = await advisor.reviewText(reviewPrompt, 20_000);
+      if (!response) return;
+
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return;
+
+      const result = JSON.parse(jsonMatch[0]);
+      if (result && !result.approved && Array.isArray(result.issues) && result.issues.length > 0) {
+        this.emit('team:plan:review', {
+          teamId: session.id,
+          approved: false,
+          issues: result.issues,
+        });
+      }
+    } catch {
+      // Plan review is best-effort
+    }
   }
 
   // ──────────────────────────────────────────────
@@ -504,11 +579,21 @@ Rules:
         this.emit('team:wi:started', { teamId, wiId: wi.id, title: wi.title });
 
         // Build predecessor context from completed dependencies
+        // Prefer structured extractedContext over raw diffs
         const predecessorContext = wi.blockedBy
           .map(depId => {
+            const depWi = workItems.find(w => w.id === depId);
+            const ctx = depWi?.extractedContext;
+            if (ctx) {
+              const parts = [`### ${depId}: ${depWi?.title ?? ''}`];
+              if (ctx.summary) parts.push(`Summary: ${ctx.summary}`);
+              if (ctx.filesChanged.length > 0) parts.push(`Files: ${ctx.filesChanged.join(', ')}`);
+              if (ctx.decisions.length > 0) parts.push(`Decisions: ${ctx.decisions.join('; ')}`);
+              return parts.join('\n');
+            }
+            // Fallback to raw diff
             const diff = completedDiffs.get(depId);
             if (!diff) return '';
-            const depWi = workItems.find(w => w.id === depId);
             return `### ${depId}: ${depWi?.title ?? ''}\n${diff}`;
           })
           .filter(Boolean)
@@ -578,9 +663,11 @@ Rules:
       if (this.isCancelled(teamId)) return;
 
       try {
+        const wiProvider = wi.provider ?? session.defaultProvider ?? 'claude';
+
         const result = await runCli({
           prompt: wiPrompt,
-          provider: 'claude',
+          provider: wiProvider,
           workspaceDir: wi.worktreePath,
           timeoutMs: WI_TIMEOUT_MS,
           dangerouslySkipPermissions: true,
@@ -593,8 +680,56 @@ Rules:
           throw new Error(result.error?.message ?? 'CLI execution failed');
         }
 
+        // File ownership guard: revert unauthorized file changes before commit
+        if (wi.ownedFiles.length > 0) {
+          const changedFiles = await manager.getChangedFiles(wi.id);
+          const violations = checkFileOwnership(changedFiles, wi.ownedFiles);
+          if (violations.length > 0) {
+            // Revert unauthorized files in the worktree
+            const wtPath = manager.getWorktreePath(wi.id);
+            if (wtPath) {
+              for (const file of violations) {
+                try {
+                  await execFile('git', ['checkout', manager.getBaseBranch(), '--', file], {
+                    cwd: wtPath,
+                    timeout: 10_000,
+                  });
+                } catch {
+                  // File may be newly created — remove it
+                  try {
+                    await execFile('git', ['rm', '-f', '--', file], {
+                      cwd: wtPath,
+                      timeout: 10_000,
+                    });
+                  } catch {
+                    // Best-effort
+                  }
+                }
+              }
+            }
+            wi.ownershipViolations = violations;
+            this.emit('team:wi:ownership-violation', {
+              teamId,
+              wiId: wi.id,
+              violations,
+            });
+          }
+        }
+
         // Commit changes in the worktree
         await manager.commitWorktree(wi.id, `team(${wi.id}): ${wi.title}`);
+
+        // Extract structured context from WI result for dependent context injection
+        try {
+          const extracted = await extractContextWithLlm({
+            result: { success: true, text: result.text ?? '' },
+            prompt: wi.prompt,
+            timeoutMs: 15_000,
+          });
+          wi.extractedContext = extracted;
+        } catch {
+          // Context extraction is best-effort
+        }
 
         wi.status = 'completed';
         wi.completedAt = Date.now();
@@ -687,8 +822,8 @@ Rules:
   }
 
   /**
-   * Attempt to resolve merge conflicts by asking Claude to intelligently merge
-   * the conflicted content. Falls back to false if resolution fails.
+   * Attempt to resolve merge conflicts by running Claude CLI in the merge branch cwd,
+   * letting it directly read and edit the conflicted files.
    */
   private async resolveConflictsIntelligently(
     session: TeamSession,
@@ -697,31 +832,21 @@ Rules:
     conflictFiles: string[],
   ): Promise<boolean> {
     try {
-      const conflictContent = await manager.getConflictContent(conflictFiles);
+      const resolvePrompt = `You are resolving git merge conflicts in a repository. The following files have conflict markers (<<<<<<< ======= >>>>>>>):
 
-      // Build conflict context for Claude
-      const filesContext = Array.from(conflictContent.entries())
-        .map(([file, content]) => `### ${file}\n\`\`\`\n${content.slice(0, 3000)}\n\`\`\``)
-        .join('\n\n');
-
-      const resolvePrompt = `You are resolving git merge conflicts. The conflicts occurred while merging work item "${wiId}" into the merge branch.
-
-## Conflicted Files
-${filesContext}
+${conflictFiles.map(f => `- ${f}`).join('\n')}
 
 ## Instructions
-For each file, resolve the conflict markers (<<<<<<< ======= >>>>>>>) by intelligently merging BOTH sides. Keep all meaningful changes from both branches.
-
-Output ONLY valid JSON mapping file paths to their fully resolved content (no conflict markers):
-{
-  ${conflictFiles.map(f => `"${f}": "resolved content..."`).join(',\n  ')}
-}
+1. Read each conflicted file
+2. Resolve the conflicts by intelligently merging BOTH sides — keep all meaningful changes
+3. Remove ALL conflict markers (<<<<<<< ======= >>>>>>>)
+4. Write the resolved content back to each file
+5. Do NOT modify any other files
 
 Rules:
-- Include the COMPLETE file content, not just the conflicted sections
-- Remove ALL conflict markers (<<<<<<< ======= >>>>>>>)
 - Preserve both sides' changes when possible
-- If changes are mutually exclusive, prefer the newer work item's changes`;
+- If changes are mutually exclusive, prefer the newer work item's ("theirs") changes
+- Make sure the resolved code compiles and is syntactically correct`;
 
       const abortSignal = this.abortControllers.get(session.id)?.signal;
 
@@ -729,26 +854,36 @@ Rules:
         prompt: resolvePrompt,
         provider: 'claude',
         workspaceDir: session.projectPath,
-        timeoutMs: 60_000,
+        timeoutMs: 90_000,
         dangerouslySkipPermissions: true,
         abortSignal,
       });
 
-      if (!result.success || !result.text) return false;
+      if (!result.success) return false;
 
-      const parsed = extractJson(result.text) as Record<string, string>;
-      if (!parsed || typeof parsed !== 'object') return false;
+      // Verify no conflict markers remain
+      const remaining = await manager.hasConflictMarkers(conflictFiles);
+      if (remaining.length > 0) return false;
 
-      const resolvedMap = new Map<string, string>();
-      for (const file of conflictFiles) {
-        const content = parsed[file];
-        if (typeof content !== 'string' || content.includes('<<<<<<<') || content.includes('>>>>>>>')) {
-          return false; // Still contains conflict markers — bail
+      // Verify Claude didn't modify files outside the conflict set
+      const allChanged = await manager.getUncommittedChanges();
+      const extraFiles = allChanged.filter(f => !conflictFiles.includes(f));
+      if (extraFiles.length > 0) {
+        // Revert unauthorized changes
+        for (const file of extraFiles) {
+          try {
+            await execFile('git', ['checkout', 'HEAD', '--', file], {
+              cwd: session.projectPath,
+              timeout: 10_000,
+            });
+          } catch {
+            // Best-effort revert
+          }
         }
-        resolvedMap.set(file, content);
       }
 
-      await manager.writeResolvedFiles(resolvedMap);
+      // Stage resolved files and commit
+      await manager.stageAndCommitMerge(conflictFiles);
       return true;
     } catch {
       return false;
@@ -760,16 +895,138 @@ Rules:
   // ──────────────────────────────────────────────
 
   private async verifyPhase(session: TeamSession): Promise<void> {
-    // Run a build check in the project directory (on merge branch)
+    const opts = session.options;
+    const runLint = opts?.runLint ?? true;
+    const runTests = opts?.runTests ?? false;
+    const llmReview = opts?.llmReview ?? false;
+    const teamId = session.id;
+
+    const execOpts = {
+      cwd: session.projectPath,
+      timeout: 120_000,
+      maxBuffer: 10 * 1024 * 1024,
+    };
+
+    // 1. Build (always)
     try {
-      await execFile('pnpm', ['build'], {
-        cwd: session.projectPath,
-        timeout: 120_000,
-        maxBuffer: 10 * 1024 * 1024,
-      });
+      await execFile('pnpm', ['build'], execOpts);
     } catch (err) {
       const errMsg = (err as Error).message;
       throw new Error(`Build verification failed: ${errMsg.slice(0, 500)}`);
+    }
+
+    // 2. Lint (default: on)
+    if (runLint) {
+      try {
+        await execFile('pnpm', ['lint'], execOpts);
+      } catch (err) {
+        const errMsg = (err as Error).message;
+        throw new Error(`Lint verification failed: ${errMsg.slice(0, 500)}`);
+      }
+    }
+
+    // 3. Test (default: off)
+    if (runTests) {
+      try {
+        await execFile('pnpm', ['test'], { ...execOpts, timeout: 300_000 });
+      } catch (err) {
+        const errMsg = (err as Error).message;
+        throw new Error(`Test verification failed: ${errMsg.slice(0, 500)}`);
+      }
+    }
+
+    // 4. LLM code review (default: off)
+    if (llmReview) {
+      try {
+        const manager = this.worktreeManagers.get(teamId);
+        const baseBranch = manager?.getBaseBranch() ?? 'main';
+        const { stdout: diff } = await execFile('git', ['diff', `${baseBranch}...HEAD`, '--stat'], {
+          cwd: session.projectPath,
+          timeout: 10_000,
+          maxBuffer: 5 * 1024 * 1024,
+        });
+
+        const reviewResult = await runCli({
+          prompt: `Review this merged code diff for issues. Be concise.\n\n${diff.slice(0, 4000)}`,
+          provider: 'codex',
+          timeoutMs: 20_000,
+          dangerouslySkipPermissions: true,
+        });
+
+        if (reviewResult.success && reviewResult.text) {
+          this.emit('team:verify:review', {
+            teamId,
+            review: reviewResult.text.slice(0, 2000),
+          });
+        }
+      } catch {
+        // LLM review is best-effort
+      }
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  // Session Persistence
+  // ──────────────────────────────────────────────
+
+  private async saveSessionsToFile(): Promise<void> {
+    try {
+      const dir = join(homedir(), '.olympus');
+      await mkdir(dir, { recursive: true });
+
+      // Save only completed/failed sessions (not running ones — those lack serializable state)
+      const sessions = Array.from(this.sessions.values())
+        .filter(s => s.phase === 'completed' || s.phase === 'failed' || s.phase === 'cancelled')
+        .map(s => ({
+          id: s.id,
+          prompt: s.prompt.slice(0, 200),
+          projectPath: s.projectPath,
+          phase: s.phase,
+          startedAt: s.startedAt,
+          completedAt: s.completedAt,
+          totalCost: s.totalCost,
+          error: s.error,
+          summary: s.summary,
+          workItemCount: s.workItems.length,
+        }));
+
+      await writeFile(this.sessionsFilePath, JSON.stringify(sessions, null, 2));
+    } catch {
+      // Best-effort persistence
+    }
+  }
+
+  private async loadSessionsFromFile(): Promise<void> {
+    try {
+      const raw = await readFile(this.sessionsFilePath, 'utf-8');
+      const sessions = JSON.parse(raw) as Array<Record<string, unknown>>;
+      if (!Array.isArray(sessions)) return;
+
+      const now = Date.now();
+      for (const s of sessions) {
+        const startedAt = typeof s.startedAt === 'number' ? s.startedAt : 0;
+        // Skip sessions older than 1 hour
+        if (now - startedAt > SESSION_MAX_AGE_MS) continue;
+
+        const id = String(s.id ?? '');
+        if (!id || this.sessions.has(id)) continue;
+
+        this.sessions.set(id, {
+          id,
+          prompt: String(s.prompt ?? ''),
+          projectPath: String(s.projectPath ?? ''),
+          phase: String(s.phase ?? 'failed') as TeamPhase,
+          workItems: [],
+          baseBranch: '',
+          startedAt,
+          completedAt: typeof s.completedAt === 'number' ? s.completedAt : undefined,
+          totalCost: typeof s.totalCost === 'number' ? s.totalCost : undefined,
+          error: typeof s.error === 'string' ? s.error : undefined,
+          summary: typeof s.summary === 'string' ? s.summary : undefined,
+        });
+      }
+    } catch {
+      // File may not exist yet
     }
   }
 

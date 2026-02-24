@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { topologicalSort, extractJson, validatePlan } from '../team-orchestrator.js';
+import { topologicalSort, extractJson, validatePlan, checkFileOwnership } from '../team-orchestrator.js';
 import type { TeamWorkItem } from '@olympus-dev/protocol';
 
 // ──────────────────────────────────────────────
@@ -243,5 +243,86 @@ describe('validatePlan', () => {
     };
     const result = validatePlan(plan);
     expect(result.sharedFiles).toEqual(['src/shared.ts']);
+  });
+
+  it('should parse valid provider field', () => {
+    const plan = {
+      requirements: [],
+      workItems: [
+        { id: 'wi-1', title: 'task', prompt: 'do it', provider: 'codex' },
+      ],
+    };
+    const result = validatePlan(plan);
+    expect(result.workItems[0].provider).toBe('codex');
+  });
+
+  it('should parse claude provider field', () => {
+    const plan = {
+      requirements: [],
+      workItems: [
+        { id: 'wi-1', title: 'task', prompt: 'do it', provider: 'claude' },
+      ],
+    };
+    const result = validatePlan(plan);
+    expect(result.workItems[0].provider).toBe('claude');
+  });
+
+  it('should ignore invalid provider value', () => {
+    const plan = {
+      requirements: [],
+      workItems: [
+        { id: 'wi-1', title: 'task', prompt: 'do it', provider: 'gemini' },
+      ],
+    };
+    const result = validatePlan(plan);
+    expect(result.workItems[0].provider).toBeUndefined();
+  });
+
+  it('should handle missing provider field', () => {
+    const plan = {
+      requirements: [],
+      workItems: [
+        { id: 'wi-1', title: 'task', prompt: 'do it' },
+      ],
+    };
+    const result = validatePlan(plan);
+    expect(result.workItems[0].provider).toBeUndefined();
+  });
+});
+
+// ──────────────────────────────────────────────
+// checkFileOwnership
+// ──────────────────────────────────────────────
+
+describe('checkFileOwnership', () => {
+  it('should return no violations when all files are owned', () => {
+    const result = checkFileOwnership(['src/a.ts', 'src/b.ts'], ['src/a.ts', 'src/b.ts', 'src/c.ts']);
+    expect(result).toEqual([]);
+  });
+
+  it('should detect unauthorized file changes', () => {
+    const result = checkFileOwnership(
+      ['src/a.ts', 'src/unauthorized.ts', 'src/b.ts'],
+      ['src/a.ts', 'src/b.ts'],
+    );
+    expect(result).toEqual(['src/unauthorized.ts']);
+  });
+
+  it('should skip check when ownedFiles is empty', () => {
+    const result = checkFileOwnership(['src/a.ts', 'src/b.ts'], []);
+    expect(result).toEqual([]);
+  });
+
+  it('should report all violations', () => {
+    const result = checkFileOwnership(
+      ['src/x.ts', 'src/y.ts', 'src/z.ts'],
+      ['src/a.ts'],
+    );
+    expect(result).toEqual(['src/x.ts', 'src/y.ts', 'src/z.ts']);
+  });
+
+  it('should handle empty changed files', () => {
+    const result = checkFileOwnership([], ['src/a.ts']);
+    expect(result).toEqual([]);
   });
 });
