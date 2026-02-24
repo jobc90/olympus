@@ -193,6 +193,7 @@ export function OlympusMountainCanvas({
           animRef.current = requestAnimationFrame(render);
           return;
         }
+        ctx.imageSmoothingEnabled = false;
 
         ctx.save();
         const totalScale = sc * deviceDpr;

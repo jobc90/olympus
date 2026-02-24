@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { OlympusClient } from '@olympus-dev/client';
 import { DEFAULT_GATEWAY_PORT, DEFAULT_GATEWAY_HOST } from '@olympus-dev/protocol';
 import { behaviorToOlympusMountainState } from '../lib/state-mapper';
+import { WORKER_AVATAR_POOL } from '../lib/avatar-pool';
 import type { WorkerBehavior, WorkerDashboardState } from '../lib/types';
 import type {
   PhasePayload,
@@ -225,7 +226,6 @@ export interface UseOlympusOptions {
 // ---------------------------------------------------------------------------
 
 const WORKER_COLORS = ['#4FC3F7', '#FF7043', '#66BB6A', '#AB47BC', '#FFCA28', '#EF5350'];
-const WORKER_AVATARS = ['athena', 'poseidon', 'ares', 'apollo', 'artemis', 'hermes', 'hephaestus', 'dionysus', 'demeter', 'aphrodite', 'hades', 'persephone', 'prometheus', 'helios', 'nike', 'pan', 'hecate', 'iris', 'heracles'];
 const ACTIVE_BEHAVIORS = new Set(['working', 'thinking', 'reviewing', 'deploying', 'analyzing', 'collaborating', 'chatting']);
 const WORKER_LOGS_STORAGE_KEY = 'olympus-worker-logs-v1';
 const WORKER_OUTPUTS_STORAGE_KEY = 'olympus-worker-outputs-v1';
@@ -254,14 +254,14 @@ function buildWorkerConfigs(workers: RegisteredWorker[]): WorkerConfigEntry[] {
 
   for (const w of sorted) {
     const h = simpleHash(w.id);
-    let idx = h % WORKER_AVATARS.length;
+    let idx = h % WORKER_AVATAR_POOL.length;
     // Resolve hash collision: find next available avatar
     let attempts = 0;
-    while (usedAvatars.has(WORKER_AVATARS[idx]) && attempts < WORKER_AVATARS.length) {
-      idx = (idx + 1) % WORKER_AVATARS.length;
+    while (usedAvatars.has(WORKER_AVATAR_POOL[idx]) && attempts < WORKER_AVATAR_POOL.length) {
+      idx = (idx + 1) % WORKER_AVATAR_POOL.length;
       attempts++;
     }
-    const avatarName = WORKER_AVATARS[idx];
+    const avatarName = WORKER_AVATAR_POOL[idx];
     usedAvatars.add(avatarName);
     configMap.set(w.id, {
       id: w.id,

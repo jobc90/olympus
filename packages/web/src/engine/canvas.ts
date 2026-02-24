@@ -225,17 +225,17 @@ function drawFunctionalZoneOverlays(
 
   for (const [zoneId, zone] of Object.entries(zones)) {
     let color = '#FBC02D';
-    let alpha = 0.04;
+    let alpha = 0.06;
 
     if (zoneId.startsWith('sanctuary_')) {
-      color = '#4FC3F7';
-      alpha = activeZoneIds.has(zoneId) ? 0.13 : 0.07;
+      color = '#6FA8DC';
+      alpha = activeZoneIds.has(zoneId) ? 0.2 : 0.1;
     } else if (zoneId === 'gods_plaza' || zoneId === 'ambrosia_hall' || zoneId === 'olympus_garden') {
-      color = '#FFCA75';
-      alpha = 0.06;
+      color = '#E3C28A';
+      alpha = 0.1;
     } else if (zoneId === 'zeus_temple' || zoneId === 'agora') {
-      color = '#D8B4FE';
-      alpha = 0.07;
+      color = '#F2D48C';
+      alpha = 0.12;
     }
 
     for (let row = zone.minRow; row <= zone.maxRow; row++) {
@@ -243,6 +243,40 @@ function drawFunctionalZoneOverlays(
         const tile = walkGrid[row]?.[col];
         if (tile === 'wall') continue;
         drawIsoOverlayTile(ctx, col, row, color, alpha);
+      }
+    }
+  }
+}
+
+function drawZoneBoundaries(
+  ctx: CanvasRenderingContext2D,
+  zones: Record<string, Zone>,
+  walkGrid: string[][],
+): void {
+  const zoneColor = (zoneId: string): string => {
+    if (zoneId.startsWith('sanctuary_')) return '#7DA6D9';
+    if (zoneId === 'zeus_temple') return '#E7BE6D';
+    if (zoneId === 'agora') return '#CBAA6B';
+    if (zoneId === 'olympus_garden') return '#9CBC8F';
+    if (zoneId === 'ambrosia_hall') return '#D8A96B';
+    return '#C8B08A';
+  };
+
+  for (const [zoneId, zone] of Object.entries(zones)) {
+    const border = zoneColor(zoneId);
+    for (let row = zone.minRow; row <= zone.maxRow; row++) {
+      for (let col = zone.minCol; col <= zone.maxCol; col++) {
+        const tile = walkGrid[row]?.[col];
+        if (tile === 'wall') continue;
+        const inZone = (c: number, r: number): boolean =>
+          c >= zone.minCol && c <= zone.maxCol && r >= zone.minRow && r <= zone.maxRow && walkGrid[r]?.[c] !== 'wall';
+        const edge =
+          !inZone(col - 1, row) ||
+          !inZone(col + 1, row) ||
+          !inZone(col, row - 1) ||
+          !inZone(col, row + 1);
+        if (!edge) continue;
+        drawIsoOverlayTile(ctx, col, row, border, 0.18);
       }
     }
   }
@@ -458,62 +492,71 @@ function drawWorkerBehaviorProp(
   y: number,
   behavior: string | undefined,
   tick: number,
-  color: string,
+  _color: string,
 ): void {
   if (!behavior) return;
+
   const px = (ox: number, oy: number, w: number, h: number, fill: string) => {
     ctx.fillStyle = fill;
     ctx.fillRect(x + ox, y + oy, w, h);
   };
+  const iconX = -2;
+  const iconY = -28;
+  const p = (gx: number, gy: number, fill: string) => {
+    ctx.fillStyle = fill;
+    ctx.fillRect(x + iconX + gx, y + iconY + gy, 1, 1);
+  };
 
-  px(7, -35, 12, 9, 'rgba(8, 14, 28, 0.85)');
-  px(7, -35, 12, 1, `${color}AA`);
+  // Minimal shadow-only marker (no occluding boxes)
+  px(iconX - 1, iconY + 6, 8, 1, 'rgba(10, 14, 24, 0.42)');
 
   if (behavior === 'working' || behavior === 'analyzing' || behavior === 'reviewing') {
-    px(10, -32, 6, 3, '#4FC3F7');
-    px(11, -29, 4, 1, '#9EE8FF');
-    px(12, -28, 2, 1, '#3F5D7A');
+    p(1, 1, '#66E0FF'); p(2, 1, '#66E0FF'); p(3, 1, '#66E0FF');
+    p(0, 2, '#3FA7D6'); p(1, 2, '#3FA7D6'); p(2, 2, '#3FA7D6'); p(3, 2, '#3FA7D6'); p(4, 2, '#3FA7D6');
+    p(1, 3, '#5BC0EB'); p(2, 3, '#5BC0EB'); p(3, 3, '#5BC0EB');
     return;
   }
   if (behavior === 'deploying') {
-    px(11, -33, 2, 5, '#FFAA5B');
-    px(10, -31, 1, 3, '#F47421');
-    px(13, -31, 1, 3, '#F47421');
-    px(11, -28, 2, 2, '#FFE4A5');
+    p(2, 0, '#FFD180'); p(1, 1, '#FF8F3A'); p(2, 1, '#FFB74D'); p(3, 1, '#FF8F3A');
+    p(2, 2, '#FFE082'); p(2, 3, '#FF6D00');
     return;
   }
   if (behavior === 'thinking') {
     const blink = (tick % 24) < 18;
-    px(11, -32, 2, 2, blink ? '#FFD54F' : '#BFA43C');
-    px(11, -29, 2, 2, '#FFD54F');
-    px(11, -27, 2, 1, '#FFD54F');
+    p(2, 0, blink ? '#FFE082' : '#C8A94E');
+    p(1, 1, '#FFD54F'); p(2, 1, '#FFD54F'); p(3, 1, '#FFD54F');
+    p(2, 2, '#FFD54F');
+    p(2, 4, '#FFD54F');
     return;
   }
   if (behavior === 'chatting' || behavior === 'collaborating' || behavior === 'meeting' || behavior === 'directing') {
-    px(10, -32, 6, 4, '#D1A7FF');
-    px(11, -28, 2, 1, '#D1A7FF');
+    p(0, 1, '#D7B8FF'); p(1, 1, '#D7B8FF'); p(2, 1, '#D7B8FF'); p(3, 1, '#D7B8FF'); p(4, 1, '#D7B8FF');
+    p(0, 2, '#C7A3F4'); p(4, 2, '#C7A3F4');
+    p(2, 3, '#C7A3F4');
     return;
   }
   if (behavior === 'resting' || behavior === 'idle') {
-    px(10, -32, 5, 4, '#E8D6B2');
-    px(14, -31, 1, 2, '#D0B78B');
-    px(10, -32, 5, 1, '#B58E5A');
+    p(1, 1, '#EAD9BB'); p(2, 1, '#EAD9BB'); p(3, 1, '#EAD9BB');
+    p(1, 2, '#C7AA7F'); p(2, 2, '#C7AA7F'); p(3, 2, '#C7AA7F');
+    p(4, 1, '#B79468');
     return;
   }
   if (behavior === 'error') {
     const blink = (tick % 20) < 10;
-    px(11, -33, 2, 6, blink ? '#FF4E4E' : '#8E1D1D');
-    px(11, -26, 2, 1, blink ? '#FFB6B6' : '#6D1C1C');
+    p(2, 0, blink ? '#FF6B6B' : '#8E1D1D');
+    p(2, 1, blink ? '#FF4E4E' : '#8E1D1D');
+    p(2, 2, blink ? '#FF4E4E' : '#8E1D1D');
+    p(2, 4, blink ? '#FFB6B6' : '#6D1C1C');
     return;
   }
   if (behavior === 'offline') {
-    px(10, -32, 6, 4, '#95A3B6');
-    px(11, -31, 4, 2, '#C7D2E2');
+    p(0, 1, '#95A3B6'); p(1, 1, '#95A3B6'); p(2, 1, '#95A3B6'); p(3, 1, '#95A3B6'); p(4, 1, '#95A3B6');
+    p(1, 2, '#C7D2E2'); p(2, 2, '#C7D2E2'); p(3, 2, '#C7D2E2');
     return;
   }
   if (behavior === 'starting') {
-    px(11, -33, 2, 6, '#7DDB84');
-    px(10, -31, 4, 2, '#A2E7A8');
+    p(2, 0, '#7DDB84'); p(1, 1, '#A2E7A8'); p(2, 1, '#7DDB84'); p(3, 1, '#A2E7A8');
+    p(2, 2, '#7DDB84'); p(2, 3, '#7DDB84');
   }
 }
 
@@ -623,6 +666,7 @@ export function renderFrame(
   }
 
   drawFunctionalZoneOverlays(ctx, zones, walkGrid, state, config);
+  drawZoneBoundaries(ctx, zones, walkGrid);
   drawSacredRoutes(ctx, state.tick);
 
   interface Drawable {
@@ -690,7 +734,9 @@ export function renderFrame(
           workerCfg.skinToneIndex,
         );
         drawWorkerBehaviorProp(ctx, sp.x, sp.y, workerCfg.behavior, state.tick, workerCfg.color);
-        drawNameTag(ctx, sp.x, sp.y + 2, workerCfg.name, workerCfg.color);
+        if (config.selectedWorkerId === workerCfg.id) {
+          drawNameTag(ctx, sp.x, sp.y + 2, workerCfg.name, workerCfg.color);
+        }
       },
     });
   }
@@ -739,7 +785,9 @@ export function renderFrame(
         config.codex.avatar,
         config.codex.emoji,
       );
-      drawNameTag(ctx, sp.x, sp.y + 2, config.codex.name, '#FFD700');
+      if (config.selectedWorkerId === 'codex') {
+        drawNameTag(ctx, sp.x, sp.y + 2, config.codex.name, '#FFD700');
+      }
     },
   });
 
@@ -757,7 +805,9 @@ export function renderFrame(
           config.gemini!.avatar,
           config.gemini!.emoji,
         );
-        drawNameTag(ctx, sp.x, sp.y + 2, config.gemini!.name, '#9C27B0');
+        if (config.selectedWorkerId === 'gemini') {
+          drawNameTag(ctx, sp.x, sp.y + 2, config.gemini!.name, '#9C27B0');
+        }
       },
     });
   }
@@ -765,16 +815,16 @@ export function renderFrame(
   drawables.sort((a, b) => a.depth - b.depth);
   for (const d of drawables) d.draw();
 
-  for (const zone of Object.values(zones)) {
-    if (zone.id.startsWith('sanctuary_')) {
+  // Reduce visual clutter: only show selected worker's sanctuary label.
+  if (config.selectedWorkerId) {
+    for (const zone of Object.values(zones)) {
+      if (!zone.id.startsWith('sanctuary_')) continue;
       const idx = parseInt(zone.id.replace('sanctuary_', ''), 10);
       const workerCfg = config.workers[idx];
-      if (workerCfg) {
-        drawZoneLabel(ctx, `${workerCfg.name}'s Sanctuary`, workerCfg.emoji, zone.center.col, zone.center.row, 0.5);
-        continue;
-      }
+      if (workerCfg?.id !== config.selectedWorkerId) continue;
+      drawZoneLabel(ctx, `${workerCfg.name}'s Sanctuary`, workerCfg.emoji, zone.center.col, zone.center.row, 0.46);
+      break;
     }
-    drawZoneLabel(ctx, zone.label, zone.emoji, zone.center.col, zone.center.row, 0.5);
   }
 
   for (const particle of state.particles) drawParticle(ctx, particle);

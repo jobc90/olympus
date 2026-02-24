@@ -32,6 +32,66 @@ const BASE_SKIN_SHADOW = '#E8C4A0';
 
 type GodFeature = 'warrior_helmet' | 'trident_crown' | 'war_helmet' | 'laurel' | 'silver_tiara' | 'winged_helm' | 'soot' | 'vine_crown' | 'wheat_crown' | 'rose_tiara' | 'royal_crown' | 'dark_helm' | 'flower_crown' | 'torch' | 'solar_crown' | 'wings' | 'horns' | 'mystic_aura' | 'rainbow' | 'lion_mane' | 'golden_crown' | 'peacock_crown' | 'crescent_diadem' | 'none';
 
+type SigilGlyph =
+  | 'shield'
+  | 'trident'
+  | 'sword'
+  | 'sun'
+  | 'moon'
+  | 'wing'
+  | 'hammer'
+  | 'grape'
+  | 'wheat'
+  | 'heart'
+  | 'crown'
+  | 'skull'
+  | 'flower'
+  | 'flame'
+  | 'halo'
+  | 'trophy'
+  | 'horn'
+  | 'star'
+  | 'rainbow'
+  | 'lion'
+  | 'crescent'
+  | 'bolt'
+  | 'peacock';
+
+interface DivineSigil {
+  glyph: SigilGlyph;
+  ring: string;
+  glow: string;
+  primary: string;
+  secondary: string;
+}
+
+const WORKER_SIGIL_MAP: Record<WorkerAvatar, DivineSigil> = {
+  athena: { glyph: 'shield', ring: '#5C7A99', glow: '#C62828', primary: '#8FA7BF', secondary: '#C62828' },
+  poseidon: { glyph: 'trident', ring: '#0277BD', glow: '#80DEEA', primary: '#008FCB', secondary: '#B3E5FC' },
+  ares: { glyph: 'sword', ring: '#C62828', glow: '#FF5252', primary: '#C0C4CC', secondary: '#C62828' },
+  apollo: { glyph: 'sun', ring: '#FFC107', glow: '#FFD54F', primary: '#FFD54F', secondary: '#FFB300' },
+  artemis: { glyph: 'moon', ring: '#8FA1B2', glow: '#E0E0E0', primary: '#ECEFF1', secondary: '#B0BEC5' },
+  hermes: { glyph: 'wing', ring: '#1E88E5', glow: '#FFD700', primary: '#FFFFFF', secondary: '#CFD8DC' },
+  hephaestus: { glyph: 'hammer', ring: '#6D4C41', glow: '#FF6D00', primary: '#8D6E63', secondary: '#CFD8DC' },
+  dionysus: { glyph: 'grape', ring: '#8E24AA', glow: '#CE93D8', primary: '#8E24AA', secondary: '#66BB6A' },
+  demeter: { glyph: 'wheat', ring: '#558B2F', glow: '#FFD600', primary: '#FFD54F', secondary: '#FFB300' },
+  aphrodite: { glyph: 'heart', ring: '#EC407A', glow: '#FF1744', primary: '#E91E63', secondary: '#F48FB1' },
+  hera: { glyph: 'peacock', ring: '#7B1FA2', glow: '#FFD700', primary: '#7B1FA2', secondary: '#00ACC1' },
+  hades: { glyph: 'skull', ring: '#263238', glow: '#64B5F6', primary: '#CFD8DC', secondary: '#37474F' },
+  persephone: { glyph: 'flower', ring: '#43A047', glow: '#F06292', primary: '#F48FB1', secondary: '#81C784' },
+  prometheus: { glyph: 'flame', ring: '#6D4C41', glow: '#FF6D00', primary: '#FF6D00', secondary: '#FFD54F' },
+  helios: { glyph: 'halo', ring: '#FF8F00', glow: '#FFD600', primary: '#FFD600', secondary: '#FFF176' },
+  nike: { glyph: 'trophy', ring: '#F5F5F5', glow: '#FFD700', primary: '#FFD700', secondary: '#FFF59D' },
+  pan: { glyph: 'horn', ring: '#5D4037', glow: '#43A047', primary: '#8D6E63', secondary: '#A1887F' },
+  hecate: { glyph: 'star', ring: '#4A148C', glow: '#D500F9', primary: '#CE93D8', secondary: '#E1BEE7' },
+  iris: { glyph: 'rainbow', ring: '#2979FF', glow: '#D500F9', primary: '#FF5252', secondary: '#4FC3F7' },
+  heracles: { glyph: 'lion', ring: '#C49A6C', glow: '#FFD700', primary: '#C49A6C', secondary: '#6D4C41' },
+  selene: { glyph: 'crescent', ring: '#3949AB', glow: '#E0E0E0', primary: '#E8EAF6', secondary: '#9FA8DA' },
+};
+
+const ZEUS_SIGIL: DivineSigil = { glyph: 'bolt', ring: '#FFC107', glow: '#FFD700', primary: '#FFD700', secondary: '#FFF59D' };
+const HERA_SIGIL: DivineSigil = { glyph: 'peacock', ring: '#7B1FA2', glow: '#FFD700', primary: '#7B1FA2', secondary: '#00ACC1' };
+
 function workerPalette(avatar: WorkerAvatar, color: string, skinToneIndex?: number): CharPalette {
   const tone = SKIN_TONES[(skinToneIndex ?? 0) % SKIN_TONES.length];
   switch (avatar) {
@@ -130,6 +190,168 @@ function lighten(hex: string, pct: number): string {
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
 }
 
+function drawDivineSigil(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  tick: number,
+  sigil: DivineSigil,
+): void {
+  const bob = Math.sin(tick * 0.08) * 1;
+  const sy = y + bob;
+  const pulse = 0.22 + 0.16 * (0.5 + 0.5 * Math.sin(tick * 0.12));
+
+  ctx.save();
+  ctx.shadowColor = sigil.glow;
+  ctx.shadowBlur = 4;
+  ctx.globalAlpha = pulse;
+  ctx.fillStyle = sigil.glow;
+  ctx.beginPath();
+  ctx.arc(x, sy, 5.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = '#F7F2E8';
+  ctx.beginPath();
+  ctx.arc(x, sy, 4.75, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = sigil.ring;
+  ctx.lineWidth = 1.25;
+  ctx.stroke();
+  ctx.restore();
+
+  drawSigilGlyph(ctx, x, sy, sigil, tick);
+}
+
+function drawSigilGlyph(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  sigil: DivineSigil,
+  tick: number,
+): void {
+  const ox = Math.round(cx - 3);
+  const oy = Math.round(cy - 3);
+  const p = (gx: number, gy: number, color: string) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(ox + gx, oy + gy, 1, 1);
+  };
+  const a = sigil.primary;
+  const b = sigil.secondary;
+
+  switch (sigil.glyph) {
+    case 'shield':
+      p(3, 0, a); p(2, 1, a); p(3, 1, a); p(4, 1, a);
+      p(1, 2, b); p(5, 2, b); p(1, 3, b); p(5, 3, b);
+      p(2, 4, a); p(4, 4, a); p(3, 5, b); p(3, 6, a);
+      break;
+    case 'trident':
+      p(2, 0, b); p(3, 0, a); p(4, 0, b);
+      p(2, 1, a); p(3, 1, a); p(4, 1, a);
+      p(3, 2, a); p(3, 3, a); p(3, 4, a); p(3, 5, a); p(3, 6, a);
+      p(1, 3, b); p(2, 3, b); p(4, 3, b); p(5, 3, b);
+      break;
+    case 'sword':
+      p(3, 0, b); p(3, 1, a); p(3, 2, a); p(3, 3, a); p(3, 4, a);
+      p(2, 4, b); p(4, 4, b); p(1, 5, b); p(2, 5, b); p(4, 5, b); p(5, 5, b);
+      p(3, 6, b);
+      break;
+    case 'sun':
+      p(3, 0, b); p(1, 1, b); p(3, 1, a); p(5, 1, b);
+      p(0, 3, b); p(1, 3, a); p(2, 3, a); p(3, 3, a); p(4, 3, a); p(5, 3, a); p(6, 3, b);
+      p(1, 5, b); p(3, 5, a); p(5, 5, b); p(3, 6, b);
+      break;
+    case 'moon':
+      p(4, 0, a); p(3, 1, a); p(4, 1, a); p(2, 2, a); p(3, 2, a);
+      p(2, 3, a); p(3, 3, b); p(2, 4, a); p(3, 4, a); p(3, 5, a); p(4, 5, a);
+      break;
+    case 'wing':
+      p(1, 3, a); p(2, 2, a); p(2, 3, b); p(3, 1, a); p(3, 2, b); p(3, 3, b);
+      p(4, 2, a); p(4, 3, b); p(5, 3, a);
+      break;
+    case 'hammer':
+      p(1, 1, b); p(2, 1, b); p(3, 1, b); p(4, 1, b); p(5, 1, b);
+      p(2, 2, a); p(3, 2, a); p(4, 2, a); p(3, 3, a); p(3, 4, a); p(3, 5, b); p(3, 6, b);
+      break;
+    case 'grape':
+      p(3, 0, b); p(2, 1, a); p(3, 1, a); p(4, 1, a);
+      p(2, 2, a); p(3, 2, a); p(4, 2, a);
+      p(3, 3, a); p(2, 4, a); p(4, 4, a);
+      break;
+    case 'wheat':
+      p(3, 0, b); p(3, 1, a); p(2, 1, b); p(4, 1, b);
+      p(3, 2, a); p(2, 2, b); p(4, 2, b);
+      p(3, 3, a); p(2, 3, b); p(4, 3, b);
+      p(3, 4, a); p(3, 5, a); p(3, 6, b);
+      break;
+    case 'heart':
+      p(2, 1, a); p(4, 1, a); p(1, 2, a); p(2, 2, b); p(3, 2, a); p(4, 2, b); p(5, 2, a);
+      p(2, 3, a); p(3, 3, a); p(4, 3, a); p(3, 4, b); p(3, 5, a);
+      break;
+    case 'crown':
+      p(1, 2, a); p(2, 1, b); p(3, 2, a); p(4, 1, b); p(5, 2, a);
+      p(1, 3, b); p(2, 3, b); p(3, 3, b); p(4, 3, b); p(5, 3, b);
+      break;
+    case 'skull':
+      p(2, 1, a); p(3, 1, a); p(4, 1, a);
+      p(1, 2, a); p(2, 2, b); p(3, 2, a); p(4, 2, b); p(5, 2, a);
+      p(1, 3, a); p(2, 3, a); p(3, 3, a); p(4, 3, a); p(5, 3, a);
+      p(2, 4, b); p(4, 4, b); p(3, 5, b);
+      break;
+    case 'flower':
+      p(3, 1, b); p(2, 2, a); p(4, 2, a); p(1, 3, a); p(3, 3, b); p(5, 3, a); p(2, 4, a); p(4, 4, a);
+      p(3, 5, b);
+      break;
+    case 'flame':
+      p(3, 0, b); p(2, 1, a); p(3, 1, b); p(3, 2, a); p(4, 2, b); p(2, 3, a); p(3, 3, a);
+      p(2, 4, b); p(3, 4, a); p(3, 5, b);
+      break;
+    case 'halo':
+      p(2, 1, b); p(3, 1, a); p(4, 1, b);
+      p(1, 2, a); p(5, 2, a); p(1, 3, a); p(5, 3, a);
+      p(2, 4, b); p(3, 4, a); p(4, 4, b);
+      break;
+    case 'trophy':
+      p(1, 1, b); p(2, 1, b); p(3, 1, a); p(4, 1, b); p(5, 1, b);
+      p(2, 2, a); p(3, 2, a); p(4, 2, a); p(3, 3, a);
+      p(2, 4, b); p(3, 4, b); p(4, 4, b); p(1, 5, b); p(5, 5, b);
+      break;
+    case 'horn':
+      p(1, 1, b); p(2, 1, b); p(2, 2, a); p(3, 2, a); p(4, 3, a); p(5, 4, b); p(6, 5, b);
+      break;
+    case 'star':
+      p(3, 0, b); p(2, 2, a); p(3, 2, b); p(4, 2, a); p(1, 3, a); p(3, 3, b); p(5, 3, a); p(3, 5, b);
+      break;
+    case 'rainbow':
+      p(1, 1, '#F44336'); p(2, 1, '#FF9800'); p(3, 1, '#FFEB3B'); p(4, 1, '#4CAF50'); p(5, 1, '#2196F3');
+      p(1, 2, '#EF5350'); p(2, 2, '#FFA726'); p(3, 2, '#FFF176'); p(4, 2, '#66BB6A'); p(5, 2, '#42A5F5');
+      p(2, 3, b); p(3, 3, a); p(4, 3, b);
+      break;
+    case 'lion':
+      p(2, 1, b); p(3, 1, a); p(4, 1, b);
+      p(1, 2, b); p(2, 2, a); p(3, 2, a); p(4, 2, a); p(5, 2, b);
+      p(2, 3, a); p(3, 3, b); p(4, 3, a); p(3, 4, b);
+      break;
+    case 'crescent':
+      p(4, 1, a); p(3, 2, a); p(4, 2, a); p(2, 3, a); p(3, 3, b); p(2, 4, a); p(3, 4, a); p(4, 5, a);
+      break;
+    case 'bolt':
+      p(3, 0, b); p(2, 1, a); p(3, 1, b); p(2, 2, a); p(3, 2, a); p(4, 2, b);
+      p(3, 3, a); p(2, 4, a); p(3, 4, b); p(2, 5, a); p(1, 6, b);
+      if (tick % 16 < 8) p(4, 1, '#FFFDE7');
+      break;
+    case 'peacock':
+      p(3, 1, a);
+      p(1, 2, b); p(3, 2, a); p(5, 2, b);
+      p(2, 3, b); p(3, 3, '#FFD700'); p(4, 3, b);
+      p(3, 4, a); p(3, 5, b);
+      break;
+    default:
+      break;
+  }
+}
+
 function drawCharacter(
   ctx: CanvasRenderingContext2D,
   x: number, y: number,
@@ -137,642 +359,228 @@ function drawCharacter(
   direction: Direction,
   tick: number,
   palette: CharPalette,
-  emoji: string,
+  sigil: DivineSigil,
   feature: GodFeature,
 ): void {
-  const scale = 3;
-  const ox = x - 18;
-  const oy = y - 54;
+  const scale = 2;
+  const ox = Math.round(x - 18);
+  const baseY = Math.round(y - 46);
+  const frame = Math.floor(tick / 9) % 2;
+  const blink = tick % 110 > 100;
+  const sit = anim === 'sit_typing' || anim === 'sit_idle' || anim === 'keyboard_mash';
+  const run = anim === 'run' || anim === 'walk_frame1' || anim === 'walk_frame2';
+  const bob = sit ? 0 : Math.floor(Math.sin(tick * 0.14) * 1);
+  const jump = anim === 'celebrate' && frame === 0 ? -2 : 0;
+  const bodyY = baseY + bob + jump;
+
+  const tint = (hex: string, delta: number): string => {
+    const n = parseInt(hex.replace('#', ''), 16);
+    const r = Math.max(0, Math.min(255, ((n >> 16) & 0xff) + delta));
+    const g = Math.max(0, Math.min(255, ((n >> 8) & 0xff) + delta));
+    const b = Math.max(0, Math.min(255, (n & 0xff) + delta));
+    return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+  };
+
+  const p = (gx: number, gy: number, c: string) => px(ctx, gx, gy, c, scale, ox, bodyY);
+
+  const drawAccessory = (): void => {
+    const a = palette.accent;
+    const af = palette.accentFrame;
+    switch (feature) {
+      case 'golden_crown':
+      case 'royal_crown':
+      case 'solar_crown':
+      case 'peacock_crown':
+        p(6, 0, '#FFD54F'); p(7, -1, '#FFF59D'); p(8, 0, '#FFD54F');
+        p(5, 1, '#FFC107'); p(9, 1, '#FFC107');
+        p(7, 1, feature === 'peacock_crown' && tick % 28 < 14 ? '#00BCD4' : '#E040FB');
+        break;
+      case 'warrior_helmet':
+      case 'war_helmet':
+        for (let i = 5; i <= 9; i++) p(i, 1, '#8A9AA9');
+        p(7, -1, '#C62828');
+        break;
+      case 'trident_crown':
+        p(6, 0, a); p(7, -1, a); p(8, 0, a); p(7, 1, af);
+        break;
+      case 'laurel':
+      case 'vine_crown':
+      case 'wheat_crown':
+      case 'flower_crown':
+      case 'rose_tiara':
+        p(5, 1, a); p(6, 0, a); p(7, 0, af); p(8, 0, a); p(9, 1, a);
+        break;
+      case 'silver_tiara':
+      case 'crescent_diadem':
+        p(6, 0, '#CFD8DC'); p(7, -1, '#FFFFFF'); p(8, 0, '#CFD8DC');
+        break;
+      case 'winged_helm':
+        p(4, 1, '#ECEFF1'); p(10, 1, '#ECEFF1'); p(3, 1, '#FFFFFF'); p(11, 1, '#FFFFFF');
+        break;
+      case 'dark_helm':
+        for (let i = 5; i <= 9; i++) p(i, 1, '#232833');
+        p(6, 1, '#7EC8FF'); p(8, 1, '#7EC8FF');
+        break;
+      case 'torch':
+        p(12, 10, '#8D6E63'); p(12, 9, '#FF9800'); p(12, 8, tick % 16 < 8 ? '#FFD54F' : '#FF6D00');
+        break;
+      case 'wings':
+        p(3, 11, '#FFFFFF'); p(3, 12, '#ECEFF1'); p(11, 11, '#FFFFFF'); p(11, 12, '#ECEFF1');
+        break;
+      case 'horns':
+        p(5, 0, '#8D6E63'); p(9, 0, '#8D6E63');
+        break;
+      case 'mystic_aura':
+        if (tick % 24 < 8) { p(3, 3, '#B388FF'); p(11, 4, '#CE93D8'); }
+        else if (tick % 24 < 16) { p(11, 3, '#B388FF'); p(3, 4, '#CE93D8'); }
+        else { p(2, 4, '#B388FF'); p(12, 4, '#CE93D8'); }
+        break;
+      case 'rainbow':
+        p(5, 0, '#FF5252'); p(6, 0, '#FFEB3B'); p(7, 0, '#4CAF50'); p(8, 0, '#2196F3'); p(9, 0, '#9C27B0');
+        break;
+      case 'lion_mane':
+        p(4, 1, '#C49A6C'); p(5, 0, '#DEB887'); p(9, 0, '#DEB887'); p(10, 1, '#C49A6C');
+        break;
+      case 'soot':
+        p(6, 8, '#5D4037'); p(8, 9, '#4E342E');
+        break;
+      case 'none':
+      default:
+        break;
+    }
+  };
+
+  const drawChestSigil = (): void => {
+    const a = sigil.primary;
+    const b = sigil.secondary;
+    switch (sigil.glyph) {
+      case 'trident':
+        p(7, 14, a); p(7, 15, a); p(6, 14, b); p(8, 14, b);
+        break;
+      case 'bolt':
+      case 'flame':
+        p(7, 14, a); p(6, 15, b); p(7, 15, a);
+        break;
+      case 'moon':
+      case 'crescent':
+        p(7, 14, a); p(6, 15, a); p(7, 15, b);
+        break;
+      default:
+        p(7, 14, a); p(8, 14, b);
+        break;
+    }
+  };
+
+  // Ground shadow
+  ctx.save();
+  ctx.fillStyle = 'rgba(8, 14, 24, 0.34)';
+  ctx.fillRect(x - 10, y - 2, 20, 3);
+  ctx.restore();
+
+  drawDivineSigil(ctx, x, bodyY - 6, tick, sigil);
 
   ctx.save();
-
   if (direction === 'w') {
     ctx.translate(x, 0);
     ctx.scale(-1, 1);
     ctx.translate(-x, 0);
   }
 
-  const frame = Math.floor(tick / 8) % 2;
-
-  // ── Emoji symbol with sparkle effect ──
-  const emojiY = oy - 4;
-  const bob = Math.sin(tick * 0.08) * 1.5; // gentle float
-  ctx.save();
-  if (direction === 'w') {
-    ctx.translate(x, 0);
-    ctx.scale(-1, 1);
-    ctx.translate(-x, 0);
+  const legBase = sit ? 18 : 17;
+  const stride = run ? (frame === 0 ? -1 : 1) : 0;
+  // Legs / boots (voxel-style)
+  p(6 + Math.min(0, stride), legBase, palette.pants);
+  p(6 + Math.min(0, stride), legBase + 1, palette.shoes);
+  p(8 + Math.max(0, stride), legBase, tint(palette.pants, 8));
+  p(8 + Math.max(0, stride), legBase + 1, palette.shoes);
+  if (sit) {
+    p(6, legBase + 1, palette.shoes);
+    p(8, legBase + 1, palette.shoes);
   }
-  // Glow halo behind emoji
-  const glowAlpha = 0.25 + Math.sin(tick * 0.12) * 0.15;
-  ctx.shadowColor = '#FFD700';
-  ctx.shadowBlur = 8 + Math.sin(tick * 0.1) * 4;
-  ctx.font = '22px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText(emoji, x, emojiY + bob);
-  ctx.shadowBlur = 0;
-  // Sparkle particles (4 points rotating around emoji)
-  const sparkleR = 14;
-  const sparkleCount = 4;
-  for (let i = 0; i < sparkleCount; i++) {
-    const angle = (tick * 0.05) + (i * Math.PI * 2 / sparkleCount);
-    const sx = x + Math.cos(angle) * sparkleR;
-    const sy = (emojiY + bob - 6) + Math.sin(angle) * sparkleR * 0.6;
-    const sparkAlpha = 0.4 + Math.sin(tick * 0.15 + i * 1.5) * 0.4;
-    ctx.globalAlpha = Math.max(0, sparkAlpha);
-    ctx.fillStyle = i % 2 === 0 ? '#FFFFFF' : '#FFF9C4';
-    ctx.fillRect(sx - 1, sy - 1, 2, 2);
-  }
-  ctx.globalAlpha = 1;
-  ctx.restore();
 
-  // Hair
-  for (let i = 3; i <= 8; i++) px(ctx, i, 2, palette.hair, scale, ox, oy);
-  for (let i = 2; i <= 9; i++) px(ctx, i, 3, palette.hair, scale, ox, oy);
-
-  // God-specific features (headgear/accessories)
-  switch (feature) {
-    case 'golden_crown': { // Zeus — Divine Golden Crown with aura
-      // Expanded crown base (wider)
-      px(ctx, 3, 2, palette.accent, scale, ox, oy);
-      px(ctx, 4, 1, palette.accent, scale, ox, oy);
-      px(ctx, 5, 1, palette.accentFrame, scale, ox, oy);
-      px(ctx, 6, 1, palette.accentFrame, scale, ox, oy);
-      px(ctx, 7, 1, palette.accent, scale, ox, oy);
-      px(ctx, 8, 2, palette.accent, scale, ox, oy);
-      // Crown spires (3 prongs)
-      px(ctx, 4, 0, '#FFF176', scale, ox, oy);
-      px(ctx, 6, 0, '#FFF176', scale, ox, oy);
-      // Center jewel (pulsing glow)
-      const zeusGlow = Math.floor(tick / 20) % 3;
-      px(ctx, 5, 0, zeusGlow === 0 ? '#FFFFFF' : zeusGlow === 1 ? '#FFF9C4' : '#FFD700', scale, ox, oy);
-      // Side glow flickers (divine aura)
-      if (Math.floor(tick / 15) % 4 !== 0) {
-        px(ctx, 2, 3, 'rgba(255,215,0,0.3)', scale, ox, oy);
-        px(ctx, 9, 3, 'rgba(255,215,0,0.3)', scale, ox, oy);
-      }
-      break;
+  // Back cloak
+  for (let r = 0; r < 8; r++) {
+    for (let c = 5; c <= 10; c++) {
+      p(c, 10 + r, tint(palette.top, -26));
     }
-    case 'warrior_helmet': // Athena
-      for (let i = 3; i <= 8; i++) px(ctx, i, 2, '#78909C', scale, ox, oy);
-      for (let i = 4; i <= 7; i++) px(ctx, i, 1, '#90A4AE', scale, ox, oy);
-      px(ctx, 5, 0, '#D32F2F', scale, ox, oy); // red crest
-      px(ctx, 6, 0, '#D32F2F', scale, ox, oy);
-      break;
-    case 'trident_crown': // Poseidon
-      px(ctx, 4, 0, palette.accent, scale, ox, oy);
-      px(ctx, 6, 0, palette.accent, scale, ox, oy);
-      px(ctx, 8, 0, palette.accent, scale, ox, oy);
-      px(ctx, 5, 1, palette.top, scale, ox, oy);
-      px(ctx, 6, 1, palette.top, scale, ox, oy);
-      px(ctx, 7, 1, palette.top, scale, ox, oy);
-      break;
-    case 'war_helmet': // Ares
-      for (let i = 2; i <= 9; i++) px(ctx, i, 2, '#B71C1C', scale, ox, oy);
-      for (let i = 3; i <= 8; i++) px(ctx, i, 1, '#D32F2F', scale, ox, oy);
-      px(ctx, 5, 0, '#F44336', scale, ox, oy);
-      px(ctx, 6, 0, '#F44336', scale, ox, oy);
-      // Visor
-      for (let i = 3; i <= 8; i++) px(ctx, i, 3, '#B71C1C', scale, ox, oy);
-      break;
-    case 'laurel': // Apollo
-      px(ctx, 2, 3, palette.accent, scale, ox, oy);
-      px(ctx, 3, 2, palette.accent, scale, ox, oy);
-      px(ctx, 8, 2, palette.accent, scale, ox, oy);
-      px(ctx, 9, 3, palette.accent, scale, ox, oy);
-      px(ctx, 2, 4, palette.accentFrame, scale, ox, oy);
-      px(ctx, 9, 4, palette.accentFrame, scale, ox, oy);
-      break;
-    case 'silver_tiara': // Artemis
-      px(ctx, 5, 1, '#CFD8DC', scale, ox, oy);
-      px(ctx, 6, 1, '#CFD8DC', scale, ox, oy);
-      px(ctx, 4, 2, '#B0BEC5', scale, ox, oy);
-      px(ctx, 7, 2, '#B0BEC5', scale, ox, oy);
-      // Crescent moon
-      px(ctx, 5, 0, '#ECEFF1', scale, ox, oy);
-      break;
-    case 'winged_helm': // Hermes
-      for (let i = 4; i <= 7; i++) px(ctx, i, 2, '#ECEFF1', scale, ox, oy);
-      // Wings on sides
-      px(ctx, 1, 2, '#FFFFFF', scale, ox, oy);
-      px(ctx, 2, 1, '#FFFFFF', scale, ox, oy);
-      px(ctx, 10, 2, '#FFFFFF', scale, ox, oy);
-      px(ctx, 9, 1, '#FFFFFF', scale, ox, oy);
-      break;
-    case 'soot': // Hephaestus
-      px(ctx, 4, 5, '#5D4037', scale, ox, oy);
-      px(ctx, 7, 6, '#4E342E', scale, ox, oy);
-      px(ctx, 3, 8, '#5D4037', scale, ox, oy);
-      break;
-    case 'vine_crown': // Dionysus
-      px(ctx, 4, 1, '#4CAF50', scale, ox, oy);
-      px(ctx, 5, 1, '#7B1FA2', scale, ox, oy); // grape
-      px(ctx, 6, 1, '#7B1FA2', scale, ox, oy); // grape
-      px(ctx, 7, 1, '#4CAF50', scale, ox, oy);
-      px(ctx, 3, 2, '#388E3C', scale, ox, oy);
-      px(ctx, 8, 2, '#388E3C', scale, ox, oy);
-      break;
-    case 'wheat_crown': // Demeter
-      px(ctx, 4, 0, '#FFD54F', scale, ox, oy);
-      px(ctx, 5, 0, '#FFCA28', scale, ox, oy);
-      px(ctx, 6, 0, '#FFD54F', scale, ox, oy);
-      px(ctx, 7, 0, '#FFCA28', scale, ox, oy);
-      px(ctx, 4, 1, '#FFC107', scale, ox, oy);
-      px(ctx, 7, 1, '#FFC107', scale, ox, oy);
-      break;
-    case 'rose_tiara': // Aphrodite
-      px(ctx, 4, 1, '#E91E63', scale, ox, oy);
-      px(ctx, 5, 1, '#F48FB1', scale, ox, oy);
-      px(ctx, 6, 1, '#E91E63', scale, ox, oy);
-      px(ctx, 7, 1, '#F48FB1', scale, ox, oy);
-      break;
-    case 'royal_crown': // Hera
-      px(ctx, 4, 0, '#FFD700', scale, ox, oy);
-      px(ctx, 5, 0, '#FFC107', scale, ox, oy);
-      px(ctx, 6, 0, '#FFD700', scale, ox, oy);
-      px(ctx, 7, 0, '#FFC107', scale, ox, oy);
-      for (let i = 3; i <= 8; i++) px(ctx, i, 1, '#FFD700', scale, ox, oy);
-      px(ctx, 5, 0, '#E91E63', scale, ox, oy); // jewel
-      break;
-    case 'dark_helm': // Hades
-      for (let i = 2; i <= 9; i++) px(ctx, i, 2, '#212121', scale, ox, oy);
-      for (let i = 3; i <= 8; i++) px(ctx, i, 1, '#303030', scale, ox, oy);
-      for (let i = 3; i <= 8; i++) px(ctx, i, 3, '#1A1A1A', scale, ox, oy);
-      // Eye slits glow
-      px(ctx, 5, 3, '#64B5F6', scale, ox, oy);
-      px(ctx, 7, 3, '#64B5F6', scale, ox, oy);
-      break;
-    case 'flower_crown': // Persephone
-      px(ctx, 3, 2, '#F48FB1', scale, ox, oy);
-      px(ctx, 5, 1, '#FFD54F', scale, ox, oy);
-      px(ctx, 7, 1, '#FFFFFF', scale, ox, oy);
-      px(ctx, 8, 2, '#F48FB1', scale, ox, oy);
-      px(ctx, 4, 1, '#81C784', scale, ox, oy);
-      px(ctx, 6, 1, '#81C784', scale, ox, oy);
-      break;
-    case 'torch': // Prometheus
-      // Torch flame drawn near right hand (handled in body rendering too)
-      px(ctx, 10, 6, '#FF6D00', scale, ox, oy);
-      px(ctx, 10, 5, '#FFAB00', scale, ox, oy);
-      px(ctx, 11, 5, '#FF6D00', scale, ox, oy);
-      if (Math.floor(tick / 8) % 2 === 0) {
-        px(ctx, 10, 4, '#FFD740', scale, ox, oy);
-      } else {
-        px(ctx, 11, 4, '#FFD740', scale, ox, oy);
-      }
-      break;
-    case 'solar_crown': // Helios
-      // Radiating rays
-      px(ctx, 5, 0, '#FFD700', scale, ox, oy);
-      px(ctx, 6, 0, '#FFD700', scale, ox, oy);
-      px(ctx, 3, 1, '#FFC107', scale, ox, oy);
-      px(ctx, 8, 1, '#FFC107', scale, ox, oy);
-      px(ctx, 2, 2, '#FFCA28', scale, ox, oy);
-      px(ctx, 9, 2, '#FFCA28', scale, ox, oy);
-      px(ctx, 4, 0, '#FFA000', scale, ox, oy);
-      px(ctx, 7, 0, '#FFA000', scale, ox, oy);
-      break;
-    case 'wings': // Nike
-      // Small wings on body sides (drawn with character body)
-      px(ctx, 0, 8, '#FFFFFF', scale, ox, oy);
-      px(ctx, 0, 7, '#F5F5F5', scale, ox, oy);
-      px(ctx, 11, 8, '#FFFFFF', scale, ox, oy);
-      px(ctx, 11, 7, '#F5F5F5', scale, ox, oy);
-      if (Math.floor(tick / 12) % 2 === 0) {
-        px(ctx, 0, 6, '#E0E0E0', scale, ox, oy);
-        px(ctx, 11, 6, '#E0E0E0', scale, ox, oy);
-      }
-      break;
-    case 'horns': // Pan
-      px(ctx, 3, 1, '#795548', scale, ox, oy);
-      px(ctx, 3, 0, '#8D6E63', scale, ox, oy);
-      px(ctx, 8, 1, '#795548', scale, ox, oy);
-      px(ctx, 8, 0, '#8D6E63', scale, ox, oy);
-      break;
-    case 'mystic_aura': // Hecate
-      if (Math.floor(tick / 10) % 3 === 0) {
-        px(ctx, 2, 2, '#B388FF', scale, ox, oy);
-        px(ctx, 9, 4, '#9575CD', scale, ox, oy);
-      } else if (Math.floor(tick / 10) % 3 === 1) {
-        px(ctx, 9, 2, '#B388FF', scale, ox, oy);
-        px(ctx, 2, 4, '#9575CD', scale, ox, oy);
-      } else {
-        px(ctx, 1, 3, '#B388FF', scale, ox, oy);
-        px(ctx, 10, 3, '#9575CD', scale, ox, oy);
-      }
-      break;
-    case 'rainbow': // Iris
-      // Rainbow gradient on top row
-      px(ctx, 3, 1, '#FF5252', scale, ox, oy);
-      px(ctx, 4, 1, '#FF9800', scale, ox, oy);
-      px(ctx, 5, 1, '#FFEB3B', scale, ox, oy);
-      px(ctx, 6, 1, '#4CAF50', scale, ox, oy);
-      px(ctx, 7, 1, '#2196F3', scale, ox, oy);
-      px(ctx, 8, 1, '#9C27B0', scale, ox, oy);
-      break;
-    case 'lion_mane': // Heracles
-      // Extended mane around head
-      px(ctx, 2, 2, '#C49A6C', scale, ox, oy);
-      px(ctx, 2, 3, '#DEB887', scale, ox, oy);
-      px(ctx, 2, 4, '#C49A6C', scale, ox, oy);
-      px(ctx, 9, 2, '#C49A6C', scale, ox, oy);
-      px(ctx, 9, 3, '#DEB887', scale, ox, oy);
-      px(ctx, 9, 4, '#C49A6C', scale, ox, oy);
-      for (let i = 3; i <= 8; i++) px(ctx, i, 1, '#DEB887', scale, ox, oy);
-      break;
-    case 'crescent_diadem': // Selene — silver crescent moon
-      // Silver crescent arc
-      px(ctx, 4, 1, '#E0E0E0', scale, ox, oy);
-      px(ctx, 5, 0, '#F5F5F5', scale, ox, oy);
-      px(ctx, 6, 0, '#FFFFFF', scale, ox, oy);
-      px(ctx, 7, 1, '#E0E0E0', scale, ox, oy);
-      // Moon glow (subtle shimmer)
-      if (Math.floor(tick / 20) % 2 === 0) {
-        px(ctx, 5, 1, '#E8EAF6', scale, ox, oy);
-        px(ctx, 6, 1, '#C5CAE9', scale, ox, oy);
-      } else {
-        px(ctx, 5, 1, '#C5CAE9', scale, ox, oy);
-        px(ctx, 6, 1, '#E8EAF6', scale, ox, oy);
-      }
-      break;
-    case 'peacock_crown': // Hera (Gemini) — royal diadem with peacock feathers
-      // Gold diadem base
-      px(ctx, 3, 2, '#FFD700', scale, ox, oy);
-      px(ctx, 4, 1, '#FFD700', scale, ox, oy);
-      px(ctx, 5, 1, '#FFD700', scale, ox, oy);
-      px(ctx, 6, 1, '#FFD700', scale, ox, oy);
-      px(ctx, 7, 1, '#FFD700', scale, ox, oy);
-      px(ctx, 8, 2, '#FFD700', scale, ox, oy);
-      // Peacock feather eyes (teal + purple shimmer)
-      px(ctx, 4, 0, '#00897B', scale, ox, oy);
-      px(ctx, 6, 0, '#7B1FA2', scale, ox, oy);
-      // Center jewel (alternating shimmer)
-      if (Math.floor(tick / 30) % 2 === 0) {
-        px(ctx, 5, 0, '#E040FB', scale, ox, oy);
-      } else {
-        px(ctx, 5, 0, '#00BCD4', scale, ox, oy);
-      }
-      break;
-    case 'none':
-    default:
-      break;
   }
 
-  // Head/face
-  for (let i = 3; i <= 8; i++) px(ctx, i, 4, palette.skin, scale, ox, oy);
-  for (let i = 3; i <= 8; i++) px(ctx, i, 5, palette.skin, scale, ox, oy);
-  for (let i = 3; i <= 8; i++) px(ctx, i, 6, palette.skin, scale, ox, oy);
-  for (let i = 4; i <= 7; i++) px(ctx, i, 7, palette.skin, scale, ox, oy);
+  // Torso front with pseudo-3D side shading
+  for (let r = 0; r < 7; r++) {
+    for (let c = 6; c <= 9; c++) {
+      let fill = palette.top;
+      if (r === 0) fill = palette.topLight;
+      if (c <= 6) fill = tint(fill, -16);
+      if (c >= 9) fill = tint(fill, 12);
+      p(c, 11 + r, fill);
+    }
+  }
+  p(6, 12, palette.accentFrame);
+  p(9, 12, palette.accentFrame);
+  p(7, 15, palette.accent);
+  p(8, 15, palette.accentFrame);
 
-  // Idle micro-movements: eye look direction
-  const eyeShift = (Math.floor(tick / 90) % 3) - 1; // -1, 0, 1
-  const eyeLeftX = 5 + (anim === 'stand' || anim === 'sit_idle' ? eyeShift : 0);
-  const eyeRightX = 7 + (anim === 'stand' || anim === 'sit_idle' ? eyeShift : 0);
+  // Arms
+  const armY = sit ? 13 : 12;
+  p(5, armY, tint(palette.top, -10));
+  p(5, armY + 1, palette.skin);
+  p(10, armY, tint(palette.top, 8));
+  p(10, armY + 1, palette.skin);
+  if (anim === 'raise_hand' || anim === 'wave' || anim === 'celebrate' || anim === 'stretch') {
+    p(10, armY - 1, palette.top);
+    p(10, armY - 2, palette.top);
+    p(frame === 0 ? 11 : 9, armY - 3, palette.skin);
+  }
+  if (anim === 'point' || anim === 'hand_task') {
+    p(11, armY, palette.top);
+    p(12, armY, palette.skin);
+    if (anim === 'hand_task') {
+      p(13, armY, '#FFFFFF');
+      p(13, armY + 1, '#FFFFFF');
+    }
+  }
+  if (anim === 'drink_coffee') {
+    p(11, armY - 1, '#8B6914');
+    p(11, armY - 2, '#8B6914');
+    p(11 + frame, armY - 3, '#FFFFFF');
+  }
 
-  // Eyes
-  if (tick % 120 < 115) {
-    px(ctx, eyeLeftX, 5, palette.eyes, scale, ox, oy);
-    px(ctx, eyeRightX, 5, palette.eyes, scale, ox, oy);
+  // Neck
+  p(7, 10, palette.skinShadow);
+  p(8, 10, palette.skin);
+
+  // Hair band
+  for (let c = 5; c <= 9; c++) {
+    p(c, 3, c >= 8 ? palette.hairLight : palette.hair);
+  }
+  p(6, 2, palette.hairLight);
+  p(7, 2, palette.hair);
+  p(8, 2, palette.hairLight);
+
+  // Head cube (top / left / right faces)
+  for (let c = 6; c <= 8; c++) {
+    p(c, 4, tint(palette.skin, 10));
+  }
+  for (let r = 0; r < 4; r++) {
+    p(5, 5 + r, palette.skinShadow);
+    p(6, 5 + r, palette.skin);
+    p(7, 5 + r, palette.skin);
+    p(8, 5 + r, tint(palette.skin, 14));
+  }
+
+  if (!blink) {
+    p(6, 6, palette.eyes);
+    p(7, 6, palette.eyes);
   } else {
-    px(ctx, 5, 5, palette.skinShadow, scale, ox, oy);
-    px(ctx, 7, 5, palette.skinShadow, scale, ox, oy);
+    p(6, 6, palette.skinShadow);
+    p(7, 6, palette.skinShadow);
   }
+  p(7, 8, palette.skinShadow);
 
-  // Mouth
-  px(ctx, 5, 7, palette.skinShadow, scale, ox, oy);
-  px(ctx, 6, 7, palette.skinShadow, scale, ox, oy);
-
-  // Idle breathing: torso shifts 1px on standing/sitting
-  const breathOffset = (anim === 'stand' || anim === 'sit_idle') && (Math.floor(tick / 60) % 2 === 0) ? 1 : 0;
-
-  drawBody(ctx, anim, frame, palette, scale, ox, oy + breathOffset);
+  drawAccessory();
+  drawChestSigil();
 
   ctx.restore();
-}
-
-function drawBody(
-  ctx: CanvasRenderingContext2D,
-  anim: CharacterAnim,
-  frame: number,
-  p: CharPalette,
-  scale: number, ox: number, oy: number,
-): void {
-  if (anim === 'sit_typing' || anim === 'sit_idle') {
-    for (let row = 8; row <= 11; row++) {
-      for (let i = 3; i <= 8; i++) {
-        px(ctx, i, row, row === 8 ? p.topLight : p.top, scale, ox, oy);
-      }
-    }
-    px(ctx, 5, 10, p.topLight, scale, ox, oy);
-    px(ctx, 6, 10, p.topLight, scale, ox, oy);
-
-    if (anim === 'sit_typing') {
-      const armOff = frame;
-      px(ctx, 2, 9 + armOff, p.top, scale, ox, oy);
-      px(ctx, 1, 10, p.skin, scale, ox, oy);
-      px(ctx, 9, 9 + armOff, p.top, scale, ox, oy);
-      px(ctx, 10, 10, p.skin, scale, ox, oy);
-    } else {
-      px(ctx, 2, 9, p.top, scale, ox, oy);
-      px(ctx, 2, 10, p.skin, scale, ox, oy);
-      px(ctx, 9, 9, p.top, scale, ox, oy);
-      px(ctx, 9, 10, p.skin, scale, ox, oy);
-    }
-    for (let i = 3; i <= 8; i++) px(ctx, i, 12, p.pants, scale, ox, oy);
-    px(ctx, 3, 13, p.shoes, scale, ox, oy);
-    px(ctx, 4, 13, p.shoes, scale, ox, oy);
-    px(ctx, 7, 13, p.shoes, scale, ox, oy);
-    px(ctx, 8, 13, p.shoes, scale, ox, oy);
-
-  } else if (anim === 'sleep') {
-    for (let row = 8; row <= 10; row++) {
-      for (let i = 2; i <= 9; i++) {
-        px(ctx, i, row, p.top, scale, ox, oy);
-      }
-    }
-
-  } else if (anim === 'walk_frame1' || anim === 'walk_frame2') {
-    for (let row = 8; row <= 12; row++) {
-      for (let i = 3; i <= 8; i++) {
-        px(ctx, i, row, row === 8 ? p.topLight : p.top, scale, ox, oy);
-      }
-    }
-    if (anim === 'walk_frame1') {
-      px(ctx, 2, 9, p.top, scale, ox, oy);
-      px(ctx, 2, 10, p.skin, scale, ox, oy);
-      px(ctx, 9, 10, p.top, scale, ox, oy);
-      px(ctx, 9, 11, p.skin, scale, ox, oy);
-      px(ctx, 4, 13, p.pants, scale, ox, oy);
-      px(ctx, 4, 14, p.shoes, scale, ox, oy);
-      px(ctx, 7, 13, p.pants, scale, ox, oy);
-      px(ctx, 8, 14, p.shoes, scale, ox, oy);
-    } else {
-      px(ctx, 2, 10, p.top, scale, ox, oy);
-      px(ctx, 2, 11, p.skin, scale, ox, oy);
-      px(ctx, 9, 9, p.top, scale, ox, oy);
-      px(ctx, 9, 10, p.skin, scale, ox, oy);
-      px(ctx, 3, 13, p.pants, scale, ox, oy);
-      px(ctx, 3, 14, p.shoes, scale, ox, oy);
-      px(ctx, 7, 13, p.pants, scale, ox, oy);
-      px(ctx, 7, 14, p.shoes, scale, ox, oy);
-    }
-
-  } else if (anim === 'drink_coffee') {
-    for (let row = 8; row <= 12; row++) {
-      for (let i = 3; i <= 8; i++) {
-        px(ctx, i, row, row === 8 ? p.topLight : p.top, scale, ox, oy);
-      }
-    }
-    px(ctx, 2, 9, p.top, scale, ox, oy);
-    px(ctx, 2, 10, p.skin, scale, ox, oy);
-    px(ctx, 9, 8, p.top, scale, ox, oy);
-    px(ctx, 9, 7, p.skin, scale, ox, oy);
-    px(ctx, 10, 7, '#8B6914', scale, ox, oy);
-    px(ctx, 10, 6, '#8B6914', scale, ox, oy);
-    if (frame === 0) {
-      px(ctx, 10, 5, '#FFFFFF80', scale, ox, oy);
-      px(ctx, 11, 4, '#FFFFFF60', scale, ox, oy);
-    } else {
-      px(ctx, 11, 5, '#FFFFFF80', scale, ox, oy);
-      px(ctx, 10, 4, '#FFFFFF60', scale, ox, oy);
-    }
-    drawStandingLegs(ctx, p, scale, ox, oy);
-
-  } else if (anim === 'raise_hand') {
-    for (let row = 8; row <= 12; row++) {
-      for (let i = 3; i <= 8; i++) {
-        px(ctx, i, row, row === 8 ? p.topLight : p.top, scale, ox, oy);
-      }
-    }
-    px(ctx, 2, 9, p.top, scale, ox, oy);
-    px(ctx, 2, 10, p.skin, scale, ox, oy);
-    px(ctx, 9, 8, p.top, scale, ox, oy);
-    px(ctx, 9, 7, p.top, scale, ox, oy);
-    px(ctx, 9, 6, p.skin, scale, ox, oy);
-    drawStandingLegs(ctx, p, scale, ox, oy);
-
-  } else if (anim === 'headphones') {
-    px(ctx, 2, 3, '#FF5722', scale, ox, oy);
-    px(ctx, 3, 2, '#FF5722', scale, ox, oy);
-    px(ctx, 8, 2, '#FF5722', scale, ox, oy);
-    px(ctx, 9, 3, '#FF5722', scale, ox, oy);
-    px(ctx, 2, 4, '#FF5722', scale, ox, oy);
-    px(ctx, 2, 5, '#FF5722', scale, ox, oy);
-    px(ctx, 9, 4, '#FF5722', scale, ox, oy);
-    px(ctx, 9, 5, '#FF5722', scale, ox, oy);
-    for (let row = 8; row <= 12; row++) {
-      for (let i = 3; i <= 8; i++) {
-        px(ctx, i, row, row === 8 ? p.topLight : p.top, scale, ox, oy);
-      }
-    }
-    px(ctx, 2, 9, p.top, scale, ox, oy);
-    px(ctx, 2, 10, p.skin, scale, ox, oy);
-    px(ctx, 9, 9, p.top, scale, ox, oy);
-    px(ctx, 9, 10, p.skin, scale, ox, oy);
-    drawStandingLegs(ctx, p, scale, ox, oy);
-
-  } else if (anim === 'thumbs_up') {
-    for (let row = 8; row <= 12; row++) {
-      for (let i = 3; i <= 8; i++) {
-        if (i >= 5 && i <= 6 && row >= 9) {
-          px(ctx, i, row, p.accent, scale, ox, oy);
-        } else {
-          px(ctx, i, row, row === 8 ? p.topLight : p.top, scale, ox, oy);
-        }
-      }
-    }
-    px(ctx, 2, 9, p.top, scale, ox, oy);
-    px(ctx, 2, 10, p.skin, scale, ox, oy);
-    px(ctx, 9, 8, p.top, scale, ox, oy);
-    px(ctx, 9, 7, p.skin, scale, ox, oy);
-    px(ctx, 9, 6, '#FFD700', scale, ox, oy);
-    drawStandingLegs(ctx, p, scale, ox, oy);
-
-  } else if (anim === 'hand_task') {
-    for (let row = 8; row <= 12; row++) {
-      for (let i = 3; i <= 8; i++) {
-        if (i >= 5 && i <= 6 && row >= 9) {
-          px(ctx, i, row, p.accent, scale, ox, oy);
-        } else {
-          px(ctx, i, row, row === 8 ? p.topLight : p.top, scale, ox, oy);
-        }
-      }
-    }
-    px(ctx, 2, 9, p.top, scale, ox, oy);
-    px(ctx, 2, 10, p.skin, scale, ox, oy);
-    px(ctx, 9, 9, p.top, scale, ox, oy);
-    px(ctx, 10, 9, p.skin, scale, ox, oy);
-    px(ctx, 11, 8, '#FFFFFF', scale, ox, oy);
-    px(ctx, 11, 9, '#FFFFFF', scale, ox, oy);
-    px(ctx, 12, 8, '#FFFFFF', scale, ox, oy);
-    px(ctx, 12, 9, '#FFFFFF', scale, ox, oy);
-    drawStandingLegs(ctx, p, scale, ox, oy);
-
-  } else if (anim === 'run') {
-    for (let row = 8; row <= 12; row++) {
-      for (let i = 3; i <= 8; i++) {
-        px(ctx, i, row, row === 8 ? p.topLight : p.top, scale, ox, oy);
-      }
-    }
-    // Running arms
-    px(ctx, 1, 9, p.top, scale, ox, oy);
-    px(ctx, 1, 10, p.skin, scale, ox, oy);
-    px(ctx, 10, 8, p.top, scale, ox, oy);
-    px(ctx, 10, 9, p.skin, scale, ox, oy);
-    // Running legs (wider stance)
-    px(ctx, 3, 13, p.pants, scale, ox, oy);
-    px(ctx, 2, 14, p.shoes, scale, ox, oy);
-    px(ctx, 8, 13, p.pants, scale, ox, oy);
-    px(ctx, 9, 14, p.shoes, scale, ox, oy);
-
-  } else if (anim === 'keyboard_mash') {
-    // Like sit_typing but head bobs 1px, arms move faster (frame % 4)
-    const fastFrame = Math.floor(frame * 2) % 2;
-    const headBob = fastFrame;
-    for (let row = 8; row <= 11; row++) {
-      for (let i = 3; i <= 8; i++) {
-        px(ctx, i, row + headBob, row === 8 ? p.topLight : p.top, scale, ox, oy);
-      }
-    }
-    px(ctx, 5, 10 + headBob, p.topLight, scale, ox, oy);
-    px(ctx, 6, 10 + headBob, p.topLight, scale, ox, oy);
-    const mArmOff = fastFrame;
-    px(ctx, 2, 9 + mArmOff, p.top, scale, ox, oy);
-    px(ctx, 1, 10, p.skin, scale, ox, oy);
-    px(ctx, 9, 9 + (1 - mArmOff), p.top, scale, ox, oy);
-    px(ctx, 10, 10, p.skin, scale, ox, oy);
-    for (let i = 3; i <= 8; i++) px(ctx, i, 12, p.pants, scale, ox, oy);
-    px(ctx, 3, 13, p.shoes, scale, ox, oy);
-    px(ctx, 4, 13, p.shoes, scale, ox, oy);
-    px(ctx, 7, 13, p.shoes, scale, ox, oy);
-    px(ctx, 8, 13, p.shoes, scale, ox, oy);
-
-  } else if (anim === 'stretch') {
-    // Arms straight up above head
-    for (let row = 8; row <= 12; row++) {
-      for (let i = 3; i <= 8; i++) {
-        px(ctx, i, row, row === 8 ? p.topLight : p.top, scale, ox, oy);
-      }
-    }
-    // Left arm up
-    px(ctx, 2, 8, p.top, scale, ox, oy);
-    px(ctx, 2, 7, p.top, scale, ox, oy);
-    px(ctx, 2, 6, p.skin, scale, ox, oy);
-    // Right arm up
-    px(ctx, 9, 8, p.top, scale, ox, oy);
-    px(ctx, 9, 7, p.top, scale, ox, oy);
-    px(ctx, 9, 6, p.skin, scale, ox, oy);
-    drawStandingLegs(ctx, p, scale, ox, oy);
-
-  } else if (anim === 'celebrate') {
-    // Both arms up + 1px jump
-    const jumpOff = frame === 0 ? -1 : 0;
-    for (let row = 8; row <= 12; row++) {
-      for (let i = 3; i <= 8; i++) {
-        px(ctx, i, row + jumpOff, row === 8 ? p.topLight : p.top, scale, ox, oy);
-      }
-    }
-    // Left arm up (celebration)
-    px(ctx, 2, 7 + jumpOff, p.top, scale, ox, oy);
-    px(ctx, 1, 6 + jumpOff, p.skin, scale, ox, oy);
-    // Right arm up (celebration)
-    px(ctx, 9, 7 + jumpOff, p.top, scale, ox, oy);
-    px(ctx, 10, 6 + jumpOff, p.skin, scale, ox, oy);
-    // Sparkle accents on frame 0
-    if (frame === 0) {
-      px(ctx, 0, 5, '#FFD700', scale, ox, oy);
-      px(ctx, 11, 5, '#FFD700', scale, ox, oy);
-    }
-    for (let i = 4; i <= 7; i++) px(ctx, i, 13 + jumpOff, p.pants, scale, ox, oy);
-    px(ctx, 4, 14 + jumpOff, p.shoes, scale, ox, oy);
-    px(ctx, 5, 14 + jumpOff, p.shoes, scale, ox, oy);
-    px(ctx, 6, 14 + jumpOff, p.shoes, scale, ox, oy);
-    px(ctx, 7, 14 + jumpOff, p.shoes, scale, ox, oy);
-
-  } else if (anim === 'point') {
-    // One arm extended horizontally to the right
-    for (let row = 8; row <= 12; row++) {
-      for (let i = 3; i <= 8; i++) {
-        px(ctx, i, row, row === 8 ? p.topLight : p.top, scale, ox, oy);
-      }
-    }
-    // Left arm at side
-    px(ctx, 2, 9, p.top, scale, ox, oy);
-    px(ctx, 2, 10, p.skin, scale, ox, oy);
-    // Right arm extended pointing
-    px(ctx, 9, 9, p.top, scale, ox, oy);
-    px(ctx, 10, 9, p.top, scale, ox, oy);
-    px(ctx, 11, 9, p.skin, scale, ox, oy);
-    drawStandingLegs(ctx, p, scale, ox, oy);
-
-  } else if (anim === 'nod') {
-    // Like stand but head shifts 1px down on alternate frames
-    const nodOff = frame;
-    for (let row = 8; row <= 12; row++) {
-      for (let i = 3; i <= 8; i++) {
-        px(ctx, i, row, row === 8 ? p.topLight : p.top, scale, ox, oy);
-      }
-    }
-    // Nod effect is handled by head in drawCharacter; body is standing pose
-    px(ctx, 5, 10, p.topLight, scale, ox, oy);
-    px(ctx, 6, 10, p.topLight, scale, ox, oy);
-    px(ctx, 2, 9, p.top, scale, ox, oy);
-    px(ctx, 2, 10, p.skin, scale, ox, oy);
-    px(ctx, 9, 9, p.top, scale, ox, oy);
-    px(ctx, 9, 10, p.skin, scale, ox, oy);
-    // Slight body lean for nod emphasis
-    if (nodOff === 1) {
-      px(ctx, 5, 8, p.skinShadow, scale, ox, oy);
-    }
-    drawStandingLegs(ctx, p, scale, ox, oy);
-
-  } else if (anim === 'wave') {
-    // One arm up, hand alternates position (wave motion)
-    for (let row = 8; row <= 12; row++) {
-      for (let i = 3; i <= 8; i++) {
-        px(ctx, i, row, row === 8 ? p.topLight : p.top, scale, ox, oy);
-      }
-    }
-    // Left arm at side
-    px(ctx, 2, 9, p.top, scale, ox, oy);
-    px(ctx, 2, 10, p.skin, scale, ox, oy);
-    // Right arm raised, hand waves
-    px(ctx, 9, 8, p.top, scale, ox, oy);
-    px(ctx, 9, 7, p.top, scale, ox, oy);
-    if (frame === 0) {
-      px(ctx, 10, 6, p.skin, scale, ox, oy);
-    } else {
-      px(ctx, 8, 6, p.skin, scale, ox, oy);
-    }
-    drawStandingLegs(ctx, p, scale, ox, oy);
-
-  } else {
-    // Default standing pose
-    for (let row = 8; row <= 12; row++) {
-      for (let i = 3; i <= 8; i++) {
-        px(ctx, i, row, row === 8 ? p.topLight : p.top, scale, ox, oy);
-      }
-    }
-    px(ctx, 5, 10, p.topLight, scale, ox, oy);
-    px(ctx, 6, 10, p.topLight, scale, ox, oy);
-    px(ctx, 2, 9, p.top, scale, ox, oy);
-    px(ctx, 2, 10, p.skin, scale, ox, oy);
-    px(ctx, 9, 9, p.top, scale, ox, oy);
-    px(ctx, 9, 10, p.skin, scale, ox, oy);
-    drawStandingLegs(ctx, p, scale, ox, oy);
-  }
-}
-
-function drawStandingLegs(
-  ctx: CanvasRenderingContext2D,
-  p: CharPalette,
-  scale: number, ox: number, oy: number,
-): void {
-  for (let i = 4; i <= 7; i++) px(ctx, i, 13, p.pants, scale, ox, oy);
-  px(ctx, 4, 14, p.shoes, scale, ox, oy);
-  px(ctx, 5, 14, p.shoes, scale, ox, oy);
-  px(ctx, 6, 14, p.shoes, scale, ox, oy);
-  px(ctx, 7, 14, p.shoes, scale, ox, oy);
 }
 
 export function drawWorker(
@@ -783,7 +591,7 @@ export function drawWorker(
   tick: number,
   avatar: WorkerAvatar,
   color: string,
-  emoji: string,
+  _emoji: string,
   skinToneIndex?: number,
 ): void {
   const pal = workerPalette(avatar, color, skinToneIndex);
@@ -810,7 +618,7 @@ export function drawWorker(
     heracles: 'lion_mane',
     selene: 'crescent_diadem',
   };
-  drawCharacter(ctx, x, y, anim, direction, tick, pal, emoji, featureMap[avatar]);
+  drawCharacter(ctx, x, y, anim, direction, tick, pal, WORKER_SIGIL_MAP[avatar], featureMap[avatar]);
 }
 
 export function drawCodex(
@@ -819,10 +627,10 @@ export function drawCodex(
   anim: CharacterAnim,
   tick: number,
   _avatar: CodexAvatar,
-  emoji: string,
+  _emoji: string,
 ): void {
   const pal = codexPalette(_avatar);
-  drawCharacter(ctx, x, y, anim, 's', tick, pal, emoji, 'golden_crown');
+  drawCharacter(ctx, x, y, anim, 's', tick, pal, ZEUS_SIGIL, 'golden_crown');
 }
 
 function geminiPalette(_avatar: GeminiAvatar): CharPalette {
@@ -842,10 +650,10 @@ export function drawGemini(
   anim: CharacterAnim,
   tick: number,
   _avatar: GeminiAvatar,
-  emoji: string,
+  _emoji: string,
 ): void {
   const pal = geminiPalette(_avatar);
-  drawCharacter(ctx, x, y, anim, 's', tick, pal, emoji, 'peacock_crown');
+  drawCharacter(ctx, x, y, anim, 's', tick, pal, HERA_SIGIL, 'peacock_crown');
 }
 
 export function drawNameTag(
@@ -855,18 +663,14 @@ export function drawNameTag(
   _color: string,
 ): void {
   ctx.save();
-  ctx.font = 'bold 11px monospace';
+  ctx.font = 'bold 10px monospace';
   ctx.textAlign = 'center';
-  // 이름 태그 배경
-  const textWidth = ctx.measureText(name).width;
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-  ctx.fillRect(x - textWidth / 2 - 3, y - 4, textWidth + 6, 16);
-  // Dark outline for readability on any background
+  // Text only (no rectangle) to avoid map occlusion
   ctx.fillStyle = '#000000';
-  for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]]) {
+  for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
     ctx.fillText(name, x + dx, y + 4 + dy);
   }
-  // Bright white text — always readable
+  // Bright text with slight gold tint
   ctx.fillStyle = '#FFFFFF';
   ctx.fillText(name, x, y + 4);
   ctx.restore();
@@ -924,9 +728,9 @@ export function drawUnicorn(
   direction: Direction,
   tick: number,
 ): void {
-  const scale = 3;
-  const ox = x - 18;
-  const oy = y - 30;
+  const scale = 2;
+  const ox = x - 12;
+  const oy = y - 22;
 
   ctx.save();
   if (direction === 'w') {

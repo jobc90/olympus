@@ -31,6 +31,7 @@ import { WorkerLogPanel } from './components/dashboard/WorkerLogPanel';
 
 import type { WorkerConfig, WorkerDashboardState, CodexConfig, GeminiConfig, WorkerAvatar } from './lib/types';
 import { DEFAULT_GEMINI } from './lib/config';
+import { WORKER_AVATAR_POOL } from './lib/avatar-pool';
 import { BEHAVIOR_INFO, formatTokens, formatRelativeTime } from './lib/state-mapper';
 
 // ---------------------------------------------------------------------------
@@ -266,14 +267,13 @@ export default function App() {
   }, [activeTab, workerTasks.length, polledWorkerConfigs.length, polledActivityEvents.length]);
 
   // Build WorkerConfig[] and WorkerDashboardState map for new components
-  const WORKER_AVATARS = ['athena', 'poseidon', 'ares', 'apollo', 'artemis', 'hermes', 'hephaestus', 'dionysus', 'demeter', 'aphrodite', 'hades', 'persephone', 'prometheus', 'helios', 'nike', 'pan', 'hecate', 'iris', 'heracles'];
   const workerConfigs: WorkerConfig[] = (connected && polledWorkerConfigs.length > 0)
     ? polledWorkerConfigs.map((w, i) => ({
         id: w.id,
         name: w.name,
         emoji: w.emoji ?? '',
         color: w.color,
-        avatar: (w.avatar || WORKER_AVATARS[i % WORKER_AVATARS.length]) as WorkerAvatar,
+        avatar: (w.avatar || WORKER_AVATAR_POOL[i % WORKER_AVATAR_POOL.length]) as WorkerAvatar,
         behavior: polledWorkerStates[w.id]?.behavior,
         skinToneIndex: i,
         projectPath: w.projectPath,

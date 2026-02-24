@@ -130,7 +130,13 @@ export type FurnitureType =
   | 'trophy_shelf'
   | 'aquarium'
   | 'marble_round_table'
-  | 'cloud_seat';
+  | 'cloud_seat'
+  | 'doric_column'
+  | 'temple_column'
+  | 'marble_column'
+  | 'sacred_brazier'
+  | 'god_statue'
+  | 'altar';
 
 /** A furniture item placed on the map */
 export interface FurnitureItem {

@@ -119,6 +119,63 @@ export function drawBackground(
 // Walls — Marble Columns
 // ---------------------------------------------------------------------------
 
+function drawTemplePillar(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  opts?: { width?: number; height?: number; grand?: boolean },
+): void {
+  const width = opts?.width ?? 10;
+  const height = opts?.height ?? 38;
+  const half = width / 2;
+  const shaftTop = y - height;
+  const shaftBottom = y - 2;
+
+  // Stylobate base
+  ctx.fillStyle = '#AFA08B';
+  ctx.fillRect(x - half - 3, y - 2, width + 6, 4);
+  ctx.fillStyle = '#D9CCBC';
+  ctx.fillRect(x - half - 2, y - 4, width + 4, 2);
+  ctx.fillStyle = '#D4AF37';
+  ctx.fillRect(x - half - 3, y - 5, width + 6, 1);
+
+  // Shaft core
+  ctx.fillStyle = '#EEE4D6';
+  ctx.fillRect(x - half, shaftTop, width, shaftBottom - shaftTop);
+  // Side depth
+  ctx.fillStyle = '#D1C2AD';
+  ctx.fillRect(x - half, shaftTop, 2, shaftBottom - shaftTop);
+  ctx.fillStyle = '#F8F1E7';
+  ctx.fillRect(x + half - 2, shaftTop, 2, shaftBottom - shaftTop);
+
+  // Fluting (pixel stripes)
+  ctx.fillStyle = '#DACBB8';
+  for (let fx = x - half + 2; fx <= x + half - 3; fx += 2) {
+    ctx.fillRect(fx, shaftTop + 2, 1, shaftBottom - shaftTop - 4);
+  }
+
+  // Capital
+  ctx.fillStyle = '#F6ECDD';
+  ctx.fillRect(x - half - 3, shaftTop - 5, width + 6, 5);
+  ctx.fillStyle = '#E8DACA';
+  ctx.fillRect(x - half - 5, shaftTop - 8, width + 10, 3);
+  ctx.fillStyle = '#D4AF37';
+  ctx.fillRect(x - half - 6, shaftTop - 9, width + 12, 2);
+
+  if (opts?.grand) {
+    // Pediment ornament for the temple-grade wall columns
+    ctx.fillStyle = '#F1E4D1';
+    ctx.beginPath();
+    ctx.moveTo(x - half - 2, shaftTop - 5);
+    ctx.lineTo(x, shaftTop - 13);
+    ctx.lineTo(x + half + 2, shaftTop - 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#D4AF37';
+    ctx.fillRect(x - 1, shaftTop - 10, 2, 2);
+  }
+}
+
 export function drawWalls(
   ctx: CanvasRenderingContext2D,
   mapCols: number,
@@ -156,103 +213,22 @@ export function drawWalls(
     gridToScreen({ col: 0, row: mapRows - 1 }),
   ];
   for (const c of corners) {
-    // 기둥 몸체 (두꺼운 대리석)
-    ctx.fillStyle = '#E8E0D5';
-    ctx.fillRect(c.x - 5, c.y - 36, 10, 36);
-    // 세로 홈 (플루팅)
-    ctx.strokeStyle = '#D5CCC0';
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(c.x - 2, c.y - 34);
-    ctx.lineTo(c.x - 2, c.y - 2);
-    ctx.moveTo(c.x, c.y - 34);
-    ctx.lineTo(c.x, c.y - 2);
-    ctx.moveTo(c.x + 2, c.y - 34);
-    ctx.lineTo(c.x + 2, c.y - 2);
-    ctx.stroke();
-    // 캐피탈 (금색 상단 장식)
-    ctx.fillStyle = '#FFD700';
-    ctx.fillRect(c.x - 7, c.y - 40, 14, 4);
-    // 삼각 페디먼트
-    ctx.beginPath();
-    ctx.moveTo(c.x - 7, c.y - 40);
-    ctx.lineTo(c.x, c.y - 46);
-    ctx.lineTo(c.x + 7, c.y - 40);
-    ctx.closePath();
-    ctx.fillStyle = '#FFF3E0';
-    ctx.fill();
-    // 기둥 기초
-    ctx.fillStyle = '#BDBDBD';
-    ctx.fillRect(c.x - 6, c.y - 1, 12, 3);
+    drawTemplePillar(ctx, c.x, c.y, { width: 12, height: 40, grand: true });
   }
 
   // 상단 벽을 따라 도리아 기둥 (col 0~mapCols-1, row 0 라인)
-  const pillarCount = 6;
+  const pillarCount = 8;
   for (let i = 1; i <= pillarCount; i++) {
     const pillarCol = Math.floor((mapCols - 1) * i / (pillarCount + 1));
     const p = gridToScreen({ col: pillarCol, row: 0 });
-    // 기둥 몸체 (두꺼운 대리석)
-    ctx.fillStyle = '#E8E0D5';
-    ctx.fillRect(p.x - 5, p.y - 36, 10, 36);
-    // 세로 홈 (플루팅)
-    ctx.strokeStyle = '#D5CCC0';
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(p.x - 2, p.y - 34);
-    ctx.lineTo(p.x - 2, p.y - 2);
-    ctx.moveTo(p.x, p.y - 34);
-    ctx.lineTo(p.x, p.y - 2);
-    ctx.moveTo(p.x + 2, p.y - 34);
-    ctx.lineTo(p.x + 2, p.y - 2);
-    ctx.stroke();
-    // 캐피탈 (금색 상단 장식)
-    ctx.fillStyle = '#FFD700';
-    ctx.fillRect(p.x - 7, p.y - 40, 14, 4);
-    // 삼각 페디먼트 힌트
-    ctx.beginPath();
-    ctx.moveTo(p.x - 7, p.y - 40);
-    ctx.lineTo(p.x, p.y - 46);
-    ctx.lineTo(p.x + 7, p.y - 40);
-    ctx.closePath();
-    ctx.fillStyle = '#FFF3E0';
-    ctx.fill();
-    // 기둥 기초
-    ctx.fillStyle = '#BDBDBD';
-    ctx.fillRect(p.x - 6, p.y - 1, 12, 3);
+    drawTemplePillar(ctx, p.x, p.y, { width: 10, height: 38, grand: true });
   }
 
   // 좌측 벽을 따라 도리아 기둥 (col 0, row 0~mapRows-1)
-  for (let i = 1; i <= 4; i++) {
-    const pillarRow = Math.floor((mapRows - 1) * i / 5);
+  for (let i = 1; i <= 6; i++) {
+    const pillarRow = Math.floor((mapRows - 1) * i / 7);
     const p = gridToScreen({ col: 0, row: pillarRow });
-    // 기둥 몸체 (두꺼운 대리석)
-    ctx.fillStyle = '#E8E0D5';
-    ctx.fillRect(p.x - 5, p.y - 36, 10, 36);
-    // 세로 홈 (플루팅)
-    ctx.strokeStyle = '#D5CCC0';
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(p.x - 2, p.y - 34);
-    ctx.lineTo(p.x - 2, p.y - 2);
-    ctx.moveTo(p.x, p.y - 34);
-    ctx.lineTo(p.x, p.y - 2);
-    ctx.moveTo(p.x + 2, p.y - 34);
-    ctx.lineTo(p.x + 2, p.y - 2);
-    ctx.stroke();
-    // 캐피탈 (금색 상단 장식)
-    ctx.fillStyle = '#FFD700';
-    ctx.fillRect(p.x - 7, p.y - 40, 14, 4);
-    // 삼각 페디먼트 힌트
-    ctx.beginPath();
-    ctx.moveTo(p.x - 7, p.y - 40);
-    ctx.lineTo(p.x, p.y - 46);
-    ctx.lineTo(p.x + 7, p.y - 40);
-    ctx.closePath();
-    ctx.fillStyle = '#FFF3E0';
-    ctx.fill();
-    // 기둥 기초
-    ctx.fillStyle = '#BDBDBD';
-    ctx.fillRect(p.x - 6, p.y - 1, 12, 3);
+    drawTemplePillar(ctx, p.x, p.y, { width: 10, height: 38, grand: false });
   }
 }
 
@@ -262,94 +238,33 @@ export function drawDividerWall(
   row: number,
 ): void {
   const { x, y } = gridToScreen({ col, row });
-  // Thick temple pillar instead of thin wall
-  const pillarW = 8;
-  const pillarH = 36;
+  const isVerticalDivider = col === 12;
+  const isMainHorizontalDivider = row === 10;
+  const isTempleHorizontalDivider = row === 4;
+  const isDoorGap = (isVerticalDivider && (row === 7 || row === 8 || row === 14 || row === 15))
+    || (isMainHorizontalDivider && (col === 17 || col === 18))
+    || (isTempleHorizontalDivider && (col === 17 || col === 18));
+  if (isDoorGap) return;
 
-  // Check if this is col 12 (vertical divider)
-  const isVertical = col === 12;
+  // Low divider rail keeps zone separation readable without blocking map/avatars.
+  ctx.fillStyle = '#DCCFBD';
+  ctx.fillRect(x - 9, y - 10, 18, 4);
+  ctx.fillStyle = '#BDAE98';
+  ctx.fillRect(x - 9, y - 6, 18, 3);
+  ctx.fillStyle = '#D4AF37';
+  ctx.fillRect(x - 9, y - 11, 18, 1);
 
-  if (isVertical && row >= 1 && row <= 9) {
-    // Zeus Temple + Agora left side — thick decorative pillar
-    // Pillar body (marble)
-    ctx.fillStyle = '#E8E0D5';
-    ctx.fillRect(x - pillarW / 2, y - pillarH, pillarW, pillarH);
-
-    // Fluting (vertical grooves)
-    ctx.strokeStyle = '#D5CCC0';
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(x - 2, y - pillarH + 2);
-    ctx.lineTo(x - 2, y - 2);
-    ctx.moveTo(x, y - pillarH + 2);
-    ctx.lineTo(x, y - 2);
-    ctx.moveTo(x + 2, y - pillarH + 2);
-    ctx.lineTo(x + 2, y - 2);
-    ctx.stroke();
-
-    // Capital (top decoration)
-    ctx.fillStyle = '#FFD700';
-    ctx.fillRect(x - pillarW / 2 - 2, y - pillarH - 4, pillarW + 4, 4);
-
-    // Pediment (triangular top)
-    ctx.beginPath();
-    ctx.moveTo(x - pillarW / 2 - 2, y - pillarH - 4);
-    ctx.lineTo(x, y - pillarH - 10);
-    ctx.lineTo(x + pillarW / 2 + 2, y - pillarH - 4);
-    ctx.closePath();
-    ctx.fillStyle = '#FFF3E0';
-    ctx.fill();
-
-    // Base
-    ctx.fillStyle = '#BDBDBD';
-    ctx.fillRect(x - pillarW / 2 - 1, y - 1, pillarW + 2, 3);
-
-    // Gold highlights
-    ctx.strokeStyle = '#FFD700';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x - pillarW / 2 - 2, y - pillarH - 4, pillarW + 4, 4);
-  } else {
-    // Thick marble column (same style as vertical divider)
-    const pw = 8;
-    const ph = 36;
-
-    // Pillar body (marble)
-    ctx.fillStyle = '#E8E0D5';
-    ctx.fillRect(x - pw / 2, y - ph, pw, ph);
-
-    // Fluting (vertical grooves)
-    ctx.strokeStyle = '#D5CCC0';
-    ctx.lineWidth = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(x - 2, y - ph + 2);
-    ctx.lineTo(x - 2, y - 2);
-    ctx.moveTo(x, y - ph + 2);
-    ctx.lineTo(x, y - 2);
-    ctx.moveTo(x + 2, y - ph + 2);
-    ctx.lineTo(x + 2, y - 2);
-    ctx.stroke();
-
-    // Capital (top decoration)
-    ctx.fillStyle = '#FFD700';
-    ctx.fillRect(x - pw / 2 - 2, y - ph - 4, pw + 4, 4);
-
-    // Pediment (triangular top)
-    ctx.beginPath();
-    ctx.moveTo(x - pw / 2 - 2, y - ph - 4);
-    ctx.lineTo(x, y - ph - 10);
-    ctx.lineTo(x + pw / 2 + 2, y - ph - 4);
-    ctx.closePath();
-    ctx.fillStyle = '#FFF3E0';
-    ctx.fill();
-
-    // Base
-    ctx.fillStyle = '#BDBDBD';
-    ctx.fillRect(x - pw / 2 - 1, y - 1, pw + 2, 3);
-
-    // Gold highlights
-    ctx.strokeStyle = '#FFD700';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x - pw / 2 - 2, y - ph - 4, pw + 4, 4);
+  const drawAccentColumn = (
+    (isVerticalDivider && row % 3 === 1)
+    || (isMainHorizontalDivider && col % 3 === 2)
+    || (isTempleHorizontalDivider && col % 2 === 0)
+  );
+  if (drawAccentColumn) {
+    drawTemplePillar(ctx, x, y, {
+      width: isTempleHorizontalDivider ? 10 : 8,
+      height: isTempleHorizontalDivider ? 30 : 22,
+      grand: isTempleHorizontalDivider,
+    });
   }
 }
 
@@ -367,30 +282,17 @@ export function drawZoneLabel(
 ): void {
   const { x, y } = gridToScreen({ col, row });
   ctx.save();
-  ctx.globalAlpha = alpha;
+  ctx.globalAlpha = alpha * 0.72;
 
   const text = `${emoji} ${label}`;
-  ctx.font = 'bold 9px monospace';
+  ctx.font = 'bold 8px monospace';
   ctx.textAlign = 'center';
-
-  // 배경 박스
-  const metrics = ctx.measureText(text);
-  const boxW = metrics.width + 8;
-  const boxH = 13;
-  const boxX = x - boxW / 2;
-  const boxY = y + TILE_H;
-
-  // 반투명 대리석 배경
-  ctx.fillStyle = 'rgba(245, 240, 232, 0.7)';
-  ctx.fillRect(boxX, boxY, boxW, boxH);
-  // 금색 테두리
-  ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
-  ctx.lineWidth = 0.5;
-  ctx.strokeRect(boxX, boxY, boxW, boxH);
-
-  // 텍스트
-  ctx.fillStyle = '#5D4037';
-  ctx.fillText(text, x, boxY + 10);
+  // Text only (no label box)
+  const ty = y + TILE_H + 9;
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.fillText(text, x + 1, ty + 1);
+  ctx.fillStyle = '#F6E9D2';
+  ctx.fillText(text, x, ty);
   ctx.restore();
 }
 
@@ -459,51 +361,79 @@ export function drawMarbleVeins(
   col: number,
   row: number,
 ): void {
-  // Deterministic marble veins based on tile position (only some tiles get them)
-  const hash = (col * 7 + row * 13) % 17;
-  if (hash > 6) return; // ~40% of tiles get marble veining
-
   const { x, y } = gridToScreen({ col, row });
-  ctx.save();
+  const hash = (col * 17 + row * 31) % 23;
+  const isTemple = col >= 13 && row <= 5;
+  const isAgora = col >= 13 && row > 5 && row <= 9;
+  const isSanctuary = col >= 13 && row >= 10;
+  const isGarden = col <= 7 && row <= 7;
+  const isAmbrosia = col <= 7 && row >= 12;
+  const isProcession = (col === 11 || col === 12 || col === 13) && row >= 2 && row <= 18;
 
-  if (hash === 0) {
-    // Light gray marble vein
-    ctx.globalAlpha = 0.08;
-    ctx.fillStyle = '#CFD8DC';
-    ctx.fillRect(x - 3, y, 5, 1);
-  } else if (hash === 1) {
-    // Subtle gold sparkle fleck
-    ctx.globalAlpha = 0.06;
-    ctx.fillStyle = '#FFD700';
-    ctx.fillRect(x + 1, y + 1, 1, 1);
-    ctx.fillRect(x - 2, y - 1, 1, 1);
-  } else if (hash === 2) {
-    // Shadow vein in marble
-    ctx.globalAlpha = 0.08;
-    ctx.fillStyle = '#B0BEC5';
-    ctx.fillRect(x - 1, y, 3, 1);
-  } else if (hash === 3) {
-    // 대각선 마블 결
-    ctx.globalAlpha = 0.06;
-    ctx.fillStyle = '#D7CCC8';
-    ctx.fillRect(x - 4, y - 1, 7, 1);
-    ctx.fillRect(x - 3, y, 5, 1);
-  } else if (hash === 4) {
-    // 금색 미세 입자
-    ctx.globalAlpha = 0.05;
-    ctx.fillStyle = '#FFD700';
-    ctx.fillRect(x + 2, y - 2, 1, 1);
-  } else if (hash === 5) {
-    // 짧은 마블 결
-    ctx.globalAlpha = 0.07;
-    ctx.fillStyle = '#BCAAA4';
-    ctx.fillRect(x - 2, y + 1, 4, 1);
-  } else {
-    // 크로스 마블 무늬
-    ctx.globalAlpha = 0.05;
-    ctx.fillStyle = '#CFD8DC';
+  if (hash > (isProcession ? 19 : 16)) return;
+
+  let veinMain = '#C8C1B5';
+  let veinAlt = '#AFA69A';
+  let sparkle = '#F2D675';
+  let alpha = 0.13;
+
+  if (isTemple) {
+    veinMain = '#D7C29E';
+    veinAlt = '#B79764';
+    sparkle = '#FFD86A';
+    alpha = 0.18;
+  } else if (isAgora || isSanctuary) {
+    veinMain = '#B6C4D6';
+    veinAlt = '#8FA1B8';
+    sparkle = '#DDE8F6';
+    alpha = 0.16;
+  } else if (isGarden) {
+    veinMain = '#B7C6B0';
+    veinAlt = '#8EA48A';
+    sparkle = '#D7E7CC';
+    alpha = 0.14;
+  } else if (isAmbrosia) {
+    veinMain = '#D2B892';
+    veinAlt = '#B59467';
+    sparkle = '#F1D2A7';
+    alpha = 0.16;
+  }
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  if (hash % 5 === 0) {
+    ctx.fillStyle = veinMain;
+    ctx.fillRect(x - 4, y - 1, 8, 1);
+    ctx.fillRect(x - 2, y, 4, 1);
+  } else if (hash % 5 === 1) {
+    ctx.fillStyle = veinAlt;
+    ctx.fillRect(x - 1, y - 2, 1, 3);
     ctx.fillRect(x, y - 1, 1, 3);
+  } else if (hash % 5 === 2) {
+    ctx.fillStyle = veinMain;
+    ctx.fillRect(x - 3, y + 1, 6, 1);
+    ctx.fillStyle = veinAlt;
+    ctx.fillRect(x - 1, y, 2, 1);
+  } else if (hash % 5 === 3) {
+    ctx.fillStyle = veinAlt;
+    ctx.fillRect(x - 2, y - 1, 5, 1);
     ctx.fillRect(x - 1, y, 3, 1);
+  } else {
+    ctx.fillStyle = sparkle;
+    ctx.fillRect(x - 1, y - 1, 1, 1);
+    ctx.fillRect(x + 1, y + 1, 1, 1);
+    if (hash % 2 === 0) {
+      ctx.fillRect(x + 2, y - 1, 1, 1);
+    }
+  }
+
+  // Strong lane separators for central sacred procession
+  if (isProcession && (col === 11 || col === 13)) {
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = '#E4BF70';
+    ctx.fillRect(x - 1, y - 2, 2, 1);
+    ctx.fillRect(x - 1, y + 1, 2, 1);
   }
 
   ctx.restore();

@@ -36,7 +36,25 @@ type FurnitureType = TileType extends string ? (
   | 'vending_machine'
   | 'trophy_shelf'
   | 'aquarium'
+  | 'marble_round_table'
+  | 'cloud_seat'
+  | 'doric_column'
+  | 'temple_column'
+  | 'marble_column'
+  | 'sacred_brazier'
+  | 'god_statue'
+  | 'altar'
 ) : never;
+
+const PALETTE = {
+  marbleLight: '#F5F1E8',
+  marbleMid: '#DCCFC0',
+  marbleDark: '#B7A893',
+  marbleShadow: '#8C7D68',
+  gold: '#D4AF37',
+  goldBright: '#F2D675',
+  goldDeep: '#A67C00',
+} as const;
 
 function px(
   ctx: CanvasRenderingContext2D,
@@ -47,6 +65,24 @@ function px(
   ctx.fillRect(Math.round(x), Math.round(y), w, h);
 }
 
+function applyTemplePatina(
+  ctx: CanvasRenderingContext2D,
+  col: number,
+  row: number,
+  tick: number,
+): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Keep patina subtle: tiny specular glints only (avoid rectangle overlays).
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  px(ctx, x - 5, y - 18, 10, 1, PALETTE.goldBright);
+  px(ctx, x - 3, y - 14, 6, 1, '#F9E6A0');
+  if (tick % 120 < 64) {
+    px(ctx, x - 1, y - 21, 2, 1, '#FFF3C4');
+  }
+  ctx.restore();
+}
+
 // ---------------------------------------------------------------------------
 // Individual furniture draw functions — Greek/Olympus Theme
 // ---------------------------------------------------------------------------
@@ -55,20 +91,20 @@ function px(
 function drawDesk(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
   const { x, y } = gridToScreen({ col, row });
   // Marble table top
-  drawIsometricBlock(ctx, { col, row }, 14, '#F5F5F5', '#CFD8DC', '#B0BEC5');
+  drawIsometricBlock(ctx, { col, row }, 14, PALETTE.marbleLight, PALETTE.marbleMid, PALETTE.marbleDark);
   // Oracle Mirror (monitor)
   const monY = y - 26;
-  px(ctx, x - 8, monY - 12, 16, 12, '#DAA520');
-  px(ctx, x - 6, monY - 10, 12, 8, '#B388FF');
+  px(ctx, x - 8, monY - 12, 16, 12, PALETTE.gold);
+  px(ctx, x - 6, monY - 10, 12, 8, '#DDE8F2');
   // Mystic flicker
   if (tick % 60 < 55) {
-    px(ctx, x - 4, monY - 8, 8, 4, '#7C4DFF');
+    px(ctx, x - 4, monY - 8, 8, 4, PALETTE.goldDeep);
   }
   // Gold stand
-  px(ctx, x - 2, monY, 4, 3, '#FFD700');
+  px(ctx, x - 2, monY, 4, 3, PALETTE.gold);
   // Stone tablet (keyboard)
-  px(ctx, x - 6, y - 10, 12, 4, '#9E9E9E');
-  px(ctx, x - 5, y - 9, 10, 2, '#757575');
+  px(ctx, x - 6, y - 10, 12, 4, PALETTE.marbleDark);
+  px(ctx, x - 5, y - 9, 10, 2, PALETTE.marbleShadow);
 }
 
 // chair → Small Throne
@@ -115,18 +151,18 @@ function drawBigDesk(ctx: CanvasRenderingContext2D, col: number, row: number, ti
 function drawMonitor(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
   const { x, y } = gridToScreen({ col, row });
   // Gold frame
-  px(ctx, x - 10, y - 22, 20, 14, '#DAA520');
-  // Mystic purple screen
-  px(ctx, x - 8, y - 20, 16, 10, tick % 90 < 85 ? '#B388FF' : '#D1C4E9');
-  // Purple rune lines
+  px(ctx, x - 10, y - 22, 20, 14, PALETTE.gold);
+  // Marble-vision screen
+  px(ctx, x - 8, y - 20, 16, 10, tick % 90 < 85 ? '#DDE8F2' : '#EEF4F8');
+  // Gold rune lines
   if (tick % 90 < 85) {
     for (let i = 0; i < 4; i++) {
       const w = 4 + Math.floor(Math.random() * 8);
-      px(ctx, x - 6, y - 18 + i * 2, w, 1, '#7C4DFF');
+      px(ctx, x - 6, y - 18 + i * 2, w, 1, PALETTE.goldDeep);
     }
   }
   // Gold stand
-  px(ctx, x - 2, y - 8, 4, 4, '#FFD700');
+  px(ctx, x - 2, y - 8, 4, 4, PALETTE.gold);
 }
 
 // floor_window → Temple Opening
@@ -310,35 +346,35 @@ function drawBookshelf(ctx: CanvasRenderingContext2D, col: number, row: number):
 // reading_chair → Reading Kline (Greek reclining couch)
 function drawReadingChair(ctx: CanvasRenderingContext2D, col: number, row: number): void {
   const { x, y } = gridToScreen({ col, row });
-  // Purple cushion
-  px(ctx, x - 10, y - 10, 20, 8, '#CE93D8');
-  px(ctx, x - 8, y - 8, 16, 4, '#E1BEE7');
-  // Wood frame
-  px(ctx, x - 10, y - 22, 20, 14, '#8D6E63');
-  px(ctx, x - 8, y - 20, 16, 10, '#A1887F');
-  // Purple headrest
-  px(ctx, x - 10, y - 20, 4, 8, '#CE93D8');
-  // Wood armrests/legs
-  px(ctx, x - 12, y - 14, 3, 8, '#8D6E63');
-  px(ctx, x + 9, y - 14, 3, 8, '#8D6E63');
+  // Marble cushion
+  px(ctx, x - 10, y - 10, 20, 8, '#EFE7DA');
+  px(ctx, x - 8, y - 8, 16, 4, '#F8F2E9');
+  // Marble frame
+  px(ctx, x - 10, y - 22, 20, 14, PALETTE.marbleMid);
+  px(ctx, x - 8, y - 20, 16, 10, PALETTE.marbleLight);
+  // Gold headrest stripe
+  px(ctx, x - 10, y - 20, 4, 8, PALETTE.gold);
+  // Side supports
+  px(ctx, x - 12, y - 14, 3, 8, PALETTE.marbleDark);
+  px(ctx, x + 9, y - 14, 3, 8, PALETTE.marbleDark);
 }
 
 // sofa → Greek Kline
 function drawSofa(ctx: CanvasRenderingContext2D, col: number, row: number): void {
   const { x, y } = gridToScreen({ col, row });
   // Marble frame seat
-  px(ctx, x - 16, y - 8, 32, 8, '#F5F5F5');
-  // Purple cushion on top
-  px(ctx, x - 14, y - 6, 28, 4, '#CE93D8');
+  px(ctx, x - 16, y - 8, 32, 8, PALETTE.marbleLight);
+  // Ivory cushion
+  px(ctx, x - 14, y - 6, 28, 4, '#EFE7DA');
   // Marble back
-  px(ctx, x - 16, y - 20, 32, 14, '#F5F5F5');
-  // Purple back cushion
-  px(ctx, x - 14, y - 18, 28, 10, '#E1BEE7');
+  px(ctx, x - 16, y - 20, 32, 14, PALETTE.marbleLight);
+  // Ivory back cushion
+  px(ctx, x - 14, y - 18, 28, 10, '#F8F2E9');
   // Marble armrests
-  px(ctx, x - 18, y - 16, 4, 12, '#ECEFF1');
-  px(ctx, x + 14, y - 16, 4, 12, '#ECEFF1');
+  px(ctx, x - 18, y - 16, 4, 12, PALETTE.marbleMid);
+  px(ctx, x + 14, y - 16, 4, 12, PALETTE.marbleMid);
   // Gold accent throw
-  px(ctx, x - 1, y - 6, 2, 4, '#FFD700');
+  px(ctx, x - 1, y - 6, 2, 4, PALETTE.gold);
 }
 
 // coffee_table → Low Stone Table
@@ -353,22 +389,22 @@ function drawCoffeeTable(ctx: CanvasRenderingContext2D, col: number, row: number
 // server_rack → Oracle Pillar
 function drawServerRack(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
   const { x, y } = gridToScreen({ col, row });
-  // Purple marble base
-  px(ctx, x - 10, y - 4, 20, 4, '#7C4DFF');
-  // Light purple marble column
-  px(ctx, x - 8, y - 36, 16, 32, '#EDE7F6');
-  px(ctx, x - 6, y - 34, 12, 28, '#E8EAF6');
+  // Marble base
+  px(ctx, x - 10, y - 4, 20, 4, PALETTE.marbleDark);
+  // Marble column
+  px(ctx, x - 8, y - 36, 16, 32, PALETTE.marbleLight);
+  px(ctx, x - 6, y - 34, 12, 28, '#ECE3D6');
   // Column capital (top)
-  px(ctx, x - 10, y - 38, 20, 4, '#D1C4E9');
+  px(ctx, x - 10, y - 38, 20, 4, PALETTE.gold);
   // Glowing runes instead of LEDs
   for (let i = 0; i < 4; i++) {
     const uy = y - 32 + i * 7;
     const runeOn = ((tick + i * 7) % 20) < 14;
-    px(ctx, x - 4, uy + 1, 3, 2, runeOn ? '#B388FF' : '#4A148C');
-    px(ctx, x + 1, uy + 1, 3, 2, ((tick + i * 3) % 30) < 25 ? '#7C4DFF' : '#311B92');
+    px(ctx, x - 4, uy + 1, 3, 2, runeOn ? PALETTE.goldBright : '#6E5A2C');
+    px(ctx, x + 1, uy + 1, 3, 2, ((tick + i * 3) % 30) < 25 ? '#D8C07D' : '#7D6A36');
     // Rune glow shimmer
     if (runeOn && tick % 10 < 6) {
-      ctx.fillStyle = '#B388FF40';
+      ctx.fillStyle = '#F2D67555';
       ctx.fillRect(x - 5, uy, 10, 4);
     }
   }
@@ -549,45 +585,45 @@ function drawDoorMat(ctx: CanvasRenderingContext2D, col: number, row: number): v
 function drawStandingDesk(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
   const { x, y } = gridToScreen({ col, row });
   // Marble column desk surface (higher)
-  drawIsometricBlock(ctx, { col, row }, 17, '#F5F5F5', '#ECEFF1', '#CFD8DC');
+  drawIsometricBlock(ctx, { col, row }, 17, PALETTE.marbleLight, PALETTE.marbleMid, PALETTE.marbleDark);
   // Gold rim on top
-  px(ctx, x - 10, y - 18, 20, 1, '#FFD700');
+  px(ctx, x - 10, y - 18, 20, 1, PALETTE.gold);
   // Marble pillar legs
-  px(ctx, x - 8, y - 4, 3, 6, '#ECEFF1');
-  px(ctx, x + 5, y - 4, 3, 6, '#ECEFF1');
+  px(ctx, x - 8, y - 4, 3, 6, PALETTE.marbleMid);
+  px(ctx, x + 5, y - 4, 3, 6, PALETTE.marbleMid);
   // Oracle Mirror on stand
   const monY = y - 30;
-  px(ctx, x - 8, monY - 12, 16, 12, '#DAA520');
-  px(ctx, x - 6, monY - 10, 12, 8, '#B388FF');
+  px(ctx, x - 8, monY - 12, 16, 12, PALETTE.gold);
+  px(ctx, x - 6, monY - 10, 12, 8, '#DDE8F2');
   if (tick % 60 < 55) {
-    px(ctx, x - 4, monY - 8, 8, 4, '#7C4DFF');
+    px(ctx, x - 4, monY - 8, 8, 4, PALETTE.goldDeep);
   }
   // Gold stand
-  px(ctx, x - 2, monY, 4, 5, '#FFD700');
+  px(ctx, x - 2, monY, 4, 5, PALETTE.gold);
   // Stone tablet (keyboard)
-  px(ctx, x - 6, y - 14, 12, 4, '#9E9E9E');
-  px(ctx, x - 5, y - 13, 10, 2, '#757575');
+  px(ctx, x - 6, y - 14, 12, 4, PALETTE.marbleDark);
+  px(ctx, x - 5, y - 13, 10, 2, PALETTE.marbleShadow);
 }
 
 // dual_monitor → Double Oracle Mirror
 function drawDualMonitor(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
   const { x, y } = gridToScreen({ col, row });
-  // Left Oracle Mirror — gold frame, purple screen
-  px(ctx, x - 16, y - 24, 14, 10, '#DAA520');
-  px(ctx, x - 14, y - 22, 10, 6, tick % 80 < 75 ? '#B388FF' : '#D1C4E9');
-  // Right Oracle Mirror — gold frame, teal divine screen
-  px(ctx, x + 2, y - 24, 14, 10, '#DAA520');
-  px(ctx, x + 4, y - 22, 10, 6, tick % 80 < 70 ? '#80CBC4' : '#B2DFDB');
-  // Purple rune lines on left
+  // Left Oracle Mirror
+  px(ctx, x - 16, y - 24, 14, 10, PALETTE.gold);
+  px(ctx, x - 14, y - 22, 10, 6, tick % 80 < 75 ? '#E5EDF5' : '#F3F7FB');
+  // Right Oracle Mirror
+  px(ctx, x + 2, y - 24, 14, 10, PALETTE.gold);
+  px(ctx, x + 4, y - 22, 10, 6, tick % 80 < 70 ? '#DBE6F0' : '#EEF3F8');
+  // Gold rune lines on left
   if (tick % 80 < 75) {
     for (let i = 0; i < 3; i++) {
       const w = 3 + ((tick + i * 7) % 5);
-      px(ctx, x - 13, y - 21 + i * 2, w, 1, '#7C4DFF');
+      px(ctx, x - 13, y - 21 + i * 2, w, 1, PALETTE.goldDeep);
     }
   }
   // Gold stands
-  px(ctx, x - 10, y - 14, 3, 4, '#FFD700');
-  px(ctx, x + 7, y - 14, 3, 4, '#FFD700');
+  px(ctx, x - 10, y - 14, 3, 4, PALETTE.gold);
+  px(ctx, x + 7, y - 14, 3, 4, PALETTE.gold);
 }
 
 // arcade_machine → Lyre (Musical Instrument)
@@ -759,9 +795,350 @@ function drawCloudSeat(ctx: CanvasRenderingContext2D, col: number, row: number, 
   ctx.fill();
 }
 
+interface ColumnSpec {
+  baseWidth: number;
+  baseDepth: number;
+  shaftWidth: number;
+  shaftHeight: number;
+  fluteStep: number;
+  goldBands: number;
+  capWidth: number;
+  capHeight: number;
+}
+
+function drawColumnCore(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  tick: number,
+  spec: ColumnSpec,
+): { topY: number } {
+  const shaftTop = y - (spec.baseDepth + spec.shaftHeight);
+
+  // Base
+  px(ctx, x - Math.floor(spec.baseWidth / 2), y - spec.baseDepth, spec.baseWidth, spec.baseDepth, PALETTE.marbleShadow);
+  px(ctx, x - Math.floor((spec.baseWidth - 4) / 2), y - spec.baseDepth - 3, spec.baseWidth - 4, 3, PALETTE.marbleDark);
+  px(ctx, x - Math.floor((spec.baseWidth - 6) / 2), y - spec.baseDepth - 5, spec.baseWidth - 6, 2, PALETTE.goldDeep);
+
+  // Shaft + side depth
+  px(ctx, x - Math.floor(spec.shaftWidth / 2), shaftTop, spec.shaftWidth, spec.shaftHeight, PALETTE.marbleLight);
+  px(ctx, x - Math.floor(spec.shaftWidth / 2), shaftTop, 2, spec.shaftHeight, PALETTE.marbleMid);
+  px(ctx, x + Math.floor(spec.shaftWidth / 2) - 2, shaftTop, 2, spec.shaftHeight, '#FFF9F0');
+
+  // Fluting
+  for (let fx = x - Math.floor(spec.shaftWidth / 2) + 2; fx < x + Math.floor(spec.shaftWidth / 2) - 2; fx += spec.fluteStep) {
+    px(ctx, fx, shaftTop + 2, 1, spec.shaftHeight - 3, '#D0C1AD');
+  }
+
+  // Capital
+  px(ctx, x - Math.floor(spec.capWidth / 2), shaftTop - spec.capHeight, spec.capWidth, spec.capHeight, '#F6EDDF');
+  px(ctx, x - Math.floor((spec.capWidth + 4) / 2), shaftTop - spec.capHeight - 3, spec.capWidth + 4, 3, '#E7D8C5');
+
+  // Gold bands
+  for (let i = 0; i < spec.goldBands; i++) {
+    const bandY = shaftTop - spec.capHeight - 4 - i * 2;
+    px(ctx, x - Math.floor((spec.capWidth + 6) / 2), bandY, spec.capWidth + 6, 1, i % 2 === 0 ? PALETTE.gold : PALETTE.goldDeep);
+  }
+
+  // Moving glint
+  if (tick % 110 < 72) {
+    const gx = x + (tick % 14) - 7;
+    px(ctx, gx, shaftTop + 6, 1, Math.max(8, spec.shaftHeight - 18), '#FFF8DC');
+  }
+
+  return { topY: shaftTop };
+}
+
+// doric_column → Doric Column
+function drawDoricColumn(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  drawColumnCore(ctx, x, y, tick, {
+    baseWidth: 16,
+    baseDepth: 5,
+    shaftWidth: 8,
+    shaftHeight: 20,
+    fluteStep: 3,
+    goldBands: 0,
+    capWidth: 12,
+    capHeight: 3,
+  });
+}
+
+// temple_column → Grand Temple Column
+function drawTempleColumn(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  const { topY } = drawColumnCore(ctx, x, y, tick, {
+    baseWidth: 34,
+    baseDepth: 10,
+    shaftWidth: 18,
+    shaftHeight: 58,
+    fluteStep: 2,
+    goldBands: 6,
+    capWidth: 32,
+    capHeight: 7,
+  });
+
+  // Dramatic temple ornamentation
+  ctx.fillStyle = '#F4E8D6';
+  ctx.beginPath();
+  ctx.moveTo(x - 12, topY - 9);
+  ctx.lineTo(x, topY - 20);
+  ctx.lineTo(x + 12, topY - 9);
+  ctx.closePath();
+  ctx.fill();
+  px(ctx, x - 2, topY - 15, 4, 2, PALETTE.goldBright);
+  px(ctx, x - 14, topY - 2, 28, 2, PALETTE.gold);
+  px(ctx, x - 8, topY - 6, 3, 2, PALETTE.gold);
+  px(ctx, x + 5, topY - 6, 3, 2, PALETTE.gold);
+
+  if (tick % 90 < 50) {
+    px(ctx, x - 10, topY - 13, 2, 1, '#FFF3BF');
+    px(ctx, x + 8, topY - 11, 2, 1, '#FFF3BF');
+  }
+}
+
+// marble_column → Polished Marble Column
+function drawMarbleColumn(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  const { topY } = drawColumnCore(ctx, x, y, tick, {
+    baseWidth: 20,
+    baseDepth: 6,
+    shaftWidth: 10,
+    shaftHeight: 34,
+    fluteStep: 3,
+    goldBands: 1,
+    capWidth: 16,
+    capHeight: 3,
+  });
+
+  // Polished marble stripe + restrained gilding
+  px(ctx, x - 1, topY + 2, 1, 34, '#FFFDF8');
+  px(ctx, x + 2, topY + 5, 1, 10, '#F1E2CA');
+  px(ctx, x + 2, topY + 20, 1, 10, '#F1E2CA');
+  if (tick % 120 < 84) {
+    px(ctx, x + 1, topY + 10 + (tick % 12), 1, 4, PALETTE.goldBright);
+  }
+}
+
+// sacred_brazier → Sacred Fire Brazier
+function drawSacredBrazier(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Stone stand
+  px(ctx, x - 4, y - 12, 8, 10, '#9E9E9E');
+  // Bronze bowl
+  px(ctx, x - 9, y - 16, 18, 4, '#CD8032');
+  px(ctx, x - 7, y - 14, 14, 2, '#DAA520');
+  // Flame
+  const flameH = 6 + Math.sin(tick * 0.11) * 2;
+  ctx.fillStyle = '#FFAB00';
+  ctx.beginPath();
+  ctx.ellipse(x, y - 18 - flameH / 2, 4, flameH / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#FF6D00';
+  ctx.beginPath();
+  ctx.ellipse(x, y - 18 - flameH / 2 + 1, 2, flameH / 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  if (tick % 12 < 8) {
+    px(ctx, x - 1, y - 20 - flameH, 2, 2, '#FFEB3B');
+  }
+}
+
+// god_statue → Olympian Statue
+function drawGodStatue(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Pedestal (double tier)
+  px(ctx, x - 10, y - 8, 20, 8, '#BEB3A3');
+  px(ctx, x - 8, y - 11, 16, 3, '#DED5C7');
+  px(ctx, x - 9, y - 12, 18, 1, PALETTE.goldDeep);
+  // Torso + drape
+  px(ctx, x - 4, y - 31, 8, 20, '#EEE7DB');
+  px(ctx, x - 3, y - 22, 1, 10, '#D7CBBB');
+  px(ctx, x + 2, y - 22, 1, 10, '#D7CBBB');
+  // Head + shoulders
+  px(ctx, x - 3, y - 36, 6, 5, '#F5F1EA');
+  px(ctx, x - 7, y - 27, 3, 2, '#DFD4C5');
+  px(ctx, x + 4, y - 27, 3, 2, '#DFD4C5');
+  // Gold laurel
+  px(ctx, x - 2, y - 37, 4, 1, PALETTE.gold);
+  px(ctx, x - 1, y - 38, 2, 1, PALETTE.goldBright);
+  if (tick % 120 < 60) {
+    px(ctx, x - 11, y - 38, 2, 2, '#FFE7A3');
+    px(ctx, x + 9, y - 36, 2, 2, '#FFE7A3');
+  }
+}
+
+// altar → Sacred Altar
+function drawAltar(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  drawIsometricBlock(ctx, { col, row }, 13, '#F4EEE2', '#CEC2B0', '#B8AB96');
+  const { x, y } = gridToScreen({ col, row });
+  // Gold trim and crest
+  px(ctx, x - 10, y - 14, 20, 1, PALETTE.gold);
+  px(ctx, x - 6, y - 18, 12, 3, '#E9DBC8');
+  px(ctx, x - 4, y - 17, 8, 1, PALETTE.goldDeep);
+  px(ctx, x - 1, y - 19, 2, 1, PALETTE.goldBright);
+  // Central flame bowl
+  px(ctx, x - 3, y - 21, 6, 2, '#C57E38');
+  if (tick % 24 < 18) {
+    px(ctx, x - 1, y - 24, 2, 3, '#FFAB00');
+    px(ctx, x, y - 26, 1, 2, '#FFEB3B');
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main dispatcher
 // ---------------------------------------------------------------------------
+
+function drawV2Workstation(
+  ctx: CanvasRenderingContext2D,
+  col: number,
+  row: number,
+  tick: number,
+  opts?: { grand?: boolean; standing?: boolean; dual?: boolean },
+): void {
+  const top = opts?.grand ? '#F7E8CF' : '#EEE2CF';
+  const left = opts?.grand ? '#C8B08C' : '#BAA289';
+  const right = opts?.grand ? '#B38F62' : '#A78D73';
+  const h = opts?.standing ? 18 : 14;
+  drawIsometricBlock(ctx, { col, row }, h, top, left, right);
+  const { x, y } = gridToScreen({ col, row });
+  const sy = y - (opts?.standing ? 31 : 27);
+  // Pixel monitor(s)
+  px(ctx, x - 8, sy, 7, 5, '#2F3948');
+  px(ctx, x - 7, sy + 1, 5, 3, '#79C4F2');
+  if (opts?.dual) {
+    px(ctx, x + 1, sy - 1, 7, 5, '#2F3948');
+    px(ctx, x + 2, sy, 5, 3, tick % 40 < 28 ? '#9DE6FF' : '#5FA1CA');
+  }
+  // Marble keyboard slab
+  px(ctx, x - 6, y - 12, 12, 2, '#D7CEC2');
+  px(ctx, x - 5, y - 11, 10, 1, '#B7AB9C');
+  // Gold trim
+  px(ctx, x - 10, y - h - 2, 20, 1, PALETTE.gold);
+}
+
+function drawV2Seat(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number, opts?: { cloud?: boolean; throne?: boolean }): void {
+  const { x, y } = gridToScreen({ col, row });
+  if (opts?.cloud) {
+    const floatOffset = Math.sin(tick * 0.04) * 1;
+    const cy = y - 8 + floatOffset;
+    px(ctx, x - 8, cy - 2, 16, 4, '#FFFFFF');
+    px(ctx, x - 10, cy - 1, 4, 3, '#F1F7FF');
+    px(ctx, x + 6, cy - 1, 4, 3, '#F1F7FF');
+    px(ctx, x - 4, cy - 4, 8, 3, '#FFFFFF');
+    px(ctx, x - 6, y + 1, 12, 1, '#C7D7E5');
+    return;
+  }
+
+  drawIsometricBlock(
+    ctx,
+    { col, row },
+    opts?.throne ? 13 : 10,
+    opts?.throne ? '#F7E6C8' : '#E4DACE',
+    opts?.throne ? '#C7A875' : '#BAAA95',
+    opts?.throne ? '#B88A4F' : '#A6947D',
+  );
+  px(ctx, x - 5, y - 17, 10, 8, '#EDE5DA');
+  px(ctx, x - 6, y - 18, 12, 1, opts?.throne ? PALETTE.gold : '#D2C2AD');
+  px(ctx, x - 3, y - 7, 2, 5, '#BDAF9C');
+  px(ctx, x + 1, y - 7, 2, 5, '#BDAF9C');
+}
+
+function drawV2Cabinet(
+  ctx: CanvasRenderingContext2D,
+  col: number,
+  row: number,
+  tick: number,
+  opts?: { server?: boolean; trophy?: boolean; shelf?: boolean },
+): void {
+  const { x, y } = gridToScreen({ col, row });
+  drawIsometricBlock(ctx, { col, row }, 15, '#DDD1BF', '#B7A790', '#A08D76');
+  px(ctx, x - 7, y - 28, 14, 20, '#D9CEBC');
+  px(ctx, x - 6, y - 27, 12, 18, '#C6B8A1');
+  for (let i = 0; i < 3; i++) {
+    px(ctx, x - 5, y - 24 + i * 5, 10, 1, '#8F7C64');
+  }
+  if (opts?.server) {
+    for (let i = 0; i < 4; i++) {
+      px(ctx, x - 4 + (i % 2) * 6, y - 22 + Math.floor(i / 2) * 5, 2, 2, tick % 30 < 15 ? '#66E0FF' : '#3F6B88');
+    }
+  }
+  if (opts?.trophy) {
+    px(ctx, x - 1, y - 25, 2, 3, '#FFD54F');
+    px(ctx, x - 3, y - 22, 6, 1, '#C99B2E');
+  }
+  if (opts?.shelf) {
+    px(ctx, x - 5, y - 19, 2, 3, '#7E57C2');
+    px(ctx, x - 2, y - 19, 2, 3, '#42A5F5');
+    px(ctx, x + 1, y - 19, 2, 3, '#EF5350');
+  }
+}
+
+function drawV2Feature(
+  ctx: CanvasRenderingContext2D,
+  col: number,
+  row: number,
+  tick: number,
+  type: string,
+): void {
+  const { x, y } = gridToScreen({ col, row });
+  if (type === 'potted_plant') {
+    drawIsometricBlock(ctx, { col, row }, 8, '#D8CCB8', '#BCA991', '#A79279');
+    px(ctx, x - 4, y - 18, 8, 6, '#B06A3A');
+    px(ctx, x - 1, y - 24, 2, 6, '#3E8A42');
+    px(ctx, x - 5, y - 22, 4, 4, '#53A95A');
+    px(ctx, x + 1, y - 23, 4, 4, '#4C9D53');
+    return;
+  }
+  if (type === 'aquarium' || type === 'water_cooler') {
+    drawIsometricBlock(ctx, { col, row }, 10, '#E5DCCB', '#BAAC96', '#A5947B');
+    px(ctx, x - 6, y - 20, 12, 10, '#7BC7EE');
+    px(ctx, x - 5, y - 19, 10, 8, '#A5E4FF');
+    px(ctx, x - 4, y - 15, 2, 2, '#4CAF50');
+    px(ctx, x + 2, y - 13, 2, 2, '#FF7043');
+    return;
+  }
+  if (type === 'coffee_machine') {
+    drawIsometricBlock(ctx, { col, row }, 10, '#E8DDC8', '#C3B197', '#AE9A7D');
+    px(ctx, x - 5, y - 20, 10, 8, '#C3A25A');
+    px(ctx, x - 3, y - 18, 6, 4, '#79C4F2');
+    px(ctx, x - 1, y - 24, 2, 3, tick % 16 < 9 ? '#FFAB00' : '#FF6D00');
+    return;
+  }
+}
+
+function drawV2SurfaceDecal(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number, type: string): void {
+  const { x, y } = gridToScreen({ col, row });
+  if (type === 'carpet' || type === 'door_mat') {
+    px(ctx, x - 10, y - 2, 20, 3, type === 'door_mat' ? '#C9A46D' : '#D7B985');
+    px(ctx, x - 8, y - 1, 16, 1, '#EED8B4');
+    return;
+  }
+  if (type === 'floor_window') {
+    drawIsometricBlock(ctx, { col, row }, 7, '#D9D3C8', '#B7AAA0', '#9F9185');
+    px(ctx, x - 10, y - 10, 20, 6, '#A6D6F4');
+    px(ctx, x - 9, y - 9, 18, 4, '#CDEBFF');
+    return;
+  }
+  if (type === 'wall_clock' || type === 'poster' || type === 'whiteboard_obj') {
+    drawIsometricBlock(ctx, { col, row }, 9, '#E2D7C6', '#BDAE98', '#A89680');
+    px(ctx, x - 7, y - 18, 14, 9, '#F4EEE3');
+    px(ctx, x - 6, y - 17, 12, 7, type === 'poster' ? '#E5C9A1' : '#DDE8F2');
+    if (type === 'wall_clock') {
+      px(ctx, x - 1, y - 14, 2, 2, '#5C4A2E');
+      px(ctx, x, y - 16, 1, 2, '#5C4A2E');
+    }
+    if (type === 'whiteboard_obj') {
+      px(ctx, x - 4, y - 14, 8, 1, '#9BBAD0');
+      px(ctx, x - 4, y - 12, 6, 1, '#9BBAD0');
+    }
+    return;
+  }
+  // Fallback small altar stone
+  drawIsometricBlock(ctx, { col, row }, 8, '#E2D8C8', '#C1B29D', '#A8947A');
+  if (tick % 100 < 70) {
+    px(ctx, x - 2, y - 13, 4, 1, PALETTE.gold);
+  }
+}
 
 export function drawFurniture(
   ctx: CanvasRenderingContext2D,
@@ -770,39 +1147,53 @@ export function drawFurniture(
   row: number,
   tick: number,
 ): void {
+  let rendered = true;
   switch (type) {
-    case 'desk': return drawDesk(ctx, col, row, tick);
-    case 'chair': return drawChair(ctx, col, row);
-    case 'monitor': return drawMonitor(ctx, col, row, tick);
-    case 'keyboard': return; // drawn as part of desk
-    case 'big_desk': return drawBigDesk(ctx, col, row, tick);
-    case 'floor_window': return drawFloorWindow(ctx, col, row, tick);
-    case 'coffee_machine': return drawCoffeeMachine(ctx, col, row, tick);
-    case 'snack_shelf': return drawSnackShelf(ctx, col, row);
-    case 'water_cooler': return drawWaterCooler(ctx, col, row, tick);
-    case 'small_table': return drawSmallTable(ctx, col, row);
-    case 'round_table': return drawRoundTable(ctx, col, row);
-    case 'long_table': return drawLongTable(ctx, col, row);
-    case 'whiteboard_obj': return drawWhiteboard(ctx, col, row, tick);
-    case 'bookshelf': return drawBookshelf(ctx, col, row);
-    case 'reading_chair': return drawReadingChair(ctx, col, row);
-    case 'sofa': return drawSofa(ctx, col, row);
-    case 'coffee_table': return drawCoffeeTable(ctx, col, row);
-    case 'server_rack': return drawServerRack(ctx, col, row, tick);
-    case 'potted_plant': return drawPottedPlant(ctx, col, row, tick);
-    case 'carpet': return drawCarpet(ctx, col, row);
-    case 'wall_clock': return drawWallClock(ctx, col, row, tick);
-    case 'poster': return drawPoster(ctx, col, row);
-    case 'meeting_chair': return drawMeetingChair(ctx, col, row);
-    case 'door_mat': return drawDoorMat(ctx, col, row);
-    case 'standing_desk': return drawStandingDesk(ctx, col, row, tick);
-    case 'dual_monitor': return drawDualMonitor(ctx, col, row, tick);
-    case 'arcade_machine': return drawArcadeMachine(ctx, col, row, tick);
-    case 'vending_machine': return drawVendingMachine(ctx, col, row, tick);
-    case 'trophy_shelf': return drawTrophyShelf(ctx, col, row);
-    case 'aquarium': return drawAquarium(ctx, col, row, tick);
-    case 'marble_round_table': return drawMarbleRoundTable(ctx, col, row);
-    case 'cloud_seat': return drawCloudSeat(ctx, col, row, tick);
+    case 'desk': drawV2Workstation(ctx, col, row, tick); break;
+    case 'chair': drawV2Seat(ctx, col, row, tick); break;
+    case 'monitor': drawV2Workstation(ctx, col, row, tick); break;
+    case 'keyboard': rendered = false; break; // drawn as part of desk
+    case 'big_desk': drawV2Workstation(ctx, col, row, tick, { grand: true }); break;
+    case 'floor_window': drawV2SurfaceDecal(ctx, col, row, tick, type); break;
+    case 'coffee_machine': drawV2Feature(ctx, col, row, tick, type); break;
+    case 'snack_shelf': drawV2Cabinet(ctx, col, row, tick, { shelf: true }); break;
+    case 'water_cooler': drawV2Feature(ctx, col, row, tick, type); break;
+    case 'small_table': drawV2Workstation(ctx, col, row, tick); break;
+    case 'round_table': drawV2Workstation(ctx, col, row, tick); break;
+    case 'long_table': drawV2Workstation(ctx, col, row, tick, { grand: true }); break;
+    case 'whiteboard_obj': drawV2SurfaceDecal(ctx, col, row, tick, type); break;
+    case 'bookshelf': drawV2Cabinet(ctx, col, row, tick, { shelf: true }); break;
+    case 'reading_chair': drawV2Seat(ctx, col, row, tick); break;
+    case 'sofa': drawV2Seat(ctx, col, row, tick, { throne: true }); break;
+    case 'coffee_table': drawV2Workstation(ctx, col, row, tick); break;
+    case 'server_rack': drawV2Cabinet(ctx, col, row, tick, { server: true }); break;
+    case 'potted_plant': drawV2Feature(ctx, col, row, tick, type); break;
+    case 'carpet': drawV2SurfaceDecal(ctx, col, row, tick, type); break;
+    case 'wall_clock': drawV2SurfaceDecal(ctx, col, row, tick, type); break;
+    case 'poster': drawV2SurfaceDecal(ctx, col, row, tick, type); break;
+    case 'meeting_chair': drawV2Seat(ctx, col, row, tick); break;
+    case 'door_mat': drawV2SurfaceDecal(ctx, col, row, tick, type); break;
+    case 'standing_desk': drawV2Workstation(ctx, col, row, tick, { standing: true }); break;
+    case 'dual_monitor': drawV2Workstation(ctx, col, row, tick, { dual: true }); break;
+    case 'arcade_machine': drawV2Cabinet(ctx, col, row, tick, { server: true }); break;
+    case 'vending_machine': drawV2Cabinet(ctx, col, row, tick, { server: true }); break;
+    case 'trophy_shelf': drawV2Cabinet(ctx, col, row, tick, { trophy: true }); break;
+    case 'aquarium': drawV2Feature(ctx, col, row, tick, type); break;
+    case 'marble_round_table': drawV2Workstation(ctx, col, row, tick); break;
+    case 'cloud_seat': drawV2Seat(ctx, col, row, tick, { cloud: true }); break;
+    case 'doric_column': drawDoricColumn(ctx, col, row, tick); break;
+    case 'temple_column': drawTempleColumn(ctx, col, row, tick); break;
+    case 'marble_column': drawMarbleColumn(ctx, col, row, tick); break;
+    case 'sacred_brazier': drawSacredBrazier(ctx, col, row, tick); break;
+    case 'god_statue': drawGodStatue(ctx, col, row, tick); break;
+    case 'altar': drawAltar(ctx, col, row, tick); break;
+    default:
+      rendered = false;
+      break;
+  }
+
+  if (rendered) {
+    applyTemplePatina(ctx, col, row, tick);
   }
 }
 
@@ -825,10 +1216,10 @@ export function drawMonitorScreen(
 
   switch (state) {
     case 'working': {
-      // Purple rune lines scrolling
-      ctx.fillStyle = '#4A148C';
+      // Gold rune lines scrolling
+      ctx.fillStyle = '#2F2A20';
       ctx.fillRect(sx, sy, sw, sh);
-      ctx.fillStyle = '#B388FF';
+      ctx.fillStyle = PALETTE.goldBright;
       for (let i = 0; i < 4; i++) {
         const w = 3 + ((tick + i * 5) % 6);
         ctx.fillRect(sx + 1, sy + 1 + i * 2, w, 1);
@@ -853,21 +1244,21 @@ export function drawMonitorScreen(
       // Golden bouncing dot
       const bx = sx + 2 + Math.abs(Math.sin(tick * 0.05)) * (sw - 6);
       const by = sy + 2 + Math.abs(Math.cos(tick * 0.04)) * (sh - 4);
-      ctx.fillStyle = '#311B92';
+      ctx.fillStyle = '#3C3323';
       ctx.fillRect(sx, sy, sw, sh);
-      ctx.fillStyle = '#FFD700';
+      ctx.fillStyle = PALETTE.gold;
       ctx.fillRect(Math.round(bx), Math.round(by), 2, 2);
       break;
     }
     case 'thinking': {
-      // Purple glowing dots
-      ctx.fillStyle = '#4A148C';
+      // Amber glowing dots
+      ctx.fillStyle = '#2E2A1F';
       ctx.fillRect(sx, sy, sw, sh);
       const dotCount = 3;
       for (let i = 0; i < dotCount; i++) {
         const alpha = ((tick * 0.08 + i * 0.8) % 2) < 1 ? 1 : 0.3;
         ctx.globalAlpha = alpha;
-        ctx.fillStyle = '#B388FF';
+        ctx.fillStyle = PALETTE.goldBright;
         ctx.fillRect(sx + 2 + i * 3, sy + 3, 2, 2);
       }
       ctx.globalAlpha = 1;
