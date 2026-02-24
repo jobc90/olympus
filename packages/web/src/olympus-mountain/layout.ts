@@ -173,8 +173,8 @@ export function createWalkGrid(workerCount: number): TileType[][] {
   }
 
   // Garden/agora divider.
-  for (let c = 1; c <= 10; c++) {
-    if (c === 6) {
+  for (let c = 1; c <= 5; c++) {
+    if (c === 3) {
       grid[8][c] = 'door';
     } else {
       grid[8][c] = 'wall';
