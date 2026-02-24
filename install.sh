@@ -1190,7 +1190,7 @@ echo "   # Claude CLI 세션 안에서:"
 echo "   /team \"로그인 페이지 UI 개선\""
 echo ""
 echo -e "${YELLOW}📋 설치 검증:${NC}"
-echo "   command -v olympus && echo '✅ olympus' || echo '❌ olympus'"
+echo "   command -v olympus && echo '✅ olympus' || echo '❌ olympus (PATH 미설정)'"
 echo "   command -v claude  && echo '✅ claude'  || echo '❌ claude'"
 if [ "$INSTALL_MODE" = "global" ] || [ "$INSTALL_MODE" = "commands" ]; then
 echo "   ls ~/.claude/commands/team.md  && echo '✅ /team 명령어' || echo '❌ /team 없음'"
@@ -1198,6 +1198,9 @@ fi
 if [ "$INSTALL_MODE" = "global" ]; then
 echo "   ls ~/.claude/agents/ | wc -l   # 19개이면 정상"
 fi
+echo ""
+echo -e "${YELLOW}   ❌ olympus 표시 시 — PATH 미설정:${NC}"
+echo "   echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc && source ~/.zshrc"
 echo ""
 echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""

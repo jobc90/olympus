@@ -486,8 +486,8 @@ Telegram에서 본인 봇에게 `/health` 전송 → `✅ Gateway 연결됨` 응
 | Agent | Model | 역할 |
 |-------|-------|------|
 | `explore` | Haiku | 빠른 코드베이스 검색 |
-| `executor` | Sonnet | 집중 실행, 직접 구현 |
-| `writer` | Haiku | 문서 작성 |
+| `executor` | Opus | 집중 실행, 직접 구현 |
+| `writer` | Sonnet | 문서 작성 |
 
 **On-Demand Agents (Team 모드에서만 — 16개)**:
 
