@@ -81,8 +81,11 @@ telegram-bot ←──HTTP──→ gateway (served by cli `olympus server start
 - `DELETE /api/workers/:id` — Delete worker
 - `POST /api/workers/:id/heartbeat` — Worker heartbeat
 - `POST /api/workers/:id/task` — Assign task to worker
-- `POST /api/workers/tasks/:taskId/result` — Report worker task result
+- `POST /api/workers/tasks/:taskId` — Report worker task result
 - `GET /api/workers/tasks/:taskId` — Worker task status query
+- `POST /api/workers/:id/stream` — PTY stdout relay
+- `POST /api/workers/:id/input` — Send keyboard input to PTY
+- `POST /api/workers/:id/resize` — Resize PTY terminal
 
 #### Codex
 - `POST /api/codex/chat` — Codex conversation (delegates to worker on @mention)
