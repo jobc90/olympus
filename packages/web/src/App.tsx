@@ -500,12 +500,15 @@ export default function App() {
   }, [codexGreeting?.timestamp]);
 
   const handleDetailClick = useCallback((workerId: string) => {
-    setSelectedWorkerId(selectedWorkerId === workerId ? null : workerId);
+    const next = selectedWorkerId === workerId ? null : workerId;
+    setSelectedWorkerId(next);
+    setMonitorSelectedWorkerId(next); // keep Monitor tab in sync
   }, [selectedWorkerId, setSelectedWorkerId]);
 
   const handleChatClick = useCallback((workerId: string) => {
     const w = workerConfigs.find(w => w.id === workerId);
     setMonitorSelectedWorkerId(workerId);
+    setSelectedWorkerId(workerId); // keep Console tab in sync
     setChatTarget(w ? { id: w.id, name: w.name, emoji: w.emoji, color: w.color } : { id: workerId, name: workerId });
   }, [workerConfigs]);
 
@@ -576,7 +579,7 @@ export default function App() {
         {activeTab === 'console' && (
           <div className="mt-5 space-y-6">
             <section>
-              <UsageBar data={usageData} />
+              <UsageBar data={connected ? usageData : null} />
             </section>
 
             {currentRunId && currentRun ? (
