@@ -236,9 +236,9 @@ function resolveDrawScale(footY: number, mapScale: number, panelScale: number): 
 }
 
 const HD_PIXEL_CHARACTER_MODE = true;
-const HD_RENDER_REV = 'ref_v3';
-const HD_SPRITE_W = 16;
-const HD_SPRITE_H = 24;
+const HD_RENDER_REV = 'ref_v4';
+const HD_SPRITE_W = 32;
+const HD_SPRITE_H = 48;
 const HD_SPRITE_CACHE = new Map<string, HTMLCanvasElement>();
 const HD_SILHOUETTE_CACHE = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
 
@@ -390,9 +390,9 @@ function drawHdPixelAvatar(
   const cached = HD_SPRITE_CACHE.get(key);
   if (cached) return cached;
 
-  // 16×24 canvas — drawn at 2× (32×48 CSS px) for clean pixel-art upscale
+  // 32×48 canvas — drawn at 2× (64×96 CSS px) for clean pixel-art upscale
   const canvas = document.createElement('canvas');
-  canvas.width = HD_SPRITE_W;  // 16
+  canvas.width = HD_SPRITE_W;  // 32
   canvas.height = HD_SPRITE_H;
   const c = canvas.getContext('2d');
   if (!c) return null;
@@ -414,370 +414,370 @@ function drawHdPixelAvatar(
   const shoes = '#0C0D18';
   const isF = spec.gender === 'f';
 
-  // ── Feet & Legs (chibi: stubby, y=17..23 in 24px canvas) ────────────
+  // ── Feet & Legs (chibi: stubby, y=34..46 in 48px canvas) ────────────
   if (!seated) {
-    const lFY = step === 0 ? 21 : 22;
-    const rFY = step === 1 ? 21 : 22;
-    px(2, lFY, 4, 2, shoes);    // splayed left foot (wider outward)
-    px(9, rFY, 4, 2, shoes);    // splayed right foot (wider outward)
-    const lLY = step === 0 ? 17 : 18;
-    const rLY = step === 1 ? 17 : 18;
-    px(3, lLY, 3, 4, pants);    // left leg  (x=3..5)
-    px(9, rLY, 3, 4, pants);    // right leg (x=9..11), 3px gap between
+    const lFY = step === 0 ? 42 : 44;
+    const rFY = step === 1 ? 42 : 44;
+    px(4, lFY, 8, 4, shoes);    // splayed left foot (wider outward)
+    px(18, rFY, 8, 4, shoes);   // splayed right foot (wider outward)
+    const lLY = step === 0 ? 34 : 36;
+    const rLY = step === 1 ? 34 : 36;
+    px(6, lLY, 6, 8, pants);    // left leg  (x=6..11)
+    px(18, rLY, 6, 8, pants);   // right leg (x=18..23), 6px gap between
   } else {
-    px(3, 21, 3, 2, shoes);
-    px(9, 21, 3, 2, shoes);
+    px(6, 42, 6, 4, shoes);
+    px(18, 42, 6, 4, shoes);
   }
 
-  // ── Body / outfit (chibi torso y=11..16 in 24px canvas) ─────────────
-  const bodyY = 11;
-  const bodyH = 6;
+  // ── Body / outfit (chibi torso y=22..33 in 48px canvas) ─────────────
+  const bodyY = 22;
+  const bodyH = 12;
   switch (spec.outfitStyle) {
     case 'armor':
-      px(3, bodyY, 10, bodyH, shirt);
-      px(4, bodyY + 1, 8, 3, '#B8C4CC');       // chest plate
-      px(4, bodyY + 1, 8, 1, '#D8E4EC');       // plate highlight top
-      px(4, bodyY + 4, 8, 1, '#8A9EAE');       // plate shadow bottom
-      px(4, bodyY + 2, 2, 2, '#9AAEBA');       // left rivet plate
-      px(10, bodyY + 2, 2, 2, '#9AAEBA');      // right rivet plate
-      px(5, bodyY, 6, 1, trim);                // collar
+      px(6, bodyY, 20, bodyH, shirt);
+      px(8, bodyY + 2, 16, 6, '#B8C4CC');       // chest plate
+      px(8, bodyY + 2, 16, 2, '#D8E4EC');       // plate highlight top
+      px(8, bodyY + 8, 16, 2, '#8A9EAE');       // plate shadow bottom
+      px(8, bodyY + 4, 4, 4, '#9AAEBA');        // left rivet plate
+      px(20, bodyY + 4, 4, 4, '#9AAEBA');       // right rivet plate
+      px(10, bodyY, 12, 2, trim);               // collar
       break;
     case 'robe':
-      px(2, bodyY, 12, bodyH + 2, shirt);      // wide flowing robe
-      px(5, bodyY, 6, 1, trim);                // collar
-      px(3, bodyY + 2, 10, 1, trim);           // sash belt
-      px(6, bodyY + 2, 4, 1, '#AA8830');       // belt buckle gold
+      px(4, bodyY, 24, bodyH + 4, shirt);       // wide flowing robe
+      px(10, bodyY, 12, 2, trim);               // collar
+      px(6, bodyY + 4, 20, 2, trim);            // sash belt
+      px(12, bodyY + 4, 8, 2, '#AA8830');       // belt buckle gold
       break;
     case 'tunic':
-      px(3, bodyY, 10, bodyH, shirt);
-      px(5, bodyY, 6, 1, trim);                // collar
-      px(3, bodyY + 3, 10, 1, '#3A2818');      // leather belt
-      px(7, bodyY + 3, 2, 1, '#C8A040');       // buckle
-      px(4, bodyY, 2, 1, trim);               // collar detail L
-      px(10, bodyY, 2, 1, trim);              // collar detail R
+      px(6, bodyY, 20, bodyH, shirt);
+      px(10, bodyY, 12, 2, trim);               // collar
+      px(6, bodyY + 6, 20, 2, '#3A2818');       // leather belt
+      px(14, bodyY + 6, 4, 2, '#C8A040');       // buckle
+      px(8, bodyY, 4, 2, trim);                 // collar detail L
+      px(20, bodyY, 4, 2, trim);                // collar detail R
       break;
     case 'gown':
-      px(3, bodyY, 10, bodyH, shirt);
-      px(2, bodyY + bodyH - 1, 12, 3, shirt);  // wide trailing hem
-      px(3, bodyY, 1, bodyH, trim);            // left trim stripe
-      px(12, bodyY, 1, bodyH, trim);           // right trim stripe
-      px(5, bodyY, 6, 1, trim);               // collar
+      px(6, bodyY, 20, bodyH, shirt);
+      px(4, bodyY + bodyH - 2, 24, 6, shirt);   // wide trailing hem
+      px(6, bodyY, 2, bodyH, trim);             // left trim stripe
+      px(24, bodyY, 2, bodyH, trim);            // right trim stripe
+      px(10, bodyY, 12, 2, trim);               // collar
       break;
     case 'dress':
-      px(3, bodyY, 10, bodyH - 1, shirt);
-      px(2, bodyY + bodyH - 1, 12, 2, shirt);  // flared skirt
-      px(5, bodyY, 6, 1, trim);
-      px(4, bodyY + 1, 8, 1, trim);            // yoke stripe
+      px(6, bodyY, 20, bodyH - 2, shirt);
+      px(4, bodyY + bodyH - 2, 24, 4, shirt);   // flared skirt
+      px(10, bodyY, 12, 2, trim);
+      px(8, bodyY + 2, 16, 2, trim);            // yoke stripe
       break;
     case 'cloak':
-      px(2, bodyY, 12, bodyH + 3, shirt);       // wide flowing cloak
-      px(1, bodyY + 1, 2, bodyH + 2, '#101828'); // deep left shadow
-      px(13, bodyY + 1, 2, bodyH + 2, '#101828'); // deep right shadow
-      px(5, bodyY, 6, 1, trim);                // inner collar
-      px(5, bodyY + 1, 6, bodyH, skinSh);       // inner body (skin visible)
+      px(4, bodyY, 24, bodyH + 6, shirt);        // wide flowing cloak
+      px(2, bodyY + 2, 4, bodyH + 4, '#101828'); // deep left shadow
+      px(26, bodyY + 2, 4, bodyH + 4, '#101828'); // deep right shadow
+      px(10, bodyY, 12, 2, trim);               // inner collar
+      px(10, bodyY + 2, 12, bodyH, skinSh);      // inner body (skin visible)
       break;
     default:
-      px(3, bodyY, 10, bodyH, shirt);
-      px(5, bodyY, 6, 1, trim);
+      px(6, bodyY, 20, bodyH, shirt);
+      px(10, bodyY, 12, 2, trim);
   }
-  px(3, bodyY + 1, 1, bodyH - 1, skinSh);     // left-edge shadow
+  px(6, bodyY + 2, 2, bodyH - 2, skinSh);       // left-edge shadow
 
   // ── Arms (styled by outfit) ──────────────────────────────────────────
   if (spec.outfitStyle === 'armor') {
-    px(0, bodyY + 1, 3, 5, '#8898A8');         // metal pauldron L
-    px(13, bodyY + 1, 3, 5, '#8898A8');        // metal pauldron R
-    px(0, bodyY + 1, 3, 1, '#A0B4C4');         // pauldron top highlight
-    px(13, bodyY + 1, 3, 1, '#A0B4C4');
+    px(0, bodyY + 2, 6, 10, '#8898A8');         // metal pauldron L
+    px(26, bodyY + 2, 6, 10, '#8898A8');        // metal pauldron R
+    px(0, bodyY + 2, 6, 2, '#A0B4C4');          // pauldron top highlight
+    px(26, bodyY + 2, 6, 2, '#A0B4C4');
   } else if (spec.outfitStyle === 'cloak' || spec.outfitStyle === 'robe') {
-    px(0, bodyY + 1, 3, 6, shirt);             // wide sleeve L
-    px(13, bodyY + 1, 3, 6, shirt);            // wide sleeve R
+    px(0, bodyY + 2, 6, 12, shirt);             // wide sleeve L
+    px(26, bodyY + 2, 6, 12, shirt);            // wide sleeve R
   } else {
-    px(1, bodyY + 1, 2, 5, shirt);
-    px(13, bodyY + 1, 2, 5, shirt);
-    px(1, bodyY + 1, 1, 5, skinSh);
+    px(2, bodyY + 2, 4, 10, shirt);
+    px(26, bodyY + 2, 4, 10, shirt);
+    px(2, bodyY + 2, 2, 10, skinSh);
   }
 
   // ── Hands ─────────────────────────────────────────────────────────────
-  px(0, bodyY + 5, 2, 2, skin);
-  px(13, bodyY + 5, 2, 2, skin);
+  px(0, bodyY + 10, 4, 4, skin);
+  px(26, bodyY + 10, 4, 4, skin);
 
-  // ── Neck (chibi: 1px, y=10 in 24px canvas) ────────────────────────────
-  px(6, 10, 4, 1, skin);
-  px(7, 10, 2, 1, skinSh);
+  // ── Neck (chibi: 2px, y=20 in 48px canvas) ────────────────────────────
+  px(12, 20, 8, 2, skin);
+  px(14, 20, 4, 2, skinSh);
 
   // ── Face skin — BIG chibi head (drawn first, hair goes on top) ────────
-  // Head occupies y=0..10 (~46% of 24px canvas) vs body y=11..23
-  px(2, 4, 12, 6, skin);          // face interior y=4..9, 12px wide
-  px(3, 10, 10, 1, skin);         // chin overlap with neck
-  px(11, 5, 2, 4, skinSh);        // right-side face shadow
-  px(6, 9, 2, 1, skinSh);         // chin shadow
+  // Head occupies y=0..20 (~42% of 48px canvas) vs body y=22..47
+  px(4, 8, 24, 12, skin);          // face interior y=8..19, 24px wide
+  px(6, 20, 20, 2, skin);          // chin overlap with neck
+  px(22, 10, 4, 8, skinSh);        // right-side face shadow
+  px(12, 18, 4, 2, skinSh);        // chin shadow
 
   // ── Hair — each case draws its FULL shape on top of skin ─────────────
   switch (spec.hairStyle) {
     case 'long':
-      // Cap + long flowing sides to below chin (24px canvas: face y=4..9)
-      px(4, 0, 8, 1, hair);
-      px(2, 1, 12, 4, hair);
-      px(1, 2, 14, 3, hair);       // widest at y=2..4
-      px(1, 5, 2, 5, hair);        // left long flow y=5..9
-      px(13, 5, 2, 5, hair);       // right long flow y=5..9
+      // Cap + long flowing sides to below chin (48px canvas: face y=8..19)
+      px(8, 0, 16, 2, hair);
+      px(4, 2, 24, 8, hair);
+      px(2, 4, 28, 6, hair);       // widest at y=4..9
+      px(2, 10, 4, 10, hair);      // left long flow y=10..19
+      px(26, 10, 4, 10, hair);     // right long flow y=10..19
       break;
     case 'wavy':
-      // Dramatic flowing waves with side bumps (24px: face y=4..9)
-      px(4, 0, 8, 1, hair);
-      px(2, 1, 12, 2, hair);       // top
-      px(0, 2, 16, 3, hair);       // full-width wave y=2..4
-      px(1, 5, 2, 3, hair);        // left wave bump y=5..7
-      px(12, 5, 3, 3, hair);       // right wave bump y=5..7
-      px(1, 8, 2, 2, hair);        // left flow y=8..9
-      px(13, 8, 2, 2, hair);       // right flow y=8..9
+      // Dramatic flowing waves with side bumps (48px: face y=8..19)
+      px(8, 0, 16, 2, hair);
+      px(4, 2, 24, 4, hair);       // top
+      px(0, 4, 32, 6, hair);       // full-width wave y=4..9
+      px(2, 10, 4, 6, hair);       // left wave bump y=10..15
+      px(24, 10, 6, 6, hair);      // right wave bump y=10..15
+      px(2, 16, 4, 4, hair);       // left flow y=16..19
+      px(26, 16, 4, 4, hair);      // right flow y=16..19
       break;
     case 'spike':
       // Three DRAMATIC spikes at crown
-      px(3, 2, 3, 1, hair);        // spike L base
-      px(4, 1, 2, 1, hair);        // spike L mid
-      px(4, 0, 1, 1, hair);        // spike L tip
-      px(7, 1, 2, 1, hair);        // spike C mid
-      px(7, 0, 2, 1, hair);        // spike C tip (2px wide, goes highest)
-      px(10, 2, 3, 1, hair);       // spike R base
-      px(10, 1, 2, 1, hair);       // spike R mid
-      px(11, 0, 1, 1, hair);       // spike R tip
-      px(2, 3, 12, 3, hair);       // solid base cap y=3..5
-      px(1, 4, 14, 2, hair);       // widest at y=4..5
+      px(6, 4, 6, 2, hair);        // spike L base
+      px(8, 2, 4, 2, hair);        // spike L mid
+      px(8, 0, 2, 2, hair);        // spike L tip
+      px(14, 2, 4, 2, hair);       // spike C mid
+      px(14, 0, 4, 2, hair);       // spike C tip (4px wide, goes highest)
+      px(20, 4, 6, 2, hair);       // spike R base
+      px(20, 2, 4, 2, hair);       // spike R mid
+      px(22, 0, 2, 2, hair);       // spike R tip
+      px(4, 6, 24, 6, hair);       // solid base cap y=6..11
+      px(2, 8, 28, 4, hair);       // widest at y=8..11
       break;
     case 'bun':
       // Large rounded top-knot bun
-      px(4, 0, 8, 2, hair);        // bun top (8px wide)
-      px(5, 0, 6, 1, hair);        // bun peak
-      px(3, 2, 10, 2, hair);       // bun lower + cap merge
-      px(2, 4, 12, 2, hair);       // cap
-      px(1, 5, 14, 1, hair);       // widest at y=5
+      px(8, 0, 16, 4, hair);       // bun top (16px wide)
+      px(10, 0, 12, 2, hair);      // bun peak
+      px(6, 4, 20, 4, hair);       // bun lower + cap merge
+      px(4, 8, 24, 4, hair);       // cap
+      px(2, 10, 28, 2, hair);      // widest at y=10..11
       break;
     case 'curly':
-      // HUGE fluffy cloud — maximum volume (24px: face y=4..9)
-      px(2, 0, 12, 1, hair);       // very top
-      px(0, 1, 16, 2, hair);       // full width y=1..2
-      px(0, 3, 16, 2, hair);       // full width y=3..4
-      px(0, 5, 16, 3, hair);       // full width y=5..7
-      px(0, 8, 3, 2, hair);        // left puff y=8..9
-      px(13, 8, 3, 2, hair);       // right puff y=8..9
+      // HUGE fluffy cloud — maximum volume (48px: face y=8..19)
+      px(4, 0, 24, 2, hair);       // very top
+      px(0, 2, 32, 4, hair);       // full width y=2..5
+      px(0, 6, 32, 4, hair);       // full width y=6..9
+      px(0, 10, 32, 6, hair);      // full width y=10..15
+      px(0, 16, 6, 4, hair);       // left puff y=16..19
+      px(26, 16, 6, 4, hair);      // right puff y=16..19
       break;
     case 'pony':
-      // Cap + thick ponytail on right + hair tie (24px canvas)
-      px(4, 0, 8, 1, hair);
-      px(2, 1, 12, 4, hair);
-      px(1, 2, 14, 3, hair);
-      px(12, 5, 3, 1, trim);       // ponytail tie/band
-      px(12, 6, 3, 10, hair);      // thick ponytail (3px wide, y=6..15)
+      // Cap + thick ponytail on right + hair tie (48px canvas)
+      px(8, 0, 16, 2, hair);
+      px(4, 2, 24, 8, hair);
+      px(2, 4, 28, 6, hair);
+      px(24, 10, 6, 2, trim);      // ponytail tie/band
+      px(24, 12, 6, 20, hair);     // thick ponytail (6px wide, y=12..31)
       break;
     case 'braid':
-      // Cap + long braided rope with alternating segments (24px canvas)
-      px(4, 0, 8, 1, hair);
-      px(2, 1, 12, 4, hair);
-      px(1, 2, 14, 3, hair);
-      px(12, 5, 2, 13, hair);      // braid runs y=5..17
-      px(12, 8,  2, 1, trim);      // braid segment 1
-      px(12, 11, 2, 1, trim);      // braid segment 2
-      px(12, 14, 2, 1, trim);      // braid segment 3
-      px(12, 17, 2, 1, trim);      // braid segment 4
+      // Cap + long braided rope with alternating segments (48px canvas)
+      px(8, 0, 16, 2, hair);
+      px(4, 2, 24, 8, hair);
+      px(2, 4, 28, 6, hair);
+      px(24, 10, 4, 26, hair);     // braid runs y=10..35
+      px(24, 16, 4, 2, trim);      // braid segment 1
+      px(24, 22, 4, 2, trim);      // braid segment 2
+      px(24, 28, 4, 2, trim);      // braid segment 3
+      px(24, 34, 4, 2, trim);      // braid segment 4
       break;
     case 'hood':
-      // Full hood covering head — face visible through opening (24px)
-      px(0, 0, 16, 11, shirt);     // entire hood in mantle color
-      px(3, 4, 10, 6, skin);       // inner face opening y=4..9
-      px(10, 5, 2, 4, skinSh);     // face shadow inside hood
-      px(6, 9, 2, 1, skinSh);
+      // Full hood covering head — face visible through opening (48px)
+      px(0, 0, 32, 22, shirt);     // entire hood in mantle color
+      px(6, 8, 20, 12, skin);      // inner face opening y=8..19
+      px(20, 10, 4, 8, skinSh);    // face shadow inside hood
+      px(12, 18, 4, 2, skinSh);
       break;
     default: // 'short' — minimal rounded cap
-      px(4, 0, 8, 1, hair);
-      px(2, 1, 12, 5, hair);
-      px(1, 2, 14, 3, hair);
+      px(8, 0, 16, 2, hair);
+      px(4, 2, 24, 10, hair);
+      px(2, 4, 28, 6, hair);
       break;
   }
 
   // ── Crown / Head Accessory (drawn on top of hair) ─────────────────────
   switch (profile.crown) {
     case 'gold':
-      px(4, 0, 8, 1, '#D4AF37');               // crown band
-      px(5, 0, 1, 2, '#F0D060');               // left point
-      px(7, 0, 2, 2, '#FFE070');               // center peak
-      px(11, 0, 1, 2, '#F0D060');              // right point
-      px(6, 1, 1, 1, '#FFF3A0');               // gem sparkle
+      px(8, 0, 16, 2, '#D4AF37');               // crown band
+      px(10, 0, 2, 4, '#F0D060');               // left point
+      px(14, 0, 4, 4, '#FFE070');               // center peak
+      px(22, 0, 2, 4, '#F0D060');               // right point
+      px(12, 2, 2, 2, '#FFF3A0');               // gem sparkle
       break;
     case 'silver':
-      px(4, 0, 8, 1, '#B8C8D8');               // silver band
-      px(5, 0, 2, 2, '#D8E8F0');               // left point
-      px(9, 0, 2, 2, '#D8E8F0');               // right point
-      px(7, 0, 2, 1, '#E8F4FF');               // center highlight
+      px(8, 0, 16, 2, '#B8C8D8');               // silver band
+      px(10, 0, 4, 4, '#D8E8F0');               // left point
+      px(18, 0, 4, 4, '#D8E8F0');               // right point
+      px(14, 0, 4, 2, '#E8F4FF');               // center highlight
       break;
     case 'laurel':
-      px(3, 0, 2, 2, '#4A7828');               // L leaf cluster
-      px(5, 0, 6, 1, '#3A6020');               // wreath center
-      px(11, 0, 2, 2, '#4A7828');              // R leaf cluster
-      px(6, 0, 1, 1, '#78B848');               // highlight leaf L
-      px(9, 0, 1, 1, '#78B848');               // highlight leaf R
+      px(6, 0, 4, 4, '#4A7828');                // L leaf cluster
+      px(10, 0, 12, 2, '#3A6020');              // wreath center
+      px(22, 0, 4, 4, '#4A7828');               // R leaf cluster
+      px(12, 0, 2, 2, '#78B848');               // highlight leaf L
+      px(18, 0, 2, 2, '#78B848');               // highlight leaf R
       break;
     case 'horn':
-      px(2, 0, 2, 4, '#8D6E63');               // L horn (curved up)
-      px(3, 0, 1, 2, '#A08060');               // L horn tip
-      px(12, 0, 2, 4, '#8D6E63');              // R horn
-      px(12, 0, 1, 2, '#A08060');              // R horn tip
-      px(2, 3, 3, 1, '#6D4E43');               // L horn base
-      px(11, 3, 3, 1, '#6D4E43');              // R horn base
+      px(4, 0, 4, 8, '#8D6E63');                // L horn (curved up)
+      px(6, 0, 2, 4, '#A08060');                // L horn tip
+      px(24, 0, 4, 8, '#8D6E63');               // R horn
+      px(24, 0, 2, 4, '#A08060');               // R horn tip
+      px(4, 6, 6, 2, '#6D4E43');                // L horn base
+      px(22, 6, 6, 2, '#6D4E43');               // R horn base
       break;
   }
 
   // ── Hair crest accent (style.crest color, drawn on hair cap) ──────────
   if (style.crest) {
-    px(6, 3, 4, 1, style.crest);              // crest stripe in hair
+    px(12, 6, 8, 2, style.crest);              // crest stripe in hair
   }
 
-  // ── Eyebrows (subtle, 2px above eyes at y=5) ──────────────────────────
-  const browY = 5;
+  // ── Eyebrows (subtle, 2px above eyes at y=10) ─────────────────────────
+  const browY = 10;
   if (faceSpec.brow === 'stern' || faceSpec.brow === 'fierce') {
-    px(4, browY, 3, 1, skinSh);     // strong L brow
-    px(9, browY, 3, 1, skinSh);     // strong R brow
+    px(8, browY, 6, 2, skinSh);     // strong L brow
+    px(18, browY, 6, 2, skinSh);    // strong R brow
   } else {
-    px(5, browY, 2, 1, skinSh);     // subtle L brow
-    px(9, browY, 2, 1, skinSh);     // subtle R brow
+    px(10, browY, 4, 2, skinSh);    // subtle L brow
+    px(18, browY, 4, 2, skinSh);    // subtle R brow
   }
 
-  // ── Eyes (reference-style: 1×1 dark dot, y=6) ────────────────────────
-  const eyeY = 6;
+  // ── Eyes (reference-style: 2×2 dark dot, y=12) ───────────────────────
+  const eyeY = 12;
   if (!blink) {
-    px(5, eyeY, 1, 1, '#181818');   // L eye — tiny dark dot
-    px(10, eyeY, 1, 1, '#181818');  // R eye — tiny dark dot
-    px(5, eyeY, 1, 1, '#181818');   // redraw for opacity
-    px(10, eyeY, 1, 1, '#181818');
+    px(10, eyeY, 2, 2, '#181818');   // L eye — dark dot
+    px(20, eyeY, 2, 2, '#181818');   // R eye — dark dot
+    px(10, eyeY, 2, 2, '#181818');   // redraw for opacity
+    px(20, eyeY, 2, 2, '#181818');
   } else {
-    px(4, eyeY, 3, 1, skinSh);     // blink L line
-    px(9, eyeY, 3, 1, skinSh);     // blink R line
+    px(8, eyeY, 6, 2, skinSh);      // blink L line
+    px(18, eyeY, 6, 2, skinSh);     // blink R line
   }
 
-  // ── Mouth (simple, y=8) ────────────────────────────────────────────────
-  const mouthY = 8;
+  // ── Mouth (simple, y=16) ───────────────────────────────────────────────
+  const mouthY = 16;
   if (faceSpec.mouth === 'smile' || faceSpec.mouth === 'open') {
-    px(6, mouthY, 1, 1, '#D05040');  // L corner up
-    px(9, mouthY, 1, 1, '#D05040');  // R corner up
-    px(7, mouthY, 2, 1, '#F07060');  // center top lip
+    px(12, mouthY, 2, 2, '#D05040');  // L corner up
+    px(18, mouthY, 2, 2, '#D05040');  // R corner up
+    px(14, mouthY, 4, 2, '#F07060');  // center top lip
   } else if (faceSpec.mouth === 'frown') {
-    px(6, mouthY, 1, 1, '#C04838');
-    px(9, mouthY, 1, 1, '#C04838');
-    px(7, mouthY + 0, 2, 1, '#A03828');
+    px(12, mouthY, 2, 2, '#C04838');
+    px(18, mouthY, 2, 2, '#C04838');
+    px(14, mouthY, 4, 2, '#A03828');
   } else {
-    px(6, mouthY, 4, 1, '#D06050');  // neutral line
+    px(12, mouthY, 8, 2, '#D06050');  // neutral line
   }
 
   // ── Prop (held item drawn in sprite) ─────────────────────────────────
   switch (style.prop) {
     case 'spear':
-      px(14, 3, 1, 1, '#E8D878');   // spearhead tip
-      px(13, 4, 2, 1, '#E8D878');   // head barb
-      px(14, 5, 1, 18, '#8B6540');  // shaft
+      px(28, 6, 2, 2, '#E8D878');    // spearhead tip
+      px(26, 8, 4, 2, '#E8D878');    // head barb
+      px(28, 10, 2, 36, '#8B6540');  // shaft
       break;
     case 'trident':
-      px(13, 2, 1, 3, '#88DDFF');   // L tine
-      px(14, 1, 1, 4, '#88DDFF');   // center tine (tallest)
-      px(15, 2, 1, 3, '#88DDFF');   // R tine
-      px(14, 5, 1, 17, '#4488CC');  // shaft
+      px(26, 4, 2, 6, '#88DDFF');    // L tine
+      px(28, 2, 2, 8, '#88DDFF');    // center tine (tallest)
+      px(30, 4, 2, 6, '#88DDFF');    // R tine
+      px(28, 10, 2, 34, '#4488CC');  // shaft
       break;
     case 'blade':
-      px(14, 5, 1, 4, '#D8E0E8');   // blade
-      px(15, 5, 1, 3, '#F0F4FF');   // shine
-      px(13, 9, 3, 1, '#D0C0A0');   // crossguard
-      px(14, 10, 1, 5, '#9B7A50');  // handle
+      px(28, 10, 2, 8, '#D8E0E8');   // blade
+      px(30, 10, 2, 6, '#F0F4FF');   // shine
+      px(26, 18, 6, 2, '#D0C0A0');   // crossguard
+      px(28, 20, 2, 10, '#9B7A50');  // handle
       break;
     case 'sunstaff':
-      px(13, 2, 3, 3, '#FFE878');   // sun orb
-      px(14, 2, 1, 3, '#FFFAC0');   // orb center
-      px(14, 5, 1, 18, '#C8A040');  // staff
+      px(26, 4, 6, 6, '#FFE878');    // sun orb
+      px(28, 4, 2, 6, '#FFFAC0');    // orb center
+      px(28, 10, 2, 36, '#C8A040');  // staff
       break;
     case 'hammer':
-      px(12, 10, 4, 3, '#8D6E63');  // hammerhead
-      px(13, 9, 2, 1, '#A88060');   // top cap
-      px(14, 13, 1, 7, '#B0BEC5');  // handle (fits in 24px)
+      px(24, 20, 8, 6, '#8D6E63');   // hammerhead
+      px(26, 18, 4, 2, '#A88060');   // top cap
+      px(28, 26, 2, 14, '#B0BEC5');  // handle (fits in 48px)
       break;
     case 'torch':
-      px(13, 4, 3, 3, tick % 18 < 10 ? '#FFB74D' : '#FF8030'); // flame
-      px(14, 7, 1, 1, '#FFEB3B');   // inner flame
-      px(14, 7, 1, 16, '#8D6E63');  // handle
+      px(26, 8, 6, 6, tick % 18 < 10 ? '#FFB74D' : '#FF8030'); // flame
+      px(28, 14, 2, 2, '#FFEB3B');   // inner flame
+      px(28, 14, 2, 32, '#8D6E63');  // handle
       break;
     case 'vine':
-      px(0, 11, 2, 1, '#9CCC65');   // top leaf
-      px(0, 12, 1, 8, '#558844');   // vine stem (fits in 24px)
-      px(0, 14, 2, 1, '#78CC48');   // leaf mid
-      px(0, 18, 2, 1, '#78CC48');   // leaf lower
+      px(0, 22, 4, 2, '#9CCC65');    // top leaf
+      px(0, 24, 2, 16, '#558844');   // vine stem (fits in 48px)
+      px(0, 28, 4, 2, '#78CC48');    // leaf mid
+      px(0, 36, 4, 2, '#78CC48');    // leaf lower
       break;
     case 'wheat':
-      px(14, 7, 2, 1, '#F2CF6C');   // grain top
-      px(15, 9, 1, 1, '#F2CF6C');   // grain
-      px(14, 11, 2, 1, '#F2CF6C');  // grain
-      px(14, 13, 1, 8, '#C49A30');  // stalk (fits in 24px)
+      px(28, 14, 4, 2, '#F2CF6C');   // grain top
+      px(30, 18, 2, 2, '#F2CF6C');   // grain
+      px(28, 22, 4, 2, '#F2CF6C');   // grain
+      px(28, 26, 2, 16, '#C49A30');  // stalk (fits in 48px)
       break;
     case 'mirror':
-      px(13, 14, 3, 4, '#EADCF5');  // mirror glass
-      px(12, 14, 1, 4, '#C8B6E3');  // frame L
-      px(15, 14, 1, 4, '#C8B6E3');  // frame R
-      px(13, 18, 1, 5, '#B8A0D0');  // handle
+      px(26, 28, 6, 8, '#EADCF5');   // mirror glass
+      px(24, 28, 2, 8, '#C8B6E3');   // frame L
+      px(30, 28, 2, 8, '#C8B6E3');   // frame R
+      px(26, 36, 2, 10, '#B8A0D0');  // handle
       break;
     case 'obsidian_staff':
-      px(13, 2, 3, 3, '#90A4AE');   // orb top
-      px(14, 2, 1, 3, '#B8C8D0');   // orb shine
-      px(14, 5, 1, 18, '#37474F');  // dark shaft
+      px(26, 4, 6, 6, '#90A4AE');    // orb top
+      px(28, 4, 2, 6, '#B8C8D0');    // orb shine
+      px(28, 10, 2, 36, '#37474F');  // dark shaft
       break;
     case 'rose':
-      px(13, 12, 3, 3, '#EC6C9E');  // rose bloom
-      px(14, 12, 1, 3, '#F898C0');  // rose highlight
-      px(14, 15, 1, 8, '#6FB377');  // green stem
+      px(26, 24, 6, 6, '#EC6C9E');   // rose bloom
+      px(28, 24, 2, 6, '#F898C0');   // rose highlight
+      px(28, 30, 2, 16, '#6FB377');  // green stem
       break;
     case 'halo':
-      px(4, 1, 8, 1, '#FDE68A');    // halo top arc
-      px(2, 2, 2, 1, '#FDE68A');    // L arc
-      px(12, 2, 2, 1, '#FDE68A');   // R arc
-      px(3, 3, 1, 1, '#FFF5C0');    // L inner
-      px(12, 3, 1, 1, '#FFF5C0');   // R inner
+      px(8, 2, 16, 2, '#FDE68A');    // halo top arc
+      px(4, 4, 4, 2, '#FDE68A');     // L arc
+      px(24, 4, 4, 2, '#FDE68A');    // R arc
+      px(6, 6, 2, 2, '#FFF5C0');     // L inner
+      px(24, 6, 2, 2, '#FFF5C0');    // R inner
       break;
     case 'laurel':
-      px(3, 1, 2, 2, '#5A8030');    // L leaf branch
-      px(5, 1, 6, 1, '#3A6020');    // crown center
-      px(11, 1, 2, 2, '#5A8030');   // R leaf branch
+      px(6, 2, 4, 4, '#5A8030');     // L leaf branch
+      px(10, 2, 12, 2, '#3A6020');   // crown center
+      px(22, 2, 4, 4, '#5A8030');    // R leaf branch
       break;
     case 'flute':
-      px(4, 19, 8, 1, '#C8A878');   // flute body
-      px(5, 20, 1, 1, '#907040');   // finger hole
-      px(7, 20, 1, 1, '#907040');
-      px(9, 20, 1, 1, '#907040');
+      px(8, 38, 16, 2, '#C8A878');   // flute body
+      px(10, 40, 2, 2, '#907040');   // finger hole
+      px(14, 40, 2, 2, '#907040');
+      px(18, 40, 2, 2, '#907040');
       break;
     case 'lantern':
-      px(14, 16, 2, 1, '#8E7CC3');  // chain link
-      px(13, 17, 3, 4, tick % 30 < 22 ? '#C4B5FD' : '#8060C0'); // lantern glow
-      px(13, 17, 3, 1, '#D0C0FF');  // lantern top
+      px(28, 32, 4, 2, '#8E7CC3');   // chain link
+      px(26, 34, 6, 8, tick % 30 < 22 ? '#C4B5FD' : '#8060C0'); // lantern glow
+      px(26, 34, 6, 2, '#D0C0FF');   // lantern top
       break;
     case 'rainbow_ribbon':
-      px(1, 19, 14, 1, '#FF5252');  // red band
-      px(2, 20, 12, 1, '#FFD740');  // yellow band
-      px(3, 21, 10, 1, '#42A5F5'); // blue band (fits in 24px)
+      px(2, 38, 28, 2, '#FF5252');   // red band
+      px(4, 40, 24, 2, '#FFD740');   // yellow band
+      px(6, 42, 20, 2, '#42A5F5');   // blue band (fits in 48px)
       break;
     case 'club':
-      px(13, 9, 3, 4, '#A88963');   // club head (wide)
-      px(12, 9, 4, 1, '#C0A078');   // top cap
-      px(14, 13, 1, 7, '#8D6E63');  // handle (fits in 24px)
+      px(26, 18, 6, 8, '#A88963');   // club head (wide)
+      px(24, 18, 8, 2, '#C0A078');   // top cap
+      px(28, 26, 2, 14, '#8D6E63');  // handle (fits in 48px)
       break;
     case 'crescent':
-      px(14, 7, 2, 5, '#E8EAF6');  // outer arc
-      px(13, 8, 1, 3, '#9FA8DA');  // inner shadow
+      px(28, 14, 4, 10, '#E8EAF6');  // outer arc
+      px(26, 16, 2, 6, '#9FA8DA');   // inner shadow
       break;
     case 'bow':
-      px(0, 9, 1, 1, '#A5C38A');   // top nock
-      px(0, 22, 1, 1, '#A5C38A');  // bottom nock
-      px(0, 10, 1, 12, '#7A9A60'); // bow limb (fits in 24px)
-      px(1, 9, 1, 13, '#D8D8B8');  // bowstring
+      px(0, 18, 2, 2, '#A5C38A');    // top nock
+      px(0, 44, 2, 2, '#A5C38A');    // bottom nock
+      px(0, 20, 2, 24, '#7A9A60');   // bow limb (fits in 48px)
+      px(2, 18, 2, 26, '#D8D8B8');   // bowstring
       break;
     case 'wing':
-      px(0, 16, 3, 5, '#E8EEF7');  // L wing
-      px(13, 16, 3, 5, '#E8EEF7'); // R wing
-      px(0, 14, 3, 3, '#D0D8F8');  // L upper feather
-      px(13, 14, 3, 3, '#D0D8F8'); // R upper feather
+      px(0, 32, 6, 10, '#E8EEF7');   // L wing
+      px(26, 32, 6, 10, '#E8EEF7');  // R wing
+      px(0, 28, 6, 6, '#D0D8F8');    // L upper feather
+      px(26, 28, 6, 6, '#D0D8F8');   // R upper feather
       break;
     case 'obsidian_staff': break; // handled above
     default: break;
@@ -1223,9 +1223,9 @@ function drawCharacterFromSheet(
     const style = avatar === 'zeus' ? ZEUS_WORKER_STYLE : WORKER_STYLE_MAP[avatar];
     const hd = drawHdPixelAvatar(avatar, profile, style, tick, frame, moving, seated);
     if (hd) {
-      // HD sprite is 16×24 — render at 3× pixel-art scale: 48×72 CSS px
-      const hdDw = HD_SPRITE_W * 3;
-      const hdDh = HD_SPRITE_H * 3;  // 72px
+      // render at 2× pixel-art scale: 64×96 CSS px
+      const hdDw = HD_SPRITE_W * 2;
+      const hdDh = HD_SPRITE_H * 2;
       const hdDrawX = Math.round(x - hdDw / 2);
       const hdDrawY = Math.round(footY - hdDh - 2);  // feet ~2px above ground line
 
