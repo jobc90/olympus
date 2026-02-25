@@ -46,6 +46,12 @@ const ALWAYS_LABELED_ZONE_IDS = new Set([
   'ambrosia_hall',
   'athenas_library',
   'hephaestus_forge',
+  'sanctuary_0',
+  'sanctuary_1',
+  'sanctuary_2',
+  'sanctuary_3',
+  'sanctuary_4',
+  'sanctuary_5',
 ]);
 
 export interface Bubble {
@@ -504,24 +510,19 @@ export function renderFrame(
   drawables.sort((a, b) => a.depth - b.depth);
   for (const d of drawables) d.draw();
 
-  // Always show major zone labels so area boundaries remain readable.
+  // Always show all zone labels prominently.
   for (const zone of Object.values(zones)) {
     if (!ALWAYS_LABELED_ZONE_IDS.has(zone.id)) continue;
-    drawZoneLabel(ctx, zone.label, zone.emoji, zone.center.col, zone.center.row, 0.48);
-  }
-
-  // Zone labels — only show selected worker's sanctuary
-  if (config.selectedWorkerId) {
-    for (const zone of Object.values(zones)) {
-      if (!zone.id.startsWith('sanctuary_')) continue;
+    // For sanctuary zones, check if the assigned worker is selected → show worker name instead
+    if (zone.id.startsWith('sanctuary_') && config.selectedWorkerId) {
       const idx = parseInt(zone.id.replace('sanctuary_', ''), 10);
       const workerCfg = config.workers[idx];
-      if (workerCfg?.id !== config.selectedWorkerId) continue;
-      const cx = zone.center.col;
-      const cy = zone.center.row;
-      drawZoneLabel(ctx, `${workerCfg.name}'s Sanctuary`, workerCfg.emoji, cx, cy, 0.5);
-      break;
+      if (workerCfg?.id === config.selectedWorkerId) {
+        drawZoneLabel(ctx, `${workerCfg.name}'s Shrine`, workerCfg.emoji, zone.center.col, zone.center.row, 1.0);
+        continue;
+      }
     }
+    drawZoneLabel(ctx, zone.label, zone.emoji, zone.center.col, zone.center.row, 1.0);
   }
 
   // Particles + bubbles

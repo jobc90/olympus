@@ -313,15 +313,32 @@ export function drawZoneLabel(
 ): void {
   const { x, y } = getTileCenter({ col, row });
   ctx.save();
-  ctx.globalAlpha = alpha * 0.78;
-  ctx.font = 'bold 8px monospace';
+  ctx.globalAlpha = alpha;
+  ctx.font = 'bold 9px monospace';
   ctx.textAlign = 'center';
   const text = `${emoji} ${label}`;
-  const ty = y + TILE_PX / 4 + 9;
-  ctx.fillStyle = '#000000';
-  ctx.fillText(text, x + 1, ty + 1);
-  ctx.fillStyle = '#D8DCE6';
-  ctx.fillText(text, x, ty);
+
+  const tw = ctx.measureText(text).width;
+  const padX = 5;
+  const boxW = tw + padX * 2;
+  const boxH = 14;
+  const textBaseline = y + 4;
+  const boxX = Math.round(x - boxW / 2);
+  const boxY = Math.round(textBaseline - 10);
+
+  // Dark semi-transparent background
+  ctx.fillStyle = 'rgba(8, 14, 26, 0.85)';
+  ctx.fillRect(boxX, boxY, Math.ceil(boxW), boxH);
+
+  // Gold border
+  ctx.strokeStyle = '#B8860B';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(boxX + 0.5, boxY + 0.5, Math.ceil(boxW) - 1, boxH - 1);
+
+  // Gold text
+  ctx.fillStyle = '#FFD700';
+  ctx.fillText(text, x, textBaseline);
+
   ctx.restore();
 }
 
