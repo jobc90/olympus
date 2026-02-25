@@ -281,7 +281,7 @@ class OlympusBot {
       const exampleWorker = workers.find(w => w.status === 'idle')?.name ?? workers[0].name;
       msg += `*워커에게 지시하기*\n`;
       msg += `\`@${exampleWorker} 최근 변경사항 요약해줘\`\n`;
-      msg += `\`@${exampleWorker} /team API 엔드포인트 추가\`\n\n`;
+      msg += `\`@${exampleWorker} team API 엔드포인트 추가\`\n\n`;
 
       msg += `/workers — 워커 목록 · /help — 사용법`;
     } else {
@@ -313,9 +313,9 @@ class OlympusBot {
     msg += `\`@${exampleWorker} 최근 변경사항 요약해줘\`\n\n`;
 
     msg += `*3. 팀 프로토콜 실행*\n`;
-    msg += `\`@워커이름 /team 작업내용\` 형식으로 입력하면\n`;
+    msg += `\`@워커이름 team 작업내용\` 형식으로 입력하면\n`;
     msg += `팀 프로토콜(병렬 에이전트)로 작업을 실행합니다.\n`;
-    msg += `\`@${exampleWorker} /team API 엔드포인트 추가하고 테스트 작성\`\n\n`;
+    msg += `\`@${exampleWorker} team API 엔드포인트 추가하고 테스트 작성\`\n\n`;
 
     msg += `*편의 명령어*\n`;
     msg += `/workers — 연결된 워커 목록 (탭으로 @멘션 복사)\n`;
