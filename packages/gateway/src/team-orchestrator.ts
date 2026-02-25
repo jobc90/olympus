@@ -32,6 +32,7 @@ const MAX_RETRIES = 2;
 const PLAN_TIMEOUT_MS = 120_000;
 const WI_TIMEOUT_MS = 900_000;
 const SESSION_MAX_AGE_MS = 3_600_000; // 1 hour
+const GEMINI_REVIEW_TIMEOUT_MS = 20_000;
 
 // ──────────────────────────────────────────────
 // Helper functions (exported for testing)
@@ -139,6 +140,14 @@ export function validatePlan(raw: unknown): TeamPlan {
 
     const ownedFiles = Array.isArray(w.ownedFiles) ? w.ownedFiles.map(String) : [];
     const readOnlyFiles = Array.isArray(w.readOnlyFiles) ? w.readOnlyFiles.map(String) : [];
+
+    // A file cannot be in both ownedFiles and readOnlyFiles for the same WI
+    for (const file of readOnlyFiles) {
+      if (ownedFiles.includes(file)) {
+        throw new Error(`File "${file}" in ${id} cannot be in both ownedFiles and readOnlyFiles`);
+      }
+    }
+
     const blockedBy = Array.isArray(w.blockedBy) ? w.blockedBy.map(String) : [];
     const rawProvider = typeof w.provider === 'string' ? w.provider : undefined;
     const provider: CliProvider | undefined =
@@ -200,6 +209,35 @@ export function validatePlan(raw: unknown): TeamPlan {
 export function checkFileOwnership(changedFiles: string[], ownedFiles: string[]): string[] {
   if (ownedFiles.length === 0) return []; // No restrictions when ownedFiles is empty
   return changedFiles.filter(f => !ownedFiles.includes(f));
+}
+
+/**
+ * Build predecessor context string from a WI's completed dependencies.
+ * Prefers structured extractedContext over raw diff when available.
+ */
+export function buildPredecessorContext(
+  wi: TeamWorkItem,
+  workItems: TeamWorkItem[],
+  completedDiffs: Map<string, string>,
+): string {
+  return wi.blockedBy
+    .map(depId => {
+      const depWi = workItems.find(w => w.id === depId);
+      const ctx = depWi?.extractedContext;
+      if (ctx) {
+        const parts = [`### ${depId}: ${depWi?.title ?? ''}`];
+        if (ctx.summary) parts.push(`Summary: ${ctx.summary}`);
+        if (ctx.filesChanged.length > 0) parts.push(`Files: ${ctx.filesChanged.join(', ')}`);
+        if (ctx.decisions.length > 0) parts.push(`Decisions: ${ctx.decisions.join('; ')}`);
+        return parts.join('\n');
+      }
+      // Fallback to raw diff
+      const diff = completedDiffs.get(depId);
+      if (!diff) return '';
+      return `### ${depId}: ${depWi?.title ?? ''}\n${diff}`;
+    })
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 /**
@@ -341,6 +379,25 @@ export class TeamOrchestrator extends EventEmitter {
 
       session.plan = plan;
       session.workItems = plan.workItems;
+
+      // Persist plan artifacts to .team/ for debugging and audit
+      const teamDir = join(session.projectPath, '.team');
+      try {
+        await mkdir(teamDir, { recursive: true });
+
+        const reqMd = plan.requirements
+          .map(r => `- [${r.id}] ${r.description} (${r.priority})`)
+          .join('\n');
+        await writeFile(join(teamDir, 'requirements.md'), `# Requirements\n\n${reqMd}\n`);
+
+        const ownership: Record<string, string> = {};
+        for (const wi of plan.workItems) {
+          for (const file of wi.ownedFiles) ownership[file] = wi.id;
+        }
+        await writeFile(join(teamDir, 'ownership.json'), JSON.stringify(ownership, null, 2));
+      } catch {
+        // Best-effort persistence — do not block execution
+      }
 
       this.emit('team:plan:ready', {
         teamId,
@@ -530,7 +587,7 @@ Task: ${session.prompt.slice(0, 500)}
 Evaluate: completeness, file ownership conflicts, dependency correctness, risk areas.
 JSON: {"approved":true|false,"issues":["..."]}`;
 
-      const response = await advisor.reviewText(reviewPrompt, 20_000);
+      const response = await advisor.reviewText(reviewPrompt, GEMINI_REVIEW_TIMEOUT_MS);
       if (!response) return;
 
       const jsonMatch = response.match(/\{[\s\S]*\}/);
@@ -579,25 +636,7 @@ JSON: {"approved":true|false,"issues":["..."]}`;
         this.emit('team:wi:started', { teamId, wiId: wi.id, title: wi.title });
 
         // Build predecessor context from completed dependencies
-        // Prefer structured extractedContext over raw diffs
-        const predecessorContext = wi.blockedBy
-          .map(depId => {
-            const depWi = workItems.find(w => w.id === depId);
-            const ctx = depWi?.extractedContext;
-            if (ctx) {
-              const parts = [`### ${depId}: ${depWi?.title ?? ''}`];
-              if (ctx.summary) parts.push(`Summary: ${ctx.summary}`);
-              if (ctx.filesChanged.length > 0) parts.push(`Files: ${ctx.filesChanged.join(', ')}`);
-              if (ctx.decisions.length > 0) parts.push(`Decisions: ${ctx.decisions.join('; ')}`);
-              return parts.join('\n');
-            }
-            // Fallback to raw diff
-            const diff = completedDiffs.get(depId);
-            if (!diff) return '';
-            return `### ${depId}: ${depWi?.title ?? ''}\n${diff}`;
-          })
-          .filter(Boolean)
-          .join('\n\n');
+        const predecessorContext = buildPredecessorContext(wi, workItems, completedDiffs);
 
         const promise = this.executeWorkItem(session, wi, manager, predecessorContext)
           .then(async () => {
@@ -624,13 +663,14 @@ JSON: {"approved":true|false,"issues":["..."]}`;
       }
     };
 
-    tryStartReady();
-
-    // Wait for all to complete
-    while (executing.size > 0) {
+    // Wait for all to complete.
+    // tryStartReady() is called FIRST each iteration to handle the race where
+    // executing.size hits 0 before newly-ready WIs have been started.
+    while (true) {
       if (this.isCancelled(teamId)) return;
-      await Promise.race(executing.values());
       tryStartReady();
+      if (executing.size === 0) break;
+      await Promise.race(executing.values());
     }
   }
 
@@ -663,7 +703,9 @@ Rules:
       if (this.isCancelled(teamId)) return;
 
       try {
-        const wiProvider = wi.provider ?? session.defaultProvider ?? 'claude';
+        // On retry, fall back from claude → codex to maximize success odds
+        const baseProvider = wi.provider ?? session.defaultProvider ?? 'claude';
+        const wiProvider = (attempt > 0 && baseProvider === 'claude') ? 'codex' : baseProvider;
 
         const result = await runCli({
           prompt: wiPrompt,
@@ -719,16 +761,20 @@ Rules:
         // Commit changes in the worktree
         await manager.commitWorktree(wi.id, `team(${wi.id}): ${wi.title}`);
 
-        // Extract structured context from WI result for dependent context injection
-        try {
-          const extracted = await extractContextWithLlm({
-            result: { success: true, text: result.text ?? '' },
-            prompt: wi.prompt,
-            timeoutMs: 15_000,
-          });
-          wi.extractedContext = extracted;
-        } catch {
-          // Context extraction is best-effort
+        // Extract structured context only when other WIs depend on this one.
+        // Avoids a 15s LLM call for leaf work items with no dependents.
+        const hasDependents = session.workItems.some(w => w.blockedBy.includes(wi.id));
+        if (hasDependents) {
+          try {
+            const extracted = await extractContextWithLlm({
+              result: { success: true, text: result.text ?? '' },
+              prompt: wi.prompt,
+              timeoutMs: 15_000,
+            });
+            wi.extractedContext = extracted;
+          } catch {
+            // Context extraction is best-effort
+          }
         }
 
         wi.status = 'completed';

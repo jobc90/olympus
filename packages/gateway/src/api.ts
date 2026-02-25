@@ -683,7 +683,7 @@ ${body.message}`;
           sendJson(res, 503, { error: 'Worker registry not available' });
           return;
         }
-        const body = await parseBody<{ prompt: string; provider?: string; dangerouslySkipPermissions?: boolean; chatId?: number }>(req);
+        const body = await parseBody<{ prompt: string; provider?: string; dangerouslySkipPermissions?: boolean; chatId?: number; source?: string }>(req);
         if (!body.prompt) {
           sendJson(res, 400, { error: 'prompt is required' });
           return;
@@ -734,6 +734,7 @@ ${body.message}`;
           provider: body.provider ?? 'claude',
           dangerouslySkipPermissions: body.dangerouslySkipPermissions ?? true,
           projectPath: worker.projectPath,
+          source: body.source,
         });
 
         sendJson(res, 202, { taskId: task.taskId, status: 'running', workerName: worker.name });
@@ -773,7 +774,7 @@ ${body.message}`;
           sendJson(res, 503, { error: 'Worker registry not available' });
           return;
         }
-        const body = await parseBody<{ success: boolean; text?: string; error?: string; durationMs?: number; usage?: Record<string, number>; cost?: number; timeout?: boolean; isFinalAfterTimeout?: boolean }>(req);
+        const body = await parseBody<{ success: boolean; text?: string; error?: string; durationMs?: number; usage?: Record<string, number>; cost?: number; timeout?: boolean; isFinalAfterTimeout?: boolean; truncated?: boolean; originalLength?: number }>(req);
         const task = workerRegistry.getTask(id);
         if (!task) {
           sendJson(res, 404, { error: 'Task not found' });
@@ -933,7 +934,10 @@ ${body.message}`;
         onCliComplete?.(result);
 
         const filteredResult = filterForTelegram(result.text ?? '');
-        const rawText = filteredResult.text.slice(0, 2000);
+        const truncationNote = body.truncated
+          ? `\n\n⚠️ 출력이 50KB에서 절삭되었습니다 (원본: ${Math.round((body.originalLength ?? 0) / 1024)}KB)`
+          : '';
+        const rawText = filteredResult.text.slice(0, 2000) + truncationNote;
 
         // Broadcast immediately with rawText
         onWorkerEvent?.('worker:task:completed', {

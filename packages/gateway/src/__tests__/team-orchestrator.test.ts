@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { topologicalSort, extractJson, validatePlan, checkFileOwnership } from '../team-orchestrator.js';
+import { topologicalSort, extractJson, validatePlan, checkFileOwnership, buildPredecessorContext } from '../team-orchestrator.js';
 import type { TeamWorkItem } from '@olympus-dev/protocol';
 
 // ──────────────────────────────────────────────
@@ -324,5 +324,209 @@ describe('checkFileOwnership', () => {
   it('should handle empty changed files', () => {
     const result = checkFileOwnership([], ['src/a.ts']);
     expect(result).toEqual([]);
+  });
+
+  it('should handle path prefix matching correctly', () => {
+    // 'src/api.ts' should NOT be considered owned by ['src/api.test.ts']
+    const result = checkFileOwnership(['src/api.ts'], ['src/api.test.ts']);
+    expect(result).toEqual(['src/api.ts']);
+  });
+});
+
+// ──────────────────────────────────────────────
+// validatePlan — new cases
+// ──────────────────────────────────────────────
+
+describe('validatePlan — overlap checks', () => {
+  it('should throw when file is in both ownedFiles and readOnlyFiles', () => {
+    const plan = {
+      requirements: [],
+      workItems: [
+        {
+          id: 'wi-1',
+          title: 'Conflict',
+          prompt: 'p',
+          ownedFiles: ['src/api.ts', 'src/types.ts'],
+          readOnlyFiles: ['src/types.ts'],
+          blockedBy: [],
+        },
+      ],
+    };
+    expect(() => validatePlan(plan)).toThrow('cannot be in both ownedFiles and readOnlyFiles');
+  });
+
+  it('should accept when ownedFiles and readOnlyFiles are disjoint', () => {
+    const plan = {
+      requirements: [],
+      workItems: [
+        {
+          id: 'wi-1',
+          title: 'OK',
+          prompt: 'p',
+          ownedFiles: ['src/api.ts'],
+          readOnlyFiles: ['src/types.ts'],
+          blockedBy: [],
+        },
+      ],
+    };
+    expect(() => validatePlan(plan)).not.toThrow();
+  });
+});
+
+// ──────────────────────────────────────────────
+// buildPredecessorContext
+// ──────────────────────────────────────────────
+
+function makeWiWithContext(
+  id: string,
+  blockedBy: string[] = [],
+  extractedContext?: TeamWorkItem['extractedContext'],
+): TeamWorkItem {
+  return {
+    id,
+    title: `WI ${id}`,
+    description: '',
+    ownedFiles: [],
+    readOnlyFiles: [],
+    blockedBy,
+    prompt: 'test',
+    status: 'completed',
+    retryCount: 0,
+    extractedContext,
+  };
+}
+
+describe('buildPredecessorContext', () => {
+  it('should return empty string when no predecessors', () => {
+    const wi = makeWiWithContext('wi-2', []);
+    const result = buildPredecessorContext(wi, [wi], new Map());
+    expect(result).toBe('');
+  });
+
+  it('should use extractedContext when available', () => {
+    const dep = makeWiWithContext('wi-1', [], {
+      success: true,
+      summary: 'Implemented auth',
+      filesChanged: ['src/auth.ts'],
+      decisions: ['Used JWT'],
+      errors: [],
+      dependencies: [],
+    });
+    const wi = makeWiWithContext('wi-2', ['wi-1']);
+    const diffs = new Map<string, string>();
+
+    const result = buildPredecessorContext(wi, [dep, wi], diffs);
+
+    expect(result).toContain('### wi-1: WI wi-1');
+    expect(result).toContain('Summary: Implemented auth');
+    expect(result).toContain('Files: src/auth.ts');
+    expect(result).toContain('Decisions: Used JWT');
+  });
+
+  it('should fall back to diff when extractedContext is missing', () => {
+    const dep = makeWiWithContext('wi-1', []);
+    const wi = makeWiWithContext('wi-2', ['wi-1']);
+    const diffs = new Map([['wi-1', 'diff --git a/src/auth.ts ...']]);
+
+    const result = buildPredecessorContext(wi, [dep, wi], diffs);
+
+    expect(result).toContain('### wi-1: WI wi-1');
+    expect(result).toContain('diff --git a/src/auth.ts');
+  });
+
+  it('should return empty string when dep has neither extractedContext nor diff', () => {
+    const dep = makeWiWithContext('wi-1', []);
+    const wi = makeWiWithContext('wi-2', ['wi-1']);
+    const diffs = new Map<string, string>();
+
+    const result = buildPredecessorContext(wi, [dep, wi], diffs);
+    expect(result).toBe('');
+  });
+
+  it('should combine multiple predecessors', () => {
+    const dep1 = makeWiWithContext('wi-1', [], {
+      success: true,
+      summary: 'API done',
+      filesChanged: ['src/api.ts'],
+      decisions: [],
+      errors: [],
+      dependencies: [],
+    });
+    const dep2 = makeWiWithContext('wi-2', [], undefined);
+    const diffs = new Map([['wi-2', 'diff content']]);
+    const wi = makeWiWithContext('wi-3', ['wi-1', 'wi-2']);
+
+    const result = buildPredecessorContext(wi, [dep1, dep2, wi], diffs);
+
+    expect(result).toContain('### wi-1');
+    expect(result).toContain('### wi-2');
+    expect(result).toContain('Summary: API done');
+    expect(result).toContain('diff content');
+  });
+});
+
+// ──────────────────────────────────────────────
+// DAG race condition — state machine unit test
+// ──────────────────────────────────────────────
+
+describe('DAG readiness logic', () => {
+  it('should mark WI ready when all its blockers are completed', () => {
+    const workItems: TeamWorkItem[] = [
+      makeWi('wi-1'),
+      makeWi('wi-2'),
+      makeWi('wi-3', ['wi-1', 'wi-2']),
+    ];
+
+    // Simulate both wi-1 and wi-2 completing
+    workItems[0].status = 'completed';
+    workItems[1].status = 'completed';
+    workItems[2].status = 'pending';
+
+    // Replicate the unblocking logic from executePhase
+    for (const other of workItems) {
+      if (other.status === 'pending' && other.blockedBy.every(
+        dep => workItems.find(w => w.id === dep)?.status === 'completed'
+      )) {
+        other.status = 'ready';
+      }
+    }
+
+    expect(workItems[2].status).toBe('ready');
+  });
+
+  it('should NOT mark WI ready when only one of two blockers is completed', () => {
+    const workItems: TeamWorkItem[] = [
+      makeWi('wi-1'),
+      makeWi('wi-2'),
+      makeWi('wi-3', ['wi-1', 'wi-2']),
+    ];
+
+    workItems[0].status = 'completed';
+    workItems[2].status = 'pending';
+
+    for (const other of workItems) {
+      if (other.status === 'pending' && other.blockedBy.every(
+        dep => workItems.find(w => w.id === dep)?.status === 'completed'
+      )) {
+        other.status = 'ready';
+      }
+    }
+
+    expect(workItems[2].status).toBe('pending');
+  });
+
+  it('topologicalSort should produce valid execution ordering for the race-prone case', () => {
+    // WI-3 blocked by both WI-1 and WI-2 — the exact case that triggered the race
+    const wis = [
+      makeWi('wi-1'),
+      makeWi('wi-2'),
+      makeWi('wi-3', ['wi-1', 'wi-2']),
+    ];
+    const order = topologicalSort(wis);
+    const wi1Idx = order.indexOf('wi-1');
+    const wi2Idx = order.indexOf('wi-2');
+    const wi3Idx = order.indexOf('wi-3');
+    expect(wi1Idx).toBeLessThan(wi3Idx);
+    expect(wi2Idx).toBeLessThan(wi3Idx);
   });
 });
