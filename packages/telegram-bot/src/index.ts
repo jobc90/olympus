@@ -185,7 +185,6 @@ class OlympusBot {
     { command: 'workers', description: '연결된 워커 목록' },
     { command: 'tasks', description: '진행 중인 작업' },
     { command: 'health', description: '시스템 상태' },
-    { command: 'team', description: '팀 프로토콜 실행' },
   ] as const;
 
   private bot: Telegraf;
@@ -321,8 +320,7 @@ class OlympusBot {
     msg += `*편의 명령어*\n`;
     msg += `/workers — 연결된 워커 목록 (탭으로 @멘션 복사)\n`;
     msg += `/tasks — 현재 진행 중인 작업\n`;
-    msg += `/health — 시스템 상태\n`;
-    msg += `/team <작업> — 워커 지정 없이 팀 프로토콜 실행`;
+    msg += `/health — 시스템 상태`;
 
     return msg;
   }
@@ -353,7 +351,7 @@ class OlympusBot {
 
     if (command.startsWith('w')) suggestions.push('/workers');
     if (command.startsWith('h')) suggestions.push('/help', '/health');
-    if (command.startsWith('t')) suggestions.push('/tasks', '/team');
+    if (command.startsWith('t')) suggestions.push('/tasks');
 
     for (const fallback of ['/help', '/workers']) {
       if (!suggestions.includes(fallback)) suggestions.push(fallback);
@@ -461,55 +459,6 @@ class OlympusBot {
       }
     });
 
-
-    // /team <prompt> - Team Engineering Protocol v4 (git worktree isolation)
-    this.bot.command('team', async (ctx) => {
-      const text = ctx.message.text;
-      const prompt = text.replace(/^\/team\s*/, '').trim();
-
-      if (!prompt) {
-        await ctx.reply(
-          '`/team <작업>` — Team v4 (Git Worktree 격리)\n\n' +
-          '`/team API 엔드포인트 추가하고 테스트 작성`\n' +
-          '`/team 로그인 페이지 UI 개선`\n' +
-          '`/team 성능 병목 분석하고 최적화`',
-          { parse_mode: 'Markdown' }
-        );
-        return;
-      }
-
-      const statusMsg = await ctx.reply(`🚀 *Team v4* 시작 중...`, { parse_mode: 'Markdown' });
-      await ctx.sendChatAction('typing');
-
-      try {
-        const startRes = await fetch(`${this.config.gatewayUrl}/api/team/start`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.config.apiKey}`,
-          },
-          body: JSON.stringify({
-            prompt,
-            chatId: ctx.chat.id,
-          }),
-          signal: AbortSignal.timeout(30_000),
-        });
-
-        if (!startRes.ok) {
-          const error = await startRes.json() as { message: string };
-          throw new Error(error.message);
-        }
-
-        const { teamId } = await startRes.json() as { teamId: string };
-        await this.pollTeamSession(ctx, teamId, statusMsg.message_id);
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        await ctx.telegram.editMessageText(
-          ctx.chat.id, statusMsg.message_id, undefined,
-          `❌ Team 오류: ${msg}`
-        ).catch(() => {});
-      }
-    });
 
     // /tasks - Show active tasks
     this.bot.command('tasks', async (ctx) => {
