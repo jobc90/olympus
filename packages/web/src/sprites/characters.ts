@@ -236,7 +236,7 @@ function resolveDrawScale(footY: number, mapScale: number, panelScale: number): 
 }
 
 const HD_PIXEL_CHARACTER_MODE = true;
-const HD_RENDER_REV = 'ref_v4';
+const HD_RENDER_REV = 'ref_v5';
 const HD_SPRITE_W = 32;
 const HD_SPRITE_H = 48;
 const HD_SPRITE_CACHE = new Map<string, HTMLCanvasElement>();
@@ -480,7 +480,8 @@ function drawHdPixelAvatar(
       px(6, bodyY, 20, bodyH, shirt);
       px(10, bodyY, 12, 2, trim);
   }
-  px(6, bodyY + 2, 2, bodyH - 2, skinSh);       // left-edge shadow
+  px(6, bodyY + 2, 2, bodyH - 2, skinSh);        // left-edge body shadow
+  px(6, bodyY + bodyH, 20, 2, '#12101E');        // hip line — body/legs separator
 
   // ── Arms (styled by outfit) ──────────────────────────────────────────
   if (spec.outfitStyle === 'armor') {
@@ -509,8 +510,10 @@ function drawHdPixelAvatar(
   // Head occupies y=0..20 (~42% of 48px canvas) vs body y=22..47
   px(4, 8, 24, 12, skin);          // face interior y=8..19, 24px wide
   px(6, 20, 20, 2, skin);          // chin overlap with neck
-  px(22, 10, 4, 8, skinSh);        // right-side face shadow
-  px(12, 18, 4, 2, skinSh);        // chin shadow
+  px(4,  10, 4, 8, skinSh);        // left-side face shadow
+  px(24, 10, 4, 8, skinSh);        // right-side face shadow
+  px(12, 18, 8, 2, skinSh);        // chin shadow (wider)
+  px(6,  19, 20, 2, '#3A2010');    // chin outline — separates face from neck
 
   // ── Hair — each case draws its FULL shape on top of skin ─────────────
   switch (spec.hairStyle) {
@@ -595,6 +598,12 @@ function drawHdPixelAvatar(
       break;
   }
 
+  // ── Hair cap underline — separates hair from forehead ────────────────
+  // A dark 2px row at the hair-cap bottom edge creates visible hair/skin boundary
+  if (spec.hairStyle !== 'hood' && spec.hairStyle !== 'curly') {
+    px(4, 10, 24, 2, '#1A1208');
+  }
+
   // ── Crown / Head Accessory (drawn on top of hair) ─────────────────────
   switch (profile.crown) {
     case 'gold':
@@ -632,40 +641,78 @@ function drawHdPixelAvatar(
     px(12, 6, 8, 2, style.crest);              // crest stripe in hair
   }
 
-  // ── Eyebrows (subtle, 2px above eyes at y=10) ─────────────────────────
+  // ── Eyebrows (dark brown — clearly visible against skin) ─────────────
   const browY = 10;
+  const browClr = '#3A1E08';
   if (faceSpec.brow === 'stern' || faceSpec.brow === 'fierce') {
-    px(8, browY, 6, 2, skinSh);     // strong L brow
-    px(18, browY, 6, 2, skinSh);    // strong R brow
+    px(8,  browY, 8, 2, browClr);    // strong L brow
+    px(18, browY, 8, 2, browClr);    // strong R brow
+    px(8,  browY, 2, 2, skinSh);     // inner taper L
+    px(24, browY, 2, 2, skinSh);     // inner taper R
+  } else if (faceSpec.brow === 'arched') {
+    px(9,  browY, 6, 2, browClr);    // arched L
+    px(19, browY, 6, 2, browClr);    // arched R
+    px(9,  browY, 2, 1, skinSh);     // arch peak L
+    px(23, browY, 2, 1, skinSh);     // arch peak R
   } else {
-    px(10, browY, 4, 2, skinSh);    // subtle L brow
-    px(18, browY, 4, 2, skinSh);    // subtle R brow
+    px(10, browY, 6, 2, browClr);    // soft/calm L brow
+    px(18, browY, 6, 2, browClr);    // soft/calm R brow
   }
 
-  // ── Eyes (reference-style: 2×2 dark dot, y=12) ───────────────────────
+  // ── Eyes — sclera + iris + pupil + highlight (y=12) ──────────────────
   const eyeY = 12;
+  const lEX = 8, rEX = 18;
   if (!blink) {
-    px(10, eyeY, 2, 2, '#181818');   // L eye — dark dot
-    px(20, eyeY, 2, 2, '#181818');   // R eye — dark dot
-    px(10, eyeY, 2, 2, '#181818');   // redraw for opacity
-    px(20, eyeY, 2, 2, '#181818');
+    // Top eyelid line
+    px(lEX, eyeY - 1, 8, 2, '#2A1A0A');
+    px(rEX, eyeY - 1, 8, 2, '#2A1A0A');
+    // White sclera
+    px(lEX, eyeY, 8, 5, '#EEF0FF');
+    px(rEX, eyeY, 8, 5, '#EEF0FF');
+    // Colored iris
+    px(lEX + 2, eyeY + 1, 5, 4, spec.eye);
+    px(rEX + 2, eyeY + 1, 5, 4, spec.eye);
+    // Dark pupil
+    px(lEX + 3, eyeY + 2, 2, 2, '#0A0A14');
+    px(rEX + 3, eyeY + 2, 2, 2, '#0A0A14');
+    // White highlight (top-left of iris)
+    px(lEX + 2, eyeY + 1, 2, 2, '#FFFFFF');
+    px(rEX + 2, eyeY + 1, 2, 2, '#FFFFFF');
+    // Bottom eyelid shadow
+    px(lEX, eyeY + 4, 8, 2, skinSh);
+    px(rEX, eyeY + 4, 8, 2, skinSh);
   } else {
-    px(8, eyeY, 6, 2, skinSh);      // blink L line
-    px(18, eyeY, 6, 2, skinSh);     // blink R line
+    // Blink — curved line
+    px(lEX,     eyeY + 2, 8, 2, skinSh);
+    px(lEX + 2, eyeY + 1, 4, 1, skinSh);
+    px(rEX,     eyeY + 2, 8, 2, skinSh);
+    px(rEX + 2, eyeY + 1, 4, 1, skinSh);
   }
 
-  // ── Mouth (simple, y=16) ───────────────────────────────────────────────
+  // ── Blush marks (between eyes and mouth) ─────────────────────────────
+  px(5,  eyeY + 5, 5, 2, '#FFA898');   // L cheek blush
+  px(22, eyeY + 5, 5, 2, '#FFA898');   // R cheek blush
+
+  // ── Mouth (y=16) ───────────────────────────────────────────────────────
   const mouthY = 16;
-  if (faceSpec.mouth === 'smile' || faceSpec.mouth === 'open') {
-    px(12, mouthY, 2, 2, '#D05040');  // L corner up
-    px(18, mouthY, 2, 2, '#D05040');  // R corner up
-    px(14, mouthY, 4, 2, '#F07060');  // center top lip
+  if (faceSpec.mouth === 'smile') {
+    px(11, mouthY,     2, 2, '#B83020');  // L corner
+    px(19, mouthY,     2, 2, '#B83020');  // R corner
+    px(13, mouthY - 1, 6, 2, '#E05040'); // upper lip
+    px(13, mouthY + 1, 6, 2, '#C04030'); // lower lip
+    px(13, mouthY,     6, 2, '#FFFFFF'); // teeth glint
+  } else if (faceSpec.mouth === 'open') {
+    px(11, mouthY, 2, 3, '#B83020');
+    px(19, mouthY, 2, 3, '#B83020');
+    px(13, mouthY, 6, 3, '#601010');     // open mouth dark
+    px(13, mouthY, 6, 1, '#E05040');     // upper lip
   } else if (faceSpec.mouth === 'frown') {
-    px(12, mouthY, 2, 2, '#C04838');
-    px(18, mouthY, 2, 2, '#C04838');
-    px(14, mouthY, 4, 2, '#A03828');
+    px(11, mouthY + 1, 2, 2, '#B02820');
+    px(19, mouthY + 1, 2, 2, '#B02820');
+    px(13, mouthY,     6, 2, '#903020');
   } else {
-    px(12, mouthY, 8, 2, '#D06050');  // neutral line
+    // line / smirk
+    px(11, mouthY, 10, 2, '#C04030');
   }
 
   // ── Prop (held item drawn in sprite) ─────────────────────────────────
