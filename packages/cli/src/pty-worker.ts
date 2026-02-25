@@ -50,6 +50,12 @@ export interface PtyWorkerOptions {
   onData?: (data: string) => void;
   onReady?: () => void;
   onExit?: () => void; // worker 종료 콜백 (Ctrl+] escape)
+  /**
+   * Called when the user presses Enter in the local terminal while PTY is idle.
+   * Used for cross-channel input sync (local PTY → Telegram/Dashboard Chat).
+   * Only fires when the PTY is not already processing a task.
+   */
+  onLocalInput?: (line: string) => void;
 }
 
 export interface TaskResult {
@@ -422,6 +428,8 @@ export class PtyWorker {
   private initFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   /** When true, suppress stderr diagnostic messages to avoid TUI corruption */
   private ttyAttached = false;
+  /** Buffer for local stdin input tracking (cross-channel sync) */
+  private localInputBuffer = '';
 
   constructor(private options: PtyWorkerOptions) {}
 
@@ -441,25 +449,35 @@ export class PtyWorker {
       claudeArgs.push('--dangerously-skip-permissions');
     }
 
+    // Do NOT send any terminal mode sequences (alternate screen, mouse tracking).
+    // Let Claude Code manage all terminal state via its own PTY output, which
+    // flows transparently through to the host terminal — identical to running
+    // `claude` directly. This preserves scroll, mouse, and cursor behaviour
+    // exactly as Claude Code intends across all terminals (iTerm2, Ghostty, Warp).
+    if (process.stdout.isTTY) {
+      this.ttyAttached = true; // marks that we should clean up on destroy()
+    }
+
+    // Clamp PTY dimensions to a valid range to prevent EINVAL on resize.
+    const cols = Math.max(40, Math.min(500, this.options.cols ?? process.stdout.columns ?? 220));
+    const rows = Math.max(10, Math.min(200, this.options.rows ?? process.stdout.rows ?? 50));
+
     this.pty = spawn('claude', claudeArgs, {
       name: 'xterm-256color',
-      cols: this.options.cols ?? process.stdout.columns ?? 120,
-      rows: this.options.rows ?? process.stdout.rows ?? 30,
+      cols,
+      rows,
       cwd: this.options.projectPath,
       env: { ...process.env } as Record<string, string>,
     });
 
-    // Enable alternate screen buffer so PTY output doesn't mix with host shell.
-    // Also enable mouse tracking (SGR mode) to prevent terminal from converting
-    // mouse wheel scrolling into arrow-key sequences (\x1b[A/B), which would
-    // trigger Claude CLI's command history navigation and cause display corruption.
-    if (process.stdout.isTTY) {
-      process.stdout.write(
-        '\x1b[?1049h'   // enter alternate screen
-        + '\x1b[?1000h' // enable basic mouse tracking
-        + '\x1b[?1006h' // enable SGR extended mouse mode
-      );
-      this.ttyAttached = true;
+    // Immediately sync to actual terminal dimensions after spawn.
+    // process.stdout.columns may be more accurate post-spawn than at PtyWorker construction.
+    if (process.stdout.isTTY && process.stdout.columns && process.stdout.rows) {
+      const actualCols = Math.max(40, Math.min(500, process.stdout.columns));
+      const actualRows = Math.max(10, Math.min(200, process.stdout.rows));
+      if (actualCols !== cols || actualRows !== rows) {
+        this.pty.resize(actualCols, actualRows);
+      }
     }
 
     // PTY 출력 핸들러
@@ -570,14 +588,38 @@ export class PtyWorker {
         const decoded = this.stdinDecoder.write(data);
         if (!decoded) return;
 
-        // Filter out mouse event sequences sent by the terminal when mouse
-        // tracking is enabled.  SGR format: \x1b[<btn;col;row[Mm]
-        const filtered = decoded.replace(/\x1b\[\<\d+;\d+;\d+[Mm]/g, '');
-        if (!filtered) return;
-
+        // Transparent passthrough — forward everything including mouse events.
+        // Claude Code enables/disables mouse tracking itself via PTY output,
+        // so mouse events only arrive when Claude is ready to handle them.
         // Normalize Enter key to CR for Ink TUI compatibility.
-        const normalized = filtered.replace(/\r?\n/g, '\r');
+        const normalized = decoded.replace(/\r?\n/g, '\r');
         this.pty.write(normalized);
+
+        // Cross-channel sync: track local input when PTY is idle.
+        // Only capture when not processing a task — prevents interfering with
+        // interactive Claude prompts (approval dialogs, etc.).
+        if (this.options.onLocalInput && this.state.phase === 'idle') {
+          for (const ch of decoded) {
+            const code = ch.codePointAt(0) ?? 0;
+            if (ch === '\r' || ch === '\n') {
+              const trimmed = this.localInputBuffer.trim();
+              this.localInputBuffer = '';
+              // Only report meaningful commands (2+ chars, no escape sequences)
+              if (trimmed.length >= 2 && !trimmed.startsWith('\x1b')) {
+                this.options.onLocalInput(trimmed);
+              }
+            } else if (ch === '\x7f' || ch === '\b') {
+              // Backspace
+              this.localInputBuffer = this.localInputBuffer.slice(0, -1);
+            } else if (code >= 32) {
+              // Printable character
+              this.localInputBuffer += ch;
+            } else {
+              // Control/escape sequence (arrow keys, etc.) — discard buffer
+              this.localInputBuffer = '';
+            }
+          }
+        }
       };
       process.stdin.on('data', this.stdinHandler);
     }
@@ -731,13 +773,17 @@ export class PtyWorker {
     this.pty = null;
     this.state = { phase: 'idle' };
 
-    // Restore original terminal: disable mouse tracking + show cursor + leave alternate screen
+    // Comprehensive terminal restore — send all cleanup sequences unconditionally.
+    // Because Claude Code manages its own terminal state, we don't know which
+    // modes are currently active. Sending disable sequences for inactive modes
+    // is a safe no-op in all terminal emulators.
     if (this.ttyAttached) {
       process.stdout.write(
-        '\x1b[?1006l'   // disable SGR extended mouse mode
-        + '\x1b[?1000l' // disable basic mouse tracking
+        '\x1b[?1006l'  // disable SGR mouse encoding
+        + '\x1b[?1002l' // disable button-event mouse tracking
+        + '\x1b[?1000l' // disable X10 mouse tracking
         + '\x1b[?25h'   // show cursor
-        + '\x1b[?1049l' // leave alternate screen
+        + '\x1b[?1049l' // leave alternate screen (no-op if not in one)
       );
       this.ttyAttached = false;
     }

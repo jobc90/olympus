@@ -109,13 +109,26 @@ serverCommand
 
     // Show what will be started
     console.log(chalk.white('Starting:'));
-    if (startGateway) console.log(chalk.green('  ✓ Gateway'));
-    if (startDashboard) console.log(chalk.green('  ✓ Dashboard'));
-    if (startTelegram) {
-      if (isTelegramConfigured()) {
-        console.log(chalk.green('  ✓ Telegram Bot'));
-      } else {
-        console.log(chalk.yellow('  ⚠ Telegram Bot (not configured)'));
+    if (startGateway) {
+      console.log(chalk.green('  ✓ Gateway') + chalk.gray(` → port ${config.gatewayPort}`));
+      if (startDashboard) {
+        console.log(chalk.green('    ├─ Dashboard') + chalk.gray(` → port ${opts.webPort}`));
+      }
+      if (startTelegram) {
+        if (isTelegramConfigured()) {
+          console.log(chalk.green('    └─ Telegram Bot'));
+        } else {
+          console.log(chalk.yellow('    └─ Telegram Bot') + chalk.gray(' (설정 없음 — olympus setup --telegram)'));
+        }
+      }
+    } else {
+      if (startDashboard) console.log(chalk.green('  ✓ Dashboard'));
+      if (startTelegram) {
+        if (isTelegramConfigured()) {
+          console.log(chalk.green('  ✓ Telegram Bot'));
+        } else {
+          console.log(chalk.yellow('  ⚠ Telegram Bot') + chalk.gray(' (설정 없음)'));
+        }
       }
     }
     console.log();
@@ -134,23 +147,47 @@ serverCommand
 
     // Start Gateway
     if (startGateway) {
-      gateway = await startGatewayServer(
-        opts.port,
-        config,
-        codexAdapter ?? undefined,
-        mode,
-        geminiAdvisor ?? undefined,
-        workspaceRoot,
-      );
+      try {
+        gateway = await startGatewayServer(
+          opts.port,
+          config,
+          codexAdapter ?? undefined,
+          mode,
+          geminiAdvisor ?? undefined,
+          workspaceRoot,
+        );
+      } catch (err) {
+        const e = err as NodeJS.ErrnoException;
+        if (e.code === 'EADDRINUSE') {
+          console.log(chalk.red(`\n  ❌ Gateway 포트 ${opts.port}이 이미 사용 중입니다.\n`));
+          console.log(chalk.gray('  해결 방법:'));
+          console.log(chalk.gray(`  1. 기존 프로세스 종료: lsof -ti :${opts.port} | xargs kill`));
+          console.log(chalk.gray('  2. 다른 포트 사용: olympus server start -p 8202'));
+          console.log(chalk.gray('  3. 이미 실행 중이면 대시보드를 바로 여세요: http://localhost:8201\n'));
+        } else {
+          console.log(chalk.red(`\n  ❌ Gateway 시작 실패: ${e.message}\n`));
+        }
+        process.exit(1);
+      }
     }
 
     // Start Dashboard
     if (startDashboard) {
-      dashboard = await startDashboardServer(opts.webPort, {
-        gatewayHost: config.gatewayHost,
-        gatewayPort: config.gatewayPort,
-        apiKey: config.apiKey,
-      });
+      try {
+        dashboard = await startDashboardServer(opts.webPort, {
+          gatewayHost: config.gatewayHost,
+          gatewayPort: config.gatewayPort,
+          apiKey: config.apiKey,
+        });
+      } catch (err) {
+        const e = err as NodeJS.ErrnoException;
+        if (e.code === 'EADDRINUSE') {
+          console.log(chalk.yellow(`  ⚠ Dashboard 포트 ${opts.webPort}이 사용 중 — 대시보드 없이 계속합니다.`));
+          console.log(chalk.gray(`    다른 포트: olympus server start --web-port 8202\n`));
+        } else {
+          console.log(chalk.yellow(`  ⚠ Dashboard 시작 실패: ${e.message}`));
+        }
+      }
     }
 
     // Start Telegram Bot
@@ -178,6 +215,17 @@ serverCommand
 
     // Final instructions
     console.log(chalk.cyan.bold('\n✅ Olympus 준비 완료!\n'));
+    if (startGateway) {
+      console.log(chalk.white(`  Gateway:   `) + chalk.cyan(`http://localhost:${config.gatewayPort}`));
+    }
+    if (startDashboard) {
+      console.log(chalk.white(`  Dashboard: `) + chalk.cyan.underline(`http://localhost:${opts.webPort}`) + chalk.gray(' ← 브라우저에서 열기'));
+    }
+    if (startTelegram && isTelegramConfigured()) {
+      console.log(chalk.white(`  Telegram:  `) + chalk.green('✓ 봇 연결됨'));
+    }
+    console.log();
+    console.log(chalk.gray('워커 시작: ') + chalk.white('olympus start-trust') + chalk.gray(' (다른 터미널)'));
     console.log(chalk.gray('종료: Ctrl+C'));
 
     // Graceful shutdown
@@ -223,13 +271,47 @@ serverCommand
 
     let stoppedAny = false;
 
+    // Cross-platform helper to find PIDs listening on a port
+    const getPidsOnPort = (port: number): string => {
+      if (process.platform === 'win32') {
+        try {
+          const out = execSync(`netstat -ano | findstr ":${port} "`, { encoding: 'utf-8' });
+          const pids = [...new Set(
+            out.split('\n')
+              .map((l) => l.trim().split(/\s+/).pop() ?? '')
+              .filter((p) => /^\d+$/.test(p) && p !== '0'),
+          )];
+          return pids.join('\n');
+        } catch {
+          return '';
+        }
+      }
+      try {
+        return execSync(`lsof -ti :${port} 2>/dev/null`, { encoding: 'utf-8' }).trim();
+      } catch {
+        return '';
+      }
+    };
+
+    // Cross-platform kill helper
+    const killPid = (pid: string, signal: 'SIGTERM' | 'SIGKILL'): void => {
+      if (process.platform === 'win32') {
+        execSync(`taskkill /PID ${pid} /F 2>nul`, { stdio: 'pipe' });
+      } else {
+        const sig = signal === 'SIGTERM' ? '-15' : '-9';
+        execSync(`kill ${sig} ${pid} 2>/dev/null`);
+      }
+    };
+
     // Graceful stop helper: SIGTERM → wait → SIGKILL
     const gracefulKill = (pids: string, label: string, timeoutMs = 5000): boolean => {
-      const pidList = pids.split('\n').filter(Boolean).join(' ');
-      if (!pidList) return false;
+      const pidArray = pids.split('\n').filter(Boolean);
+      if (pidArray.length === 0) return false;
       try {
         // Step 1: Send SIGTERM for graceful shutdown
-        execSync(`kill -15 ${pidList} 2>/dev/null`);
+        for (const pid of pidArray) {
+          try { killPid(pid, 'SIGTERM'); } catch { /* already dead */ }
+        }
         console.log(chalk.gray(`    ${label}: SIGTERM 전송됨, 종료 대기 중...`));
 
         // Step 2: Wait for process to exit (poll every 500ms)
@@ -237,9 +319,12 @@ serverCommand
         let alive = true;
         while (alive && Date.now() - startTime < timeoutMs) {
           try {
-            execSync(`kill -0 ${pidList.split(' ')[0]} 2>/dev/null`);
-            // Still alive, wait
-            execSync('sleep 0.5');
+            if (process.platform === 'win32') {
+              execSync(`tasklist /FI "PID eq ${pidArray[0]}" /NH 2>nul | findstr /I "${pidArray[0]}"`, { stdio: 'pipe' });
+            } else {
+              execSync(`kill -0 ${pidArray[0]} 2>/dev/null`);
+            }
+            execSync(process.platform === 'win32' ? 'timeout /t 1 /nobreak >nul' : 'sleep 0.5');
           } catch {
             alive = false;
           }
@@ -247,12 +332,10 @@ serverCommand
 
         // Step 3: Force kill if still alive
         if (alive) {
-          try {
-            execSync(`kill -9 ${pidList} 2>/dev/null`);
-            console.log(chalk.yellow(`    ${label}: 강제 종료됨 (SIGKILL)`));
-          } catch {
-            // Already dead
+          for (const pid of pidArray) {
+            try { killPid(pid, 'SIGKILL'); } catch { /* already dead */ }
           }
+          console.log(chalk.yellow(`    ${label}: 강제 종료됨`));
         }
         return true;
       } catch {
@@ -262,32 +345,24 @@ serverCommand
 
     // Stop Gateway (port 8200) - this also stops telegram if running in same process
     if (stopGateway) {
-      try {
-        const pids = execSync(`lsof -ti :${config.gatewayPort} 2>/dev/null`, { encoding: 'utf-8' }).trim();
-        if (pids) {
-          gracefulKill(pids, 'Gateway');
-          console.log(chalk.green('  ✓ Gateway 종료됨 (+ Telegram Bot)'));
-          stoppedAny = true;
-        } else {
-          console.log(chalk.gray('  - Gateway: 실행 중이 아님'));
-        }
-      } catch {
+      const pids = getPidsOnPort(config.gatewayPort);
+      if (pids) {
+        gracefulKill(pids, 'Gateway');
+        console.log(chalk.green('  ✓ Gateway 종료됨 (+ Telegram Bot)'));
+        stoppedAny = true;
+      } else {
         console.log(chalk.gray('  - Gateway: 실행 중이 아님'));
       }
     }
 
     // Stop Dashboard (port 8201)
     if (stopDashboard) {
-      try {
-        const pids = execSync('lsof -ti :8201 2>/dev/null', { encoding: 'utf-8' }).trim();
-        if (pids) {
-          gracefulKill(pids, 'Dashboard');
-          console.log(chalk.green('  ✓ Dashboard 종료됨'));
-          stoppedAny = true;
-        } else {
-          console.log(chalk.gray('  - Dashboard: 실행 중이 아님'));
-        }
-      } catch {
+      const pids = getPidsOnPort(8201);
+      if (pids) {
+        gracefulKill(pids, 'Dashboard');
+        console.log(chalk.green('  ✓ Dashboard 종료됨'));
+        stoppedAny = true;
+      } else {
         console.log(chalk.gray('  - Dashboard: 실행 중이 아님'));
       }
     }
@@ -295,7 +370,10 @@ serverCommand
     // Stop standalone Telegram bot (if running separately via `olympus telegram`)
     if (stopTelegram && !stopGateway) {
       try {
-        const pids = execSync('pgrep -f "olympus.*telegram" 2>/dev/null', { encoding: 'utf-8' }).trim();
+        const pids = process.platform === 'win32'
+          ? execSync('wmic process where "CommandLine like \'%olympus%telegram%\'" get ProcessId /VALUE 2>nul', { encoding: 'utf-8' })
+              .split('\n').map((l) => l.replace('ProcessId=', '').trim()).filter((p) => /^\d+$/.test(p) && p !== '0').join('\n')
+          : execSync('pgrep -f "olympus.*telegram" 2>/dev/null', { encoding: 'utf-8' }).trim();
         if (pids) {
           gracefulKill(pids, 'Telegram Bot');
           console.log(chalk.green('  ✓ Telegram Bot 종료됨'));
@@ -424,7 +502,12 @@ async function startDashboardServer(port: string, gatewayConfig?: DashboardConfi
   if (!distPath) {
     console.log(chalk.yellow('🌐 Dashboard'));
     console.log(chalk.red('   ✗ 빌드된 파일을 찾을 수 없습니다.'));
-    console.log(chalk.gray('   pnpm build 를 먼저 실행하세요.'));
+    console.log(chalk.gray('   확인한 위치:'));
+    for (const p of possiblePaths) {
+      console.log(chalk.gray(`     • ${p}`));
+    }
+    console.log(chalk.gray('   해결:'));
+    console.log(chalk.gray('     pnpm -F @olympus-dev/web build'));
     console.log();
     return null;
   }

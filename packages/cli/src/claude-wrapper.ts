@@ -22,7 +22,7 @@ export async function launchClaude(args: string[] = []): Promise<void> {
 
   if (!claudePath) {
     console.error('\x1b[31mError: Claude CLI not found.\x1b[0m');
-    console.error('Install it with: npm install -g @anthropic-ai/claude-code');
+    console.error('Install Claude CLI from: https://claude.ai/download');
     process.exit(1);
   }
 

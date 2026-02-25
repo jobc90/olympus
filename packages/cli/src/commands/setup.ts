@@ -120,13 +120,11 @@ export const setupCommand = new Command('setup')
 
       console.log(chalk.white('\n다음 단계:'));
 
-      if (finalConfig.telegram) {
-        console.log(chalk.yellow('  olympus start'));
-        console.log(chalk.gray('  → Gateway + Telegram 봇 동시 시작\n'));
-      } else {
-        console.log(chalk.yellow('  olympus gateway'));
-        console.log(chalk.gray('  → Gateway 시작\n'));
-      }
+      console.log(chalk.yellow('  olympus server start'));
+      console.log(chalk.gray('  → Gateway + Dashboard + Telegram 봇 시작\n'));
+      console.log(chalk.yellow('  olympus start-trust'));
+      console.log(chalk.gray('  → 워커 등록 (다른 터미널, 작업 프로젝트 디렉토리에서)\n'));
+      console.log(chalk.cyan('  Dashboard: http://localhost:8201\n'));
 
       console.log(chalk.gray(`Config: ${getConfigPath()}`));
     } finally {
