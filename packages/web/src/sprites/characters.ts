@@ -102,9 +102,9 @@ const HERA_SIGIL: DivineSigil = { glyph: 'peacock', ring: '#7B1FA2', glow: '#FFD
 
 const WORKER_PROFILE_MAP: Record<WorkerAvatar, SpriteProfile> = {
   athena: { sheet: 0, accent: '#6F89A8', trim: '#D6E4F5', sigil: WORKER_SIGIL_MAP.athena, crown: 'silver' },
-  poseidon: { sheet: 1, accent: '#1E88E5', trim: '#9ED8FF', sigil: WORKER_SIGIL_MAP.poseidon, crown: 'laurel' },
+  poseidon: { sheet: 1, accent: '#1E88E5', trim: '#9ED8FF', sigil: WORKER_SIGIL_MAP.poseidon, crown: 'gold' },
   ares: { sheet: 2, accent: '#B71C1C', trim: '#F28B82', sigil: WORKER_SIGIL_MAP.ares, crown: 'horn' },
-  apollo: { sheet: 3, accent: '#E8A317', trim: '#FFE08A', sigil: WORKER_SIGIL_MAP.apollo, crown: 'gold' },
+  apollo: { sheet: 3, accent: '#E8A317', trim: '#FFE08A', sigil: WORKER_SIGIL_MAP.apollo, crown: 'laurel' },
   artemis: { sheet: 4, accent: '#8FA1B2', trim: '#E7EEF7', sigil: WORKER_SIGIL_MAP.artemis, crown: 'silver' },
   hermes: { sheet: 5, accent: '#1D4ED8', trim: '#BFDBFE', sigil: WORKER_SIGIL_MAP.hermes, crown: 'gold' },
   hephaestus: { sheet: 0, accent: '#8D4A23', trim: '#D9A066', sigil: WORKER_SIGIL_MAP.hephaestus },
@@ -116,11 +116,11 @@ const WORKER_PROFILE_MAP: Record<WorkerAvatar, SpriteProfile> = {
   persephone: { sheet: 0, accent: '#2E7D32', trim: '#B9E4BC', sigil: WORKER_SIGIL_MAP.persephone, crown: 'laurel' },
   prometheus: { sheet: 1, accent: '#C2410C', trim: '#FDBA74', sigil: WORKER_SIGIL_MAP.prometheus, crown: 'silver' },
   helios: { sheet: 2, accent: '#F59E0B', trim: '#FDE68A', sigil: WORKER_SIGIL_MAP.helios, crown: 'gold' },
-  nike: { sheet: 3, accent: '#8A6D3B', trim: '#F5E5B6', sigil: WORKER_SIGIL_MAP.nike, crown: 'silver' },
+  nike: { sheet: 3, accent: '#8A6D3B', trim: '#F5E5B6', sigil: WORKER_SIGIL_MAP.nike, crown: 'gold' },
   pan: { sheet: 4, accent: '#4E342E', trim: '#C8A27A', sigil: WORKER_SIGIL_MAP.pan, crown: 'horn' },
   hecate: { sheet: 5, accent: '#5B21B6', trim: '#C4B5FD', sigil: WORKER_SIGIL_MAP.hecate, crown: 'silver' },
   iris: { sheet: 0, accent: '#E11D48', trim: '#FDB4C7', sigil: WORKER_SIGIL_MAP.iris, crown: 'gold' },
-  heracles: { sheet: 1, accent: '#8D6E63', trim: '#E6CCAE', sigil: WORKER_SIGIL_MAP.heracles, crown: 'horn' },
+  heracles: { sheet: 1, accent: '#8D6E63', trim: '#E6CCAE', sigil: WORKER_SIGIL_MAP.heracles, crown: 'laurel' },
   selene: { sheet: 2, accent: '#3949AB', trim: '#C5CAE9', sigil: WORKER_SIGIL_MAP.selene, crown: 'silver' },
 };
 
@@ -147,9 +147,9 @@ const WORKER_STYLE_MAP: Record<WorkerAvatar, WorkerStyle> = {
   apollo:     { hair: '#FFD040', mantle: '#E07010', trim: '#FFE860', crest: '#FFE860', prop: 'sunstaff' },
   artemis:    { hair: '#D0D0F0', mantle: '#2A5E30', trim: '#90C890', crest: '#DDEEDD', prop: 'bow' },
   hermes:     { hair: '#D0A818', mantle: '#28882E', trim: '#FFE840', crest: '#FFE840', prop: 'wing' },
-  hephaestus: { hair: '#5A3020', mantle: '#7A5030', trim: '#C06820', crest: '#A04820', prop: 'hammer' },
+  hephaestus: { hair: '#7A3818', mantle: '#6A3820', trim: '#D07830', crest: '#C05820', prop: 'hammer' },
   dionysus:   { hair: '#7030A0', mantle: '#400870', trim: '#C080FF', crest: '#B070F0', prop: 'vine' },
-  demeter:    { hair: '#C09820', mantle: '#507020', trim: '#C8D850', crest: '#D0C040', prop: 'wheat' },
+  demeter:    { hair: '#C09820', mantle: '#507020', trim: '#D4B060', crest: '#C8A840', prop: 'wheat' },
   aphrodite:  { hair: '#FF88CC', mantle: '#E03070', trim: '#FFB8DD', crest: '#FFCCEE', prop: 'rose' },
   hera:       { hair: '#2A1040', mantle: '#3855C0', trim: '#FFD700', crest: '#C8A020', prop: 'mirror' },
   hades:      { hair: '#101010', mantle: '#200A40', trim: '#7040A8', crest: '#502880', prop: 'obsidian_staff' },
@@ -236,7 +236,7 @@ function resolveDrawScale(footY: number, mapScale: number, panelScale: number): 
 }
 
 const HD_PIXEL_CHARACTER_MODE = true;
-const HD_RENDER_REV = 'ref_v17';
+const HD_RENDER_REV = 'ref_v18';
 const HD_SPRITE_W = 32;
 const HD_SPRITE_H = 64;
 const HD_SPRITE_CACHE = new Map<string, HTMLCanvasElement>();
@@ -331,7 +331,7 @@ const HD_BASE_FEMALE: HdAvatarSpec = {
 const HD_AVATAR_SPECS: Record<WorkerLikeAvatar, HdAvatarSpec> = {
   athena:     { ...HD_BASE_FEMALE, height: 58, headW: 10, headH: 10, shoulder: 14, waist: 9,  hip: 12, hairStyle: 'bun',   outfitStyle: 'armor', skinA: '#F2DEC9', skinB: '#D2AE90', eye: '#24364A', faceShape: 'oval' },
   poseidon:   { ...HD_BASE_MALE,   height: 60, headW: 12, headH: 11, shoulder: 17, waist: 11, hip: 13, legW: 3, hairStyle: 'wavy',  outfitStyle: 'robe',  facial: 'beard',   skinA: '#ECD5BC', skinB: '#C8A487', eye: '#1E4A64', faceShape: 'square' },
-  ares:       { ...HD_BASE_MALE,   height: 59, headW: 11, headH: 10, shoulder: 18, waist: 12, hip: 13, legW: 4, hairStyle: 'spike', outfitStyle: 'armor', facial: 'stubble', skinA: '#E7CCB2', skinB: '#BE9473', eye: '#45211E', faceShape: 'square' },
+  ares:       { ...HD_BASE_MALE,   height: 59, headW: 11, headH: 10, shoulder: 18, waist: 12, hip: 13, legW: 4, hairStyle: 'spike', outfitStyle: 'armor', facial: 'goatee',  skinA: '#E7CCB2', skinB: '#BE9473', eye: '#45211E', faceShape: 'square' },
   apollo:     { ...HD_BASE_MALE,   height: 54, headW: 10, headH: 9,  shoulder: 11, waist: 8,  hip: 10, legW: 2, hairStyle: 'curly', outfitStyle: 'tunic', skinA: '#F3DCC2', skinB: '#D0AA85', eye: '#5C4021', faceShape: 'oval' },
   artemis:    { ...HD_BASE_FEMALE, height: 57, headW: 10, headH: 10, shoulder: 12, waist: 8,  hip: 11, hairStyle: 'pony',  outfitStyle: 'tunic', skinA: '#F2DEC9', skinB: '#CCAA8C', eye: '#2C4A32', faceShape: 'heart' },
   hermes:     { ...HD_BASE_MALE,   height: 51, headW: 9,  headH: 9,  shoulder: 10, waist: 8,  hip: 9,  legW: 2, hairStyle: 'short', outfitStyle: 'tunic', skinA: '#EFD6BB', skinB: '#C6A07F', eye: '#3D2D21', faceShape: 'long' },
@@ -342,7 +342,7 @@ const HD_AVATAR_SPECS: Record<WorkerLikeAvatar, HdAvatarSpec> = {
   hera:       { ...HD_BASE_FEMALE, height: 61, headW: 12, headH: 11, shoulder: 13, waist: 8,  hip: 15, hairStyle: 'long',  outfitStyle: 'gown',  skinA: '#F4DECB', skinB: '#D5AF96', eye: '#3B2A52', faceShape: 'oval' },
   hades:      { ...HD_BASE_MALE,   height: 59, headW: 11, headH: 10, shoulder: 14, waist: 9,  hip: 12, hairStyle: 'hood',  outfitStyle: 'cloak', facial: 'goatee',  skinA: '#E7D4C7', skinB: '#BCA091', eye: '#1F3040', faceShape: 'long' },
   persephone: { ...HD_BASE_FEMALE, height: 53, headW: 10, headH: 9,  shoulder: 10, waist: 7,  hip: 12, hairStyle: 'long',  outfitStyle: 'dress', skinA: '#F7E2CE', skinB: '#DDB89D', eye: '#5A3456', faceShape: 'heart' },
-  prometheus: { ...HD_BASE_MALE,   height: 56, headW: 10, headH: 10, shoulder: 13, waist: 9,  hip: 11, legW: 3, hairStyle: 'wavy',  outfitStyle: 'tunic', skinA: '#E8CEB1', skinB: '#BF956F', eye: '#5A3827', faceShape: 'square' },
+  prometheus: { ...HD_BASE_MALE,   height: 56, headW: 10, headH: 10, shoulder: 13, waist: 9,  hip: 11, legW: 3, hairStyle: 'wavy',  outfitStyle: 'tunic', facial: 'goatee',  skinA: '#E8CEB1', skinB: '#BF956F', eye: '#5A3827', faceShape: 'square' },
   helios:     { ...HD_BASE_MALE,   height: 58, headW: 11, headH: 10, shoulder: 14, waist: 10, hip: 12, legW: 3, hairStyle: 'spike', outfitStyle: 'robe',  skinA: '#EFD4B8', skinB: '#C59D76', eye: '#6B4A24', faceShape: 'round' },
   nike:       { ...HD_BASE_FEMALE, height: 51, headW: 9,  headH: 9,  shoulder: 10, waist: 7,  hip: 11, legW: 2, hairStyle: 'bun',   outfitStyle: 'tunic', skinA: '#F3DBC3', skinB: '#CCA885', eye: '#4D3F2F', faceShape: 'oval' },
   pan:        { ...HD_BASE_MALE,   height: 52, headW: 10, headH: 9,  shoulder: 14, waist: 10, hip: 12, legW: 3, hairStyle: 'curly', outfitStyle: 'tunic', facial: 'goatee',  skinA: '#DDB590', skinB: '#B68660', eye: '#3C2E24', faceShape: 'round' },
@@ -355,13 +355,13 @@ const HD_AVATAR_SPECS: Record<WorkerLikeAvatar, HdAvatarSpec> = {
 
 const HD_FACE_SPECS: Record<WorkerLikeAvatar, HdFaceSpec> = {
   athena:     { brow: 'stern',  mouth: 'line',  eye: 'almond', eyeGap: 3, browLift: 0  },
-  poseidon:   { brow: 'stern',  mouth: 'frown', eye: 'narrow', eyeGap: 3, browLift: 0  },
+  poseidon:   { brow: 'fierce', mouth: 'frown', eye: 'narrow', eyeGap: 3, browLift: -1 },
   ares:       { brow: 'fierce', mouth: 'frown', eye: 'narrow', eyeGap: 3, browLift: -1 },
   apollo:     { brow: 'arched', mouth: 'smile', eye: 'wide',   eyeGap: 2, browLift: 1  },
   artemis:    { brow: 'stern',  mouth: 'smirk', eye: 'almond', eyeGap: 3, browLift: 0  },
   hermes:     { brow: 'arched', mouth: 'smirk', eye: 'round',  eyeGap: 2, browLift: 1  },
   hephaestus: { brow: 'stern',  mouth: 'line',  eye: 'narrow', eyeGap: 3, browLift: -1 },
-  dionysus:   { brow: 'soft',   mouth: 'smile', eye: 'round',  eyeGap: 2, browLift: 1  },
+  dionysus:   { brow: 'soft',   mouth: 'open',  eye: 'round',  eyeGap: 2, browLift: 1  },
   demeter:    { brow: 'calm',   mouth: 'smile', eye: 'round',  eyeGap: 2, browLift: 1  },
   aphrodite:  { brow: 'arched', mouth: 'smile', eye: 'wide',   eyeGap: 2, browLift: 1  },
   hera:       { brow: 'arched', mouth: 'smirk', eye: 'almond', eyeGap: 3, browLift: 1  },
@@ -369,13 +369,13 @@ const HD_FACE_SPECS: Record<WorkerLikeAvatar, HdFaceSpec> = {
   persephone: { brow: 'soft',   mouth: 'smile', eye: 'wide',   eyeGap: 2, browLift: 1  },
   prometheus: { brow: 'stern',  mouth: 'smirk', eye: 'round',  eyeGap: 3, browLift: 0  },
   helios:     { brow: 'arched', mouth: 'smile', eye: 'wide',   eyeGap: 3, browLift: 1  },
-  nike:       { brow: 'stern',  mouth: 'smirk', eye: 'wide',   eyeGap: 2, browLift: 0  },
+  nike:       { brow: 'stern',  mouth: 'smirk', eye: 'almond', eyeGap: 2, browLift: 0  },
   pan:        { brow: 'fierce', mouth: 'smirk', eye: 'round',  eyeGap: 2, browLift: -1 },
   hecate:     { brow: 'fierce', mouth: 'line',  eye: 'sleepy', eyeGap: 3, browLift: -1 },
   iris:       { brow: 'soft',   mouth: 'smile', eye: 'wide',   eyeGap: 2, browLift: 1  },
   heracles:   { brow: 'fierce', mouth: 'frown', eye: 'narrow', eyeGap: 3, browLift: -1 },
   selene:     { brow: 'calm',   mouth: 'line',  eye: 'almond', eyeGap: 2, browLift: 1  },
-  zeus:       { brow: 'stern',  mouth: 'line',  eye: 'narrow', eyeGap: 3, browLift: 0  },
+  zeus:       { brow: 'fierce', mouth: 'line',  eye: 'narrow', eyeGap: 3, browLift: -1 },
 };
 
 function drawHdPixelAvatar(
