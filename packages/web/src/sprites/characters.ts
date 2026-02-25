@@ -236,7 +236,7 @@ function resolveDrawScale(footY: number, mapScale: number, panelScale: number): 
 }
 
 const HD_PIXEL_CHARACTER_MODE = true;
-const HD_RENDER_REV = 'ref_v9';
+const HD_RENDER_REV = 'ref_v10';
 const HD_SPRITE_W = 32;
 const HD_SPRITE_H = 48;
 const HD_SPRITE_CACHE = new Map<string, HTMLCanvasElement>();
@@ -945,7 +945,6 @@ function drawHdPixelAvatar(
       px(0, 28, 6, 6, '#D0D8F8');    // L upper feather
       px(26, 28, 6, 6, '#D0D8F8');   // R upper feather
       break;
-    case 'obsidian_staff': break; // handled above
     default: break;
   }
 
@@ -977,181 +976,56 @@ function drawDivineSymbol(
   glow: string,
   tick: number,
 ): void {
-  const S = 2;  // 2 canvas px per symbol pixel (2× scale)
-  const bob = Math.round(Math.sin(tick * 0.07) * 2);
-  const sy = Math.round(headTopY - 7 * S + bob);  // float above head
-  const sx = Math.round(cx) - 3 * S;              // center the 6S-wide glyph
-
-  // Helper: draw a glyph cell at grid offset, scaled by S, offset by (dx,dy) canvas px
-  const p = (ox: number, oy: number, w: number, h: number, col: string, dx = 0, dy = 0) => {
-    ctx.fillStyle = col;
-    ctx.fillRect(sx + ox * S + dx, sy + oy * S + dy, w * S, h * S);
+  // Emoji map — system emoji renders at macOS quality on canvas
+  const EMOJI_MAP: Record<string, string> = {
+    bolt:          '⚡',
+    trident:       '🔱',
+    shield:        '🛡️',
+    sword:         '⚔️',
+    sun:           '☀️',
+    moon:          '🌙',
+    wing:          '🕊️',
+    hammer:        '🔨',
+    grape:         '🍇',
+    wheat:         '🌾',
+    heart:         '❤️',
+    peacock:       '🦚',
+    skull:         '💀',
+    flower:        '🌸',
+    flame:         '🔥',
+    halo:          '✨',
+    trophy:        '🏆',
+    horn:          '📯',
+    star:          '⭐',
+    rainbow:       '🌈',
+    lion:          '🦁',
+    crescent:      '🌛',
+    obsidian_staff:'🪄',
   };
 
-  // Colour helpers for 3D depth
-  const parseHex = (hex: string) => {
-    const n = parseInt(hex.replace('#', ''), 16);
-    return { r: (n >> 16) & 0xFF, g: (n >> 8) & 0xFF, b: n & 0xFF };
-  };
-  const shade = (hex: string, d: number) => {
-    const { r, g, b } = parseHex(hex);
-    const c = (v: number) => Math.min(255, Math.max(0, v + d)).toString(16).padStart(2, '0');
-    return `#${c(r)}${c(g)}${c(b)}`;
-  };
-  const shadowCol = shade(primary, -90);   // deep shadow for depth
-  const highlightCol = shade(primary, +90); // bright highlight
-  const ringDark = shade(ring, -70);
-  const ringLight = shade(ring, +70);
+  const emoji = EMOJI_MAP[glyph] ?? '✨';
+  const size = 24;
+  const bob = Math.sin(tick * 0.07) * 2;
+  const ey = Math.round(headTopY - size - 8 + bob);
 
-  // Pulsing glow background (stronger, sharper)
-  const alpha = 0.38 + Math.sin(tick * 0.05) * 0.12;
   ctx.save();
-  ctx.globalAlpha = alpha;
+  ctx.font = `${size}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  // Pulsing glow halo (drawn as colored circle behind emoji)
+  const glowPulse = 0.25 + Math.sin(tick * 0.05) * 0.08;
+  ctx.globalAlpha = glowPulse;
   ctx.fillStyle = glow;
-  ctx.fillRect(sx - S, sy - S, 8 * S, 8 * S);
+  ctx.beginPath();
+  ctx.arc(cx, ey + size / 2, size * 0.7, 0, Math.PI * 2);
+  ctx.fill();
   ctx.globalAlpha = 1;
 
-  // Outer dark bevel (bottom-right edge — depth illusion)
-  ctx.fillStyle = ringDark;
-  ctx.fillRect(sx - S, sy + 6 * S, 8 * S, S);       // bottom dark
-  ctx.fillRect(sx + 7 * S, sy - S, S, 8 * S);        // right dark
-
-  // Inner bright bevel (top-left edge — raised highlight)
-  ctx.fillStyle = ringLight;
-  ctx.fillRect(sx - S, sy - S, 8 * S, S);             // top light
-  ctx.fillRect(sx - S, sy - S, S, 8 * S);             // left light
-
-  // Ring fill (mid-tone)
-  ctx.fillStyle = ring;
-  ctx.fillRect(sx, sy, 6 * S, 6 * S);                 // inner area (glyph field)
-
-  ctx.restore();
-  ctx.save();
-
-  // 3D depth: draw drop-shadow layer first (offset +1,+1 in darker colour)
-  ctx.globalAlpha = 0.55;
-  const drawGlyphLayer = (col: string, dx: number, dy: number) => {
-    const lp = (ox: number, oy: number, w: number, h: number) => p(ox, oy, w, h, col, dx, dy);
-    switch (glyph) {
-      case 'bolt':    lp(2,0,3,2); lp(1,2,3,1); lp(2,3,3,2); lp(3,5,2,1); break;
-      case 'trident': lp(1,0,1,5); lp(3,0,1,6); lp(5,0,1,5); lp(1,5,5,1); lp(3,2,1,4); break;
-      case 'shield':  lp(1,0,4,1); lp(0,1,6,3); lp(1,4,4,1); lp(2,5,2,1); break;
-      case 'sword':   lp(3,0,1,4); lp(1,2,5,1); lp(3,4,1,2); break;
-      case 'sun':     lp(2,0,2,1); lp(0,2,1,2); lp(5,2,1,2); lp(2,5,2,1); lp(1,2,4,2); lp(2,1,2,4); lp(0,0,1,1); lp(5,0,1,1); lp(0,5,1,1); lp(5,5,1,1); break;
-      case 'moon':    lp(1,0,4,1); lp(0,1,2,4); lp(5,1,1,2); lp(1,5,4,1); break;
-      case 'wing':    lp(0,1,3,2); lp(3,0,3,3); lp(1,3,5,2); lp(2,5,3,1); break;
-      case 'hammer':  lp(0,0,6,3); lp(2,3,2,3); break;
-      case 'grape':   lp(1,0,2,2); lp(4,0,2,2); lp(0,2,2,2); lp(2,2,2,2); lp(4,2,2,2); lp(1,4,2,2); lp(3,4,2,2); break;
-      case 'wheat':   lp(3,0,1,1); lp(2,1,1,1); lp(4,1,1,1); lp(1,2,1,1); lp(3,2,1,2); lp(5,2,1,1); lp(2,4,1,1); lp(4,4,1,1); lp(3,3,1,3); break;
-      case 'heart':   lp(0,1,2,2); lp(4,1,2,2); lp(0,3,6,2); lp(1,5,4,1); lp(2,5,2,1); break;
-      case 'peacock': lp(3,0,1,6); lp(0,1,1,4); lp(1,0,1,5); lp(5,0,1,5); lp(6,1,1,4); break;
-      case 'skull':   lp(1,0,4,3); lp(0,3,6,2); lp(1,5,4,1); break;
-      case 'flower':  lp(2,0,2,2); lp(0,2,2,2); lp(4,2,2,2); lp(2,4,2,2); break;
-      case 'flame':   lp(2,0,2,2); lp(1,1,4,2); lp(0,3,6,2); lp(1,5,4,1); break;
-      case 'halo':    lp(1,0,4,1); lp(0,1,1,4); lp(5,1,1,4); lp(1,5,4,1); break;
-      case 'trophy':  lp(0,0,6,1); lp(0,1,6,3); lp(1,4,4,1); lp(2,5,2,1); break;
-      default: break;
-    }
-  };
-  drawGlyphLayer(shadowCol, +1, +1);   // drop shadow
-  ctx.globalAlpha = 0.4;
-  drawGlyphLayer(highlightCol, -1, -1); // top-left light catch
-  ctx.globalAlpha = 1;
-
-  // Main glyph icon (6×6 grid)
-  switch (glyph) {
-    case 'bolt':    // ⚡ Zeus zigzag
-      p(2, 0, 3, 2, primary);  p(1, 2, 3, 1, primary);  p(2, 3, 3, 2, primary);  p(3, 5, 2, 1, primary);
-      break;
-    case 'trident': // 🔱 Poseidon
-      p(1, 0, 1, 5, primary);  p(3, 0, 1, 6, primary);  p(5, 0, 1, 5, primary);
-      p(1, 5, 5, 1, primary);  p(3, 2, 1, 4, primary);
-      break;
-    case 'shield':  // 🛡 Athena
-      p(1, 0, 4, 1, primary);  p(0, 1, 6, 3, primary);  p(1, 4, 4, 1, primary);  p(2, 5, 2, 1, primary);
-      p(2, 2, 2, 1, ring);     // inner detail
-      break;
-    case 'sword':   // ⚔ Ares
-      p(3, 0, 1, 4, primary);  p(1, 2, 5, 1, primary);  p(3, 4, 1, 2, ring);
-      break;
-    case 'sun':     // ☀ Apollo
-      p(2, 0, 2, 1, primary);  p(0, 2, 1, 2, primary);  p(5, 2, 1, 2, primary);  p(2, 5, 2, 1, primary);
-      p(1, 2, 4, 2, primary);  p(2, 1, 2, 4, primary);  // cross body
-      p(0, 0, 1, 1, primary);  p(5, 0, 1, 1, primary);   // diagonal rays
-      p(0, 5, 1, 1, primary);  p(5, 5, 1, 1, primary);
-      break;
-    case 'moon':    // 🌙 Artemis crescent
-      p(1, 0, 4, 1, primary);  p(0, 1, 2, 4, primary);  p(5, 1, 1, 2, primary);
-      p(1, 5, 4, 1, primary);  p(2, 1, 3, 4, ring);      // inner hollow
-      break;
-    case 'wing':    // 🕊 Hermes
-      p(0, 1, 3, 2, primary);  p(3, 0, 3, 3, primary);  p(1, 3, 5, 2, primary);  p(2, 5, 3, 1, primary);
-      break;
-    case 'hammer':  // 🔨 Hephaestus
-      p(0, 0, 6, 3, primary);  p(2, 3, 2, 3, primary);
-      p(1, 1, 4, 1, ring);     // top highlight
-      break;
-    case 'grape':   // 🍇 Dionysus
-      p(1, 0, 2, 2, primary);  p(4, 0, 2, 2, primary);  p(0, 2, 2, 2, primary);
-      p(2, 2, 2, 2, primary);  p(4, 2, 2, 2, primary);  p(1, 4, 2, 2, primary);  p(3, 4, 2, 2, primary);
-      break;
-    case 'wheat':   // 🌾 Demeter
-      p(3, 0, 1, 1, primary);  p(2, 1, 1, 1, primary);  p(4, 1, 1, 1, primary);
-      p(1, 2, 1, 1, primary);  p(3, 2, 1, 2, primary);  p(5, 2, 1, 1, primary);
-      p(2, 4, 1, 1, primary);  p(4, 4, 1, 1, primary);  p(3, 3, 1, 3, primary);
-      break;
-    case 'heart':   // ❤ Aphrodite
-      p(0, 1, 2, 2, primary);  p(4, 1, 2, 2, primary);  p(0, 3, 6, 2, primary);  p(1, 5, 4, 1, primary);  p(2, 5, 2, 1, primary);
-      break;
-    case 'peacock': // 🦚 Hera fan
-      p(3, 0, 1, 6, primary);  p(0, 1, 1, 4, primary);  p(1, 0, 1, 5, primary);
-      p(5, 0, 1, 5, primary);  p(6, 1, 1, 4, primary);
-      p(2, 3, 3, 2, ring);     // fan body center
-      break;
-    case 'skull':   // 💀 Hades
-      p(1, 0, 4, 3, primary);  p(0, 3, 6, 2, primary);  p(1, 5, 4, 1, primary);
-      p(1, 1, 2, 1, ring);     // eye socket L
-      p(3, 1, 2, 1, ring);     // eye socket R
-      p(2, 4, 1, 1, ring);     // tooth gap
-      p(4, 4, 1, 1, ring);
-      break;
-    case 'flower':  // 🌸 Persephone
-      p(2, 0, 2, 2, primary);  p(0, 2, 2, 2, primary);  p(4, 2, 2, 2, primary);  p(2, 4, 2, 2, primary);
-      p(2, 2, 2, 2, ring);     // center
-      break;
-    case 'flame':   // 🔥 Prometheus
-      p(2, 0, 2, 2, primary);  p(1, 1, 4, 2, primary);  p(0, 3, 6, 2, primary);  p(1, 5, 4, 1, primary);
-      p(2, 2, 2, 2, '#FFE060'); // inner flame
-      break;
-    case 'halo':    // 😇 Helios ring
-      p(1, 0, 4, 1, primary);  p(0, 1, 1, 4, primary);  p(5, 1, 1, 4, primary);  p(1, 5, 4, 1, primary);
-      break;
-    case 'trophy':  // 🏆 Nike
-      p(0, 0, 6, 3, primary);  p(1, 3, 4, 1, primary);  p(2, 4, 2, 1, primary);  p(1, 5, 4, 1, primary);
-      p(1, 1, 4, 1, ring);     // cup inner
-      break;
-    case 'horn':    // Pan horn
-      p(0, 0, 2, 1, primary);  p(0, 1, 3, 2, primary);  p(0, 3, 5, 2, primary);  p(2, 5, 4, 1, primary);
-      break;
-    case 'star':    // ⭐ Hecate
-      p(2, 0, 2, 2, primary);  p(0, 2, 6, 2, primary);  p(2, 4, 2, 2, primary);
-      p(0, 0, 2, 2, primary);  p(4, 0, 2, 2, primary);  p(0, 4, 2, 2, primary);  p(4, 4, 2, 2, primary);
-      break;
-    case 'rainbow': // 🌈 Iris arc
-      p(0, 0, 6, 1, '#FF5050');  p(0, 1, 6, 1, '#FFD040');
-      p(0, 2, 6, 1, '#40D040');  p(0, 3, 6, 1, '#4080FF');
-      p(1, 4, 4, 1, '#8040C0');
-      break;
-    case 'lion':    // 🦁 Heracles paw
-      p(0, 0, 6, 4, primary);   p(0, 4, 2, 2, primary);  p(2, 4, 2, 2, primary);  p(4, 4, 2, 2, primary);
-      p(1, 1, 4, 2, ring);      // mane inner
-      break;
-    case 'crescent': // 🌙 Selene
-      p(1, 0, 4, 1, primary);  p(0, 1, 2, 4, primary);  p(5, 1, 1, 2, primary);
-      p(1, 5, 4, 1, primary);  p(1, 1, 3, 4, ring);      // inner hollow (crescent shape)
-      break;
-    default: p(1, 1, 4, 4, primary); break; // fallback: colored square
-  }
+  // Draw emoji at full quality
+  ctx.shadowColor = glow;
+  ctx.shadowBlur = 8;
+  ctx.fillText(emoji, cx, ey);
 
   ctx.restore();
 }
