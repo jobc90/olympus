@@ -82,7 +82,7 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
     process.exit(1);
   }
 
-  // 2.5. Check for worker name conflict
+  // 2.5. Check for worker name conflict — auto-assign available suffix if collision
   if (!opts.name) {
     try {
       const listRes = await fetch(`${gatewayUrl}/api/workers`, {
@@ -91,11 +91,14 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
       });
       if (listRes.ok) {
         const data = await listRes.json() as { workers?: Array<{ name: string }> };
-        const existing = (data.workers ?? []).find((w) => w.name === workerName);
-        if (existing) {
-          logBrief(chalk.yellow(`  ⚠ 워커 이름 '${workerName}'이 이미 등록되어 있습니다.`));
-          logBrief(chalk.gray('    다른 이름으로 시작: olympus start-trust --name worker2'));
-          logBrief(chalk.gray('    또는 다른 프로젝트 디렉토리에서 실행하세요.'));
+        const existingNames = new Set((data.workers ?? []).map((w) => w.name));
+        if (existingNames.has(workerName)) {
+          const base = workerName;
+          let suffix = 2;
+          while (existingNames.has(`${base}-${suffix}`)) suffix++;
+          workerName = `${base}-${suffix}`;
+          logBrief(chalk.yellow(`  ⚠ '${base}' 이름 충돌 → '${workerName}'으로 자동 변경`));
+          logBrief(chalk.gray(`    직접 지정: olympus start --name <이름>`));
           logBrief('');
         }
       }

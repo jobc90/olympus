@@ -758,10 +758,11 @@ async function updateCLITools(): Promise<void> {
 
   console.log(chalk.white('🔄 CLI 도구 업데이트 확인 중...\n'));
 
+  const checkCmd = process.platform === 'win32' ? 'where' : 'which';
   for (const tool of CLI_TOOLS) {
     // Check if tool is installed
     try {
-      execSync(`which ${tool.name}`, { stdio: 'pipe' });
+      execSync(`${checkCmd} ${tool.name}`, { stdio: 'pipe' });
     } catch {
       console.log(chalk.gray(`   - ${tool.label}: 설치되지 않음 (건너뜀)`));
       continue;
