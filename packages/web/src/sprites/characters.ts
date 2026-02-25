@@ -236,7 +236,7 @@ function resolveDrawScale(footY: number, mapScale: number, panelScale: number): 
 }
 
 const HD_PIXEL_CHARACTER_MODE = true;
-const HD_RENDER_REV = 'ref_v10';
+const HD_RENDER_REV = 'ref_v11';
 const HD_SPRITE_W = 32;
 const HD_SPRITE_H = 48;
 const HD_SPRITE_CACHE = new Map<string, HTMLCanvasElement>();
@@ -976,6 +976,8 @@ function drawDivineSymbol(
   glow: string,
   tick: number,
 ): void {
+  if (tick === 0) return;  // card preview mode — no room above head, skip symbol
+
   // Emoji map — system emoji renders at macOS quality on canvas
   const EMOJI_MAP: Record<string, string> = {
     bolt:          '⚡',
