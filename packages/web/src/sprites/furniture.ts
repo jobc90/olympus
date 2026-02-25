@@ -858,12 +858,6 @@ function drawColumnCore(
     px(ctx, x - Math.floor((spec.capWidth+6)/2), bandY, spec.capWidth + 6, 1, i % 2 === 0 ? GLD : GLD2);
   }
 
-  // Moving glint on shaft
-  if (tick % 110 < 72) {
-    const gx = x + (tick % 14) - 7;
-    px(ctx, gx, shaftTop + 6, 1, Math.max(8, spec.shaftHeight - 18), '#FFFCF0');
-  }
-
   return { topY: shaftTop };
 }
 
@@ -891,10 +885,6 @@ function drawTempleColumn(ctx: CanvasRenderingContext2D, col: number, row: numbe
   }
   px(ctx, x - 2, topY - 15, 4, 2, GLL);
   px(ctx, x - 14, topY - 2, 28, 2, GLD);
-  if (tick % 90 < 50) {
-    px(ctx, x - 10, topY - 13, 2, 1, '#FFF3BF');
-    px(ctx, x + 8,  topY - 11, 2, 1, '#FFF3BF');
-  }
 }
 
 // marble_column → Polished Marble Column
@@ -907,9 +897,6 @@ function drawMarbleColumn(ctx: CanvasRenderingContext2D, col: number, row: numbe
   // Polish stripe
   px(ctx, x - 1, topY + 2, 1, 34, '#FFFDF8');
   px(ctx, x + 2, topY + 5, 1, 10, '#F1E2CA');
-  if (tick % 120 < 84) {
-    px(ctx, x + 1, topY + 10 + (tick % 12), 1, 4, GLL);
-  }
 }
 
 // sacred_brazier → Sacred Fire Brazier
