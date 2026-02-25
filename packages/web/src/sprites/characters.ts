@@ -1223,9 +1223,9 @@ function drawCharacterFromSheet(
     const style = avatar === 'zeus' ? ZEUS_WORKER_STYLE : WORKER_STYLE_MAP[avatar];
     const hd = drawHdPixelAvatar(avatar, profile, style, tick, frame, moving, seated);
     if (hd) {
-      // HD sprite is 16×24 — render at 2× pixel-art scale: 32×48 CSS px
-      const hdDw = HD_SPRITE_W * 2;
-      const hdDh = HD_SPRITE_H * 2;  // 48px (not FRAME_H*2=64)
+      // HD sprite is 16×24 — render at 3× pixel-art scale: 48×72 CSS px
+      const hdDw = HD_SPRITE_W * 3;
+      const hdDh = HD_SPRITE_H * 3;  // 72px
       const hdDrawX = Math.round(x - hdDw / 2);
       const hdDrawY = Math.round(footY - hdDh - 2);  // feet ~2px above ground line
 
