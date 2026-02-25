@@ -199,24 +199,13 @@ export function createWalkGrid(workerCount: number): TileType[][] {
       if (r === 0 || c === 0 || r === MAP_ROWS - 1 || c === MAP_COLS - 1) {
         grid[r][c] = 'wall';
       }
-      // Column dividers between upper zones
-      else if ((c === 11 || c === 21) && r >= 1 && r <= 4) {
-        grid[r][c] = 'wall';
-      }
-      // Divider between agora and lower tier
+      // Tier wall: agora → lower rooms (ambrosia / library)
+      // Processional path (col 16) and sanctuary cols (17+) stay open
       else if (r === 13 && c >= 1 && c <= 15) {
         grid[r][c] = 'wall';
       }
-      // Divider between ambrosia and library
+      // Divider between ambrosia hall and library
       else if (c === 10 && r >= 13 && r <= 17) {
-        grid[r][c] = 'wall';
-      }
-      // Separator between sanctuary cols A and B
-      else if (c === 22 && r >= 5 && r <= 13) {
-        grid[r][c] = 'wall';
-      }
-      // Sanctuary row dividers
-      else if ((r === 8 || r === 11) && (c >= 17 && c <= 21 || c >= 23 && c <= 32)) {
         grid[r][c] = 'wall';
       }
       else {
@@ -225,11 +214,9 @@ export function createWalkGrid(workerCount: number): TileType[][] {
     }
   }
 
-  // Open processional gates
-  if (grid[8]?.[16]) grid[8][16] = 'door';  // processional path at row 8
-  if (grid[11]?.[16]) grid[11][16] = 'door'; // processional path at row 11
-  if (grid[13]?.[8]) grid[13][8] = 'door';   // agora→ambrosia gate
-  if (grid[13]?.[13]) grid[13][13] = 'door'; // agora→library gate
+  // Doors in the lower-tier wall
+  if (grid[13]?.[8])  grid[13][8]  = 'door'; // agora → ambrosia hall
+  if (grid[13]?.[13]) grid[13][13] = 'door'; // agora → athena's library
 
   // Mark furniture tiles as blocked
   const furniture = buildFurnitureLayout(workerCount);
