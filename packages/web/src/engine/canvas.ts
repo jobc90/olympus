@@ -513,7 +513,7 @@ export function renderFrame(
   // Sanctuary area: single combined label at block center
   {
     let shrineLabel = 'Sanctuaries';
-    let shrineEmoji = '⛩️';
+    let shrineEmoji = '🏛️';
     if (config.selectedWorkerId) {
       for (const zone of Object.values(zones)) {
         if (!zone.id.startsWith('sanctuary_')) continue;
