@@ -783,9 +783,17 @@ function drawHdPixelAvatar(
     default: break;
   }
 
+  // 2× integer upscale for pixel-perfect sharpness — cached canvas is 64×96
+  const upscaled = document.createElement('canvas');
+  upscaled.width  = HD_SPRITE_W * 2;   // 64
+  upscaled.height = HD_SPRITE_H * 2;   // 96
+  const uc = upscaled.getContext('2d')!;
+  uc.imageSmoothingEnabled = false;
+  uc.drawImage(canvas, 0, 0, upscaled.width, upscaled.height);
+
   if (HD_SPRITE_CACHE.size > 512) HD_SPRITE_CACHE.clear();
-  HD_SPRITE_CACHE.set(key, canvas);
-  return canvas;
+  HD_SPRITE_CACHE.set(key, upscaled);
+  return upscaled;
 }
 
 
@@ -1223,11 +1231,11 @@ function drawCharacterFromSheet(
     const style = avatar === 'zeus' ? ZEUS_WORKER_STYLE : WORKER_STYLE_MAP[avatar];
     const hd = drawHdPixelAvatar(avatar, profile, style, tick, frame, moving, seated);
     if (hd) {
-      // render at 2× pixel-art scale: 64×96 CSS px
-      const hdDw = HD_SPRITE_W * 2;
-      const hdDh = HD_SPRITE_H * 2;
+      // hd is already 2× upscaled (64×96) — draw at 70% for sharp display
+      const hdDw = Math.round(hd.width  * 0.7);   // 64×0.7 = 45
+      const hdDh = Math.round(hd.height * 0.7);   // 96×0.7 = 67
       const hdDrawX = Math.round(x - hdDw / 2);
-      const hdDrawY = Math.round(footY - hdDh - 2);  // feet ~2px above ground line
+      const hdDrawY = Math.round(footY - hdDh - 2);
 
       ctx.save();
       ctx.imageSmoothingEnabled = false;
@@ -1235,7 +1243,7 @@ function drawCharacterFromSheet(
         ctx.translate(x * 2, 0);
         ctx.scale(-1, 1);
       }
-      // Black pixel-art outline — silhouette drawn at 4 diagonal offsets
+      // Black pixel-art outline
       const sil = getSilhouette(hd);
       ctx.drawImage(sil, hdDrawX - 1, hdDrawY - 1, hdDw, hdDh);
       ctx.drawImage(sil, hdDrawX + 1, hdDrawY - 1, hdDw, hdDh);
