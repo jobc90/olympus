@@ -236,9 +236,9 @@ function resolveDrawScale(footY: number, mapScale: number, panelScale: number): 
 }
 
 const HD_PIXEL_CHARACTER_MODE = true;
-const HD_RENDER_REV = 'ref_v2';
+const HD_RENDER_REV = 'ref_v3';
 const HD_SPRITE_W = 16;
-const HD_SPRITE_H = 32;
+const HD_SPRITE_H = 24;
 const HD_SPRITE_CACHE = new Map<string, HTMLCanvasElement>();
 const HD_SILHOUETTE_CACHE = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
 
@@ -390,7 +390,7 @@ function drawHdPixelAvatar(
   const cached = HD_SPRITE_CACHE.get(key);
   if (cached) return cached;
 
-  // 16×32 canvas — drawn at 2× (32×64 CSS px) for clean pixel-art upscale
+  // 16×24 canvas — drawn at 2× (32×48 CSS px) for clean pixel-art upscale
   const canvas = document.createElement('canvas');
   canvas.width = HD_SPRITE_W;  // 16
   canvas.height = HD_SPRITE_H;
@@ -403,6 +403,7 @@ function drawHdPixelAvatar(
   };
 
   const spec = HD_AVATAR_SPECS[avatar];
+  const faceSpec = HD_FACE_SPECS[avatar];
   // Reference-style proportions: big round head, simple body, short legs
   const hair = style.hair;
   const skin = spec.skinA;
@@ -413,27 +414,23 @@ function drawHdPixelAvatar(
   const shoes = '#0C0D18';
   const isF = spec.gender === 'f';
 
-  // ── Shadow ──────────────────────────────────────────────────────────
-  c.fillStyle = 'rgba(0,0,0,0.28)';
-  c.fillRect(2, 29, 12, 2);
-
-  // ── Feet & Legs (chibi: stubby legs, y=22..29) ────────────────────────
+  // ── Feet & Legs (chibi: stubby, y=17..23 in 24px canvas) ────────────
   if (!seated) {
-    const lFY = step === 0 ? 27 : 28;
-    const rFY = step === 1 ? 27 : 28;
-    px(3, lFY, 3, 2, shoes);
-    px(10, rFY, 3, 2, shoes);
-    const lLY = step === 0 ? 22 : 23;
-    const rLY = step === 1 ? 22 : 23;
-    px(3, lLY, 3, 5, pants);
-    px(10, rLY, 3, 5, pants);
+    const lFY = step === 0 ? 21 : 22;
+    const rFY = step === 1 ? 21 : 22;
+    px(2, lFY, 4, 2, shoes);    // splayed left foot (wider outward)
+    px(9, rFY, 4, 2, shoes);    // splayed right foot (wider outward)
+    const lLY = step === 0 ? 17 : 18;
+    const rLY = step === 1 ? 17 : 18;
+    px(3, lLY, 3, 4, pants);    // left leg  (x=3..5)
+    px(9, rLY, 3, 4, pants);    // right leg (x=9..11), 3px gap between
   } else {
-    px(3, 26, 3, 2, shoes);
-    px(10, 26, 3, 2, shoes);
+    px(3, 21, 3, 2, shoes);
+    px(9, 21, 3, 2, shoes);
   }
 
-  // ── Body / outfit (chibi torso y=16..21) ────────────────────────────
-  const bodyY = 16;
+  // ── Body / outfit (chibi torso y=11..16 in 24px canvas) ─────────────
+  const bodyY = 11;
   const bodyH = 6;
   switch (spec.outfitStyle) {
     case 'armor':
@@ -501,39 +498,39 @@ function drawHdPixelAvatar(
   }
 
   // ── Hands ─────────────────────────────────────────────────────────────
-  px(1, bodyY + 6, 2, 2, skin);
-  px(13, bodyY + 6, 2, 2, skin);
+  px(0, bodyY + 5, 2, 2, skin);
+  px(13, bodyY + 5, 2, 2, skin);
 
-  // ── Neck (chibi: 1px, y=15) ───────────────────────────────────────────
-  px(6, 15, 4, 1, skin);
-  px(7, 15, 2, 1, skinSh);
+  // ── Neck (chibi: 1px, y=10 in 24px canvas) ────────────────────────────
+  px(6, 10, 4, 1, skin);
+  px(7, 10, 2, 1, skinSh);
 
   // ── Face skin — BIG chibi head (drawn first, hair goes on top) ────────
-  // Head occupies y=0..14 (15px ~47%) vs body y=16..29 (14px)
-  px(2, 5, 12, 10, skin);         // face interior y=5..14, 12px wide
-  px(3, 15, 10, 1, skin);         // chin overlap with neck
-  px(11, 6, 2, 8, skinSh);        // right-side face shadow
-  px(6, 14, 2, 1, skinSh);        // chin shadow
+  // Head occupies y=0..10 (~46% of 24px canvas) vs body y=11..23
+  px(2, 4, 12, 6, skin);          // face interior y=4..9, 12px wide
+  px(3, 10, 10, 1, skin);         // chin overlap with neck
+  px(11, 5, 2, 4, skinSh);        // right-side face shadow
+  px(6, 9, 2, 1, skinSh);         // chin shadow
 
   // ── Hair — each case draws its FULL shape on top of skin ─────────────
   switch (spec.hairStyle) {
     case 'long':
-      // Cap + long flowing sides to below chin
+      // Cap + long flowing sides to below chin (24px canvas: face y=4..9)
       px(4, 0, 8, 1, hair);
-      px(2, 1, 12, 5, hair);
+      px(2, 1, 12, 4, hair);
       px(1, 2, 14, 3, hair);       // widest at y=2..4
-      px(1, 5, 2, 10, hair);       // left long flow y=5..14
-      px(13, 5, 2, 10, hair);      // right long flow y=5..14
+      px(1, 5, 2, 5, hair);        // left long flow y=5..9
+      px(13, 5, 2, 5, hair);       // right long flow y=5..9
       break;
     case 'wavy':
-      // Dramatic flowing waves with side bumps
+      // Dramatic flowing waves with side bumps (24px: face y=4..9)
       px(4, 0, 8, 1, hair);
       px(2, 1, 12, 2, hair);       // top
       px(0, 2, 16, 3, hair);       // full-width wave y=2..4
       px(1, 5, 2, 3, hair);        // left wave bump y=5..7
       px(12, 5, 3, 3, hair);       // right wave bump y=5..7
-      px(1, 8, 2, 5, hair);        // left flow y=8..12
-      px(13, 8, 2, 5, hair);       // right flow y=8..12
+      px(1, 8, 2, 2, hair);        // left flow y=8..9
+      px(13, 8, 2, 2, hair);       // right flow y=8..9
       break;
     case 'spike':
       // Three DRAMATIC spikes at crown
@@ -557,39 +554,39 @@ function drawHdPixelAvatar(
       px(1, 5, 14, 1, hair);       // widest at y=5
       break;
     case 'curly':
-      // HUGE fluffy cloud — maximum volume
+      // HUGE fluffy cloud — maximum volume (24px: face y=4..9)
       px(2, 0, 12, 1, hair);       // very top
       px(0, 1, 16, 2, hair);       // full width y=1..2
       px(0, 3, 16, 2, hair);       // full width y=3..4
       px(0, 5, 16, 3, hair);       // full width y=5..7
-      px(0, 8, 3, 5, hair);        // left big puff y=8..12
-      px(13, 8, 3, 5, hair);       // right big puff y=8..12
+      px(0, 8, 3, 2, hair);        // left puff y=8..9
+      px(13, 8, 3, 2, hair);       // right puff y=8..9
       break;
     case 'pony':
-      // Cap + thick ponytail on right + hair tie
+      // Cap + thick ponytail on right + hair tie (24px canvas)
       px(4, 0, 8, 1, hair);
-      px(2, 1, 12, 5, hair);
+      px(2, 1, 12, 4, hair);
       px(1, 2, 14, 3, hair);
-      px(12, 6, 3, 1, trim);       // ponytail tie/band
-      px(12, 5, 3, 14, hair);      // thick ponytail (3px wide, y=5..18)
+      px(12, 5, 3, 1, trim);       // ponytail tie/band
+      px(12, 6, 3, 10, hair);      // thick ponytail (3px wide, y=6..15)
       break;
     case 'braid':
-      // Cap + long braided rope with alternating segments
+      // Cap + long braided rope with alternating segments (24px canvas)
       px(4, 0, 8, 1, hair);
-      px(2, 1, 12, 5, hair);
+      px(2, 1, 12, 4, hair);
       px(1, 2, 14, 3, hair);
-      px(12, 6, 2, 17, hair);      // braid runs y=6..22
-      px(12, 9,  2, 1, trim);      // braid segment 1
-      px(12, 12, 2, 1, trim);      // braid segment 2
-      px(12, 15, 2, 1, trim);      // braid segment 3
-      px(12, 18, 2, 1, trim);      // braid segment 4
+      px(12, 5, 2, 13, hair);      // braid runs y=5..17
+      px(12, 8,  2, 1, trim);      // braid segment 1
+      px(12, 11, 2, 1, trim);      // braid segment 2
+      px(12, 14, 2, 1, trim);      // braid segment 3
+      px(12, 17, 2, 1, trim);      // braid segment 4
       break;
     case 'hood':
-      // Full hood covering head — face visible through opening
-      px(0, 0, 16, 15, shirt);     // entire hood in mantle color
-      px(3, 5, 10, 9, skin);       // inner face opening y=5..13
-      px(10, 6, 2, 7, skinSh);     // face shadow inside hood
-      px(6, 13, 2, 1, skinSh);
+      // Full hood covering head — face visible through opening (24px)
+      px(0, 0, 16, 11, shirt);     // entire hood in mantle color
+      px(3, 4, 10, 6, skin);       // inner face opening y=4..9
+      px(10, 5, 2, 4, skinSh);     // face shadow inside hood
+      px(6, 9, 2, 1, skinSh);
       break;
     default: // 'short' — minimal rounded cap
       px(4, 0, 8, 1, hair);
@@ -635,16 +632,40 @@ function drawHdPixelAvatar(
     px(6, 3, 4, 1, style.crest);              // crest stripe in hair
   }
 
-  // ── Eyes (chibi: BIG 3×2 eyes for cute look, y=9..10) ──────────────────
-  const eyeY = 9;
-  if (!blink) {
-    px(4, eyeY, 3, 2, spec.eye);    // L eye (3px wide × 2px tall)
-    px(9, eyeY, 3, 2, spec.eye);    // R eye (3px wide × 2px tall)
-    px(4, eyeY, 1, 1, '#FFFFFF');   // L highlight (top-left)
-    px(9, eyeY, 1, 1, '#FFFFFF');   // R highlight (top-left)
+  // ── Eyebrows (subtle, 2px above eyes at y=5) ──────────────────────────
+  const browY = 5;
+  if (faceSpec.brow === 'stern' || faceSpec.brow === 'fierce') {
+    px(4, browY, 3, 1, skinSh);     // strong L brow
+    px(9, browY, 3, 1, skinSh);     // strong R brow
   } else {
-    px(4, eyeY + 1, 3, 1, skinSh); // blink L
-    px(9, eyeY + 1, 3, 1, skinSh); // blink R
+    px(5, browY, 2, 1, skinSh);     // subtle L brow
+    px(9, browY, 2, 1, skinSh);     // subtle R brow
+  }
+
+  // ── Eyes (reference-style: 1×1 dark dot, y=6) ────────────────────────
+  const eyeY = 6;
+  if (!blink) {
+    px(5, eyeY, 1, 1, '#181818');   // L eye — tiny dark dot
+    px(10, eyeY, 1, 1, '#181818');  // R eye — tiny dark dot
+    px(5, eyeY, 1, 1, '#181818');   // redraw for opacity
+    px(10, eyeY, 1, 1, '#181818');
+  } else {
+    px(4, eyeY, 3, 1, skinSh);     // blink L line
+    px(9, eyeY, 3, 1, skinSh);     // blink R line
+  }
+
+  // ── Mouth (simple, y=8) ────────────────────────────────────────────────
+  const mouthY = 8;
+  if (faceSpec.mouth === 'smile' || faceSpec.mouth === 'open') {
+    px(6, mouthY, 1, 1, '#D05040');  // L corner up
+    px(9, mouthY, 1, 1, '#D05040');  // R corner up
+    px(7, mouthY, 2, 1, '#F07060');  // center top lip
+  } else if (faceSpec.mouth === 'frown') {
+    px(6, mouthY, 1, 1, '#C04838');
+    px(9, mouthY, 1, 1, '#C04838');
+    px(7, mouthY + 0, 2, 1, '#A03828');
+  } else {
+    px(6, mouthY, 4, 1, '#D06050');  // neutral line
   }
 
   // ── Prop (held item drawn in sprite) ─────────────────────────────────
@@ -672,9 +693,9 @@ function drawHdPixelAvatar(
       px(14, 5, 1, 18, '#C8A040');  // staff
       break;
     case 'hammer':
-      px(12, 14, 4, 3, '#8D6E63');  // hammerhead
-      px(13, 13, 2, 1, '#A88060');  // top cap
-      px(14, 17, 1, 8, '#B0BEC5');  // handle
+      px(12, 10, 4, 3, '#8D6E63');  // hammerhead
+      px(13, 9, 2, 1, '#A88060');   // top cap
+      px(14, 13, 1, 7, '#B0BEC5');  // handle (fits in 24px)
       break;
     case 'torch':
       px(13, 4, 3, 3, tick % 18 < 10 ? '#FFB74D' : '#FF8030'); // flame
@@ -682,16 +703,16 @@ function drawHdPixelAvatar(
       px(14, 7, 1, 16, '#8D6E63');  // handle
       break;
     case 'vine':
-      px(0, 14, 2, 1, '#9CCC65');   // top leaf
-      px(0, 16, 1, 10, '#558844');  // vine stem
-      px(0, 18, 2, 1, '#78CC48');   // leaf mid
-      px(0, 22, 2, 1, '#78CC48');   // leaf lower
+      px(0, 11, 2, 1, '#9CCC65');   // top leaf
+      px(0, 12, 1, 8, '#558844');   // vine stem (fits in 24px)
+      px(0, 14, 2, 1, '#78CC48');   // leaf mid
+      px(0, 18, 2, 1, '#78CC48');   // leaf lower
       break;
     case 'wheat':
-      px(14, 9, 2, 1, '#F2CF6C');   // grain top
-      px(15, 11, 1, 1, '#F2CF6C');  // grain
-      px(14, 13, 2, 1, '#F2CF6C');  // grain
-      px(14, 15, 1, 10, '#C49A30'); // stalk
+      px(14, 7, 2, 1, '#F2CF6C');   // grain top
+      px(15, 9, 1, 1, '#F2CF6C');   // grain
+      px(14, 11, 2, 1, '#F2CF6C');  // grain
+      px(14, 13, 1, 8, '#C49A30');  // stalk (fits in 24px)
       break;
     case 'mirror':
       px(13, 14, 3, 4, '#EADCF5');  // mirror glass
@@ -733,24 +754,24 @@ function drawHdPixelAvatar(
       px(13, 17, 3, 1, '#D0C0FF');  // lantern top
       break;
     case 'rainbow_ribbon':
-      px(1, 22, 14, 1, '#FF5252');  // red band
-      px(2, 23, 12, 1, '#FFD740');  // yellow band
-      px(3, 24, 10, 1, '#42A5F5'); // blue band
+      px(1, 19, 14, 1, '#FF5252');  // red band
+      px(2, 20, 12, 1, '#FFD740');  // yellow band
+      px(3, 21, 10, 1, '#42A5F5'); // blue band (fits in 24px)
       break;
     case 'club':
-      px(13, 12, 3, 4, '#A88963');  // club head (wide)
-      px(12, 12, 4, 1, '#C0A078');  // top cap
-      px(14, 16, 1, 9, '#8D6E63'); // handle
+      px(13, 9, 3, 4, '#A88963');   // club head (wide)
+      px(12, 9, 4, 1, '#C0A078');   // top cap
+      px(14, 13, 1, 7, '#8D6E63');  // handle (fits in 24px)
       break;
     case 'crescent':
       px(14, 7, 2, 5, '#E8EAF6');  // outer arc
       px(13, 8, 1, 3, '#9FA8DA');  // inner shadow
       break;
     case 'bow':
-      px(0, 11, 1, 1, '#A5C38A');  // top nock
-      px(0, 24, 1, 1, '#A5C38A');  // bottom nock
-      px(0, 12, 1, 12, '#7A9A60'); // bow limb
-      px(1, 11, 1, 13, '#D8D8B8'); // bowstring
+      px(0, 9, 1, 1, '#A5C38A');   // top nock
+      px(0, 22, 1, 1, '#A5C38A');  // bottom nock
+      px(0, 10, 1, 12, '#7A9A60'); // bow limb (fits in 24px)
+      px(1, 9, 1, 13, '#D8D8B8');  // bowstring
       break;
     case 'wing':
       px(0, 16, 3, 5, '#E8EEF7');  // L wing
@@ -1202,6 +1223,12 @@ function drawCharacterFromSheet(
     const style = avatar === 'zeus' ? ZEUS_WORKER_STYLE : WORKER_STYLE_MAP[avatar];
     const hd = drawHdPixelAvatar(avatar, profile, style, tick, frame, moving, seated);
     if (hd) {
+      // HD sprite is 16×24 — render at 2× pixel-art scale: 32×48 CSS px
+      const hdDw = HD_SPRITE_W * 2;
+      const hdDh = HD_SPRITE_H * 2;  // 48px (not FRAME_H*2=64)
+      const hdDrawX = Math.round(x - hdDw / 2);
+      const hdDrawY = Math.round(footY - hdDh - 2);  // feet ~2px above ground line
+
       ctx.save();
       ctx.imageSmoothingEnabled = false;
       if (flip) {
@@ -1210,15 +1237,15 @@ function drawCharacterFromSheet(
       }
       // Black pixel-art outline — silhouette drawn at 4 diagonal offsets
       const sil = getSilhouette(hd);
-      ctx.drawImage(sil, drawX - 1, drawY - 1, dw, dh);
-      ctx.drawImage(sil, drawX + 1, drawY - 1, dw, dh);
-      ctx.drawImage(sil, drawX - 1, drawY + 1, dw, dh);
-      ctx.drawImage(sil, drawX + 1, drawY + 1, dw, dh);
-      ctx.drawImage(hd, drawX, drawY, dw, dh);
+      ctx.drawImage(sil, hdDrawX - 1, hdDrawY - 1, hdDw, hdDh);
+      ctx.drawImage(sil, hdDrawX + 1, hdDrawY - 1, hdDw, hdDh);
+      ctx.drawImage(sil, hdDrawX - 1, hdDrawY + 1, hdDw, hdDh);
+      ctx.drawImage(sil, hdDrawX + 1, hdDrawY + 1, hdDw, hdDh);
+      ctx.drawImage(hd, hdDrawX, hdDrawY, hdDw, hdDh);
       ctx.restore();
 
       // Draw divine sigil above head (unflipped coord space restored)
-      drawDivineSymbol(ctx, x, drawY, profile.sigil.glyph, profile.sigil.primary, profile.sigil.ring, profile.sigil.glow, tick);
+      drawDivineSymbol(ctx, x, hdDrawY, profile.sigil.glyph, profile.sigil.primary, profile.sigil.ring, profile.sigil.glow, tick);
 
       return;
     }
