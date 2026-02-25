@@ -236,7 +236,7 @@ function resolveDrawScale(footY: number, mapScale: number, panelScale: number): 
 }
 
 const HD_PIXEL_CHARACTER_MODE = true;
-const HD_RENDER_REV = 'ref_v7';
+const HD_RENDER_REV = 'ref_v8';
 const HD_SPRITE_W = 32;
 const HD_SPRITE_H = 48;
 const HD_SPRITE_CACHE = new Map<string, HTMLCanvasElement>();
@@ -383,7 +383,7 @@ function drawHdPixelAvatar(
   seated: boolean,
 ): HTMLCanvasElement | null {
   if (typeof document === 'undefined') return null;
-  const blink = tick % 60 < 4 ? 1 : 0;
+  const blink = tick > 0 && tick % 60 < 4 ? 1 : 0;  // tick=0 = always open (card preview)
   const step = moving ? frame % 2 : 0;
   const pose = seated ? 'sit' : 'stand';
   const key = `${HD_RENDER_REV}:${avatar}:${pose}:${step}:${blink}`;
@@ -421,8 +421,8 @@ function drawHdPixelAvatar(
     const b = Math.min(255, Math.max(0, (n & 0xFF) + delta));
     return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
   };
-  const hairSh = adjColor(hair, -50);   // shadow strand (dark)
-  const hairHi = adjColor(hair, +65);   // highlight strand (light)
+  const hairSh = adjColor(hair, -80);   // shadow strand (dark)
+  const hairHi = adjColor(hair, +100);  // highlight strand (bright)
 
   // ── Feet & Legs (chibi: stubby, y=38..47 in 48px canvas) ────────────
   if (!seated) {
@@ -537,19 +537,21 @@ function drawHdPixelAvatar(
       // Shoulder cascade: flare slightly wider at y=28..37 (over outfit)
       px(0, 28, 7, 10, hair);      // left shoulder cascade
       px(25, 28, 7, 10, hair);     // right shoulder cascade
-      // Cap shading
-      px(10, 2, 12, 2, hairHi);    // top-center highlight streak
-      px(14, 4, 2, 5, hairSh);     // center parting shadow
-      px(5,  4, 2, 5, hairSh);     // left-of-center shadow band
-      px(24, 4, 2, 5, hairSh);     // right-of-center shadow band
-      // Flow shading — vertical strand lines (light inner, dark outer)
-      px(2,  14, 2, 22, hairHi);   // left flow highlight
-      px(0,  14, 2, 22, hairSh);   // left flow outer shadow
-      px(28, 14, 2, 22, hairHi);   // right flow highlight
-      px(30, 14, 2, 22, hairSh);   // right flow outer shadow
-      // Extra strand details in shoulder cascade
-      px(3,  30, 2, 6, hairSh);    // left cascade shadow strand
-      px(27, 30, 2, 6, hairSh);    // right cascade shadow strand
+      // Cap shading — wide highlight + flanking shadow bands
+      px(10, 1, 12, 3, hairHi);    // top-center highlight (brighter, thicker)
+      px(14, 4, 3, 5, hairSh);     // center parting shadow
+      px(5,  4, 3, 5, hairSh);     // left shadow band
+      px(23, 4, 3, 5, hairSh);     // right shadow band
+      // Flow shading — alternating dark/light vertical strand lines
+      px(2,  12, 2, 25, hairHi);   // left flow: inner highlight strand
+      px(0,  12, 2, 25, hairSh);   // left flow: outer shadow strand
+      px(28, 12, 2, 25, hairHi);   // right flow: inner highlight strand
+      px(30, 12, 2, 25, hairSh);   // right flow: outer shadow strand
+      // Shoulder cascade strand lines
+      px(3,  28, 2, 8, hairSh);    // left cascade shadow
+      px(5,  28, 2, 8, hairHi);    // left cascade highlight
+      px(25, 28, 2, 8, hairHi);    // right cascade highlight
+      px(28, 28, 2, 8, hairSh);    // right cascade shadow
       break;
     }
     case 'wavy': {
@@ -565,22 +567,24 @@ function drawHdPixelAvatar(
       px(0, 28, 7, 10, hair);      // left shoulder wave y=28..37
       px(25, 28, 7, 10, hair);     // right shoulder wave y=28..37
       // Cap shading
-      px(10, 2, 12, 2, hairHi);    // top-center highlight
-      px(5,  4, 2, 5, hairSh);     // left shadow band
-      px(24, 4, 2, 5, hairSh);     // right shadow band
-      px(14, 4, 2, 4, hairSh);     // center parting
-      // Wave shading — alternating light/dark following wave direction
-      px(2,  12, 2, 3, hairHi);    // left bump crest highlight
-      px(2,  16, 2, 3, hairSh);    // left bump trough shadow
-      px(2,  20, 2, 3, hairHi);    // left lower crest highlight
-      px(2,  24, 2, 3, hairSh);    // left lower trough
-      px(29, 12, 2, 3, hairHi);    // right bump crest highlight
-      px(29, 16, 2, 3, hairSh);    // right bump trough shadow
-      px(29, 20, 2, 3, hairHi);    // right lower crest highlight
-      px(29, 24, 2, 3, hairSh);    // right lower trough
+      px(10, 1, 12, 3, hairHi);    // top-center highlight (wide, thick)
+      px(5,  4, 3, 5, hairSh);     // left shadow band
+      px(23, 4, 3, 5, hairSh);     // right shadow band
+      px(14, 4, 3, 4, hairSh);     // center parting
+      // Wave shading — alternating crest/trough highlights
+      px(1,  12, 3, 4, hairHi);    // left bump crest highlight
+      px(1,  16, 3, 4, hairSh);    // left bump trough shadow
+      px(1,  20, 3, 4, hairHi);    // left lower crest highlight
+      px(1,  24, 3, 4, hairSh);    // left lower trough
+      px(28, 12, 3, 4, hairHi);    // right bump crest highlight
+      px(28, 16, 3, 4, hairSh);    // right bump trough shadow
+      px(28, 20, 3, 4, hairHi);    // right lower crest highlight
+      px(28, 24, 3, 4, hairSh);    // right lower trough
       // Shoulder wave shading
-      px(3,  30, 2, 6, hairSh);
-      px(27, 30, 2, 6, hairSh);
+      px(2,  29, 3, 7, hairSh);    // left shadow
+      px(5,  29, 3, 7, hairHi);    // left highlight
+      px(24, 29, 3, 7, hairHi);    // right highlight
+      px(27, 29, 3, 7, hairSh);    // right shadow
       break;
     }
     case 'spike': {
@@ -705,10 +709,10 @@ function drawHdPixelAvatar(
       px(4, 2, 24, 10, hair);
       px(2, 4, 28, 6, hair);
       // Cap shading
-      px(10, 2, 12, 2, hairHi);    // top-center highlight
-      px(5,  4, 2, 6, hairSh);     // left shadow band
-      px(22, 4, 2, 6, hairSh);     // right shadow band
-      px(14, 4, 4, 4, hairSh);     // center-right shadow
+      px(10, 1, 12, 3, hairHi);    // top-center highlight (wide)
+      px(5,  4, 3, 7, hairSh);     // left shadow band
+      px(22, 4, 3, 7, hairSh);     // right shadow band
+      px(14, 5, 4, 4, hairSh);     // center shadow
       break;
     }
   }
@@ -973,10 +977,10 @@ function drawDivineSymbol(
   glow: string,
   tick: number,
 ): void {
-  const S = 1;  // 1 canvas px per symbol pixel
-  const bob = Math.sin(tick * 0.07) * 1.5;
-  const sy = Math.round(headTopY - 7 + bob);
-  const sx = Math.round(cx) - 3;
+  const S = 3;  // 3 canvas px per symbol pixel (3× scale up)
+  const bob = Math.sin(tick * 0.07) * 2;
+  const sy = Math.round(headTopY - 7 * S + bob);  // float above head, scaled
+  const sx = Math.round(cx) - 3 * S;              // center the 6S-wide glyph
 
   const p = (ox: number, oy: number, w: number, h: number, col: string) => {
     ctx.fillStyle = col;
@@ -988,15 +992,15 @@ function drawDivineSymbol(
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = glow;
-  ctx.fillRect(sx - 1, sy - 1, 8 * S, 8 * S);
+  ctx.fillRect(sx - S, sy - S, 8 * S, 8 * S);
   ctx.globalAlpha = 1;
 
-  // Ring border (1px frame)
+  // Ring border (S-px frame, scaled)
   ctx.fillStyle = ring;
-  ctx.fillRect(sx - 1, sy - 1, 8 * S, 1);          // top
-  ctx.fillRect(sx - 1, sy + 6 * S, 8 * S, 1);       // bottom
-  ctx.fillRect(sx - 1, sy - 1, 1, 8 * S);            // left
-  ctx.fillRect(sx + 7 * S, sy - 1, 1, 8 * S);        // right
+  ctx.fillRect(sx - S, sy - S, 8 * S, S);          // top
+  ctx.fillRect(sx - S, sy + 6 * S, 8 * S, S);       // bottom
+  ctx.fillRect(sx - S, sy - S, S, 8 * S);            // left
+  ctx.fillRect(sx + 7 * S, sy - S, S, 8 * S);        // right
 
   // Glyph icon (6×6 grid)
   switch (glyph) {

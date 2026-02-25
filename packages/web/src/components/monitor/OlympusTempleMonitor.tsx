@@ -80,7 +80,7 @@ function WorkerPortrait({ worker, size = 70 }: { worker: WorkerConfig; size?: nu
     ctx.setTransform(detailScale, 0, 0, detailScale, 0, 0);
     ctx.clearRect(0, 0, size, size);
     ctx.imageSmoothingEnabled = false;
-    drawWorker(ctx, size / 2, size - 8, 'stand', 's', 0, worker.avatar as WorkerAvatar, worker.color, '');
+    drawWorker(ctx, size / 2, size - 4, 'stand', 's', 0, worker.avatar as WorkerAvatar, worker.color, '');
   };
 
   return (
@@ -316,7 +316,7 @@ export function OlympusTempleMonitor({
                 ) : (
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                      <WorkerPortrait worker={selectedWorker} size={66} />
+                      <WorkerPortrait worker={selectedWorker} size={96} />
                       <div className="min-w-0">
                         <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>{selectedWorker.name}</div>
                         <div className="text-[11px] font-mono truncate" style={{ color: 'var(--text-secondary)' }}>
