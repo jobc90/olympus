@@ -22,7 +22,7 @@
 #>
 
 param(
-    [ValidateSet("global", "local")]
+    [ValidateSet("global", "local", "commands")]
     [string]$Mode = "",
     [switch]$WithClaudeMd,
     [switch]$Help
@@ -40,20 +40,64 @@ function Write-Err     { param($msg) Write-Host "[ERROR]   $msg" -ForegroundColo
 function Write-Step    { param($msg) Write-Host "[STEP]    $msg" -ForegroundColor Cyan }
 function Write-Phase   { param($msg) Write-Host "[PHASE]   $msg" -ForegroundColor Magenta }
 
+# CLAUDE.md managed block upsert (insert or replace <!-- OLYMPUS:START --> block)
+function Invoke-UpsertOlympusClaudeMd {
+    param(
+        [string]$TemplatePath,
+        [string]$DestPath
+    )
+    $startMarker = "<!-- OLYMPUS:START (managed by install.ps1) -->"
+    $endMarker   = "<!-- OLYMPUS:END -->"
+    $block       = "$startMarker`n$(Get-Content $TemplatePath -Raw)`n$endMarker"
+
+    # Resolve symlink if exists (legacy install)
+    if (Test-Path $DestPath -PathType Any) {
+        $item = Get-Item $DestPath -Force
+        if ($item.LinkType -eq "SymbolicLink") {
+            $resolved = $item.Target
+            Remove-Item $DestPath -Force
+            if ($resolved -and (Test-Path $resolved)) {
+                Copy-Item $resolved $DestPath -Force
+            }
+        }
+    }
+
+    if (-not (Test-Path $DestPath)) {
+        Set-Content -Path $DestPath -Value $block -Encoding UTF8
+        return
+    }
+
+    $content = Get-Content $DestPath -Raw
+    if ($content -match [regex]::Escape($startMarker)) {
+        # Replace existing block
+        $pattern = [regex]::Escape($startMarker) + '[\s\S]*?' + [regex]::Escape($endMarker)
+        $content = [regex]::Replace($content, $pattern, $block)
+    } else {
+        # Append block
+        $content = $content.TrimEnd() + "`n`n$block`n"
+    }
+    Set-Content -Path $DestPath -Value $content -Encoding UTF8
+}
+
 if ($Help) {
     Write-Host @"
 
-Usage: .\install.ps1 [-Mode global|local] [-WithClaudeMd] [-Help]
+Usage: .\install.ps1 [-Mode commands|global|local] [-WithClaudeMd] [-Help]
 
-  -Mode global   전역 설치 (모든 프로젝트에서 /orchestration 사용 가능)
-                 -> ~/.claude/에 MCP, commands, skills, plugins 설치
+  -Mode commands  명령어만 전역 등록 (권장 — 최소 침범)
+                  -> ~/.claude/commands/에 /team, /agents 명령어만 설치
+                  -> 기존 ~/.claude/agents/, settings.json 완전 보존
 
-  -Mode local    로컬 설치 (이 프로젝트에서만 사용)
-                 -> CLI만 글로벌, 나머지는 프로젝트 내 유지
+  -Mode global    전역 설치 (모든 프로젝트에서 에이전트까지 사용)
+                  -> ~/.claude/에 MCP, commands, skills, plugins 설치
+                  -> ⚠️  기존 ~/.claude/ 설정에 영향을 줄 수 있습니다
 
-  -WithClaudeMd  ~/.claude/CLAUDE.md에 Olympus managed block 삽입
+  -Mode local     로컬 설치 (이 프로젝트에서만 사용)
+                  -> CLI만 글로벌, 나머지는 프로젝트 .claude/ 내 설치
 
-  (인자 없음)    대화형으로 선택
+  -WithClaudeMd   ~/.claude/CLAUDE.md에 Olympus managed block 삽입
+
+  (인자 없음)     대화형으로 선택
 
 "@
     exit 0
@@ -81,17 +125,29 @@ Write-Host ""
 if (-not $Mode) {
     Write-Host "설치 모드를 선택하세요:" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  1) 전역 설치 (Global) - 모든 프로젝트에서 /orchestration 사용 가능" -ForegroundColor Green
-    Write-Host "  2) 로컬 설치 (Local)  - 이 프로젝트에서만 사용" -ForegroundColor Yellow
+    Write-Host "  1) 명령어만 전역 등록 (Commands — 권장)" -ForegroundColor Green
+    Write-Host "     -> /team, /agents 어디서든 사용 가능"
+    Write-Host "     -> ~/.claude/commands/에만 설치 (기존 설정 보존)"
     Write-Host ""
-    $choice = Read-Host "선택 [1/2] (기본: 1)"
-    if ($choice -eq "2") { $Mode = "local" } else { $Mode = "global" }
+    Write-Host "  2) 전역 설치 (Global) - 에이전트까지 전역 등록" -ForegroundColor Magenta
+    Write-Host "     -> ~/.claude/에 MCP, agents, skills, plugins 모두 설치"
+    Write-Host "     -> ⚠️  기존 ~/.claude/ 설정에 영향을 줄 수 있습니다"
+    Write-Host ""
+    Write-Host "  3) 로컬 설치 (Local)  - 이 프로젝트에서만 사용" -ForegroundColor Yellow
+    Write-Host "     -> CLI만 글로벌, 나머지는 프로젝트 .claude/ 내 설치"
+    Write-Host ""
+    $choice = Read-Host "선택 [1/2/3] (기본: 1)"
+    switch ($choice) {
+        "2" { $Mode = "global" }
+        "3" { $Mode = "local" }
+        default { $Mode = "commands" }
+    }
 }
 
-if ($Mode -eq "local") {
-    Write-Host "로컬 설치 모드 - 프로젝트 디렉토리에서만 사용 가능" -ForegroundColor Yellow
-} else {
-    Write-Host "전역 설치 모드 - 모든 프로젝트에서 사용 가능" -ForegroundColor Green
+switch ($Mode) {
+    "commands" { Write-Host "명령어 전역 등록 모드 - ~/.claude/commands/만 수정" -ForegroundColor Green }
+    "global"   { Write-Host "전역 설치 모드 - 모든 프로젝트에서 사용 가능" -ForegroundColor Magenta }
+    "local"    { Write-Host "로컬 설치 모드 - 프로젝트 디렉토리에서만 사용 가능" -ForegroundColor Yellow }
 }
 Write-Host ""
 
@@ -126,9 +182,15 @@ if (Get-Command pnpm -ErrorAction SilentlyContinue) {
 if (Get-Command claude -ErrorAction SilentlyContinue) {
     Write-Success "Claude CLI 설치됨"
 } else {
-    Write-Warn "Claude CLI가 없습니다. 설치 중..."
-    npm install -g @anthropic-ai/claude-code
-    Write-Success "Claude CLI 설치 완료"
+    Write-Error "Claude CLI가 설치되어 있지 않습니다."
+    Write-Host ""
+    Write-Host "  Claude CLI는 Olympus의 핵심 의존성입니다." -ForegroundColor Yellow
+    Write-Host "  네이티브 인스톨러로 설치 후 재시도하세요:" -ForegroundColor Yellow
+    Write-Host "  → https://claude.ai/download" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  설치 후 'claude' 명령어가 PATH에 있는지 확인하세요:" -ForegroundColor Gray
+    Write-Host "  → where claude" -ForegroundColor Gray
+    exit 1
 }
 
 # Gemini CLI (선택)
@@ -203,7 +265,40 @@ Write-Success "openapi MCP 설치 완료"
 
 Write-Host ""
 
-if ($Mode -eq "global") {
+if ($Mode -eq "commands") {
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # Phase 3: 명령어만 전역 등록 (~/.claude/commands/)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
+    Write-Phase "Phase 3: 명령어 전역 등록 (~/.claude/commands/)"
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
+    Write-Host ""
+
+    $commandsDir = Join-Path $ClaudeDir "commands"
+    if (-not (Test-Path $commandsDir)) { New-Item -ItemType Directory -Path $commandsDir -Force | Out-Null }
+
+    Copy-Item (Join-Path $OrchestrationDir "commands\team.md")   (Join-Path $ClaudeDir "commands\team.md")   -Force
+    Copy-Item (Join-Path $OrchestrationDir "commands\agents.md") (Join-Path $ClaudeDir "commands\agents.md") -Force
+    Write-Success "/team + /agents 커맨드 전역 등록 완료"
+    Write-Info "~/.claude/agents/, settings.json — 기존 사용자 설정 보존"
+
+    # CLAUDE.md managed block (-WithClaudeMd 옵션)
+    if ($WithClaudeMd) {
+        $claudeMdTemplate = Join-Path $OrchestrationDir "templates\CLAUDE.global.md"
+        $claudeMdDest     = Join-Path $ClaudeDir "CLAUDE.md"
+        if (Test-Path $claudeMdTemplate) {
+            Write-Step "~/.claude/CLAUDE.md에 Olympus managed block 삽입..."
+            Invoke-UpsertOlympusClaudeMd -TemplatePath $claudeMdTemplate -DestPath $claudeMdDest
+            Write-Success "~/.claude/CLAUDE.md managed block 반영 완료"
+        } else {
+            Write-Warn "CLAUDE.global.md 템플릿을 찾을 수 없습니다"
+        }
+    } else {
+        Write-Info "CLAUDE.md는 수정하지 않습니다. (원하면 -WithClaudeMd 옵션 추가)"
+    }
+
+} elseif ($Mode -eq "global") {
 
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # Phase 3: 글로벌 설정 배포 (~/.claude/)
@@ -228,14 +323,24 @@ if ($Mode -eq "global") {
 
     # MCP 파일 복사
     Write-Step "MCP 서버 파일 복사..."
-    Copy-Item (Join-Path $mcpAgents "server.js")    (Join-Path $ClaudeDir "mcps\ai-agents\server.js")    -Force
-    Copy-Item (Join-Path $mcpAgents "package.json")  (Join-Path $ClaudeDir "mcps\ai-agents\package.json") -Force
-    $wisdomDest = Join-Path $ClaudeDir "mcps\ai-agents\wisdom.json"
-    if (-not (Test-Path $wisdomDest)) {
-        Copy-Item (Join-Path $mcpAgents "wisdom.json") $wisdomDest -Force
+    $mcpAgentsServerSrc = Join-Path $mcpAgents "server.js"
+    if (-not (Test-Path $mcpAgentsServerSrc)) {
+        Write-Warn "MCP 파일을 찾을 수 없습니다: $mcpAgentsServerSrc"
+        Write-Info "  npm install이 완료되었는지 확인하세요: cd $PSScriptRoot && npm install"
+    } else {
+        Copy-Item $mcpAgentsServerSrc                       (Join-Path $ClaudeDir "mcps\ai-agents\server.js")    -Force
+        Copy-Item (Join-Path $mcpAgents "package.json")     (Join-Path $ClaudeDir "mcps\ai-agents\package.json") -Force
+        $wisdomDest = Join-Path $ClaudeDir "mcps\ai-agents\wisdom.json"
+        if (-not (Test-Path $wisdomDest)) {
+            $wisdomSrc = Join-Path $mcpAgents "wisdom.json"
+            if (Test-Path $wisdomSrc) { Copy-Item $wisdomSrc $wisdomDest -Force }
+        }
+        $mcpOpenapiServerSrc = Join-Path $mcpOpenapi "server.js"
+        if (Test-Path $mcpOpenapiServerSrc) {
+            Copy-Item $mcpOpenapiServerSrc                      (Join-Path $ClaudeDir "mcps\openapi\server.js")    -Force
+            Copy-Item (Join-Path $mcpOpenapi "package.json")    (Join-Path $ClaudeDir "mcps\openapi\package.json") -Force
+        }
     }
-    Copy-Item (Join-Path $mcpOpenapi "server.js")    (Join-Path $ClaudeDir "mcps\openapi\server.js")    -Force
-    Copy-Item (Join-Path $mcpOpenapi "package.json")  (Join-Path $ClaudeDir "mcps\openapi\package.json") -Force
 
     # MCP 글로벌 의존성
     Push-Location (Join-Path $ClaudeDir "mcps\ai-agents"); npm install --silent 2>&1 | Out-Null; Pop-Location
@@ -243,9 +348,10 @@ if ($Mode -eq "global") {
     Write-Success "MCP 서버 글로벌 설치 완료"
 
     # Commands
-    Write-Step "/orchestration 커맨드 설치..."
-    Copy-Item (Join-Path $OrchestrationDir "commands\orchestration.md") (Join-Path $ClaudeDir "commands\orchestration.md") -Force
-    Write-Success "/orchestration v5.3 설치 완료"
+    Write-Step "/team + /agents 커맨드 설치..."
+    Copy-Item (Join-Path $OrchestrationDir "commands\team.md")   (Join-Path $ClaudeDir "commands\team.md")   -Force
+    Copy-Item (Join-Path $OrchestrationDir "commands\agents.md") (Join-Path $ClaudeDir "commands\agents.md") -Force
+    Write-Success "/team + /agents 커맨드 설치 완료"
 
     # Skills (번들)
     Write-Step "번들 스킬 복사..."
@@ -333,6 +439,21 @@ if ($Mode -eq "global") {
         Write-Info "~/.gemini/ 미존재 또는 템플릿 없음. gemini CLI 먼저 실행 필요."
     }
 
+    # CLAUDE.md managed block (-WithClaudeMd 옵션)
+    if ($WithClaudeMd) {
+        $claudeMdTemplate = Join-Path $OrchestrationDir "templates\CLAUDE.global.md"
+        $claudeMdDest     = Join-Path $ClaudeDir "CLAUDE.md"
+        if (Test-Path $claudeMdTemplate) {
+            Write-Step "~/.claude/CLAUDE.md에 Olympus managed block 삽입..."
+            Invoke-UpsertOlympusClaudeMd -TemplatePath $claudeMdTemplate -DestPath $claudeMdDest
+            Write-Success "~/.claude/CLAUDE.md managed block 반영 완료"
+        } else {
+            Write-Warn "CLAUDE.global.md 템플릿을 찾을 수 없습니다"
+        }
+    } else {
+        Write-Info "CLAUDE.md는 수정하지 않습니다. (원하면 -WithClaudeMd 옵션 추가)"
+    }
+
 } else {
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # 로컬 모드: 프로젝트 .claude/ 설정
@@ -346,8 +467,9 @@ if ($Mode -eq "global") {
     New-Item -ItemType Directory -Path (Join-Path $projectClaude "commands") -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $projectClaude "skills")   -Force | Out-Null
 
-    Copy-Item (Join-Path $OrchestrationDir "commands\orchestration.md") (Join-Path $projectClaude "commands\orchestration.md") -Force
-    Write-Success "/orchestration 커맨드 설치 완료"
+    Copy-Item (Join-Path $OrchestrationDir "commands\team.md")   (Join-Path $projectClaude "commands\team.md")   -Force
+    Copy-Item (Join-Path $OrchestrationDir "commands\agents.md") (Join-Path $projectClaude "commands\agents.md") -Force
+    Write-Success "/team + /agents 커맨드 설치 완료"
 
     foreach ($skill in @("frontend-ui-ux", "git-master", "agent-browser")) {
         $src = Join-Path $OrchestrationDir "skills\$skill"
@@ -359,9 +481,50 @@ if ($Mode -eq "global") {
         }
     }
 
-    Write-Info "로컬 모드: 이 프로젝트 디렉토리에서만 /orchestration 사용 가능"
+    Write-Info "로컬 모드: 이 프로젝트 디렉토리에서만 /team, /agents 사용 가능"
+
+    # CLAUDE.md managed block (-WithClaudeMd 옵션)
+    if ($WithClaudeMd) {
+        $claudeMdTemplate = Join-Path $OrchestrationDir "templates\CLAUDE.global.md"
+        $claudeMdDest     = Join-Path $ClaudeDir "CLAUDE.md"
+        if (Test-Path $claudeMdTemplate) {
+            Write-Step "~/.claude/CLAUDE.md에 Olympus managed block 삽입..."
+            Invoke-UpsertOlympusClaudeMd -TemplatePath $claudeMdTemplate -DestPath $claudeMdDest
+            Write-Success "~/.claude/CLAUDE.md managed block 반영 완료"
+        } else {
+            Write-Warn "CLAUDE.global.md 템플릿을 찾을 수 없습니다"
+        }
+    } else {
+        Write-Info "CLAUDE.md는 수정하지 않습니다. (원하면 -WithClaudeMd 옵션 추가)"
+    }
 }
 
+Write-Host ""
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Phase 4.9: /team 필수 환경변수 자동 설정
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
+Write-Phase "Phase 4.9: /team 필수 환경변수 — CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
+Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
+Write-Host ""
+
+# 현재 프로세스에 즉시 적용
+$env:CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"
+Write-Success "현재 세션: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 즉시 적용"
+
+# 사용자 환경변수로 영속 설정 (로그인 후에도 유지)
+$existing = [System.Environment]::GetEnvironmentVariable("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "User")
+if ($existing -eq "1") {
+    Write-Info "이미 User 환경변수에 설정됨 (건너뜀)"
+} else {
+    [System.Environment]::SetEnvironmentVariable("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1", "User")
+    Write-Success "영속 설정 완료: User 환경변수 (재로그인 후 적용)"
+}
+
+Write-Host ""
+Write-Host "    새 터미널에서 확인: " -NoNewline
+Write-Host 'echo $env:CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS' -ForegroundColor Cyan
 Write-Host ""
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -385,22 +548,41 @@ Write-Host ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Magenta
-if ($Mode -eq "local") {
-    Write-Host "    Olympus + AIOS v5.3 로컬 설치 완료!" -ForegroundColor Green
-} else {
-    Write-Host "    Olympus + AIOS v5.3 전역 설치 완료!" -ForegroundColor Green
+switch ($Mode) {
+    "commands" { Write-Host "    Olympus + AIOS v5.3 명령어 전역 등록 완료!" -ForegroundColor Green }
+    "global"   { Write-Host "    Olympus + AIOS v5.3 전역 설치 완료!" -ForegroundColor Green }
+    "local"    { Write-Host "    Olympus + AIOS v5.3 로컬 설치 완료!" -ForegroundColor Green }
 }
 Write-Host "================================================================" -ForegroundColor Magenta
 Write-Host ""
 
 Write-Host "사용 방법:" -ForegroundColor Green
 Write-Host ""
-Write-Host "   olympus                        # Claude CLI 실행"
-Write-Host "   olympus server start            # Gateway + Dashboard + Telegram"
-Write-Host "   /orchestration `"작업 설명`"     # Multi-AI 10 Phase 프로토콜"
+Write-Host "  olympus server start            # Gateway + Dashboard + Telegram 시작"
+Write-Host "  olympus start-trust             # 워커 등록 (별도 터미널, 작업 프로젝트에서)"
+Write-Host "  /team `"작업 설명`"               # Multi-AI Team Engineering Protocol"
 Write-Host ""
 
-Write-Host "문제 발생 시:" -ForegroundColor Yellow
-Write-Host "   olympus 명령이 인식되지 않으면:" -ForegroundColor Yellow
-Write-Host "   cd packages\cli && npm link" -ForegroundColor White
+Write-Host "다음 단계:" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  Step 1. Telegram 봇 설정 (선택)"
+Write-Host "    1) @BotFather → /newbot → 토큰 발급"
+Write-Host "    2) @userinfobot → /start → User ID 확인"
+Write-Host "    3) PowerShell에서 환경변수 설정:"
+Write-Host "       `$env:TELEGRAM_BOT_TOKEN='<토큰>'"
+Write-Host "       `$env:ALLOWED_USERS='<User ID>'"
+Write-Host "    또는 .env 파일에 추가:"
+Write-Host "       TELEGRAM_BOT_TOKEN=<토큰>"
+Write-Host "       ALLOWED_USERS=<User ID>"
+Write-Host ""
+Write-Host "  Step 2. 서버 시작"
+Write-Host "       olympus server start"
+Write-Host "       # 브라우저: http://localhost:8201 (대시보드)"
+Write-Host ""
+Write-Host "  Step 3. 워커 시작 (별도 터미널, 작업할 프로젝트 디렉토리에서)"
+Write-Host "       olympus start-trust"
+Write-Host ""
+
+Write-Host "olympus 명령이 인식되지 않으면:" -ForegroundColor Yellow
+Write-Host "  cd packages\cli && npm link" -ForegroundColor White
 Write-Host ""

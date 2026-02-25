@@ -273,8 +273,8 @@ if command -v claude &> /dev/null; then
     success "Claude CLI 설치됨: $CLAUDE_VERSION"
 else
     warn "Claude CLI가 설치되어 있지 않습니다."
-    echo "    Phase 1에서 자동 설치를 시도합니다: npm install -g @anthropic-ai/claude-code"
-    echo "    설치 실패 시 수동 설치: https://docs.anthropic.com/claude-code"
+    echo "    Phase 1에서 설치 안내를 제공합니다."
+    echo "    공식 설치: https://claude.ai/download"
 fi
 
 # tmux는 더 이상 필요하지 않음 (v0.4.0에서 제거됨)
@@ -314,18 +314,15 @@ echo -e "${CYAN}👑 Claude CLI (필수):${NC}"
 if command -v claude &> /dev/null; then
     success "Claude CLI 설치됨"
 else
-    warn "Claude CLI가 설치되어 있지 않습니다. 설치 중..."
-    if npm install -g @anthropic-ai/claude-code; then
-        success "Claude CLI 설치 완료"
-    else
-        error "Claude CLI 설치 실패!"
-        echo ""
-        echo "    Claude CLI는 Olympus의 핵심 의존성입니다."
-        echo "    수동 설치 후 재시도하세요:"
-        echo "    → npm install -g @anthropic-ai/claude-code"
-        echo "    → 또는: https://docs.anthropic.com/claude-code"
-        exit 1
-    fi
+    error "Claude CLI가 설치되어 있지 않습니다."
+    echo ""
+    echo "    Claude CLI는 Olympus의 핵심 의존성입니다."
+    echo "    네이티브 인스톨러로 설치 후 재시도하세요:"
+    echo "    → https://claude.ai/download"
+    echo ""
+    echo "    설치 후 'claude' 명령어가 PATH에 있는지 확인하세요:"
+    echo "    → which claude"
+    exit 1
 fi
 
 # Olympus CLI 설치
@@ -521,7 +518,9 @@ EOF
     else
         info "CLAUDE.md는 건드리지 않습니다. (--with-claude-md로 managed block 설치 가능)"
         if [ -L "$CLAUDE_DIR/CLAUDE.md" ]; then
-            warn "기존 CLAUDE.md symlink가 감지되었습니다. 필요 시 수동으로 개인 설정 파일로 전환하세요."
+            warn "기존 CLAUDE.md가 심볼릭 링크입니다."
+            info "   → --with-claude-md 옵션을 추가하면 managed block으로 자동 전환됩니다:"
+            info "      ./install.sh --commands --with-claude-md"
         fi
     fi
 
@@ -968,6 +967,57 @@ echo ""
 
 fi  # ── 전역 모드 if 블록 끝 ──
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Phase 6.9: /team 명령어 필수 환경변수 자동 설정
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+phase "Phase 6.9: /team 필수 환경변수 — CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+ENV_VAR_LINE='export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1'
+ENV_VAR_COMMENT='# Olympus /team: Claude Code AI Agent Teams 실험적 기능 활성화 (필수)'
+
+# 현재 세션에 즉시 적용
+export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+success "현재 세션: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 즉시 적용"
+
+# 쉘 프로파일 자동 감지 + 영속 설정
+SHELL_PROFILES=()
+if [ -f "$HOME/.zshrc" ]; then
+    SHELL_PROFILES+=("$HOME/.zshrc")
+fi
+if [ -f "$HOME/.bashrc" ]; then
+    SHELL_PROFILES+=("$HOME/.bashrc")
+fi
+if [ -f "$HOME/.bash_profile" ] && [ ! -f "$HOME/.bashrc" ]; then
+    SHELL_PROFILES+=("$HOME/.bash_profile")
+fi
+if [ ${#SHELL_PROFILES[@]} -eq 0 ]; then
+    # 프로파일이 없으면 현재 쉘에 맞게 생성
+    if [ "$(basename "$SHELL")" = "zsh" ]; then
+        SHELL_PROFILES+=("$HOME/.zshrc")
+    else
+        SHELL_PROFILES+=("$HOME/.bashrc")
+    fi
+fi
+
+for profile in "${SHELL_PROFILES[@]}"; do
+    if grep -qF 'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS' "$profile" 2>/dev/null; then
+        info "이미 설정됨: $profile (건너뜀)"
+    else
+        echo "" >> "$profile"
+        echo "$ENV_VAR_COMMENT" >> "$profile"
+        echo "$ENV_VAR_LINE" >> "$profile"
+        success "영속 설정 완료: $profile"
+    fi
+done
+
+echo ""
+echo -e "    ${YELLOW}⚠️  새 터미널에서 적용 확인:${NC} echo \$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
+echo -e "    ${YELLOW}   현재 세션은 이미 적용됨.${NC}"
+echo ""
+
 # Phase 6.5: tmux 설정은 더 이상 필요하지 않음 (v0.4.0에서 tmux 의존성 완전 제거)
 
 echo ""
@@ -1183,9 +1233,14 @@ echo "   # 브라우저: http://localhost:8201 (대시보드)"
 echo ""
 echo -e "${CYAN}Step 4. 작업할 프로젝트에서 워커 시작 (별도 터미널)${NC}"
 echo "   cd /path/to/your/project"
-echo "   olympus start"
+echo "   olympus start-trust   # 권장: Claude 권한 자동 승인 (--dangerously-skip-permissions)"
+echo "   # 또는: olympus start  # 매번 Claude가 권한 확인 요청 (인터랙티브)"
 echo ""
-echo -e "${CYAN}Step 5. Team 모드 첫 사용${NC}"
+echo -e "${CYAN}Step 5. /team 환경변수 확인${NC}"
+echo "   echo \$CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS  # '1'이면 정상"
+echo "   # 미설정 시: source ~/.zshrc  (또는 새 터미널 열기)"
+echo ""
+echo -e "${CYAN}Step 6. Team 모드 첫 사용${NC}"
 echo "   # Claude CLI 세션 안에서:"
 echo "   /team \"로그인 페이지 UI 개선\""
 echo ""
@@ -1210,8 +1265,8 @@ echo -e "   ⚡ ${CYAN}PTY Worker${NC}: node-pty 기반 상주형 Claude CLI (TU
 echo -e "   🔗 ${CYAN}Worker Registry${NC}: Gateway 워커 등록/하트비트/작업 할당"
 echo -e "   📡 ${CYAN}실시간 스트리밍${NC}: stdout WebSocket 브로드캐스트 (cli:stream)"
 echo -e "   🤝 ${CYAN}AIOS v5.3${NC}: Claude + Codex + Gemini Co-Leadership"
-echo -e "   📊 ${CYAN}9 Packages${NC}: protocol, core, gateway, cli, client, web, tui, telegram-bot, codex"
-echo -e "   🧪 ${CYAN}576 Tests${NC}: gateway(372) + codex(82) + telegram(57) + cli(54) + core(24)"
+echo -e "   📊 ${CYAN}11 Packages${NC}: protocol, core, gateway, cli, client, web, tui, telegram-bot, codex, claude-dashboard, mcp"
+echo -e "   🧪 ${CYAN}483+ Tests${NC}: gateway(483) + codex(63) + cli(130)"
 echo ""
 echo -e "   ${YELLOW}🎯 목표: Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 도구${NC}"
 echo ""

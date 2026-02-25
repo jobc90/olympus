@@ -12,12 +12,35 @@ import { hashToken } from './hash.js';
 import { VERSION } from '../version.js';
 import { debugLog } from './debug.js';
 
-const API_TIMEOUT_MS = 5000;
+const API_TIMEOUT_MS = 10000;  // 5s → 10s (Google API can be slow)
 const GEMINI_DIR = '.gemini';
 const OAUTH_CREDS_FILE = 'oauth_creds.json';
 const SETTINGS_FILE = 'settings.json';
 const KEYCHAIN_SERVICE_NAME = 'gemini-cli-oauth';
 const MAIN_ACCOUNT_KEY = 'main-account';
+
+// Disk cache: persists across process spawns (unlike in-memory cache)
+const DISK_CACHE_PATH = path.join(os.homedir(), '.olympus', 'gemini-quota-cache.json');
+const DISK_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+async function readDiskCache(): Promise<GeminiUsageLimits | null> {
+  try {
+    const s = await stat(DISK_CACHE_PATH);
+    if (Date.now() - s.mtimeMs > DISK_CACHE_TTL_MS) return null;
+    const raw = await readFile(DISK_CACHE_PATH, 'utf-8');
+    return JSON.parse(raw) as GeminiUsageLimits;
+  } catch {
+    return null;
+  }
+}
+
+async function writeDiskCache(data: GeminiUsageLimits): Promise<void> {
+  try {
+    await writeFile(DISK_CACHE_PATH, JSON.stringify(data), { mode: 0o600 });
+  } catch {
+    // ignore write errors
+  }
+}
 
 const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
 const CODE_ASSIST_API_VERSION = 'v1internal';
@@ -501,7 +524,16 @@ export async function fetchGeminiUsage(ttlSeconds: number = 60): Promise<GeminiU
   pendingRequests.set(tokenHash, requestPromise);
 
   try {
-    return await requestPromise;
+    const result = await requestPromise;
+    if (result) return result;
+
+    // API failed — fall back to disk cache (last known-good value)
+    const diskCached = await readDiskCache();
+    if (diskCached) {
+      debugLog('gemini', 'fetchGeminiUsage: API failed, using disk cache fallback');
+      return diskCached;
+    }
+    return null;
   } finally {
     pendingRequests.delete(tokenHash);
   }
@@ -597,9 +629,11 @@ async function fetchFromGeminiApi(
       })) ?? [],
     };
 
-    // Update cache
+    // Update in-memory cache
     const tokenHash = hashToken(credentials.accessToken);
     geminiCacheMap.set(tokenHash, { data: limits, timestamp: Date.now() });
+    // Update disk cache (fire-and-forget — survives process respawn)
+    void writeDiskCache(limits);
     debugLog('gemini', 'fetchFromGeminiApi: success', limits);
 
     return limits;

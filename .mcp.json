@@ -10,8 +10,8 @@
       "args": ["${PWD}/orchestration/mcps/openapi/server.js"]
     },
     "stitch": {
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/stitch-mcp"]
+      "command": "/opt/homebrew/bin/stitch-mcp",
+      "args": []
     }
   }
 }

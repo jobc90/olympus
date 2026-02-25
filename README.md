@@ -176,20 +176,21 @@ cd olympus
 ### Step 1. 설치 (Windows)
 
 ```bash
-# Git Bash / MINGW (권장)
+# Git Bash / MINGW — Git이 설치되어 있으면 Git Bash를 권장
 git clone https://github.com/jobc90/olympus.git
 cd olympus
-./install-win.sh
+bash ./install-win.sh   # Enter → 명령어만 등록 (권장, 기존 설정 보존)
+# 또는: ./install-win.sh  (Git Bash에서 실행 권한이 있을 경우)
 ```
 
 ```powershell
-# PowerShell
+# PowerShell — Git Bash가 없을 때
 git clone https://github.com/jobc90/olympus.git
 cd olympus
-.\install.ps1
+.\install.ps1           # Enter → 명령어만 등록 (권장, 기존 설정 보존)
 ```
 
-> `install.sh`는 macOS/Linux 전용입니다. Windows에서는 `install-win.sh` (Git Bash) 또는 `install.ps1` (PowerShell)을 사용하세요.
+> **어떤 것을 써야 하나요?** Git이 설치되어 있으면 → `install-win.sh` (Git Bash). PowerShell만 있다면 → `install.ps1`.
 
 ---
 
@@ -202,7 +203,7 @@ cp .env.example .env
 # 값 편집 후 shell 설정에 추가
 # ~/.zshrc 또는 ~/.bashrc에 아래 추가:
 export TELEGRAM_BOT_TOKEN="7123456789:AAHxxxxxx..."
-export ALLOWED_USERS="123456789"          # 내 Telegram User ID
+export ALLOWED_USERS="123456789"          # 내 Telegram User ID (여러 명: "111,222,333")
 ```
 
 > Telegram을 사용하지 않는다면 이 단계는 건너뜁니다. 환경변수 전체 목록은 `.env.example` 참조.
@@ -224,7 +225,8 @@ olympus server start
 
 ```bash
 cd /path/to/your/project    # 작업할 프로젝트 디렉토리로 이동
-olympus start               # Gateway에 워커로 등록 + Claude CLI 시작
+olympus start-trust         # Gateway에 워커로 등록 + 권한 자동 승인 (권장)
+# 또는: olympus start       # 권한 확인 요청 (인터랙티브)
 ```
 
 ---
@@ -441,12 +443,18 @@ Telegram에서 본인 봇에게 `/health` 전송 → `✅ Gateway 연결됨` 응
 
 | 명령어 | 설명 |
 |--------|------|
-| `/start` | 도움말 표시 |
-| `/health` | 상태 확인 |
-| `/workers` | 워커 목록 표시 |
+| `/start` | 도움말 + 워커 현황 표시 |
+| `/health` | Gateway 연결 상태 확인 |
+| `/workers` | 등록된 워커 목록 + 상태 |
+| `/tasks` | 진행 중인 작업 목록 |
+| `/sessions` | 세션 목록 |
+| `/use <이름>` | 특정 워커/세션으로 직접 모드 전환 |
+| `/use main` | 오케스트레이터(Codex) 모드로 복귀 |
+| `/last` | 마지막 출력 확인 |
 | `/team <요청>` | Team Engineering Protocol 실행 |
-| 일반 메시지 | Claude CLI에 전송 |
-| `@worker-name 작업` | 워커에 직접 작업 지시 |
+| 일반 메시지 | Codex 오케스트레이터가 자동 라우팅 |
+| `@worker-name 작업` | 워커에 직접 작업 지시 _(일반 모드에서 바로 사용)_ |
+| `@worker-name team 작업` | 해당 워커에서 Team Protocol 실행 |
 
 **인라인 쿼리**: 아무 채팅에서 `@봇이름`을 입력하면 사용 가능한 워커 목록이 표시됩니다.
 
@@ -518,13 +526,18 @@ ls ~/.claude/agents/    # 19개 .md 파일
 
 # 로컬 설치 시
 ls .claude/agents/
+
+# /team 명령어 필수 환경변수 확인
+echo $CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS  # "1" 이어야 정상
+# 미설정 시: source ~/.zshrc 또는 새 터미널 열기
+# (install.sh가 자동 설정 — 수동 설정: export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1)
 ```
 
 ---
 
 ## 🏗️ Architecture
 
-### 패키지 구조 (10개)
+### 패키지 구조 (11개)
 
 ```
 protocol → core → gateway ──→ cli
@@ -598,7 +611,7 @@ protocol → core → gateway ──→ cli
 ```bash
 pnpm install && pnpm build    # 전체 빌드
 pnpm test                     # 전체 테스트
-pnpm lint                     # TypeScript 타입 체크 (6 packages)
+pnpm lint                     # TypeScript 타입 체크 (7 packages)
 pnpm dev                      # 개발 모드
 ```
 
