@@ -236,7 +236,7 @@ function resolveDrawScale(footY: number, mapScale: number, panelScale: number): 
 }
 
 const HD_PIXEL_CHARACTER_MODE = true;
-const HD_RENDER_REV = 'ref_v5';
+const HD_RENDER_REV = 'ref_v6';
 const HD_SPRITE_W = 32;
 const HD_SPRITE_H = 48;
 const HD_SPRITE_CACHE = new Map<string, HTMLCanvasElement>();
@@ -414,24 +414,24 @@ function drawHdPixelAvatar(
   const shoes = '#0C0D18';
   const isF = spec.gender === 'f';
 
-  // ── Feet & Legs (chibi: stubby, y=34..46 in 48px canvas) ────────────
+  // ── Feet & Legs (chibi: stubby, y=38..47 in 48px canvas) ────────────
   if (!seated) {
-    const lFY = step === 0 ? 42 : 44;
-    const rFY = step === 1 ? 42 : 44;
+    const lFY = step === 0 ? 43 : 44;
+    const rFY = step === 1 ? 43 : 44;
     px(4, lFY, 8, 4, shoes);    // splayed left foot (wider outward)
     px(18, rFY, 8, 4, shoes);   // splayed right foot (wider outward)
-    const lLY = step === 0 ? 34 : 36;
-    const rLY = step === 1 ? 34 : 36;
-    px(6, lLY, 6, 8, pants);    // left leg  (x=6..11)
-    px(18, rLY, 6, 8, pants);   // right leg (x=18..23), 6px gap between
+    const lLY = step === 0 ? 38 : 39;
+    const rLY = step === 1 ? 38 : 39;
+    px(6, lLY, 6, 5, pants);    // left leg  (x=6..11)
+    px(18, rLY, 6, 5, pants);   // right leg (x=18..23), 6px gap between
   } else {
-    px(6, 42, 6, 4, shoes);
-    px(18, 42, 6, 4, shoes);
+    px(6, 43, 6, 4, shoes);
+    px(18, 43, 6, 4, shoes);
   }
 
-  // ── Body / outfit (chibi torso y=22..33 in 48px canvas) ─────────────
-  const bodyY = 22;
-  const bodyH = 12;
+  // ── Body / outfit (chibi torso y=30..36 in 48px canvas) ─────────────
+  const bodyY = 30;
+  const bodyH = 7;
   switch (spec.outfitStyle) {
     case 'armor':
       px(6, bodyY, 20, bodyH, shirt);
@@ -499,21 +499,20 @@ function drawHdPixelAvatar(
   }
 
   // ── Hands ─────────────────────────────────────────────────────────────
-  px(0, bodyY + 10, 4, 4, skin);
-  px(26, bodyY + 10, 4, 4, skin);
+  px(0, bodyY + 4, 4, 4, skin);
+  px(26, bodyY + 4, 4, 4, skin);
 
-  // ── Neck (chibi: 2px, y=20 in 48px canvas) ────────────────────────────
-  px(12, 20, 8, 2, skin);
-  px(14, 20, 4, 2, skinSh);
+  // ── Neck (chibi: 2px, y=28 in 48px canvas) ────────────────────────────
+  px(12, 28, 8, 2, skin);
+  px(14, 28, 4, 2, skinSh);
 
-  // ── Face skin — BIG chibi head (drawn first, hair goes on top) ────────
-  // Head occupies y=0..20 (~42% of 48px canvas) vs body y=22..47
-  px(4, 8, 24, 12, skin);          // face interior y=8..19, 24px wide
-  px(6, 20, 20, 2, skin);          // chin overlap with neck
-  px(4,  10, 4, 8, skinSh);        // left-side face shadow
-  px(24, 10, 4, 8, skinSh);        // right-side face shadow
-  px(12, 18, 8, 2, skinSh);        // chin shadow (wider)
-  px(6,  19, 20, 2, '#3A2010');    // chin outline — separates face from neck
+  // ── Face skin — 2× BIGGER chibi head (drawn first, hair goes on top) ──
+  // Head occupies y=0..27 (~56% of 48px canvas) vs body y=30..47
+  px(2, 8, 28, 20, skin);          // face interior y=8..27, 28px wide (2× taller)
+  px(2, 10, 4, 16, skinSh);        // left-side face shadow
+  px(26, 10, 4, 16, skinSh);       // right-side face shadow
+  px(10, 25, 12, 2, skinSh);       // chin shadow
+  px(4,  27, 24, 2, '#3A2010');    // chin outline — separates face from neck
 
   // ── Hair — each case draws its FULL shape on top of skin ─────────────
   switch (spec.hairStyle) {
@@ -522,18 +521,18 @@ function drawHdPixelAvatar(
       px(8, 0, 16, 2, hair);
       px(4, 2, 24, 8, hair);
       px(2, 4, 28, 6, hair);       // widest at y=4..9
-      px(2, 10, 4, 10, hair);      // left long flow y=10..19
-      px(26, 10, 4, 10, hair);     // right long flow y=10..19
+      px(2, 10, 4, 18, hair);      // left long flow y=10..27
+      px(26, 10, 4, 18, hair);     // right long flow y=10..27
       break;
     case 'wavy':
       // Dramatic flowing waves with side bumps (48px: face y=8..19)
       px(8, 0, 16, 2, hair);
       px(4, 2, 24, 4, hair);       // top
       px(0, 4, 32, 6, hair);       // full-width wave y=4..9
-      px(2, 10, 4, 6, hair);       // left wave bump y=10..15
-      px(24, 10, 6, 6, hair);      // right wave bump y=10..15
-      px(2, 16, 4, 4, hair);       // left flow y=16..19
-      px(26, 16, 4, 4, hair);      // right flow y=16..19
+      px(2, 10, 4, 8, hair);       // left wave bump y=10..17
+      px(24, 10, 6, 8, hair);      // right wave bump y=10..17
+      px(2, 18, 4, 10, hair);      // left flow y=18..27
+      px(26, 18, 4, 10, hair);     // right flow y=18..27
       break;
     case 'spike':
       // Three DRAMATIC spikes at crown
@@ -562,8 +561,8 @@ function drawHdPixelAvatar(
       px(0, 2, 32, 4, hair);       // full width y=2..5
       px(0, 6, 32, 4, hair);       // full width y=6..9
       px(0, 10, 32, 6, hair);      // full width y=10..15
-      px(0, 16, 6, 4, hair);       // left puff y=16..19
-      px(26, 16, 6, 4, hair);      // right puff y=16..19
+      px(0, 16, 6, 12, hair);      // left puff y=16..27
+      px(26, 16, 6, 12, hair);     // right puff y=16..27
       break;
     case 'pony':
       // Cap + thick ponytail on right + hair tie (48px canvas)
@@ -586,10 +585,10 @@ function drawHdPixelAvatar(
       break;
     case 'hood':
       // Full hood covering head — face visible through opening (48px)
-      px(0, 0, 32, 22, shirt);     // entire hood in mantle color
-      px(6, 8, 20, 12, skin);      // inner face opening y=8..19
-      px(20, 10, 4, 8, skinSh);    // face shadow inside hood
-      px(12, 18, 4, 2, skinSh);
+      px(0, 0, 32, 30, shirt);     // entire hood in mantle color (covers neck)
+      px(4, 8, 24, 20, skin);      // inner face opening y=8..27
+      px(26, 10, 4, 16, skinSh);   // face shadow inside hood (right)
+      px(10, 25, 12, 2, skinSh);   // chin shadow inside hood
       break;
     default: // 'short' — minimal rounded cap
       px(8, 0, 16, 2, hair);
@@ -601,7 +600,7 @@ function drawHdPixelAvatar(
   // ── Hair cap underline — separates hair from forehead ────────────────
   // A dark 2px row at the hair-cap bottom edge creates visible hair/skin boundary
   if (spec.hairStyle !== 'hood' && spec.hairStyle !== 'curly') {
-    px(4, 10, 24, 2, '#1A1208');
+    px(2, 10, 28, 2, '#1A1208');   // hair/forehead boundary (full face width)
   }
 
   // ── Crown / Head Accessory (drawn on top of hair) ─────────────────────
@@ -642,7 +641,7 @@ function drawHdPixelAvatar(
   }
 
   // ── Eyebrows (dark brown — clearly visible against skin) ─────────────
-  const browY = 10;
+  const browY = 13;
   const browClr = '#3A1E08';
   if (faceSpec.brow === 'stern' || faceSpec.brow === 'fierce') {
     px(8,  browY, 8, 2, browClr);    // strong L brow
@@ -659,8 +658,8 @@ function drawHdPixelAvatar(
     px(18, browY, 6, 2, browClr);    // soft/calm R brow
   }
 
-  // ── Eyes — sclera + iris + pupil + highlight (y=12) ──────────────────
-  const eyeY = 12;
+  // ── Eyes — sclera + iris + pupil + highlight (y=15) ──────────────────
+  const eyeY = 15;
   const lEX = 8, rEX = 18;
   if (!blink) {
     // Top eyelid line
@@ -690,11 +689,11 @@ function drawHdPixelAvatar(
   }
 
   // ── Blush marks (between eyes and mouth) ─────────────────────────────
-  px(5,  eyeY + 5, 5, 2, '#FFA898');   // L cheek blush
-  px(22, eyeY + 5, 5, 2, '#FFA898');   // R cheek blush
+  px(5,  eyeY + 7, 5, 2, '#FFA898');   // L cheek blush (below bottom eyelid)
+  px(22, eyeY + 7, 5, 2, '#FFA898');   // R cheek blush
 
   // ── Mouth (y=16) ───────────────────────────────────────────────────────
-  const mouthY = 16;
+  const mouthY = 24;
   if (faceSpec.mouth === 'smile') {
     px(11, mouthY,     2, 2, '#B83020');  // L corner
     px(19, mouthY,     2, 2, '#B83020');  // R corner
