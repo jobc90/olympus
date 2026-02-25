@@ -33,12 +33,12 @@ function zoneRect(zone: ZoneBounds): Rect {
 }
 
 function floorKindByZone(zoneId: string): FloorKind {
-  if (zoneId === 'celestial_observatory') return 'tile_light';
+  if (zoneId === 'celestial_observatory' || zoneId === 'zeus_temple') return 'tile_light';
   if (zoneId.startsWith('sanctuary_') || zoneId === 'athenas_library') return 'tile_blue';
   if (zoneId === 'ambrosia_hall') return 'lounge';
   if (zoneId === 'hephaestus_forge') return 'forge';
   if (zoneId === 'olympus_garden') return 'garden';
-  return 'wood';
+  return 'tile_light'; // agora and processional path → marble
 }
 
 function fillWoodPattern(ctx: CanvasRenderingContext2D, rect: Rect): void {

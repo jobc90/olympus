@@ -380,11 +380,8 @@ export function renderFrame(
     });
   }
 
-  // Monitor screen state overlay on worker desks
-  const deskPositions = [
-    { col: 18, row: 6 }, { col: 18, row: 9 }, { col: 18, row: 12 },
-    { col: 26, row: 6 }, { col: 26, row: 9 }, { col: 26, row: 12 },
-  ];
+  // Monitor screen overlays removed — no longer using desk/monitor furniture
+  const deskPositions: Array<{ col: number; row: number }> = [];
   for (let i = 0; i < config.workers.length && i < deskPositions.length; i++) {
     const workerCfg = config.workers[i];
     const deskPos = deskPositions[i];

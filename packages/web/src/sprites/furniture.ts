@@ -50,6 +50,11 @@ type FurnitureType = TileType extends string ? (
   | 'sacred_brazier'
   | 'god_statue'
   | 'altar'
+  | 'fountain'
+  | 'olive_tree'
+  | 'urn'
+  | 'stone_bench'
+  | 'laurel_tree'
 ) : never;
 
 // ---------------------------------------------------------------------------
@@ -978,6 +983,155 @@ function drawAltar(ctx: CanvasRenderingContext2D, col: number, row: number, tick
   }
 }
 
+// fountain → Marble Fountain with animated water
+function drawFountain(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Outer basin rim
+  fillPixelEllipse(ctx, x, y - 4, 14, 8, OL);
+  fillPixelEllipse(ctx, x, y - 4, 13, 7, MBD);
+  fillPixelEllipse(ctx, x, y - 4, 11, 6, MBM);
+  // Water surface
+  fillPixelEllipse(ctx, x, y - 5, 9, 5, '#1E72A4');
+  // Water shimmer animation
+  const sh1 = tick % 60 < 35;
+  const sh2 = tick % 45 < 25;
+  if (sh1) { ctx.fillStyle = '#4A9EC8'; ctx.fillRect(x - 5, y - 7, 4, 2); }
+  if (sh2) { ctx.fillStyle = '#3A90BC'; ctx.fillRect(x + 2, y - 5, 3, 1); }
+  // Central pedestal shaft
+  px(ctx, x - 2, y - 18, 4, 14, OL);
+  px(ctx, x - 1, y - 17, 2, 13, MBL);
+  // Upper basin (smaller)
+  fillPixelEllipse(ctx, x, y - 19, 6, 3, OL);
+  fillPixelEllipse(ctx, x, y - 19, 5, 3, MBM);
+  fillPixelEllipse(ctx, x, y - 19, 4, 2, '#2A84B8');
+  // Water droplet animation
+  const dp = tick % 20;
+  if (dp < 14) {
+    ctx.fillStyle = '#88CCE870';
+    ctx.fillRect(x - 1, y - 17 + dp / 2, 1, 2);
+    ctx.fillRect(x + 1, y - 16 + dp / 2, 1, 2);
+  }
+  // Basin base
+  px(ctx, x - 5, y - 1, 10, 3, OL);
+  px(ctx, x - 4, y, 8, 2, MBD);
+}
+
+// olive_tree → Ancient Silvery Olive Tree
+function drawOliveTree(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Gnarled trunk
+  px(ctx, x - 3, y - 18, 6, 18, OL);
+  px(ctx, x - 2, y - 17, 4, 17, '#7A5A28');
+  px(ctx, x - 1, y - 14, 2, 10, '#9A7438');
+  // Branches
+  px(ctx, x - 7, y - 22, 5, 2, '#8A6632'); // left branch
+  px(ctx, x + 2, y - 20, 5, 2, '#8A6632'); // right branch
+  // Foliage — silvery-green olive character
+  const sway = Math.round(Math.sin(tick * 0.02) * 1);
+  const lx = x + sway;
+  fillPixelEllipse(ctx, lx, y - 29, 13, 9, OL);
+  fillPixelEllipse(ctx, lx, y - 29, 12, 8, '#485E30');
+  fillPixelEllipse(ctx, lx - 4, y - 31, 8, 6, '#566C38');
+  fillPixelEllipse(ctx, lx + 4, y - 27, 8, 6, '#4A6432');
+  // Silver-leaf sheen (olive trees look grey-green / silvery)
+  fillPixelEllipse(ctx, lx - 2, y - 33, 6, 4, '#7A9068');
+  fillPixelEllipse(ctx, lx + 2, y - 28, 5, 3, '#6E8460');
+  // Olive fruits (small dark purple dots)
+  ctx.fillStyle = '#503860';
+  ctx.fillRect(lx - 5, y - 27, 2, 2);
+  ctx.fillRect(lx + 3, y - 30, 2, 2);
+  ctx.fillRect(lx - 1, y - 24, 2, 2);
+  ctx.fillStyle = '#7A5880';
+  ctx.fillRect(lx - 5, y - 27, 1, 1);
+  ctx.fillRect(lx + 3, y - 30, 1, 1);
+}
+
+// urn → Greek Terracotta Amphora / Urn
+function drawUrn(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Foot / base ring
+  px(ctx, x - 4, y - 3, 8, 3, OL);
+  px(ctx, x - 3, y - 2, 6, 2, '#7A3C18');
+  // Lower belly (wide ellipse)
+  fillPixelEllipse(ctx, x, y - 10, 8, 7, OL);
+  fillPixelEllipse(ctx, x, y - 10, 7, 6, '#BF5018');
+  // Belly highlight
+  fillPixelEllipse(ctx, x - 1, y - 12, 5, 4, '#D46028');
+  px(ctx, x - 1, y - 14, 2, 5, '#E07840'); // bright stripe
+  // Shoulder taper
+  fillPixelEllipse(ctx, x, y - 18, 6, 4, OL);
+  fillPixelEllipse(ctx, x, y - 18, 5, 3, '#A84418');
+  // Neck
+  px(ctx, x - 2, y - 23, 4, 5, OL);
+  px(ctx, x - 1, y - 22, 2, 4, '#983C14');
+  // Rim
+  px(ctx, x - 4, y - 24, 8, 2, OL);
+  px(ctx, x - 3, y - 23, 6, 1, '#7A3010');
+  // Handles
+  px(ctx, x - 10, y - 20, 2, 1, OL);
+  px(ctx, x - 9, y - 21, 1, 5, '#7A3010');
+  px(ctx, x - 9, y - 16, 2, 1, OL);
+  px(ctx, x + 8, y - 20, 2, 1, OL);
+  px(ctx, x + 9, y - 21, 1, 5, '#7A3010');
+  px(ctx, x + 8, y - 16, 2, 1, OL);
+  // Greek key decoration band
+  px(ctx, x - 7, y - 14, 14, 1, '#5A2808');
+  px(ctx, x - 6, y - 13, 12, 1, GLL);  // gold band
+  px(ctx, x - 7, y - 12, 14, 1, '#5A2808');
+  // Black-figure silhouette
+  ctx.fillStyle = '#1C100A';
+  ctx.fillRect(x - 2, y - 12, 1, 4);
+  ctx.fillRect(x + 1, y - 11, 1, 3);
+}
+
+// stone_bench → Marble Exedra / Stone Bench
+function drawStoneBench(ctx: CanvasRenderingContext2D, col: number, row: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Front face (depth illusion)
+  px(ctx, x - 12, y - 2, 24, 4, OL);
+  px(ctx, x - 11, y - 1, 22, 3, MBD);
+  // Seat top surface
+  px(ctx, x - 12, y - 6, 24, 4, OL);
+  px(ctx, x - 11, y - 5, 22, 3, MBL);
+  px(ctx, x - 10, y - 5, 20, 2, '#F4EEE4'); // marble top sheen
+  // Stone veining
+  ctx.fillStyle = MBM;
+  ctx.fillRect(x - 8, y - 5, 1, 3);
+  ctx.fillRect(x + 4, y - 5, 1, 3);
+  ctx.fillRect(x - 1, y - 5, 1, 2);
+  // Legs
+  px(ctx, x - 10, y - 6, 4, 8, OL);
+  px(ctx, x - 9, y - 5, 2, 7, MBD);
+  px(ctx, x + 6, y - 6, 4, 8, OL);
+  px(ctx, x + 7, y - 5, 2, 7, MBD);
+}
+
+// laurel_tree → Sacred Laurel / Bay Tree
+function drawLaurelTree(ctx: CanvasRenderingContext2D, col: number, row: number, tick: number): void {
+  const { x, y } = gridToScreen({ col, row });
+  // Short trunk
+  px(ctx, x - 2, y - 16, 4, 16, OL);
+  px(ctx, x - 1, y - 15, 2, 15, '#5A4022');
+  // Dense rounded foliage — laurel is dark evergreen
+  const sway = Math.round(Math.sin(tick * 0.025) * 1);
+  const lx = x + sway;
+  fillPixelEllipse(ctx, lx, y - 27, 12, 11, OL);
+  fillPixelEllipse(ctx, lx, y - 27, 11, 10, '#244E1C');
+  fillPixelEllipse(ctx, lx - 4, y - 29, 8, 7, '#2E6024');
+  fillPixelEllipse(ctx, lx + 4, y - 25, 8, 7, '#28582C');
+  // Crown top
+  fillPixelEllipse(ctx, lx, y - 34, 8, 7, OL);
+  fillPixelEllipse(ctx, lx, y - 34, 7, 6, '#2E6826');
+  // Highlight
+  fillPixelEllipse(ctx, lx - 2, y - 36, 5, 4, '#3E8034');
+  // Sacred shimmer (laurel is Apollo's sacred tree)
+  if (tick % 80 < 40) {
+    ctx.fillStyle = '#B0D040';
+    ctx.fillRect(lx + 3, y - 32, 2, 2);
+    ctx.fillRect(lx - 5, y - 28, 1, 1);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main dispatcher
 // ---------------------------------------------------------------------------
@@ -1034,6 +1188,11 @@ export function drawFurniture(
     case 'sacred_brazier': drawSacredBrazier(ctx, col, row, tick); break;
     case 'god_statue': drawGodStatue(ctx, col, row, tick); break;
     case 'altar': drawAltar(ctx, col, row, tick); break;
+    case 'fountain': drawFountain(ctx, col, row, tick); break;
+    case 'olive_tree': drawOliveTree(ctx, col, row, tick); break;
+    case 'urn': drawUrn(ctx, col, row); break;
+    case 'stone_bench': drawStoneBench(ctx, col, row); break;
+    case 'laurel_tree': drawLaurelTree(ctx, col, row, tick); break;
     default: break;
   }
 

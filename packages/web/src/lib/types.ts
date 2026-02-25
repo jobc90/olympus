@@ -138,7 +138,12 @@ export type FurnitureType =
   | 'marble_column'
   | 'sacred_brazier'
   | 'god_statue'
-  | 'altar';
+  | 'altar'
+  | 'fountain'
+  | 'olive_tree'
+  | 'urn'
+  | 'stone_bench'
+  | 'laurel_tree';
 
 /** A furniture item placed on the map */
 export interface FurnitureItem {

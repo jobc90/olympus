@@ -43,121 +43,145 @@ export function getFloorColor(col: number, row: number): string {
 export function buildFurnitureLayout(workerCount: number): FurnitureItem[] {
   const items: FurnitureItem[] = [];
 
-  // ── Top-left room (green room) ────────────────────────────────────────
-  items.push({ type: 'bookshelf', col: 3, row: 1 });
-  items.push({ type: 'bookshelf', col: 7, row: 1 });
-  items.push({ type: 'potted_plant', col: 2, row: 3 });
-  items.push({ type: 'potted_plant', col: 8, row: 3 });
-  items.push({ type: 'whiteboard_obj', col: 5, row: 2 });
-  items.push({ type: 'round_table', col: 7, row: 2 });
+  // ── Sacred Olive Grove (olympus_garden: col 1-10, rows 1-4) ──────────────
+  items.push({ type: 'olive_tree', col: 2, row: 1 });
+  items.push({ type: 'olive_tree', col: 8, row: 1 });
+  items.push({ type: 'olive_tree', col: 5, row: 2 });
+  items.push({ type: 'olive_tree', col: 1, row: 3 });
+  items.push({ type: 'olive_tree', col: 9, row: 3 });
+  items.push({ type: 'stone_bench', col: 4, row: 3 });
+  items.push({ type: 'stone_bench', col: 7, row: 3 });
+  items.push({ type: 'urn', col: 3, row: 4 });
+  items.push({ type: 'urn', col: 8, row: 4 });
 
-  // ── Top-center room (lead desk) ───────────────────────────────────────
-  items.push({ type: 'big_desk', col: 16, row: 2 });
-  items.push({ type: 'chair', col: 16, row: 3 });
-  items.push({ type: 'bookshelf', col: 12, row: 2 });
-  items.push({ type: 'bookshelf', col: 20, row: 2 });
-  items.push({ type: 'poster', col: 14, row: 1 });
-  items.push({ type: 'poster', col: 18, row: 1 });
+  // ── Zeus Sanctum (zeus_temple: col 12-20, rows 1-4) ──────────────────────
+  items.push({ type: 'temple_column', col: 13, row: 1 });
+  items.push({ type: 'temple_column', col: 19, row: 1 });
+  items.push({ type: 'temple_column', col: 13, row: 4 });
+  items.push({ type: 'temple_column', col: 19, row: 4 });
+  items.push({ type: 'god_statue', col: 16, row: 1 });
+  items.push({ type: 'altar', col: 16, row: 2 });
+  items.push({ type: 'sacred_brazier', col: 14, row: 2 });
+  items.push({ type: 'sacred_brazier', col: 18, row: 2 });
+  items.push({ type: 'urn', col: 12, row: 3 });
+  items.push({ type: 'urn', col: 20, row: 3 });
 
-  // ── Top-right room (kitchen-like) ─────────────────────────────────────
-  items.push({ type: 'vending_machine', col: 23, row: 2 });
-  items.push({ type: 'water_cooler', col: 24, row: 2 });
-  items.push({ type: 'snack_shelf', col: 31, row: 2 });
-  items.push({ type: 'small_table', col: 29, row: 2 });
-  items.push({ type: 'floor_window', col: 26, row: 2 });
-  items.push({ type: 'floor_window', col: 28, row: 2 });
-  items.push({ type: 'floor_window', col: 30, row: 2 });
-  items.push({ type: 'round_table', col: 24, row: 3 });
-  items.push({ type: 'round_table', col: 30, row: 3 });
-  items.push({ type: 'wall_clock', col: 27, row: 1 });
+  // ── Temple of the Muses (celestial_observatory: col 22-32, rows 1-4) ─────
+  items.push({ type: 'marble_column', col: 23, row: 1 });
+  items.push({ type: 'marble_column', col: 31, row: 1 });
+  items.push({ type: 'marble_column', col: 23, row: 4 });
+  items.push({ type: 'marble_column', col: 31, row: 4 });
+  items.push({ type: 'god_statue', col: 27, row: 2 });
+  items.push({ type: 'altar', col: 27, row: 3 });
+  items.push({ type: 'urn', col: 25, row: 1 });
+  items.push({ type: 'urn', col: 29, row: 1 });
+  items.push({ type: 'stone_bench', col: 25, row: 4 });
+  items.push({ type: 'stone_bench', col: 29, row: 4 });
 
-  // ── Main office hall (left-center) ────────────────────────────────────
-  items.push({ type: 'long_table', col: 5, row: 7 });
-  items.push({ type: 'long_table', col: 11, row: 7 });
-  items.push({ type: 'long_table', col: 5, row: 10 });
-  items.push({ type: 'long_table', col: 11, row: 10 });
-  items.push({ type: 'meeting_chair', col: 4, row: 8 });
-  items.push({ type: 'meeting_chair', col: 6, row: 8 });
-  items.push({ type: 'meeting_chair', col: 10, row: 8 });
-  items.push({ type: 'meeting_chair', col: 12, row: 8 });
-  items.push({ type: 'meeting_chair', col: 4, row: 11 });
-  items.push({ type: 'meeting_chair', col: 6, row: 11 });
-  items.push({ type: 'meeting_chair', col: 10, row: 11 });
-  items.push({ type: 'meeting_chair', col: 12, row: 11 });
-  items.push({ type: 'monitor', col: 4, row: 7 });
-  items.push({ type: 'monitor', col: 10, row: 7 });
-  items.push({ type: 'monitor', col: 4, row: 10 });
-  items.push({ type: 'monitor', col: 10, row: 10 });
-  items.push({ type: 'bookshelf', col: 2, row: 5 });
-  items.push({ type: 'bookshelf', col: 14, row: 5 });
-  items.push({ type: 'potted_plant', col: 2, row: 12 });
-  items.push({ type: 'potted_plant', col: 14, row: 12 });
-  items.push({ type: 'whiteboard_obj', col: 15, row: 8 });
+  // ── Grand Agora — Marble Courtyard (col 1-15, rows 5-12) ─────────────────
+  // Doric columns at zone corners
+  items.push({ type: 'doric_column', col: 2, row: 5 });
+  items.push({ type: 'doric_column', col: 14, row: 5 });
+  items.push({ type: 'doric_column', col: 2, row: 12 });
+  items.push({ type: 'doric_column', col: 14, row: 12 });
+  // Central fountain
+  items.push({ type: 'fountain', col: 8, row: 8 });
+  // Sacred braziers flanking the fountain
+  items.push({ type: 'sacred_brazier', col: 4, row: 6 });
+  items.push({ type: 'sacred_brazier', col: 12, row: 6 });
+  items.push({ type: 'sacred_brazier', col: 4, row: 11 });
+  items.push({ type: 'sacred_brazier', col: 12, row: 11 });
+  // Stone benches
+  items.push({ type: 'stone_bench', col: 6, row: 7 });
+  items.push({ type: 'stone_bench', col: 10, row: 7 });
+  items.push({ type: 'stone_bench', col: 6, row: 10 });
+  items.push({ type: 'stone_bench', col: 10, row: 10 });
+  // Laurel trees
+  items.push({ type: 'laurel_tree', col: 3, row: 9 });
+  items.push({ type: 'laurel_tree', col: 13, row: 9 });
+  // Decorative urns near corner columns
+  items.push({ type: 'urn', col: 1, row: 7 });
+  items.push({ type: 'urn', col: 15, row: 7 });
+  items.push({ type: 'urn', col: 1, row: 10 });
+  items.push({ type: 'urn', col: 15, row: 10 });
+  // God statues flanking processional entrance
+  items.push({ type: 'god_statue', col: 5, row: 5 });
+  items.push({ type: 'god_statue', col: 11, row: 5 });
 
-  // ── Worker sanctuaries (right stacked rooms) ──────────────────────────
-  const sanctuaryDesks: Array<{ col: number; row: number }> = [
-    { col: 19, row: 6 },
-    { col: 19, row: 9 },
-    { col: 19, row: 12 },
-    { col: 27, row: 6 },
-    { col: 27, row: 9 },
-    { col: 27, row: 12 },
+  // ── Sanctuary A — Demigod Chambers (col 17-21) ───────────────────────────
+  // Fixed columns at corners
+  items.push({ type: 'doric_column', col: 17, row: 5 });
+  items.push({ type: 'doric_column', col: 21, row: 5 });
+  items.push({ type: 'doric_column', col: 17, row: 13 });
+  items.push({ type: 'doric_column', col: 21, row: 13 });
+  // Braziers on east wall of each chamber
+  items.push({ type: 'sacred_brazier', col: 20, row: 6 });
+  items.push({ type: 'sacred_brazier', col: 20, row: 9 });
+  items.push({ type: 'sacred_brazier', col: 20, row: 12 });
+
+  // ── Sanctuary B — Hero's Halls (col 23-32) ───────────────────────────────
+  // Fixed columns
+  items.push({ type: 'marble_column', col: 32, row: 5 });
+  items.push({ type: 'marble_column', col: 32, row: 12 });
+  // Laurel trees on far wall
+  items.push({ type: 'laurel_tree', col: 30, row: 6 });
+  items.push({ type: 'laurel_tree', col: 30, row: 9 });
+  items.push({ type: 'laurel_tree', col: 30, row: 12 });
+  // Urns near the divider wall
+  items.push({ type: 'urn', col: 23, row: 5 });
+  items.push({ type: 'urn', col: 23, row: 9 });
+  items.push({ type: 'urn', col: 23, row: 12 });
+
+  // Worker-specific sanctuary furniture (marble table + cloud seats)
+  const sanctuaryPos = [
+    { col: 19, row: 6 },  // A1 (sanctuary_0, rows 5-7)
+    { col: 19, row: 9 },  // A2 (sanctuary_1, interior 9-10)
+    { col: 19, row: 12 }, // A3 (sanctuary_2, interior 12-13)
+    { col: 27, row: 6 },  // B1 (sanctuary_3, rows 5-7)
+    { col: 27, row: 9 },  // B2 (sanctuary_4, interior 9-10)
+    { col: 27, row: 12 }, // B3 (sanctuary_5, interior 12-13)
   ];
-  const sanctuaryChairs: Array<{ col: number; row: number }> = [
-    { col: 19, row: 7 },
-    { col: 19, row: 10 },
-    { col: 19, row: 13 },
-    { col: 27, row: 7 },
-    { col: 27, row: 10 },
-    { col: 27, row: 13 },
-  ];
-
   for (let i = 0; i < Math.min(workerCount, 6); i++) {
-    const desk = sanctuaryDesks[i];
-    const chair = sanctuaryChairs[i];
-    items.push({ type: i % 2 === 0 ? 'desk' : 'standing_desk', col: desk.col, row: desk.row });
-    items.push({ type: i % 2 === 0 ? 'monitor' : 'dual_monitor', col: desk.col - 1, row: desk.row });
-    items.push({ type: 'chair', col: chair.col, row: chair.row });
+    const pos = sanctuaryPos[i];
+    items.push({ type: 'marble_round_table', col: pos.col, row: pos.row });
+    items.push({ type: 'cloud_seat', col: pos.col - 1, row: pos.row });
+    items.push({ type: 'cloud_seat', col: pos.col + 1, row: pos.row });
   }
 
-  items.push({ type: 'bookshelf', col: 24, row: 6 });
-  items.push({ type: 'bookshelf', col: 24, row: 9 });
-  items.push({ type: 'bookshelf', col: 24, row: 12 });
-  items.push({ type: 'bookshelf', col: 31, row: 6 });
-  items.push({ type: 'bookshelf', col: 31, row: 9 });
-  items.push({ type: 'bookshelf', col: 31, row: 12 });
+  // ── Ambrosia Hall — Divine Feast Room (col 1-9, rows 14-17) ─────────────
+  // Note: row 13 is a wall (door at col 8, row 13)
+  items.push({ type: 'doric_column', col: 1, row: 14 });
+  items.push({ type: 'doric_column', col: 9, row: 14 });
+  items.push({ type: 'sacred_brazier', col: 2, row: 14 });
+  items.push({ type: 'sacred_brazier', col: 8, row: 14 });
+  items.push({ type: 'marble_round_table', col: 5, row: 15 });
+  items.push({ type: 'cloud_seat', col: 3, row: 15 });
+  items.push({ type: 'cloud_seat', col: 7, row: 15 });
+  items.push({ type: 'urn', col: 2, row: 17 });
+  items.push({ type: 'urn', col: 8, row: 17 });
+  items.push({ type: 'laurel_tree', col: 5, row: 17 });
 
-  // ── Bottom-left lounge ────────────────────────────────────────────────
-  items.push({ type: 'sofa', col: 3, row: 15 });
-  items.push({ type: 'sofa', col: 6, row: 15 });
-  items.push({ type: 'coffee_table', col: 3, row: 16 });
-  items.push({ type: 'coffee_table', col: 6, row: 16 });
-  items.push({ type: 'snack_shelf', col: 2, row: 17 });
-  items.push({ type: 'snack_shelf', col: 8, row: 17 });
-  items.push({ type: 'coffee_machine', col: 2, row: 14 });
-  items.push({ type: 'water_cooler', col: 8, row: 14 });
-  items.push({ type: 'potted_plant', col: 4, row: 17 });
+  // ── Athena's Library — Hall of Wisdom (col 11-15, rows 14-17) ────────────
+  // Note: row 13 is a wall (door at col 13, row 13)
+  items.push({ type: 'marble_column', col: 11, row: 14 });
+  items.push({ type: 'marble_column', col: 15, row: 14 });
+  items.push({ type: 'god_statue', col: 13, row: 15 });
+  items.push({ type: 'altar', col: 13, row: 17 });
+  items.push({ type: 'urn', col: 12, row: 16 });
+  items.push({ type: 'urn', col: 14, row: 16 });
 
-  // ── Bottom-center archive ─────────────────────────────────────────────
-  items.push({ type: 'bookshelf', col: 11, row: 14 });
-  items.push({ type: 'bookshelf', col: 12, row: 14 });
-  items.push({ type: 'bookshelf', col: 14, row: 14 });
-  items.push({ type: 'bookshelf', col: 15, row: 14 });
-  items.push({ type: 'reading_chair', col: 13, row: 16 });
-  items.push({ type: 'small_table', col: 12, row: 16 });
-
-  // ── Bottom-right ops/forge room ───────────────────────────────────────
-  items.push({ type: 'server_rack', col: 18, row: 15 });
-  items.push({ type: 'server_rack', col: 20, row: 15 });
-  items.push({ type: 'server_rack', col: 22, row: 15 });
-  items.push({ type: 'server_rack', col: 24, row: 15 });
-  items.push({ type: 'server_rack', col: 26, row: 15 });
-  items.push({ type: 'arcade_machine', col: 28, row: 15 });
-  items.push({ type: 'vending_machine', col: 30, row: 16 });
-  items.push({ type: 'vending_machine', col: 31, row: 16 });
-  items.push({ type: 'trophy_shelf', col: 32, row: 15 });
-  items.push({ type: 'poster', col: 29, row: 14 });
-  items.push({ type: 'poster', col: 24, row: 14 });
+  // ── Hephaestus Forge — Sacred Smithy (col 17-32, rows 14-17) ─────────────
+  items.push({ type: 'marble_column', col: 17, row: 14 });
+  items.push({ type: 'marble_column', col: 32, row: 14 });
+  items.push({ type: 'god_statue', col: 24, row: 14 });
+  items.push({ type: 'altar', col: 24, row: 16 });
+  items.push({ type: 'sacred_brazier', col: 19, row: 15 });
+  items.push({ type: 'sacred_brazier', col: 22, row: 15 });
+  items.push({ type: 'sacred_brazier', col: 26, row: 15 });
+  items.push({ type: 'sacred_brazier', col: 29, row: 15 });
+  items.push({ type: 'sacred_brazier', col: 32, row: 15 });
+  items.push({ type: 'urn', col: 18, row: 17 });
+  items.push({ type: 'urn', col: 31, row: 17 });
 
   return items;
 }
