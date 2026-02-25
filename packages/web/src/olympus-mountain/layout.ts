@@ -19,20 +19,18 @@ export const MAP_ROWS = 19;
 export function getFloorColor(col: number, row: number): string {
   if (col === 0 || col === MAP_COLS - 1 || row === 0 || row === MAP_ROWS - 1) return '#2A2118';
   if ((col === 11 || col === 21) && row >= 1 && row <= 4) return '#7A6242';
-  if (col === 22 && row >= 5 && row <= 13) return '#6A7690';
   if (row === 13 && col >= 1 && col <= 15) return '#7A6242';
   if (col === 10 && row >= 13 && row <= 17) return '#7A6242';
-  if ((row === 8 || row === 11) && ((col >= 17 && col <= 21) || (col >= 23 && col <= 32))) return '#7A87A4';
   if (col === 16 && row >= 4 && row <= 17) return '#D4AF69';
 
   if (col >= 1 && col <= 10 && row >= 1 && row <= 4) return '#D5E8BB'; // garden
   if (col >= 12 && col <= 20 && row >= 1 && row <= 4) return '#F4E6C7'; // zeus temple
   if (col >= 22 && col <= 32 && row >= 1 && row <= 4) return '#D9D5EE'; // observatory
   if (col >= 1 && col <= 15 && row >= 5 && row <= 12) return '#E6D8C2'; // agora
-  if (((col >= 17 && col <= 21) || (col >= 23 && col <= 32)) && row >= 5 && row <= 13) return '#D0E1F2'; // sanctuaries
+  if (col >= 17 && col <= 32 && row >= 5 && row <= 12) return '#E8D5B0'; // forge (warm stone)
   if (col >= 1 && col <= 9 && row >= 13 && row <= 17) return '#EBD7C3'; // ambrosia
   if (col >= 11 && col <= 15 && row >= 13 && row <= 17) return '#CFDCEF'; // library
-  if (col >= 17 && col <= 32 && row >= 14 && row <= 17) return '#E0C4A8'; // forge
+  if (col >= 17 && col <= 32 && row >= 13 && row <= 17) return '#D0E1F2'; // sanctuaries (light blue)
   return '#DED1C0';
 }
 
@@ -108,38 +106,49 @@ export function buildFurnitureLayout(workerCount: number): FurnitureItem[] {
   items.push({ type: 'god_statue', col: 5, row: 5 });
   items.push({ type: 'god_statue', col: 11, row: 5 });
 
-  // ── Sanctuary A — Demigod Chambers (col 17-21) ───────────────────────────
-  // Fixed columns at corners
-  items.push({ type: 'doric_column', col: 17, row: 5 });
-  items.push({ type: 'doric_column', col: 21, row: 5 });
-  items.push({ type: 'doric_column', col: 17, row: 13 });
-  items.push({ type: 'doric_column', col: 21, row: 13 });
-  // Braziers on east wall of each chamber
-  items.push({ type: 'sacred_brazier', col: 20, row: 6 });
-  items.push({ type: 'sacred_brazier', col: 20, row: 9 });
-  items.push({ type: 'sacred_brazier', col: 20, row: 12 });
-
-  // ── Sanctuary B — Hero's Halls (col 23-32) ───────────────────────────────
-  // Fixed columns
+  // ── Hephaestus Forge — Sacred Smithy (col 17-32, rows 5-12) ─────────────
+  // Corner columns
+  items.push({ type: 'marble_column', col: 17, row: 5 });
   items.push({ type: 'marble_column', col: 32, row: 5 });
+  items.push({ type: 'marble_column', col: 17, row: 12 });
   items.push({ type: 'marble_column', col: 32, row: 12 });
-  // Laurel trees on far wall
-  items.push({ type: 'laurel_tree', col: 30, row: 6 });
-  items.push({ type: 'laurel_tree', col: 30, row: 9 });
-  items.push({ type: 'laurel_tree', col: 30, row: 12 });
-  // Urns near the divider wall
-  items.push({ type: 'urn', col: 23, row: 5 });
-  items.push({ type: 'urn', col: 23, row: 9 });
-  items.push({ type: 'urn', col: 23, row: 12 });
+  // Central deity and altar
+  items.push({ type: 'god_statue', col: 24, row: 6 });
+  items.push({ type: 'altar', col: 24, row: 8 });
+  // Sacred braziers ringing the forge
+  items.push({ type: 'sacred_brazier', col: 19, row: 6 });
+  items.push({ type: 'sacred_brazier', col: 29, row: 6 });
+  items.push({ type: 'sacred_brazier', col: 19, row: 11 });
+  items.push({ type: 'sacred_brazier', col: 29, row: 11 });
+  // Laurel trees
+  items.push({ type: 'laurel_tree', col: 21, row: 9 });
+  items.push({ type: 'laurel_tree', col: 27, row: 9 });
+  // Urns at corners
+  items.push({ type: 'urn', col: 18, row: 5 });
+  items.push({ type: 'urn', col: 31, row: 5 });
+  items.push({ type: 'urn', col: 18, row: 12 });
+  items.push({ type: 'urn', col: 31, row: 12 });
+
+  // ── Sanctuaries — Divine Workspaces (col 17-32, rows 13-17) ─────────────
+  // Perimeter columns
+  items.push({ type: 'doric_column', col: 17, row: 13 });
+  items.push({ type: 'doric_column', col: 32, row: 13 });
+  items.push({ type: 'doric_column', col: 17, row: 17 });
+  items.push({ type: 'doric_column', col: 32, row: 17 });
+  // Braziers at top edge
+  items.push({ type: 'sacred_brazier', col: 18, row: 14 });
+  items.push({ type: 'sacred_brazier', col: 31, row: 14 });
 
   // Worker-specific sanctuary furniture (marble table + cloud seats)
+  // 3×2 grid: top row (rows 13-14) cols 17-21, 22-26, 27-32
+  //           bottom row (rows 15-17) cols 17-21, 22-26, 27-32
   const sanctuaryPos = [
-    { col: 19, row: 6 },  // A1 (sanctuary_0, rows 5-7)
-    { col: 19, row: 9 },  // A2 (sanctuary_1, interior 9-10)
-    { col: 19, row: 12 }, // A3 (sanctuary_2, interior 12-13)
-    { col: 27, row: 6 },  // B1 (sanctuary_3, rows 5-7)
-    { col: 27, row: 9 },  // B2 (sanctuary_4, interior 9-10)
-    { col: 27, row: 12 }, // B3 (sanctuary_5, interior 12-13)
+    { col: 19, row: 13 },  // sanctuary_0 (cols 17-21, rows 13-14)
+    { col: 24, row: 13 },  // sanctuary_1 (cols 22-26, rows 13-14)
+    { col: 29, row: 13 },  // sanctuary_2 (cols 27-32, rows 13-14)
+    { col: 19, row: 16 },  // sanctuary_3 (cols 17-21, rows 15-17)
+    { col: 24, row: 16 },  // sanctuary_4 (cols 22-26, rows 15-17)
+    { col: 29, row: 16 },  // sanctuary_5 (cols 27-32, rows 15-17)
   ];
   for (let i = 0; i < Math.min(workerCount, 6); i++) {
     const pos = sanctuaryPos[i];
@@ -169,19 +178,6 @@ export function buildFurnitureLayout(workerCount: number): FurnitureItem[] {
   items.push({ type: 'altar', col: 13, row: 17 });
   items.push({ type: 'urn', col: 12, row: 16 });
   items.push({ type: 'urn', col: 14, row: 16 });
-
-  // ── Hephaestus Forge — Sacred Smithy (col 17-32, rows 14-17) ─────────────
-  items.push({ type: 'marble_column', col: 17, row: 14 });
-  items.push({ type: 'marble_column', col: 32, row: 14 });
-  items.push({ type: 'god_statue', col: 24, row: 14 });
-  items.push({ type: 'altar', col: 24, row: 16 });
-  items.push({ type: 'sacred_brazier', col: 19, row: 15 });
-  items.push({ type: 'sacred_brazier', col: 22, row: 15 });
-  items.push({ type: 'sacred_brazier', col: 26, row: 15 });
-  items.push({ type: 'sacred_brazier', col: 29, row: 15 });
-  items.push({ type: 'sacred_brazier', col: 32, row: 15 });
-  items.push({ type: 'urn', col: 18, row: 17 });
-  items.push({ type: 'urn', col: 31, row: 17 });
 
   return items;
 }

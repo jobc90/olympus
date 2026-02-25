@@ -273,9 +273,9 @@ function drawSelectedHighlight(
   tick: number,
   accentColor: string,
 ): void {
-  // sprite dims: 32×64 at ZOOM=2
-  const sw = 32;
-  const sh = 64;
+  // sprite dims: 45×90 (64×128 upscaled canvas × 0.7 display scale)
+  const sw = 45;
+  const sh = 90;
   const sx = Math.round(footX - sw / 2);
   const sy = Math.round(footY - sh);
   const pulse = 0.5 + 0.5 * Math.sin(tick * 0.18);
@@ -526,8 +526,8 @@ export function renderFrame(
         }
       }
     }
-    // Center of the full sanctuary block (cols 17-32, rows 5-13)
-    drawZoneLabel(ctx, shrineLabel, shrineEmoji, 25, 9, 1.0);
+    // Center of the sanctuary block (cols 17-32, rows 13-17)
+    drawZoneLabel(ctx, shrineLabel, shrineEmoji, 25, 15, 1.0);
   }
 
   // Particles + bubbles

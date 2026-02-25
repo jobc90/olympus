@@ -15,109 +15,112 @@ import type { Zone, ZoneId } from '../lib/types';
 //   Row 2:  W  G  G  G  G  G  G  G  G  G  G  W  T  T  T  T  T  T  T  T  T  W  O  O  O  O  O  O  O  O  O  O  O  W
 //   Row 3:  W  G  G  G  G  G  G  G  G  G  G  W  T  T  T  T  T  T  T  T  T  W  O  O  O  O  O  O  O  O  O  O  O  W
 //   Row 4:  W  G  G  G  G  G  G  G  G  G  G  W  T  T  T  T  T  T  T  T  T  W  O  O  O  O  O  O  O  O  O  O  O  W
-//   Row 5:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S0 S0 S0 S0 S0  S3 S3 S3 S3 S3 S3 S3 S3 S3 S3  W
-//   Row 6:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S0 S0 S0 S0 S0  S3 S3 S3 S3 S3 S3 S3 S3 S3 S3  W
-//   Row 7:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S0 S0 S0 S0 S0  S3 S3 S3 S3 S3 S3 S3 S3 S3 S3  W
-//   Row 8:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S1 S1 S1 S1 S1  S4 S4 S4 S4 S4 S4 S4 S4 S4 S4  W
-//   Row 9:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S1 S1 S1 S1 S1  S4 S4 S4 S4 S4 S4 S4 S4 S4 S4  W
-//   Row10:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S1 S1 S1 S1 S1  S4 S4 S4 S4 S4 S4 S4 S4 S4 S4  W
-//   Row11:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S2 S2 S2 S2 S2  S5 S5 S5 S5 S5 S5 S5 S5 S5 S5  W
-//   Row12:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  S2 S2 S2 S2 S2  S5 S5 S5 S5 S5 S5 S5 S5 S5 S5  W
-//   Row13:  W  B  B  B  B  B  B  B  B  B  W  L  L  L  L  L  P  S2 S2 S2 S2 S2  S5 S5 S5 S5 S5 S5 S5 S5 S5 S5  W
-//   Row14:  W  B  B  B  B  B  B  B  B  B  W  L  L  L  L  L  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
-//   Row15:  W  B  B  B  B  B  B  B  B  B  W  L  L  L  L  L  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
-//   Row16:  W  B  B  B  B  B  B  B  B  B  W  L  L  L  L  L  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
-//   Row17:  W  B  B  B  B  B  B  B  B  B  W  L  L  L  L  L  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
+//   Row 5:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
+//   Row 6:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
+//   Row 7:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
+//   Row 8:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
+//   Row 9:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
+//   Row10:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
+//   Row11:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
+//   Row12:  W  A  A  A  A  A  A  A  A  A  A  A  A  A  A  A  P  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  F  W
+//   Row13:  W  B  B  B  B  B  B  B  B  B  W  L  L  L  L  L  P  S0 S0 S0 S0 S0 S1 S1 S1 S1 S1 S2 S2 S2 S2 S2 S2 W
+//   Row14:  W  B  B  B  B  B  B  B  B  B  W  L  L  L  L  L  P  S0 S0 S0 S0 S0 S1 S1 S1 S1 S1 S2 S2 S2 S2 S2 S2 W
+//   Row15:  W  B  B  B  B  B  B  B  B  B  W  L  L  L  L  L  P  S3 S3 S3 S3 S3 S4 S4 S4 S4 S4 S5 S5 S5 S5 S5 S5 W
+//   Row16:  W  B  B  B  B  B  B  B  B  B  W  L  L  L  L  L  P  S3 S3 S3 S3 S3 S4 S4 S4 S4 S4 S5 S5 S5 S5 S5 S5 W
+//   Row17:  W  B  B  B  B  B  B  B  B  B  W  L  L  L  L  L  P  S3 S3 S3 S3 S3 S4 S4 S4 S4 S4 S5 S5 S5 S5 S5 S5 W
 //   Row18:  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W  W
 //
 //  G=garden, T=zeus_temple, O=observatory, A=agora, P=processional_path,
-//  S0-S5=sanctuary_0..5, B=ambrosia_hall, L=athenas_library, F=hephaestus_forge
+//  F=hephaestus_forge (middle-right), S0-S5=sanctuary_0..5 (bottom-right 3×2),
+//  B=ambrosia_hall, L=athenas_library
 
 export const ZONES_TEMPLATE: Record<ZoneId, Omit<Zone, 'id'>> = {
   // ── Upper tier (rows 1-4) ──────────────────────────────────────────────
   olympus_garden: {
-    label: 'North Studio',
-    emoji: '🌱',
+    label: 'Sacred Olive Grove',
+    emoji: '🫒',
     center: { col: 6, row: 2 },
     minCol: 1, maxCol: 10, minRow: 1, maxRow: 4,
   },
   zeus_temple: {
-    label: 'Lead Desk',
-    emoji: '👑',
+    label: 'Zeus Sanctum',
+    emoji: '⚡',
     center: { col: 16, row: 2 },
     minCol: 12, maxCol: 20, minRow: 1, maxRow: 4,
   },
   celestial_observatory: {
-    label: 'Break Room',
-    emoji: '🍽️',
+    label: 'Temple of Muses',
+    emoji: '🎭',
     center: { col: 27, row: 2 },
     minCol: 22, maxCol: 32, minRow: 1, maxRow: 4,
   },
 
   // ── Middle tier left — Agora (rows 5-12) ──────────────────────────────
   agora: {
-    label: 'Main Office',
-    emoji: '💻',
+    label: 'Grand Agora',
+    emoji: '🏛️',
     center: { col: 8, row: 9 },
     minCol: 1, maxCol: 15, minRow: 5, maxRow: 12,
   },
 
-  // ── Middle tier right — Sanctuaries (rows 5-13) ───────────────────────
-  sanctuary_0: {
-    label: 'Pod A',
-    emoji: '🧩',
-    center: { col: 19, row: 6 },
-    minCol: 17, maxCol: 21, minRow: 5, maxRow: 7,
-  },
-  sanctuary_1: {
-    label: 'Pod B',
-    emoji: '🧩',
-    center: { col: 19, row: 9 },
-    minCol: 17, maxCol: 21, minRow: 8, maxRow: 10,
-  },
-  sanctuary_2: {
-    label: 'Pod C',
-    emoji: '🧩',
-    center: { col: 19, row: 12 },
-    minCol: 17, maxCol: 21, minRow: 11, maxRow: 13,
-  },
-  sanctuary_3: {
-    label: 'Pod D',
-    emoji: '🧩',
-    center: { col: 27, row: 6 },
-    minCol: 23, maxCol: 32, minRow: 5, maxRow: 7,
-  },
-  sanctuary_4: {
-    label: 'Pod E',
-    emoji: '🧩',
-    center: { col: 27, row: 9 },
-    minCol: 23, maxCol: 32, minRow: 8, maxRow: 10,
-  },
-  sanctuary_5: {
-    label: 'Pod F',
-    emoji: '🧩',
-    center: { col: 27, row: 12 },
-    minCol: 23, maxCol: 32, minRow: 11, maxRow: 13,
+  // ── Middle tier right — Hephaestus Forge (rows 5-12) ────────────────
+  hephaestus_forge: {
+    label: 'Hephaestus Forge',
+    emoji: '🔥',
+    center: { col: 24, row: 8 },
+    minCol: 17, maxCol: 32, minRow: 5, maxRow: 12,
   },
 
   // ── Lower tier (rows 13-17) ───────────────────────────────────────────
   ambrosia_hall: {
-    label: 'Lounge',
-    emoji: '☕',
+    label: 'Ambrosia Hall',
+    emoji: '🍯',
     center: { col: 5, row: 15 },
     minCol: 1, maxCol: 9, minRow: 13, maxRow: 17,
   },
   athenas_library: {
-    label: 'Archives',
-    emoji: '📚',
+    label: "Athena's Library",
+    emoji: '📜',
     center: { col: 13, row: 15 },
     minCol: 11, maxCol: 15, minRow: 13, maxRow: 17,
   },
-  hephaestus_forge: {
-    label: 'Ops Room',
-    emoji: '🖥️',
-    center: { col: 25, row: 15 },
-    minCol: 17, maxCol: 32, minRow: 14, maxRow: 17,
+
+  // ── Lower-right — Sanctuaries 3×2 grid (rows 13-17, cols 17-32) ──────
+  sanctuary_0: {
+    label: 'Shrine I',
+    emoji: '🏺',
+    center: { col: 19, row: 13 },
+    minCol: 17, maxCol: 21, minRow: 13, maxRow: 14,
+  },
+  sanctuary_1: {
+    label: 'Shrine II',
+    emoji: '🏺',
+    center: { col: 24, row: 13 },
+    minCol: 22, maxCol: 26, minRow: 13, maxRow: 14,
+  },
+  sanctuary_2: {
+    label: 'Shrine III',
+    emoji: '🏺',
+    center: { col: 29, row: 13 },
+    minCol: 27, maxCol: 32, minRow: 13, maxRow: 14,
+  },
+  sanctuary_3: {
+    label: 'Shrine IV',
+    emoji: '🏺',
+    center: { col: 19, row: 16 },
+    minCol: 17, maxCol: 21, minRow: 15, maxRow: 17,
+  },
+  sanctuary_4: {
+    label: 'Shrine V',
+    emoji: '🏺',
+    center: { col: 24, row: 16 },
+    minCol: 22, maxCol: 26, minRow: 15, maxRow: 17,
+  },
+  sanctuary_5: {
+    label: 'Shrine VI',
+    emoji: '🏺',
+    center: { col: 29, row: 16 },
+    minCol: 27, maxCol: 32, minRow: 15, maxRow: 17,
   },
 
   // ── Alias zones (mapped to existing areas) ────────────────────────────

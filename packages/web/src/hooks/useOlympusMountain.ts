@@ -50,6 +50,21 @@ export interface UseOlympusMountainReturn {
 
 const SANCTUARY_ZONES: ZoneId[] = ['sanctuary_0', 'sanctuary_1', 'sanctuary_2', 'sanctuary_3', 'sanctuary_4', 'sanctuary_5'];
 
+// Zones workers can freely roam between during mobile behaviors
+const ROAM_ZONE_POOL: ZoneId[] = [
+  'olympus_garden',
+  'agora',
+  'ambrosia_hall',
+  'athenas_library',
+  'hephaestus_forge',
+  'celestial_observatory',
+  'zeus_temple',
+];
+// Mobile behaviors: worker may roam cross-zone
+const MOBILE_BEHAVIORS = new Set<WorkerBehavior>(['idle', 'thinking', 'completed', 'chatting', 'collaborating', 'resting']);
+// Strict behaviors: worker must stay in assigned zone
+const STRICT_BEHAVIORS = new Set<WorkerBehavior>(['working', 'deploying', 'error']);
+
 interface MotionProfile {
   work: CharacterAnim[];
   think: CharacterAnim[];
@@ -358,6 +373,10 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
   const prevBehaviorRef = useRef<Record<string, string>>({});
   // Track workers in transition (playing brief 'stand' before switching)
   const transitionAnimRef = useRef<Record<string, number>>({});
+  // Cross-zone roaming: per-worker active roam target and expiry tick
+  const roamZoneRef = useRef<Record<string, { zone: ZoneId; until: number }>>({});
+  // Hera cross-zone roaming state
+  const geminiRoamRef = useRef<{ zone: ZoneId; until: number } | null>(null);
 
   // Rebuild walk grid when worker count changes
   useEffect(() => {
@@ -444,6 +463,35 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
         const updated: WorkerRuntime = { ...runtime };
         const workerCfg = workerConfigById.get(runtime.id);
         const workerSeed = hashId(runtime.id);
+        const behTicks = behaviorTicksRef.current[runtime.id] ?? 0;
+
+        // Cross-zone roaming: determine effective zone for this tick.
+        // Mobile behaviors can roam to any zone; strict behaviors stay put.
+        let effectiveZoneId: ZoneId = targetZone;
+        {
+          const roamEntry = roamZoneRef.current[runtime.id];
+          if (STRICT_BEHAVIORS.has(behavior)) {
+            // Cancel any active roam for strict behaviors
+            if (roamEntry) delete roamZoneRef.current[runtime.id];
+          } else if (roamEntry && newTick < roamEntry.until) {
+            // Active roam in progress
+            effectiveZoneId = roamEntry.zone;
+          } else {
+            // Clear expired roam entry
+            if (roamEntry) delete roamZoneRef.current[runtime.id];
+            // Trigger a new cross-zone roam for mobile behaviors
+            if (MOBILE_BEHAVIORS.has(behavior) && behTicks > 60) {
+              const roamInterval = 400 + (workerSeed % 300); // 400-700 ticks between roams
+              if (behTicks % roamInterval === 0) {
+                const candidates = ROAM_ZONE_POOL.filter(z => z !== targetZone);
+                const roamZoneId = candidates[(workerSeed + behTicks + idx * 13) % candidates.length];
+                const roamDuration = 250 + (workerSeed % 350); // 250-600 ticks in roam zone
+                roamZoneRef.current[runtime.id] = { zone: roamZoneId, until: newTick + roamDuration };
+                effectiveZoneId = roamZoneId;
+              }
+            }
+          }
+        }
 
         // Rescue invalid/blocked current tile (legacy bad spawn or map changes).
         if (!isWalkable(walkGridRef.current, updated.pos.col, updated.pos.row)) {
@@ -455,8 +503,8 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
           }
         }
 
-        // Check if worker needs to move to a new zone
-        const zone = getZone(targetZone, workers.length);
+        // Check if worker needs to move to effective zone
+        const zone = getZone(effectiveZoneId, workers.length);
         if (zone) {
           const inZone =
             updated.pos.col >= zone.minCol && updated.pos.col <= zone.maxCol &&
@@ -489,24 +537,21 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
           }
 
           // Track zone for interaction detection
-          const zoneKey = targetZone;
-          if (inZone && !zoneKey.startsWith('sanctuary_')) {
-            if (!workerZones[zoneKey]) workerZones[zoneKey] = [];
-            workerZones[zoneKey].push(runtime.id);
+          if (inZone && !effectiveZoneId.startsWith('sanctuary_')) {
+            if (!workerZones[effectiveZoneId]) workerZones[effectiveZoneId] = [];
+            workerZones[effectiveZoneId].push(runtime.id);
           }
         }
 
-        // Free motion logic: leisurely wandering with wide per-worker variance.
+        // Free motion: wander within effective zone
         if (zone && updated.path.length === 0) {
-          const behTicks = behaviorTicksRef.current[runtime.id] ?? 0;
-          const inSanctuary = targetZone.startsWith('sanctuary_');
+          const inSanctuary = effectiveZoneId.startsWith('sanctuary_');
 
           let wanderInterval = 0;
           let minDist = 2;
 
           if (inSanctuary) {
             if (behavior === 'working' || behavior === 'reviewing' || behavior === 'analyzing' || behavior === 'deploying' || behavior === 'error') {
-              // Working workers rarely reposition — long intervals with wide seed spread
               wanderInterval = 500 + (workerSeed % 300);
               minDist = 2;
             }
@@ -518,7 +563,7 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
             behavior === 'collaborating' ||
             behavior === 'resting'
           ) {
-            // Social/idle: slower, relaxed roaming
+            // Social/idle: relaxed roaming within zone
             wanderInterval = 350 + (workerSeed % 250);
             minDist = 3;
           }
@@ -744,13 +789,27 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
         updatedGemini.anim = geminiMapping ? getAnimForTick(geminiMapping, newTick) : 'sleep';
       }
 
-      // Gemini idle wandering within ambrosia_hall
-      if ((geminiBehavior === 'idle' || geminiBehavior === 'scanning') && updatedGemini.path.length === 0) {
-        const wanderInterval = 400;
-        if (newTick > 0 && newTick % wanderInterval === 0) {
-          const homeZone = getZone(geminiTargetZone ?? 'ambrosia_hall', workers.length);
-          if (homeZone) {
-            const target = getRandomPointInZone(homeZone);
+      // Gemini wandering: cross-zone roaming + frequent in-zone wander
+      if ((geminiBehavior === 'idle' || geminiBehavior === 'scanning' || geminiBehavior === 'refreshing') && updatedGemini.path.length === 0) {
+        // Cross-zone roaming: every ~200 ticks visit a random zone for ~150 ticks
+        const roamEntry = geminiRoamRef.current;
+        let geminiEffectiveZone: ZoneId = geminiTargetZone ?? 'ambrosia_hall';
+        if (roamEntry && newTick < roamEntry.until) {
+          geminiEffectiveZone = roamEntry.zone;
+        } else {
+          if (roamEntry) geminiRoamRef.current = null;
+          if (newTick > 0 && newTick % 200 === 0) {
+            const candidates: ZoneId[] = ['agora', 'olympus_garden', 'athenas_library', 'zeus_temple', 'celestial_observatory', 'hephaestus_forge'];
+            const roamZoneId = candidates[newTick % candidates.length];
+            geminiRoamRef.current = { zone: roamZoneId, until: newTick + 150 };
+            geminiEffectiveZone = roamZoneId;
+          }
+        }
+        // In-zone wander every 80 ticks
+        if (newTick > 0 && newTick % 80 === 0) {
+          const targetZoneObj = getZone(geminiEffectiveZone, workers.length);
+          if (targetZoneObj) {
+            const target = getRandomPointInZone(targetZoneObj);
             const path = findPath(walkGridRef.current, updatedGemini.pos, target);
             if (path.length > 0) {
               updatedGemini.path = [...path];
