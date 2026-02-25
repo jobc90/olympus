@@ -20,8 +20,8 @@ function PixelAvatar({ worker, size = 98 }: { worker: WorkerConfig; size?: numbe
     if (!ctx) return;
     ctx.clearRect(0, 0, size, size);
     ctx.imageSmoothingEnabled = false;
-    // HD char 45×67px, centered: hdDrawY=(size-67)/2=16, footY=16+67+2=85 → size-13
-    drawWorker(ctx, size / 2, size - 13, 'stand', 's', 0, worker.avatar as WorkerAvatar, worker.color, '');
+    // HD char 45×90px (64×128 upscaled @ 0.7): footY=size-5=93, hdDrawY=93-90-2=1 → fits in 98px
+    drawWorker(ctx, size / 2, size - 5, 'stand', 's', 0, worker.avatar as WorkerAvatar, worker.color, '');
   };
 
   return (

@@ -145,6 +145,13 @@ function loadConfig(): BotConfig {
     process.exit(1);
   }
 
+  if (allowedUsers.length === 0) {
+    console.warn('[Telegram Bot] ⚠️  ALLOWED_USERS가 설정되지 않았습니다.');
+    console.warn('  모든 사용자의 명령이 거부됩니다. User ID를 확인하세요:');
+    console.warn('  Telegram에서 @userinfobot 검색 → /start → ID 확인');
+    console.warn('  export ALLOWED_USERS="<your-telegram-user-id>"');
+  }
+
   return { telegramToken: token, gatewayUrl, apiKey, allowedUsers };
 }
 
@@ -173,16 +180,11 @@ function safeSlice(text: string, maxLength: number): string {
 class OlympusBot {
   private static readonly COMMAND_MENU = [
     { command: 'start', description: '시작 화면' },
-    { command: 'help', description: '전체 명령어 안내' },
-    { command: 'workers', description: '워커 현황 + 지시' },
-    { command: 'sessions', description: '세션 목록/전환' },
-    { command: 'use', description: '모드 전환 (직접/오케스트레이터)' },
-    { command: 'close', description: '세션 종료' },
-    { command: 'last', description: '마지막 출력 보기' },
+    { command: 'help', description: '사용법 안내' },
+    { command: 'workers', description: '연결된 워커 목록' },
+    { command: 'tasks', description: '진행 중인 작업' },
     { command: 'health', description: '시스템 상태' },
-    { command: 'codex', description: 'Codex에 질의' },
     { command: 'team', description: '팀 프로토콜 실행' },
-    { command: 'tasks', description: '작업 목록' },
   ] as const;
 
   private bot: Telegraf;
@@ -192,19 +194,8 @@ class OlympusBot {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
   private isConnected = false;
-  // Multi-session support: chatId -> Map<sessionName, sessionId>
-  private chatSessions = new Map<number, Map<string, string>>();
-  private activeSession = new Map<number, string>(); // chatId -> current active session name
   // Per-session message queue to prevent interleaving
   private sendQueues = new Map<string, Promise<void>>(); // sessionId -> queue chain
-  // Direct mode: when true, messages go directly to active session (bypass orchestrator)
-  private directMode = new Map<number, boolean>(); // chatId -> direct mode
-  // Output history buffer per session (last N messages for /last retrieval)
-  private outputHistory = new Map<string, string[]>(); // sessionId -> last 10 outputs
-  private static readonly OUTPUT_HISTORY_SIZE = 10;
-  // Throttle for sessions:list sync (prevent burst REST calls)
-  private syncThrottleTimer: NodeJS.Timeout | null = null;
-  private syncThrottleMs = 1000;
   // Pending RPC calls (requestId -> resolve/reject)
   private pendingRpc = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   private static readonly RPC_TIMEOUT_MS = 30000;
@@ -287,53 +278,50 @@ class OlympusBot {
       }
       msg += '\n';
 
-      msg += `*바로 지시하기*\n`;
-      for (const w of workers.slice(0, 3)) {
-        msg += `\`@${w.name} git status\`\n`;
-      }
-      msg += '\n';
+      const exampleWorker = workers.find(w => w.status === 'idle')?.name ?? workers[0].name;
+      msg += `*워커에게 지시하기*\n`;
+      msg += `\`@${exampleWorker} 최근 변경사항 요약해줘\`\n`;
+      msg += `\`@${exampleWorker} /team API 엔드포인트 추가\`\n\n`;
 
-      msg += `/workers · /help · /health`;
+      msg += `/workers — 워커 목록 · /help — 사용법`;
     } else {
-      msg += `워커가 없습니다. 터미널에서 시작하세요:\n`;
-      msg += `\`olympus start --name hub\`\n\n`;
-      msg += `/help — 명령어 안내`;
+      msg += `워커가 없습니다. 터미널에서 직접 실행하세요:\n`;
+      msg += `\`olympus start-trust --name 워커이름\`\n\n`;
+      msg += `워커가 등록되면 \`@워커이름 작업내용\`으로 지시할 수 있습니다.\n\n`;
+      msg += `/help — 사용법 안내`;
     }
 
     return msg;
   }
 
   private buildHelpMessage(
-    chatId: number,
+    _chatId: number,
     workers: Array<{ name: string; status: string; projectPath: string }>,
   ): string {
-    const modeLabel = this.directMode.get(chatId) ? '직접' : '오케스트레이터';
-    const currentSession = this.getActiveSessionName(chatId)?.replace(/^olympus-/, '') ?? '-';
     const exampleWorker = workers[0]?.name ?? 'hub';
 
-    let msg = `📘 *명령어 가이드*\n`;
-    msg += `${modeLabel} 모드 · 세션: ${currentSession} · 워커: ${workers.length}개\n\n`;
+    let msg = `📘 *사용법*\n\n`;
 
-    msg += `*워커 제어*\n`;
-    msg += `\`@워커이름 작업내용\` — 워커에게 직접 지시\n`;
-    msg += `/workers — 워커 현황 + 빠른 지시\n`;
-    msg += `/tasks — 진행 중인 작업 목록\n\n`;
+    msg += `*1. 일반 채팅 — Codex와 대화*\n`;
+    msg += `메시지를 그냥 입력하면 Codex가 응답합니다.\n`;
+    msg += `\`전체 프로젝트 상태 알려줘\`\n\n`;
 
-    msg += `*세션 관리*\n`;
-    msg += `/sessions — 세션 목록\n`;
-    msg += `/use main — 오케스트레이터 모드\n`;
-    msg += `/use <이름> — 직접 모드 전환\n`;
-    msg += `/close <이름> — 세션 종료\n`;
-    msg += `/last — 마지막 출력\n\n`;
-
-    msg += `*시스템*\n`;
-    msg += `/health — 상태 확인\n`;
-    msg += `/codex <질문> — Codex 질의\n`;
-    msg += `/team <작업> — 팀 프로토콜\n\n`;
-
-    msg += `*예시*\n`;
+    msg += `*2. 워커에게 작업 지시*\n`;
+    msg += `\`@워커이름 작업내용\` 형식으로 입력하면\n`;
+    msg += `Codex가 해당 워커에게 작업을 할당합니다.\n`;
     msg += `\`@${exampleWorker} 빌드하고 테스트 돌려줘\`\n`;
-    msg += `\`/codex 전체 프로젝트 상태 알려줘\``;
+    msg += `\`@${exampleWorker} 최근 변경사항 요약해줘\`\n\n`;
+
+    msg += `*3. 팀 프로토콜 실행*\n`;
+    msg += `\`@워커이름 /team 작업내용\` 형식으로 입력하면\n`;
+    msg += `팀 프로토콜(병렬 에이전트)로 작업을 실행합니다.\n`;
+    msg += `\`@${exampleWorker} /team API 엔드포인트 추가하고 테스트 작성\`\n\n`;
+
+    msg += `*편의 명령어*\n`;
+    msg += `/workers — 연결된 워커 목록 (탭으로 @멘션 복사)\n`;
+    msg += `/tasks — 현재 진행 중인 작업\n`;
+    msg += `/health — 시스템 상태\n`;
+    msg += `/team <작업> — 워커 지정 없이 팀 프로토콜 실행`;
 
     return msg;
   }
@@ -363,21 +351,18 @@ class OlympusBot {
     const suggestions: string[] = [];
 
     if (command.startsWith('w')) suggestions.push('/workers');
-    if (command.startsWith('s')) suggestions.push('/sessions');
-    if (command.startsWith('u')) suggestions.push('/use');
-    if (command.startsWith('h')) suggestions.push('/help');
-    if (command.startsWith('c')) suggestions.push('/codex');
-    if (command.startsWith('t')) suggestions.push('/team', '/tasks');
+    if (command.startsWith('h')) suggestions.push('/help', '/health');
+    if (command.startsWith('t')) suggestions.push('/tasks', '/team');
 
     for (const fallback of ['/help', '/workers']) {
       if (!suggestions.includes(fallback)) suggestions.push(fallback);
-      if (suggestions.length >= 3) break;
+      if (suggestions.length >= 2) break;
     }
 
     return (
       `\`${text.split(/\s+/)[0]}\` — 없는 명령어입니다.\n\n` +
-      `혹시? ${suggestions.map(v => `\`${v}\``).join('  ')}\n` +
-      `/help 에서 전체 명령어를 확인하세요.`
+      `혹시? ${suggestions.slice(0, 2).map(v => `\`${v}\``).join('  ')}\n` +
+      `/help — 사용법 확인`
     );
   }
 
@@ -453,333 +438,28 @@ class OlympusBot {
         const res = await fetch(`${this.config.gatewayUrl}/healthz`);
         const data = await res.json() as { status: string; uptime: number };
         const wsOk = this.isConnected;
-        const sessionCount = this.chatSessions.get(ctx.chat.id)?.size ?? 0;
         const uptimeMin = Math.floor(data.uptime / 60);
         const uptimeStr = uptimeMin >= 60 ? `${Math.floor(uptimeMin / 60)}h ${uptimeMin % 60}m` : `${uptimeMin}m`;
 
-        let msg = `✅ 정상 — 가동 ${uptimeStr}, WS ${wsOk ? '연결' : '끊김'}, 세션 ${sessionCount}개`;
+        let msg = `✅ 정상 — 가동 ${uptimeStr}, WS ${wsOk ? '연결' : '끊김'}`;
         if (!wsOk || data.status !== 'ok') {
           msg = `⚠️ 점검 필요\n\n`;
           msg += `Gateway: ${data.status}\n`;
-          msg += `WebSocket: ${wsOk ? '✅' : '❌'}\n`;
-          msg += `가동시간: ${uptimeStr}\n`;
-          msg += `세션: ${sessionCount}개`;
+          msg += `WebSocket: ${wsOk ? '✅' : '❌ 끊김'}\n`;
+          msg += `가동시간: ${uptimeStr}`;
+          if (!wsOk) {
+            msg += `\n\n💡 해결: \`olympus server stop && olympus server start\``;
+          }
         }
         await ctx.reply(msg, { parse_mode: 'Markdown' });
       } catch (err) {
-        await ctx.reply(`❌ Gateway 연결 실패\n${(err as Error).message}`);
-      }
-    });
-
-    // /sessions - List sessions (both connected and available tmux sessions)
-    this.bot.command('sessions', async (ctx) => {
-      try {
-        // 1. Get all sessions (Gateway reconciles stale ones automatically)
-        const sessionsRes = await fetch(`${this.config.gatewayUrl}/api/sessions`, {
-          headers: { Authorization: `Bearer ${this.config.apiKey}` },
-        });
-        const sessionsData = await sessionsRes.json() as {
-          sessions: Array<{ id: string; name?: string; tmuxSession: string; chatId: number; status: string; projectPath: string; createdAt: number }>;
-          availableSessions?: Array<{ tmuxSession: string; projectPath: string }>;
-        };
-
-        // All active registered sessions (regardless of chatId)
-        const activeSessions = sessionsData.sessions.filter(s => s.status === 'active');
-        // Available (unregistered) tmux sessions
-        const availableTmux = sessionsData.availableSessions ?? [];
-
-        if (activeSessions.length === 0 && availableTmux.length === 0) {
-          await ctx.reply(
-            '📭 활성 세션이 없습니다.\n\n' +
-            '💡 터미널에서 `olympus start`로 Claude CLI 세션을 시작하세요.\n' +
-            '💡 또는 `/new 이름`으로 새 세션을 생성하세요.',
-            { parse_mode: 'Markdown' }
-          );
-          return;
-        }
-
-        const currentName = this.getActiveSessionName(ctx.chat.id);
-        const currentDisplayName = currentName?.replace(/^olympus-/, '');
-        const myChatId = ctx.chat.id;
-        const modeLabel = this.directMode.get(myChatId) ? '🔗 직접 모드' : '🤖 오케스트레이터 모드';
-        const myConnectedSessions = this.chatSessions.get(myChatId)?.size ?? 0;
-
-        let msg = `🧭 *세션 요약*\n`;
-        msg += `모드: ${modeLabel}\n`;
-        msg += `현재 세션: ${currentDisplayName ?? '없음'}\n`;
-        msg += `내 연결 세션: ${myConnectedSessions}개\n`;
-        msg += `전체 활성 세션: ${activeSessions.length}개\n\n`;
-
-        // Active registered sessions (all, not just this chat)
-        // Show current active session prominently at the top
-        if (currentDisplayName) {
-          const currentSession = activeSessions.find(s => {
-            const name = (s.name ?? s.tmuxSession).replace(/^olympus-/, '');
-            return name === currentDisplayName && s.chatId === myChatId;
-          });
-          if (currentSession) {
-            const shortPath = currentSession.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
-            const age = this.formatAge(currentSession.createdAt);
-            msg += `🟢 *현재 세션: ${currentDisplayName}*\n`;
-            msg += `    📂 \`${shortPath}\`  ⏱ ${age}\n`;
-            msg += `    💬 메시지를 입력하면 이 세션으로 전송됩니다\n`;
-            msg += '─────────────────\n\n';
-          }
-        }
-
-        if (activeSessions.length > 0) {
-          msg += `📋 *전체 세션* (${activeSessions.length}개)\n`;
-          msg += '─────────────────\n';
-          for (const session of activeSessions) {
-            const rawName = session.name ?? session.tmuxSession;
-            const displayName = rawName.replace(/^olympus-/, '');
-            const isMyChat = session.chatId === myChatId;
-            const isCurrent = isMyChat && currentDisplayName === displayName;
-            const icon = isCurrent ? '▶️' : isMyChat ? '🔵' : '⚪';
-            const suffix = isCurrent ? ' ✓' : isMyChat ? '' : ' (외부)';
-            const shortPath = session.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
-            const age = this.formatAge(session.createdAt);
-            msg += `${icon} *${displayName}*${suffix}\n`;
-            msg += `    📂 \`${shortPath}\`\n`;
-            msg += `    ⏱ ${age}\n\n`;
-          }
-        }
-
-        // Available (unregistered) tmux sessions
-        if (availableTmux.length > 0) {
-          msg += `⬜ *미연결 세션* (${availableTmux.length}개)\n`;
-          msg += '─────────────────\n';
-          for (const tmux of availableTmux) {
-            const displayName = tmux.tmuxSession.replace(/^olympus-/, '');
-            const shortPath = tmux.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
-            msg += `⚪ *${displayName}*\n`;
-            msg += `    📂 \`${shortPath}\`\n`;
-            msg += `    → \`/use ${displayName}\`\n\n`;
-          }
-        }
-
-        msg += '─────────────────\n';
-
-        // Collect all session names for /use examples
-        const allNames: string[] = [];
-        for (const session of activeSessions) {
-          allNames.push((session.name ?? session.tmuxSession).replace(/^olympus-/, ''));
-        }
-        for (const tmux of availableTmux) {
-          const name = tmux.tmuxSession.replace(/^olympus-/, '');
-          if (!allNames.includes(name)) allNames.push(name);
-        }
-
-        if (allNames.length > 0) {
-          msg += '💡 세션 전환:\n';
-          for (const name of allNames) {
-            msg += `  \`/use ${name}\`\n`;
-          }
-          msg += '\n';
-        }
-        msg += `▶️ = 현재 연결 | 🔵 = 내 세션 | ⚪ = 외부/미연결`;
-
-        await ctx.reply(msg, { parse_mode: 'Markdown' });
-      } catch (err) {
-        await ctx.reply(`❌ 목록 조회 실패: ${(err as Error).message}`);
-      }
-    });
-
-    // /close [name] - Close session by name
-    this.bot.command('close', async (ctx) => {
-      let name = ctx.message.text.replace(/^\/close\s*/, '').trim();
-
-      // If no name provided, use current active session
-      if (!name) {
-        name = this.activeSession.get(ctx.chat.id) ?? '';
-        if (!name) {
-          await ctx.reply('사용법: `/close 세션이름`\n\n현재 활성 세션이 없습니다.', { parse_mode: 'Markdown' });
-          return;
-        }
-      }
-
-      const sessions = this.chatSessions.get(ctx.chat.id);
-      const sessionId = sessions?.get(name);
-
-      if (!sessionId) {
-        await ctx.reply(`❌ 세션 '${name}'을 찾을 수 없습니다.\n\n\`/sessions\`로 활성 세션 목록을 확인하세요.`, { parse_mode: 'Markdown' });
-        return;
-      }
-
-      try {
-        const res = await fetch(`${this.config.gatewayUrl}/api/sessions/${sessionId}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${this.config.apiKey}` },
-        });
-
-        if (!res.ok) {
-          const error = await res.json() as { message: string };
-          throw new Error(error.message);
-        }
-
-        // Remove from local state
-        sessions?.delete(name);
-        this.subscribedRuns.delete(sessionId);
-
-        // If this was the active session, clear it
-        if (this.activeSession.get(ctx.chat.id) === name) {
-          this.activeSession.delete(ctx.chat.id);
-          // Set another session as active if available
-          if (sessions && sessions.size > 0) {
-            const nextName = sessions.keys().next().value as string;
-            if (nextName) {
-              this.activeSession.set(ctx.chat.id, nextName);
-            }
-          }
-        }
-
-        await ctx.reply(`🛑 세션 '${name}' 종료됨`, { parse_mode: 'Markdown' });
-      } catch (err) {
-        await ctx.reply(`❌ 종료 실패: ${(err as Error).message}`);
-      }
-    });
-
-    // /use <name> - Switch to or connect to session
-    // /use main|orchestrator - Switch back to orchestrator mode
-    // /use direct <name> - Direct mode (bypass orchestrator)
-    this.bot.command('use', async (ctx) => {
-      const nameInput = ctx.message.text.replace(/^\/use\s*/, '').trim();
-
-      if (!nameInput) {
-        const isDirect = this.directMode.get(ctx.chat.id);
-        const currentSession = this.getActiveSessionName(ctx.chat.id)?.replace(/^olympus-/, '') ?? '-';
         await ctx.reply(
-          `현재: ${isDirect ? '직접' : '오케스트레이터'} 모드 (세션: ${currentSession})\n\n` +
-          `\`/use main\` — 오케스트레이터로 복귀\n` +
-          `\`/use <세션이름>\` — 직접 모드 전환\n\n` +
-          `_직접 모드: 메시지가 세션에 직접 전달_\n` +
-          `_오케스트레이터: AI가 적절한 워커에 분배_`,
-          { parse_mode: 'Markdown' }
-        );
-        return;
-      }
-
-      // /use main or /use orchestrator → switch back to orchestrator mode
-      if (nameInput === 'main' || nameInput === 'orchestrator') {
-        this.directMode.delete(ctx.chat.id);
-        this.activeSession.set(ctx.chat.id, 'main');
-        await ctx.reply('🤖 오케스트레이터 모드로 전환됨\n\n모든 메시지가 AI 오케스트레이터를 통해 라우팅됩니다.');
-        return;
-      }
-
-      // /use direct <session> → enable direct mode
-      const directMatch = nameInput.match(/^direct\s+(.+)$/);
-      const actualName = directMatch ? directMatch[1] : nameInput;
-
-      // Enable direct mode for any /use <session> command
-      this.directMode.set(ctx.chat.id, true);
-
-      const sessions = this.chatSessions.get(ctx.chat.id);
-      const displayName = actualName.replace(/^olympus-/, '');
-
-      // Check if already connected AND still valid in gateway
-      const connectedName = this.resolveSessionName(ctx.chat.id, actualName);
-      if (connectedName) {
-        const cachedSessionId = sessions?.get(connectedName);
-        let sessionStillValid = false;
-
-        // Verify session ID is still valid with gateway
-        try {
-          const sessionsRes = await fetch(`${this.config.gatewayUrl}/api/sessions`, {
-            headers: { Authorization: `Bearer ${this.config.apiKey}` },
-          });
-          const sessionsData = await sessionsRes.json() as { sessions: Array<{ id: string; name: string; projectPath: string; status: string }> };
-          const sessionInfo = sessionsData.sessions.find(s => s.id === cachedSessionId && s.status === 'active');
-
-          if (sessionInfo) {
-            // Session still valid - just switch
-            sessionStillValid = true;
-            this.activeSession.set(ctx.chat.id, connectedName);
-            const banner = this.getOlympusBanner(displayName, sessionInfo.projectPath);
-            await ctx.reply(banner, { parse_mode: 'Markdown' });
-            return;
-          }
-
-          // Session ID is stale - check if gateway has a session with same tmux name
-          const freshSession = sessionsData.sessions.find(s => s.name === connectedName && s.status === 'active');
-          if (freshSession) {
-            // Re-map to fresh session ID
-            sessions?.set(connectedName, freshSession.id);
-            this.subscribedRuns.set(freshSession.id, ctx.chat.id);
-            if (this.ws?.readyState === 1) {
-              this.ws.send(JSON.stringify({ type: 'subscribe', payload: { sessionId: freshSession.id } }));
-            }
-            this.activeSession.set(ctx.chat.id, connectedName);
-            const banner = this.getOlympusBanner(displayName, freshSession.projectPath);
-            await ctx.reply(banner, { parse_mode: 'Markdown' });
-            return;
-          }
-        } catch {
-          // Gateway unreachable — fall through to connect
-        }
-
-        if (!sessionStillValid) {
-          // Stale local entry — remove and fall through to connect
-          sessions?.delete(connectedName);
-          this.subscribedRuns.delete(cachedSessionId ?? '');
-        }
-      }
-
-      // Not connected - try to connect to tmux session (use name as-is)
-      const tmuxSession = actualName;
-      const statusMsg = await ctx.reply(`🔗 '${displayName}' 연결 중...`);
-
-      try {
-        const res = await fetch(`${this.config.gatewayUrl}/api/sessions/connect`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.config.apiKey}`,
-          },
-          body: JSON.stringify({ chatId: ctx.chat.id, tmuxSession }),
-        });
-
-        if (!res.ok) {
-          const error = await res.json() as { message: string };
-          throw new Error(error.message);
-        }
-
-        const data = await res.json() as { session: { id: string; name: string; projectPath: string } };
-
-        // Store in local state
-        let sessionsMap = this.chatSessions.get(ctx.chat.id);
-        if (!sessionsMap) {
-          sessionsMap = new Map();
-          this.chatSessions.set(ctx.chat.id, sessionsMap);
-        }
-        sessionsMap.set(data.session.name, data.session.id);
-        this.activeSession.set(ctx.chat.id, data.session.name);
-
-        // Subscribe to session events
-        this.subscribedRuns.set(data.session.id, ctx.chat.id);
-        if (this.ws?.readyState === 1) {
-          this.ws.send(JSON.stringify({ type: 'subscribe', payload: { sessionId: data.session.id } }));
-        }
-
-        const modeLabel = '🔗 직접 모드';
-        const banner = this.getOlympusBanner(displayName, data.session.projectPath);
-        await ctx.telegram.editMessageText(
-          ctx.chat.id,
-          statusMsg.message_id,
-          undefined,
-          `${banner}\n\n${modeLabel} — /use main 으로 오케스트레이터 복귀`,
-          { parse_mode: 'Markdown' }
-        );
-      } catch (err) {
-        await ctx.telegram.editMessageText(
-          ctx.chat.id,
-          statusMsg.message_id,
-          undefined,
-          `❌ '${displayName}' 연결 실패\n\n\`/sessions\`로 연결 가능한 세션을 확인하세요.`,
+          `❌ Gateway 연결 실패\n${(err as Error).message}\n\n💡 해결: \`olympus server start\``,
           { parse_mode: 'Markdown' }
         );
       }
     });
+
 
     // /team <prompt> - Team Engineering Protocol v4 (git worktree isolation)
     this.bot.command('team', async (ctx) => {
@@ -830,68 +510,6 @@ class OlympusBot {
       }
     });
 
-    // /codex - Send query to Codex Orchestrator via RPC
-    this.bot.command('codex', async (ctx) => {
-      const text = ctx.message.text.replace(/^\/codex\s*/, '').trim();
-
-      if (!text) {
-        await this.safeReply(ctx,
-          '`/codex <질문>` — Codex에 질의/지시\n\n' +
-          '`/codex 전체 프로젝트 상태 알려줘`\n' +
-          '`/codex hub 워커 최근 작업 요약`\n' +
-          '`/codex 빌드 에러 원인 분석해줘`',
-          'Markdown'
-        );
-        return;
-      }
-
-      if (!this.isConnected) {
-        await this.safeReply(ctx, '❌ Gateway에 연결되지 않았습니다.', undefined);
-        return;
-      }
-
-      const statusMsg = await ctx.reply('🤖 Codex 처리 중...');
-
-      try {
-        const result = await this.rpc('codex.route', { text, source: 'telegram' }) as {
-          requestId: string;
-          decision: { type: string; targetSessions: string[]; processedInput: string; confidence: number; reason: string };
-          response?: { type: string; content: string; metadata: Record<string, unknown>; rawOutput?: string; agentInsight?: string };
-        };
-
-        const d = result.decision;
-        const r = result.response;
-        const confPercent = Math.round(d.confidence * 100);
-
-        let reply = `🤖 *Codex 응답*\n\n`;
-        reply += `📋 유형: ${d.type} (${confPercent}%)\n`;
-        if (d.targetSessions.length > 0) {
-          reply += `🎯 대상: ${d.targetSessions.join(', ')}\n`;
-        }
-        if (r?.content) {
-          reply += `\n${r.content}`;
-        }
-        if (r?.agentInsight) {
-          reply += `\n\n💡 ${r.agentInsight}`;
-        }
-
-        await ctx.telegram.editMessageText(
-          ctx.chat.id,
-          statusMsg.message_id,
-          undefined,
-          reply.slice(0, TELEGRAM_MSG_LIMIT),
-          { parse_mode: 'Markdown' }
-        );
-      } catch (err) {
-        await ctx.telegram.editMessageText(
-          ctx.chat.id,
-          statusMsg.message_id,
-          undefined,
-          `❌ Codex 오류: ${(err as Error).message}`
-        );
-      }
-    });
-
     // /tasks - Show active tasks
     this.bot.command('tasks', async (ctx) => {
       try {
@@ -918,37 +536,36 @@ class OlympusBot {
         }
         await this.safeReply(ctx, msg, 'Markdown');
       } catch {
-        await ctx.reply('💡 /tasks 기능은 Codex 작업 추적 시스템과 연동됩니다.\n현재 대시보드에서 실시간 스트리밍으로 작업 진행 상황을 확인할 수 있습니다.');
+        // Codex RPC unavailable — fall back to showing busy workers
+        try {
+          const workersRes = await fetch(`${this.config.gatewayUrl}/api/workers`, {
+            headers: { Authorization: `Bearer ${this.config.apiKey}` },
+            signal: AbortSignal.timeout(5_000),
+          });
+          if (workersRes.ok) {
+            const { workers } = await workersRes.json() as { workers: Array<{ name: string; status: string; currentTaskPrompt?: string }> };
+            const busyWorkers = workers.filter(w => w.status === 'busy');
+            if (busyWorkers.length === 0) {
+              await ctx.reply('📭 현재 진행 중인 작업이 없습니다.');
+            } else {
+              let msg = `📋 *진행 중인 작업* (${busyWorkers.length}개)\n─────────────────\n`;
+              for (const w of busyWorkers) {
+                msg += `🔴 *@${w.name}*`;
+                if (w.currentTaskPrompt) msg += `: ${w.currentTaskPrompt.slice(0, 100)}`;
+                msg += '\n';
+              }
+              await this.safeReply(ctx, msg, 'Markdown');
+            }
+          } else {
+            await ctx.reply('❌ Gateway에 연결할 수 없습니다. olympus server start로 서버를 시작하세요.');
+          }
+        } catch {
+          await ctx.reply('❌ 작업 목록을 가져올 수 없습니다.\n대시보드에서 확인하세요: http://localhost:8201');
+        }
       }
     });
 
-    // /last - Show last output from active session
-    this.bot.command('last', async (ctx) => {
-      const targetName = this.getActiveSessionName(ctx.chat.id);
-      if (!targetName) {
-        await this.safeReply(ctx, '❌ 연결된 세션이 없습니다.', undefined);
-        return;
-      }
-
-      const sessions = this.chatSessions.get(ctx.chat.id);
-      const sessionId = sessions?.get(targetName);
-      if (!sessionId) {
-        await this.safeReply(ctx, '❌ 세션을 찾을 수 없습니다.', undefined);
-        return;
-      }
-
-      const history = this.outputHistory.get(sessionId);
-      if (!history || history.length === 0) {
-        await this.safeReply(ctx, '📭 아직 출력이 없습니다.', undefined);
-        return;
-      }
-
-      const lastOutput = history[history.length - 1];
-      const displayName = targetName.replace(/^olympus-/, '');
-      await this.sendLongMessage(ctx.chat.id, `📋 [${displayName}] 마지막 출력\n\n${lastOutput}`);
-    });
-
-    // /workers - List registered workers
+    // /workers - List registered workers with @mention copy buttons
     this.bot.command('workers', async (ctx) => {
       try {
         const res = await fetch(`${this.config.gatewayUrl}/api/workers`, {
@@ -959,38 +576,36 @@ class OlympusBot {
         if (workers.length === 0) {
           await ctx.reply(
             '워커가 없습니다.\n\n' +
-            '터미널에서 시작:\n' +
-            '`olympus start --name hub`\n' +
-            '`olympus start --name api --project ~/dev/console`',
+            '터미널에서 직접 실행하세요:\n' +
+            '```\ncd ~/dev/프로젝트\nolympus start-trust --name 워커이름\n```',
             { parse_mode: 'Markdown' }
           );
           return;
         }
 
-        let msg = `⚡ *워커* (${workers.length})\n\n`;
+        let msg = `⚡ *워커* (${workers.length})\n`;
+        msg += `버튼을 탭하면 @멘션이 입력창에 붙여넣어집니다.\n\n`;
 
         for (const w of workers) {
           const icon = w.status === 'idle' ? '🟢' : w.status === 'busy' ? '🔴' : '⚫';
           const shortPath = w.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
-
           msg += `${icon} *${w.name}* — \`${shortPath}\`\n`;
           if (w.status === 'busy' && w.currentTaskPrompt) {
-            msg += `  💬 ${w.currentTaskPrompt.slice(0, 80)}${w.currentTaskPrompt.length > 80 ? '...' : ''}\n`;
-          } else if (w.status === 'idle') {
-            msg += `  \`@${w.name} git status\`\n`;
+            msg += `  💬 ${w.currentTaskPrompt.slice(0, 60)}${w.currentTaskPrompt.length > 60 ? '...' : ''}\n`;
           }
           msg += '\n';
         }
 
-        const idleWorkers = workers.filter(w => w.status === 'idle');
-        if (idleWorkers.length > 0) {
-          const w = idleWorkers[0];
-          msg += `*빠른 지시*\n`;
-          msg += `\`@${w.name} 빌드하고 테스트 돌려줘\`\n`;
-          msg += `\`@${w.name} 최근 변경사항 요약해줘\``;
-        }
+        // Inline keyboard: one button per worker — tap to pre-fill @workerName in chat
+        const keyboard = workers.map(w => [{
+          text: `${w.status === 'idle' ? '🟢' : '🔴'} @${w.name}`,
+          switch_inline_query_current_chat: `@${w.name} `,
+        }]);
 
-        await ctx.reply(msg, { parse_mode: 'Markdown' });
+        await ctx.reply(msg, {
+          parse_mode: 'Markdown',
+          reply_markup: { inline_keyboard: keyboard },
+        });
       } catch (err) {
         await ctx.reply(`❌ 워커 목록 조회 실패: ${(err as Error).message}`);
       }
@@ -1006,8 +621,8 @@ class OlympusBot {
         return;
       }
 
-      // Direct mode: bypass Codex, send directly to session
-      if (this.directMode.get(ctx.chat.id)) {
+      // @worker mention — delegate to worker via Codex
+      if (/^@\S+\s/.test(text)) {
         await this.handleDirectMessage(ctx, text);
         return;
       }
@@ -1030,9 +645,12 @@ class OlympusBot {
           throw new Error(`Codex chat failed: ${chatRes.status}`);
         }
 
-        const data = await chatRes.json() as { type: string; response?: string; taskId?: string };
-        // Skip delegation responses — WebSocket worker:task:assigned handles the notification
-        if (data.type !== 'delegation' && data.response) {
+        const data = await chatRes.json() as { type: string; response?: string; taskId?: string; workerName?: string };
+        if (data.type === 'delegation') {
+          // Show brief confirmation — detailed result arrives via worker:task:summary event
+          const workerLabel = data.workerName ? `\`@${data.workerName}\`` : '워커';
+          await this.safeReply(ctx, `🔄 ${workerLabel}에게 작업을 위임했습니다. 완료 시 결과를 알려드립니다.`, 'Markdown');
+        } else if (data.response) {
           await this.sendLongMessage(ctx.chat.id, data.response);
         }
       } catch (err) {
@@ -1107,13 +725,31 @@ class OlympusBot {
     try {
       await ctx.reply(text, parseMode ? { parse_mode: parseMode } : {});
     } catch {
-      // Markdown parsing failed — retry with plain text
+      // Markdown parsing failed — retry without parse_mode (preserves all content)
       try {
-        const plainText = text.replace(/[*_`\[\]()~>#+=|{}.!-]/g, '');
-        await ctx.reply(plainText);
+        await ctx.reply(text);
       } catch (fallbackErr) {
         structuredLog('error', 'telegram-bot', 'reply_failed', {
           chatId: ctx.chat?.id,
+          error: (fallbackErr as Error).message,
+        });
+      }
+    }
+  }
+
+  /**
+   * Safely edit a Telegram message, falling back to plain text if Markdown parse fails
+   */
+  private async safeEditMessage(chatId: number, msgId: number, text: string): Promise<void> {
+    try {
+      await this.bot.telegram.editMessageText(chatId, msgId, undefined, text, { parse_mode: 'Markdown' });
+    } catch {
+      // Markdown parsing failed — retry without parse_mode (preserves content integrity)
+      try {
+        await this.bot.telegram.editMessageText(chatId, msgId, undefined, text);
+      } catch (fallbackErr) {
+        structuredLog('error', 'telegram-bot', 'edit_message_failed', {
+          chatId,
           error: (fallbackErr as Error).message,
         });
       }
@@ -1133,103 +769,8 @@ class OlympusBot {
     return `${Math.floor(hours / 24)}일 전 시작`;
   }
 
-  private getActiveSessionName(chatId: number): string | null {
-    const activeName = this.activeSession.get(chatId);
-    const sessions = this.chatSessions.get(chatId);
-
-    // If active session exists and is still connected, use it
-    if (activeName && sessions?.has(activeName)) {
-      return activeName;
-    }
-
-    // Otherwise use first connected session
-    if (sessions && sessions.size > 0) {
-      const firstName = sessions.keys().next().value as string;
-      if (firstName) {
-        this.activeSession.set(chatId, firstName);
-        return firstName;
-      }
-    }
-
-    return null;
-  }
-
   /**
-   * Resolve session name (handles olympus- prefix)
-   */
-  private resolveSessionName(chatId: number, name: string): string | null {
-    const sessions = this.chatSessions.get(chatId);
-    if (!sessions) return null;
-
-    // Try exact match first
-    if (sessions.has(name)) return name;
-
-    // Try with olympus- prefix
-    const withPrefix = `olympus-${name}`;
-    if (sessions.has(withPrefix)) return withPrefix;
-
-    return null;
-  }
-
-  /**
-   * Ensure the main session (main) is connected for this chat.
-   * Auto-connects to Gateway if not already in local state.
-   */
-  private async ensureMainSessionConnected(chatId: number): Promise<void> {
-    const MAIN_SESSION = 'main';
-    const sessions = this.chatSessions.get(chatId);
-
-    // Already connected? Verify still alive
-    if (sessions?.has(MAIN_SESSION)) {
-      const sessionId = sessions.get(MAIN_SESSION)!;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      try {
-        const res = await fetch(`${this.config.gatewayUrl}/api/sessions/${sessionId}`, {
-          headers: { Authorization: `Bearer ${this.config.apiKey}` },
-          signal: controller.signal,
-        });
-        if (res.ok) {
-          const data = await res.json() as { session: { status: string } };
-          if (data.session.status === 'active') return; // Still alive
-        }
-      } catch { /* fall through to reconnect */ } finally { clearTimeout(timeout); }
-      sessions.delete(MAIN_SESSION);
-    }
-
-    // Connect to main session via Gateway
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    try {
-      const res = await fetch(`${this.config.gatewayUrl}/api/sessions/connect`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.config.apiKey}`,
-        },
-        body: JSON.stringify({ chatId, tmuxSession: MAIN_SESSION }),
-        signal: controller.signal,
-      });
-
-      if (res.ok) {
-        const data = await res.json() as { session: { id: string; name: string } };
-        let sessionsMap = this.chatSessions.get(chatId);
-        if (!sessionsMap) {
-          sessionsMap = new Map();
-          this.chatSessions.set(chatId, sessionsMap);
-        }
-        sessionsMap.set(data.session.name, data.session.id);
-        this.subscribedRuns.set(data.session.id, chatId);
-        if (this.ws?.readyState === WebSocket.OPEN) {
-          this.ws.send(JSON.stringify(createMessage('subscribe', { sessionId: data.session.id })));
-        }
-        this.activeSession.set(chatId, MAIN_SESSION);
-      }
-    } catch { /* ignore */ } finally { clearTimeout(timeout); }
-  }
-
-  /**
-   * Handle text message in direct mode — POST /api/cli/run 동기 호출
+   * Handle @worker message — route via Codex
    */
   private async handleDirectMessage(ctx: Context & { chat: { id: number }; message: { text: string } }, text: string): Promise<void> {
     // Check for @sessionName prefix: @name message
@@ -1239,12 +780,37 @@ class OlympusBot {
     let displayName: string;
 
     if (atMatch) {
-      sessionKey = `telegram:${ctx.chat.id}:${atMatch[1]}`;
+      const workerName = atMatch[1];
+      // Validate worker exists (skip for 'main' session which is always valid)
+      if (workerName !== 'main') {
+        try {
+          const res = await fetch(`${this.config.gatewayUrl}/api/workers`, {
+            headers: { Authorization: `Bearer ${this.config.apiKey}` },
+            signal: AbortSignal.timeout(5_000),
+          });
+          if (res.ok) {
+            const { workers } = await res.json() as { workers: Array<{ name: string }> };
+            const found = workers.some((w) => w.name === workerName);
+            if (!found && workers.length > 0) {
+              const available = workers.map((w) => `\`@${w.name}\``).join(', ');
+              await this.safeReply(ctx, `❌ 워커 \`@${workerName}\`를 찾을 수 없습니다.\n사용 가능한 워커: ${available}`, 'Markdown');
+              return;
+            } else if (!found && workers.length === 0) {
+              await this.safeReply(ctx, '❌ 등록된 워커가 없습니다. 터미널에서 `olympus start-trust`를 실행하세요.', 'Markdown');
+              return;
+            }
+          }
+        } catch {
+          // Gateway unreachable — proceed anyway (don't block on validation failure)
+        }
+      }
+      sessionKey = `telegram:${ctx.chat.id}:${workerName}`;
       message = atMatch[2];
-      displayName = atMatch[1];
+      displayName = workerName;
+      // Immediate acknowledgment — before async routing (avoids silent delay)
+      await ctx.sendChatAction('typing');
     } else {
-      const activeName = this.getActiveSessionName(ctx.chat.id);
-      displayName = activeName?.replace(/^olympus-/, '') ?? 'default';
+      displayName = 'default';
       sessionKey = `telegram:${ctx.chat.id}:${displayName}`;
       message = text;
     }
@@ -1824,13 +1390,6 @@ class OlympusBot {
       // Start ping interval to keep connection alive
       this.startPing();
 
-      // Re-sync sessions from gateway on reconnect to prune stale sessions
-      // Sync for all known chats + allowedUsers
-      const chatIds = new Set([...this.config.allowedUsers, ...this.chatSessions.keys()]);
-      for (const chatId of chatIds) {
-        this.syncSessionsFromGateway(chatId).catch(() => {});
-      }
-
       // WI-4.5: Catch up on worker tasks completed during disconnection
       this.catchUpMissedWorkerTasks().catch(() => {});
     });
@@ -1903,12 +1462,6 @@ class OlympusBot {
           pending.reject(new Error((msg.payload as { message: string }).message ?? 'RPC error'));
         }
       }
-      return;
-    }
-
-    // Handle broadcast events (no sessionId) before the sessionId guard
-    if (msg.type === 'sessions:list') {
-      this.throttledSyncAllChats();
       return;
     }
 
@@ -2114,32 +1667,8 @@ class OlympusBot {
       case 'session:screen': {
         const content = (payload as { content?: string }).content;
         if (content && content.trim()) {
-          // Find session name
-          let sessionName = '';
-          const sessions = this.chatSessions.get(chatId);
-          if (sessions) {
-            for (const [name, sId] of sessions) {
-              if (sId === sessionId) {
-                sessionName = name;
-                break;
-              }
-            }
-          }
-          const displayName = sessionName.replace(/^olympus-/, '') || sessionId.slice(0, 8);
+          const displayName = sessionId.slice(0, 8);
           const prefix = `📩 [${displayName}]`;
-
-          // Store in output history (always, for /last command)
-          let history = this.outputHistory.get(sessionId);
-          if (!history) {
-            history = [];
-            this.outputHistory.set(sessionId, history);
-          }
-          history.push(content);
-          if (history.length > OlympusBot.OUTPUT_HISTORY_SIZE) {
-            history.shift();
-          }
-
-          // Raw 전달 (digest 제거됨 — 동기 HTTP가 메인 경로)
           this.enqueueSessionMessage(sessionId, chatId, `${prefix}\n\n${content}`, prefix);
         }
         break;
@@ -2154,33 +1683,10 @@ class OlympusBot {
       }
 
       case 'session:closed': {
-        // Find session name for the closed session
-        let closedName = '';
-        for (const [cId, sessions] of this.chatSessions.entries()) {
-          for (const [name, sId] of sessions) {
-            if (sId === sessionId) {
-              closedName = name;
-              sessions.delete(name);
-              // If this was the active session, clear it
-              if (this.activeSession.get(cId) === name) {
-                this.activeSession.delete(cId);
-                // Set another session as active if available
-                if (sessions.size > 0) {
-                  const nextName = sessions.keys().next().value as string;
-                  if (nextName) {
-                    this.activeSession.set(cId, nextName);
-                  }
-                }
-              }
-              break;
-            }
-          }
-        }
         this.subscribedRuns.delete(sessionId);
-        this.outputHistory.delete(sessionId);
         this.sendQueues.delete(sessionId);
 
-        const displayClosed = (closedName || sessionId.slice(0, 8)).replace(/^olympus-/, '');
+        const displayClosed = sessionId.slice(0, 8);
         this.bot.telegram.sendMessage(
           chatId,
           `🛑 세션 '${displayClosed}' 종료됨`
@@ -2286,12 +1792,6 @@ class OlympusBot {
 
       await this.registerBotCommands();
 
-      // Sync sessions from Gateway for all allowed users + known chats
-      const chatIds = new Set([...this.config.allowedUsers, ...this.chatSessions.keys()]);
-      for (const chatId of chatIds) {
-        await this.syncSessionsFromGateway(chatId);
-      }
-
       // Auto-run /start equivalent after bot startup (for allowed users).
       for (const chatId of this.config.allowedUsers) {
         await this.sendStartGuide(chatId).catch(() => {});
@@ -2328,33 +1828,6 @@ class OlympusBot {
   }
 
   /**
-   * Sync ALL active sessions from Gateway for a specific chat.
-   * Single-user tool: subscribe to all sessions regardless of chatId ownership.
-   */
-  /**
-   * Throttled sync for all known chats — triggered by sessions:list WS broadcast.
-   * Coalesces rapid-fire events into a single sync cycle (1s throttle).
-   */
-  private throttledSyncAllChats(): void {
-    if (this.syncThrottleTimer) return; // Already scheduled
-    this.syncThrottleTimer = setTimeout(() => {
-      this.syncThrottleTimer = null;
-      // Collect all chat IDs: existing sessions + allowed users (for empty-state recovery)
-      const chatIds = new Set<number>([
-        ...this.chatSessions.keys(),
-        ...this.config.allowedUsers,
-      ]);
-      for (const chatId of chatIds) {
-        if (chatId > 0) {
-          this.syncSessionsFromGateway(chatId).catch((err) => {
-            structuredLog('warn', 'telegram', 'sessions:list sync failed', { chatId, error: String(err) });
-          });
-        }
-      }
-    }, this.syncThrottleMs);
-  }
-
-  /**
    * WI-4.5: Catch up on missed worker task completions after WebSocket reconnect.
    * Telegram UX rule: no raw completion replay. Summary-only delivery is handled
    * by live worker:task:summary events.
@@ -2374,78 +1847,6 @@ class OlympusBot {
     } catch { /* ignore */ }
   }
 
-  private async syncSessionsFromGateway(chatId: number): Promise<void> {
-    try {
-      const res = await fetch(`${this.config.gatewayUrl}/api/sessions`, {
-        headers: { Authorization: `Bearer ${this.config.apiKey}` },
-      });
-
-      if (!res.ok) return;
-
-      const data = await res.json() as { sessions: Array<{ id: string; name: string; chatId: number; status: string }> };
-      // Subscribe to ALL active sessions (not just this chatId — single-user tool)
-      const activeSessions = data.sessions.filter(s => s.status === 'active');
-
-      // Get or create sessions map for this chat
-      let sessionsMap = this.chatSessions.get(chatId);
-      if (!sessionsMap) {
-        sessionsMap = new Map();
-        this.chatSessions.set(chatId, sessionsMap);
-      }
-
-      // If gateway returns no active sessions, clear all local sessions for this chat
-      if (activeSessions.length === 0) {
-        for (const [, sessionId] of sessionsMap) {
-          this.subscribedRuns.delete(sessionId);
-          this.outputHistory.delete(sessionId);
-        }
-        sessionsMap.clear();
-        this.activeSession.delete(chatId);
-        return;
-      }
-
-      // Build set of active session IDs from gateway
-      const activeSessionIds = new Set(activeSessions.map(s => s.id));
-
-      // Prune stale sessions (sessions in local state that gateway doesn't have)
-      for (const [name, sessionId] of sessionsMap) {
-        if (!activeSessionIds.has(sessionId)) {
-          sessionsMap.delete(name);
-          this.subscribedRuns.delete(sessionId);
-          this.outputHistory.delete(sessionId);
-
-          if (this.activeSession.get(chatId) === name) {
-            this.activeSession.delete(chatId);
-          }
-        }
-      }
-
-      // Add NEW sessions from gateway that aren't in local state
-      for (const session of activeSessions) {
-        if (!sessionsMap.has(session.name)) {
-          sessionsMap.set(session.name, session.id);
-
-          // Subscribe to session events via WebSocket
-          this.subscribedRuns.set(session.id, chatId);
-          if (this.ws?.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify(createMessage('subscribe', { sessionId: session.id })));
-          }
-        }
-      }
-
-      // Set active session: prefer main session in orchestrator mode
-      if (!this.directMode.get(chatId) && sessionsMap.has('main')) {
-        this.activeSession.set(chatId, 'main');
-      } else if (!this.activeSession.get(chatId) && sessionsMap.size > 0) {
-        const firstName = sessionsMap.keys().next().value as string;
-        if (firstName) {
-          this.activeSession.set(chatId, firstName);
-        }
-      }
-    } catch {
-      // Ignore errors
-    }
-  }
 }
 
 // Export for programmatic use (CLI startup handshake)

@@ -76,7 +76,10 @@ export default function UsageBar({ data }: UsageBarProps) {
           color: 'var(--text-secondary)',
         }}
       >
-        <span style={{ opacity: 0.6 }}>Usage data will appear when a Claude CLI session is active with the dashboard plugin.</span>
+        <span style={{ opacity: 0.6 }}>
+          토큰 사용량 대기 중 —{' '}
+          <code style={{ opacity: 0.85 }}>olympus start-trust</code>로 워커를 시작하면 실시간 사용량이 표시됩니다.
+        </span>
       </div>
     );
   }
@@ -95,7 +98,7 @@ export default function UsageBar({ data }: UsageBarProps) {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
-        <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(16, 23, 37, 0.75)' }}>
+        <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: 'rgba(180, 120, 220, 0.35)', backgroundColor: 'rgba(80, 30, 110, 0.28)' }}>
           <div className="flex items-center gap-1.5 text-xs mb-1">
             <span>🤖</span>
             <span className="font-semibold" style={{ color: '#E1BEE7' }}>Claude</span>
@@ -149,7 +152,7 @@ export default function UsageBar({ data }: UsageBarProps) {
           </div>
         </div>
 
-        <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(16, 23, 37, 0.75)' }}>
+        <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: 'rgba(80, 160, 230, 0.35)', backgroundColor: 'rgba(20, 60, 120, 0.28)' }}>
           <div className="flex items-center gap-1.5 text-xs mb-1">
             <span>🔷</span>
             <span className="font-semibold" style={{ color: '#7DD3FC' }}>Codex</span>
@@ -169,7 +172,7 @@ export default function UsageBar({ data }: UsageBarProps) {
           )}
         </div>
 
-        <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(16, 23, 37, 0.75)' }}>
+        <div className="rounded-xl border px-3 py-2.5" style={{ borderColor: 'rgba(80, 200, 130, 0.35)', backgroundColor: 'rgba(15, 70, 45, 0.28)' }}>
           <div className="flex items-center gap-1.5 text-xs mb-1">
             <span>💎</span>
             <span className="font-semibold" style={{ color: '#9AE6B4' }}>Gemini</span>

@@ -47,11 +47,12 @@ export default function Navbar({ connected, activeTab, onTabChange, onSettingsCl
             <button
               key={tab.key}
               onClick={() => onTabChange(tab.key)}
-              className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors text-center"
+              className="flex-1 py-2 rounded-lg text-sm font-medium text-center"
               style={{
                 backgroundColor: activeTab === tab.key ? 'rgba(79, 195, 247, 0.18)' : 'transparent',
                 color: activeTab === tab.key ? '#A5E5FF' : 'var(--text-secondary)',
                 border: activeTab === tab.key ? '1px solid rgba(79, 195, 247, 0.45)' : '1px solid transparent',
+                transition: 'background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease',
               }}
             >
               {tab.icon} {tab.label}

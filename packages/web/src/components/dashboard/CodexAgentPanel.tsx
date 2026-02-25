@@ -44,6 +44,13 @@ export function CodexAgentPanel({ codexConfig, codexBehavior, connected, onChatC
     analyzing: '분석 중',
     meeting: '회의 중',
     offline: '오프라인',
+    idle: '대기 중',
+    working: '작업 중',
+    thinking: '추론 중',
+    reviewing: '검토 중',
+    summarizing: '요약 중',
+    routing: '라우팅 중',
+    initializing: '초기화 중',
   };
 
   const description = behaviorInfo[codexBehavior] ?? '대기 중';
@@ -54,6 +61,13 @@ export function CodexAgentPanel({ codexConfig, codexBehavior, connected, onChatC
     analyzing: '결과 분석 중',
     meeting: '협업 조율 중',
     offline: '대기 중',
+    idle: '명령 대기',
+    working: '태스크 처리 중',
+    thinking: 'LLM 추론 중',
+    reviewing: '코드 리뷰 중',
+    summarizing: '결과 요약 중',
+    routing: '워커 라우팅 중',
+    initializing: 'Codex CLI 초기화',
   };
 
   return (

@@ -163,6 +163,7 @@ export default function App() {
   const [chatTarget, setChatTarget] = useState<{ id: string; name: string; emoji?: string; color?: string } | null>(null);
   const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>(loadChatMessages);
   const [monitorSelectedWorkerId, setMonitorSelectedWorkerId] = useState<string | null>(null);
+  const hasEverConnected = useRef<boolean>(false);
   const leftConsoleColumnRef = useRef<HTMLDivElement | null>(null);
   const [leftConsoleHeight, setLeftConsoleHeight] = useState<number>(0);
   const [isXlLayout, setIsXlLayout] = useState<boolean>(() => (typeof window !== 'undefined' ? window.innerWidth >= 1280 : false));
@@ -228,6 +229,11 @@ export default function App() {
     document.documentElement.dataset.theme = savedTheme;
   }, []);
 
+  // Track first successful connection so we can distinguish "initial loading" vs "reconnecting"
+  useEffect(() => {
+    if (connected) { hasEverConnected.current = true; }
+  }, [connected]);
+
   useEffect(() => {
     try {
       localStorage.setItem(CHAT_MESSAGES_STORAGE_KEY, JSON.stringify(trimChatMessages(chatMessages)));
@@ -272,19 +278,22 @@ export default function App() {
   const assignedAvatars = assignWorkerAvatars(polledWorkerConfigs.map((w) => w.id));
 
   const workerConfigs: WorkerConfig[] = (connected && polledWorkerConfigs.length > 0)
-    ? polledWorkerConfigs.map((w, i) => ({
-        id: w.id,
-        name: w.name,
-        emoji: w.emoji ?? '',
-        color: w.color,
-        // Enforce Olympus avatar policy:
-        // - First 20 workers: unique, randomized avatar assignment (no duplicates)
-        // - Beyond 20 workers: pool reuse allowed
-        avatar: (assignedAvatars.get(w.id) || w.avatar || WORKER_AVATAR_POOL[i % WORKER_AVATAR_POOL.length]) as WorkerAvatar,
-        behavior: polledWorkerStates[w.id]?.behavior,
-        skinToneIndex: i,
-        projectPath: w.projectPath,
-      } satisfies WorkerConfig))
+    ? polledWorkerConfigs.map((w, i) => {
+        // Name-based avatar: worker named "Heracles" gets heracles avatar, etc.
+        const nameLower = w.name.toLowerCase() as WorkerAvatar;
+        const nameAvatar = WORKER_AVATAR_POOL.includes(nameLower) ? nameLower : null;
+        return {
+          id: w.id,
+          name: w.name,
+          emoji: w.emoji ?? '',
+          color: w.color,
+          // Priority: name match > hash-based random > fallback index
+          avatar: (nameAvatar || assignedAvatars.get(w.id) || w.avatar || WORKER_AVATAR_POOL[i % WORKER_AVATAR_POOL.length]) as WorkerAvatar,
+          behavior: polledWorkerStates[w.id]?.behavior,
+          skinToneIndex: i,
+          projectPath: w.projectPath,
+        } satisfies WorkerConfig;
+      })
     : [];
 
   const workerStates: Record<string, WorkerDashboardState> = connected ? polledWorkerStates : {};
@@ -349,9 +358,9 @@ export default function App() {
         const mentionName = wConfig?.registeredName ?? wConfig?.name ?? agentId;
         const res = await chatWithCodex(`@${mentionName} ${message}`);
         content = res.response ?? 'No response';
-        // Worker card에서는 즉시 위임 ACK 대신 worker:task:assigned 이벤트 메시지를 사용한다.
         if (res.type === 'delegation') {
-          shouldAppendResponse = false;
+          // Show brief delegation confirmation; final result arrives via worker:task:summary event
+          content = `🔄 \`@${mentionName}\`에게 작업을 위임했습니다. 완료 시 결과가 여기에 표시됩니다.`;
         }
       }
 
@@ -534,6 +543,31 @@ export default function App() {
             />
           </svg>
           {error}
+        </div>
+      )}
+
+      {/* Connection State Banner */}
+      {!connected && !hasEverConnected.current && (
+        <div
+          className="mx-6 mt-4 p-4 rounded-xl border flex items-center gap-3"
+          style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(10,14,26,0.8)' }}
+        >
+          <div
+            className="w-4 h-4 border-2 rounded-full animate-spin flex-shrink-0"
+            style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }}
+          />
+          <span className="text-sm font-mono" style={{ color: 'var(--text-secondary)' }}>
+            Gateway에 연결 중... — Gateway가 실행 중인지 확인하세요 (<code className="opacity-70">olympus server start</code>)
+          </span>
+        </div>
+      )}
+      {!connected && hasEverConnected.current && (
+        <div
+          className="mx-6 mt-4 p-3 rounded-lg border flex items-center gap-2"
+          style={{ borderColor: 'rgba(255,180,0,0.35)', backgroundColor: 'rgba(255,180,0,0.06)' }}
+        >
+          <span className="text-yellow-400 flex-shrink-0">⚠</span>
+          <span className="text-sm font-mono text-yellow-400">연결 끊김 — 재연결 중...</span>
         </div>
       )}
 

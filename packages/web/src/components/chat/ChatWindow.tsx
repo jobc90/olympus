@@ -49,6 +49,13 @@ export default function ChatWindow({
     return () => window.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
+  // Lock background scroll while modal is open
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   // Smart auto-scroll
   useEffect(() => {
     const container = messagesContainerRef.current;
@@ -99,6 +106,7 @@ export default function ChatWindow({
       <div
         className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
         onClick={onClose}
+        onWheel={(e) => e.stopPropagation()}
       />
 
       {/* Chat modal (centered popup) */}
