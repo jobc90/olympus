@@ -79,7 +79,7 @@ esac
 echo ""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLAUDE_DIR="$USERPROFILE/.claude"
+CLAUDE_DIR="${USERPROFILE:-$HOME}/.claude"
 ORCHESTRATION_DIR="$SCRIPT_DIR/orchestration"
 
 # Windows 경로 변환 헬퍼 (C:\path → C:/path)
@@ -91,7 +91,15 @@ winpath() { echo "$1" | sed 's|\\|/|g'; }
 phase "Phase 0: 사전 요구사항 확인"
 echo ""
 
-command -v node &>/dev/null && success "Node.js $(node --version)" || { err "Node.js 미설치"; exit 1; }
+if command -v node &>/dev/null; then
+  NODE_MAJOR=$(node -e "process.stdout.write(String(parseInt(process.version.slice(1))))")
+  if [ "$NODE_MAJOR" -lt 22 ] 2>/dev/null; then
+    err "Node.js v22+ 필요 (현재 $(node --version)) — https://nodejs.org 에서 업그레이드 후 재시도하세요"; exit 1
+  fi
+  success "Node.js $(node --version)"
+else
+  err "Node.js 미설치 — https://nodejs.org 에서 설치 후 재시도하세요"; exit 1
+fi
 command -v pnpm &>/dev/null && success "pnpm $(pnpm --version)" || { warn "pnpm 설치 중..."; npm install -g pnpm; }
 command -v claude &>/dev/null && success "Claude CLI 설치됨" || { err "Claude CLI 미설치 — https://claude.ai/download 에서 설치 후 재시도하세요"; exit 1; }
 command -v gemini &>/dev/null && success "Gemini CLI 설치됨" || info "Gemini CLI 미설치 (선택)"
