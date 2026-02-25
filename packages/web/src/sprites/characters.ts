@@ -236,7 +236,7 @@ function resolveDrawScale(footY: number, mapScale: number, panelScale: number): 
 }
 
 const HD_PIXEL_CHARACTER_MODE = true;
-const HD_RENDER_REV = 'ref_v6';
+const HD_RENDER_REV = 'ref_v7';
 const HD_SPRITE_W = 32;
 const HD_SPRITE_H = 48;
 const HD_SPRITE_CACHE = new Map<string, HTMLCanvasElement>();
@@ -413,6 +413,16 @@ function drawHdPixelAvatar(
   const pants = '#1E2438';
   const shoes = '#0C0D18';
   const isF = spec.gender === 'f';
+  // Hair shading helpers — darken/lighten hair color for strand depth
+  const adjColor = (hex: string, delta: number): string => {
+    const n = parseInt(hex.replace('#', ''), 16);
+    const r = Math.min(255, Math.max(0, (n >> 16) + delta));
+    const g = Math.min(255, Math.max(0, ((n >> 8) & 0xFF) + delta));
+    const b = Math.min(255, Math.max(0, (n & 0xFF) + delta));
+    return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+  };
+  const hairSh = adjColor(hair, -50);   // shadow strand (dark)
+  const hairHi = adjColor(hair, +65);   // highlight strand (light)
 
   // ── Feet & Legs (chibi: stubby, y=38..47 in 48px canvas) ────────────
   if (!seated) {
@@ -514,87 +524,193 @@ function drawHdPixelAvatar(
   px(10, 25, 12, 2, skinSh);       // chin shadow
   px(4,  27, 24, 2, '#3A2010');    // chin outline — separates face from neck
 
-  // ── Hair — each case draws its FULL shape on top of skin ─────────────
+  // ── Hair — each case draws base shape + shoulder extension + shading ───
   switch (spec.hairStyle) {
-    case 'long':
-      // Cap + long flowing sides to below chin (48px canvas: face y=8..19)
+    case 'long': {
+      // Cap
       px(8, 0, 16, 2, hair);
       px(4, 2, 24, 8, hair);
-      px(2, 4, 28, 6, hair);       // widest at y=4..9
-      px(2, 10, 4, 18, hair);      // left long flow y=10..27
-      px(26, 10, 4, 18, hair);     // right long flow y=10..27
+      px(2, 4, 28, 6, hair);
+      // Side flows — past face (y=10..27), through neck, onto shoulder/chest
+      px(0, 10, 5, 28, hair);      // left flow y=10..37 (shoulder-width)
+      px(27, 10, 5, 28, hair);     // right flow y=10..37
+      // Shoulder cascade: flare slightly wider at y=28..37 (over outfit)
+      px(0, 28, 7, 10, hair);      // left shoulder cascade
+      px(25, 28, 7, 10, hair);     // right shoulder cascade
+      // Cap shading
+      px(10, 2, 12, 2, hairHi);    // top-center highlight streak
+      px(14, 4, 2, 5, hairSh);     // center parting shadow
+      px(5,  4, 2, 5, hairSh);     // left-of-center shadow band
+      px(24, 4, 2, 5, hairSh);     // right-of-center shadow band
+      // Flow shading — vertical strand lines (light inner, dark outer)
+      px(2,  14, 2, 22, hairHi);   // left flow highlight
+      px(0,  14, 2, 22, hairSh);   // left flow outer shadow
+      px(28, 14, 2, 22, hairHi);   // right flow highlight
+      px(30, 14, 2, 22, hairSh);   // right flow outer shadow
+      // Extra strand details in shoulder cascade
+      px(3,  30, 2, 6, hairSh);    // left cascade shadow strand
+      px(27, 30, 2, 6, hairSh);    // right cascade shadow strand
       break;
-    case 'wavy':
-      // Dramatic flowing waves with side bumps (48px: face y=8..19)
+    }
+    case 'wavy': {
+      // Cap
       px(8, 0, 16, 2, hair);
-      px(4, 2, 24, 4, hair);       // top
-      px(0, 4, 32, 6, hair);       // full-width wave y=4..9
-      px(2, 10, 4, 8, hair);       // left wave bump y=10..17
-      px(24, 10, 6, 8, hair);      // right wave bump y=10..17
-      px(2, 18, 4, 10, hair);      // left flow y=18..27
-      px(26, 18, 4, 10, hair);     // right flow y=18..27
+      px(4, 2, 24, 4, hair);
+      px(0, 4, 32, 6, hair);       // full-width wave crest y=4..9
+      // Side waves — past face and onto shoulders
+      px(0, 10, 5, 8, hair);       // left wave bump y=10..17
+      px(27, 10, 5, 8, hair);      // right wave bump y=10..17
+      px(0, 18, 5, 10, hair);      // left flow y=18..27
+      px(27, 18, 5, 10, hair);     // right flow y=18..27
+      px(0, 28, 7, 10, hair);      // left shoulder wave y=28..37
+      px(25, 28, 7, 10, hair);     // right shoulder wave y=28..37
+      // Cap shading
+      px(10, 2, 12, 2, hairHi);    // top-center highlight
+      px(5,  4, 2, 5, hairSh);     // left shadow band
+      px(24, 4, 2, 5, hairSh);     // right shadow band
+      px(14, 4, 2, 4, hairSh);     // center parting
+      // Wave shading — alternating light/dark following wave direction
+      px(2,  12, 2, 3, hairHi);    // left bump crest highlight
+      px(2,  16, 2, 3, hairSh);    // left bump trough shadow
+      px(2,  20, 2, 3, hairHi);    // left lower crest highlight
+      px(2,  24, 2, 3, hairSh);    // left lower trough
+      px(29, 12, 2, 3, hairHi);    // right bump crest highlight
+      px(29, 16, 2, 3, hairSh);    // right bump trough shadow
+      px(29, 20, 2, 3, hairHi);    // right lower crest highlight
+      px(29, 24, 2, 3, hairSh);    // right lower trough
+      // Shoulder wave shading
+      px(3,  30, 2, 6, hairSh);
+      px(27, 30, 2, 6, hairSh);
       break;
-    case 'spike':
-      // Three DRAMATIC spikes at crown
-      px(6, 4, 6, 2, hair);        // spike L base
-      px(8, 2, 4, 2, hair);        // spike L mid
-      px(8, 0, 2, 2, hair);        // spike L tip
+    }
+    case 'spike': {
+      // Three dramatic spikes at crown
+      px(6,  4, 6, 2, hair);       // spike L base
+      px(8,  2, 4, 2, hair);       // spike L mid
+      px(8,  0, 2, 2, hair);       // spike L tip
       px(14, 2, 4, 2, hair);       // spike C mid
-      px(14, 0, 4, 2, hair);       // spike C tip (4px wide, goes highest)
+      px(14, 0, 4, 2, hair);       // spike C tip
       px(20, 4, 6, 2, hair);       // spike R base
       px(20, 2, 4, 2, hair);       // spike R mid
       px(22, 0, 2, 2, hair);       // spike R tip
-      px(4, 6, 24, 6, hair);       // solid base cap y=6..11
-      px(2, 8, 28, 4, hair);       // widest at y=8..11
+      px(4,  6, 24, 6, hair);      // solid base cap
+      px(2,  8, 28, 4, hair);      // widest at y=8..11
+      // Spike shading — left highlight, right shadow on each spike
+      px(8,  2, 2, 3, hairHi);     // L spike highlight
+      px(10, 2, 2, 3, hairSh);     // L spike shadow
+      px(14, 0, 2, 4, hairHi);     // C spike highlight
+      px(16, 0, 2, 4, hairSh);     // C spike shadow
+      px(20, 2, 2, 3, hairHi);     // R spike highlight
+      px(22, 2, 2, 3, hairSh);     // R spike shadow
+      // Cap shading
+      px(10, 8, 2, 3, hairHi);     // cap highlight left-center
+      px(20, 8, 2, 3, hairSh);     // cap shadow right-center
       break;
-    case 'bun':
+    }
+    case 'bun': {
       // Large rounded top-knot bun
-      px(8, 0, 16, 4, hair);       // bun top (16px wide)
+      px(8,  0, 16, 4, hair);      // bun top
       px(10, 0, 12, 2, hair);      // bun peak
-      px(6, 4, 20, 4, hair);       // bun lower + cap merge
-      px(4, 8, 24, 4, hair);       // cap
+      px(6,  4, 20, 4, hair);      // bun lower + cap merge
+      px(4,  8, 24, 4, hair);      // cap
       px(2, 10, 28, 2, hair);      // widest at y=10..11
+      // Bun shading — top-left highlight, bottom-right shadow for roundness
+      px(12, 0, 4, 2, hairHi);     // bun top highlight
+      px(10, 2, 4, 3, hairHi);     // bun upper-left highlight
+      px(18, 4, 4, 4, hairSh);     // bun right-lower shadow
+      px(10, 6, 2, 2, hairSh);     // bun bottom-left shadow
+      px(14, 8, 4, 2, hairHi);     // cap center highlight
+      px(22, 8, 4, 3, hairSh);     // cap right shadow
       break;
-    case 'curly':
-      // HUGE fluffy cloud — maximum volume (48px: face y=8..19)
-      px(4, 0, 24, 2, hair);       // very top
-      px(0, 2, 32, 4, hair);       // full width y=2..5
-      px(0, 6, 32, 4, hair);       // full width y=6..9
+    }
+    case 'curly': {
+      // Huge fluffy cloud extending past face onto shoulders
+      px(4,  0, 24, 2, hair);      // very top
+      px(0,  2, 32, 4, hair);      // full width y=2..5
+      px(0,  6, 32, 4, hair);      // full width y=6..9
       px(0, 10, 32, 6, hair);      // full width y=10..15
-      px(0, 16, 6, 12, hair);      // left puff y=16..27
+      px(0, 16,  6, 12, hair);     // left puff y=16..27
       px(26, 16, 6, 12, hair);     // right puff y=16..27
+      // Shoulder puffs — curly hair billows out over shoulders
+      px(0, 28, 8, 8, hair);       // left shoulder puff y=28..35
+      px(24, 28, 8, 8, hair);      // right shoulder puff y=28..35
+      // Curly shading — scattered light/dark patches simulate volume
+      px(12, 2, 8, 2, hairHi);     // top center highlight
+      px(2,  4, 2, 4, hairSh);     // left edge shadow
+      px(28, 4, 2, 4, hairSh);     // right edge shadow
+      px(8,  6, 4, 2, hairHi);     // mid-left highlight
+      px(20, 6, 4, 2, hairSh);     // mid-right shadow
+      px(4, 10, 2, 4, hairHi);     // lower-left highlight
+      px(26, 10, 2, 4, hairSh);    // lower-right shadow
+      px(2, 18, 2, 6, hairSh);     // left puff outer shadow
+      px(4, 20, 2, 4, hairHi);     // left puff inner highlight
+      px(26, 18, 2, 6, hairSh);    // right puff outer shadow
+      px(28, 20, 2, 4, hairHi);    // right puff inner highlight
+      // Shoulder puff shading
+      px(1, 30, 2, 4, hairSh);
+      px(29, 30, 2, 4, hairSh);
       break;
-    case 'pony':
-      // Cap + thick ponytail on right + hair tie (48px canvas)
+    }
+    case 'pony': {
+      // Cap + thick ponytail on right
       px(8, 0, 16, 2, hair);
       px(4, 2, 24, 8, hair);
       px(2, 4, 28, 6, hair);
-      px(24, 10, 6, 2, trim);      // ponytail tie/band
-      px(24, 12, 6, 20, hair);     // thick ponytail (6px wide, y=12..31)
+      px(24, 10, 6, 2, trim);      // ponytail hair tie
+      px(24, 12, 6, 26, hair);     // thick ponytail y=12..37 (past shoulder)
+      // Cap shading
+      px(10, 2, 12, 2, hairHi);    // top-center highlight
+      px(5,  4, 2, 5, hairSh);     // left shadow band
+      px(14, 4, 2, 4, hairSh);     // center parting shadow
+      // Ponytail shading — two vertical strand lines
+      px(25, 14, 2, 22, hairHi);   // ponytail left highlight strand
+      px(28, 14, 2, 22, hairSh);   // ponytail right shadow strand
+      px(29, 18,  1, 14, hairHi);  // ponytail outer edge glint
       break;
-    case 'braid':
-      // Cap + long braided rope with alternating segments (48px canvas)
+    }
+    case 'braid': {
+      // Cap + long braided rope with alternating colored segments
       px(8, 0, 16, 2, hair);
       px(4, 2, 24, 8, hair);
       px(2, 4, 28, 6, hair);
-      px(24, 10, 4, 26, hair);     // braid runs y=10..35
+      px(24, 10, 4, 32, hair);     // braid runs y=10..41 (past shoulder)
       px(24, 16, 4, 2, trim);      // braid segment 1
       px(24, 22, 4, 2, trim);      // braid segment 2
       px(24, 28, 4, 2, trim);      // braid segment 3
       px(24, 34, 4, 2, trim);      // braid segment 4
+      px(24, 40, 4, 2, trim);      // braid segment 5 (extended)
+      // Cap shading
+      px(10, 2, 12, 2, hairHi);    // top-center highlight
+      px(5,  4, 2, 5, hairSh);     // left shadow
+      px(14, 4, 2, 4, hairSh);     // center parting
+      // Braid strand shading — depth on the rope texture
+      px(25, 12, 2, 26, hairHi);   // braid left highlight strand
+      px(27, 12, 2, 26, hairSh);   // braid right shadow strand
       break;
-    case 'hood':
-      // Full hood covering head — face visible through opening (48px)
-      px(0, 0, 32, 30, shirt);     // entire hood in mantle color (covers neck)
+    }
+    case 'hood': {
+      // Full hood covering head — face visible through opening
+      px(0, 0, 32, 30, shirt);     // entire hood (covers neck)
       px(4, 8, 24, 20, skin);      // inner face opening y=8..27
       px(26, 10, 4, 16, skinSh);   // face shadow inside hood (right)
       px(10, 25, 12, 2, skinSh);   // chin shadow inside hood
+      // Hood shading — fabric folds
+      px(2,  4,  2, 16, hairSh);   // left fold shadow
+      px(28, 4,  2, 16, hairSh);   // right fold shadow
+      px(8,  2,  4,  4, hairHi);   // upper-left highlight (lit area)
       break;
-    default: // 'short' — minimal rounded cap
+    }
+    default: { // 'short' — minimal rounded cap
       px(8, 0, 16, 2, hair);
       px(4, 2, 24, 10, hair);
       px(2, 4, 28, 6, hair);
+      // Cap shading
+      px(10, 2, 12, 2, hairHi);    // top-center highlight
+      px(5,  4, 2, 6, hairSh);     // left shadow band
+      px(22, 4, 2, 6, hairSh);     // right shadow band
+      px(14, 4, 4, 4, hairSh);     // center-right shadow
       break;
+    }
   }
 
   // ── Hair cap underline — separates hair from forehead ────────────────
