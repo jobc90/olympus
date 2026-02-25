@@ -37,13 +37,13 @@ if (!hasArgs && !isHelpOrVersion) {
   program
     .name('olympus')
     .description('⚡ Olympus - AI-powered development platform')
-    .version('0.3.0');
+    .version('1.0.0');
 
   // Main commands (most common)
   program.addCommand(quickstartCommand); // Quick setup + start
   program.addCommand(setupCommand);      // First-time setup only
-  program.addCommand(startCommand);      // Start tmux claude cli
-  program.addCommand(startTrustCommand);  // Start tmux claude cli (bypass permissions)
+  program.addCommand(startCommand);      // Start PTY worker (Claude CLI TUI)
+  program.addCommand(startTrustCommand);  // Start PTY worker (bypass permissions)
   program.addCommand(serverCommand);     // Server management (gateway + dashboard + telegram)
   program.addCommand(runCommand);        // Run a task
   program.addCommand(interactiveCommand); // Interactive REPL (explicit)

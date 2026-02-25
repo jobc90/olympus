@@ -86,7 +86,10 @@ serverCommand
 
     // Validate mode
     const validModes = ['legacy', 'hybrid', 'codex'];
-    const mode: string = validModes.includes(opts.mode) ? opts.mode : 'legacy';
+    const mode: string = validModes.includes(opts.mode) ? opts.mode : (() => {
+      if (opts.mode) console.warn(chalk.yellow(`  ⚠ 알 수 없는 모드 '${opts.mode}' → codex로 실행`));
+      return 'codex';
+    })();
 
     // Determine what to start
     const startAll = !opts.gateway && !opts.dashboard && !opts.telegram;
