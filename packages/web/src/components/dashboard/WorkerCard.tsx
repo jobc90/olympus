@@ -13,15 +13,15 @@ interface WorkerCardProps {
   onDetailClick?: (workerId: string) => void;
 }
 
-function PixelAvatar({ worker, size = 92 }: { worker: WorkerConfig; size?: number }) {
+function PixelAvatar({ worker, size = 98 }: { worker: WorkerConfig; size?: number }) {
   const canvasRef = (canvas: HTMLCanvasElement | null) => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, size, size);
     ctx.imageSmoothingEnabled = false;
-    // Character is ~54px tall (scale 3 * 18 rows), y = feet position
-    drawWorker(ctx, size / 2, size - 6, 'stand', 's', 0, worker.avatar as WorkerAvatar, worker.color, '');
+    // HD char 45×67px, centered: hdDrawY=(size-67)/2=16, footY=16+67+2=85 → size-13
+    drawWorker(ctx, size / 2, size - 13, 'stand', 's', 0, worker.avatar as WorkerAvatar, worker.color, '');
   };
 
   return (
@@ -64,9 +64,9 @@ export function WorkerCard({ worker, state, onChatClick, onDetailClick }: Worker
       />
 
       <div className="flex items-start gap-3 min-h-0">
-        <PixelAvatar worker={worker} size={96} />
+        <PixelAvatar worker={worker} size={98} />
         <div
-          className="flex-1 min-w-0 h-[96px] rounded-lg border px-2.5 py-2 text-[11px] font-mono flex flex-col justify-between"
+          className="flex-1 min-w-0 h-[98px] rounded-lg border px-2.5 py-2 text-[11px] font-mono flex flex-col justify-between"
           style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(8, 13, 26, 0.45)' }}
         >
           <div className="truncate leading-tight" style={{ color: 'var(--text-primary)' }}>

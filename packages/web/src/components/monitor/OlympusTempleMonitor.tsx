@@ -70,7 +70,7 @@ const ACTIVE_ZONE_BEHAVIORS = new Set([
   'starting',
 ]);
 
-function WorkerPortrait({ worker, size = 70 }: { worker: WorkerConfig; size?: number }) {
+function WorkerPortrait({ worker, size = 98 }: { worker: WorkerConfig; size?: number }) {
   const detailScale = 1;
   const renderSize = size * detailScale;
   const canvasRef = (canvas: HTMLCanvasElement | null) => {
@@ -80,7 +80,8 @@ function WorkerPortrait({ worker, size = 70 }: { worker: WorkerConfig; size?: nu
     ctx.setTransform(detailScale, 0, 0, detailScale, 0, 0);
     ctx.clearRect(0, 0, size, size);
     ctx.imageSmoothingEnabled = false;
-    drawWorker(ctx, size / 2, size - 4, 'stand', 's', 0, worker.avatar as WorkerAvatar, worker.color, '');
+    // HD char 45×67px, centered: hdDrawY=(size-67)/2=16, footY=16+67+2=85 → size-13
+    drawWorker(ctx, size / 2, size - 13, 'stand', 's', 0, worker.avatar as WorkerAvatar, worker.color, '');
   };
 
   return (
@@ -100,7 +101,7 @@ function WorkerPortrait({ worker, size = 70 }: { worker: WorkerConfig; size?: nu
   );
 }
 
-function ZeusPortrait({ size = 90 }: { size?: number }) {
+function ZeusPortrait({ size = 98 }: { size?: number }) {
   const detailScale = 1;
   const renderSize = size * detailScale;
   const canvasRef = (canvas: HTMLCanvasElement | null) => {
@@ -110,7 +111,7 @@ function ZeusPortrait({ size = 90 }: { size?: number }) {
     ctx.setTransform(detailScale, 0, 0, detailScale, 0, 0);
     ctx.clearRect(0, 0, size, size);
     ctx.imageSmoothingEnabled = false;
-    drawCodex(ctx, size / 2, size - 10, 'stand', 0, 'zeus', '');
+    drawCodex(ctx, size / 2, size - 13, 'stand', 0, 'zeus', '');
   };
 
   return (
@@ -130,7 +131,7 @@ function ZeusPortrait({ size = 90 }: { size?: number }) {
   );
 }
 
-function HeraPortrait({ size = 90 }: { size?: number }) {
+function HeraPortrait({ size = 98 }: { size?: number }) {
   const detailScale = 1;
   const renderSize = size * detailScale;
   const canvasRef = (canvas: HTMLCanvasElement | null) => {
@@ -140,7 +141,7 @@ function HeraPortrait({ size = 90 }: { size?: number }) {
     ctx.setTransform(detailScale, 0, 0, detailScale, 0, 0);
     ctx.clearRect(0, 0, size, size);
     ctx.imageSmoothingEnabled = false;
-    drawGemini(ctx, size / 2, size - 10, 'stand', 0, 'hera', '');
+    drawGemini(ctx, size / 2, size - 13, 'stand', 0, 'hera', '');
   };
 
   return (
@@ -316,7 +317,7 @@ export function OlympusTempleMonitor({
                 ) : (
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                      <WorkerPortrait worker={selectedWorker} size={96} />
+                      <WorkerPortrait worker={selectedWorker} size={98} />
                       <div className="min-w-0">
                         <div className="font-semibold" style={{ color: 'var(--text-primary)' }}>{selectedWorker.name}</div>
                         <div className="text-[11px] font-mono truncate" style={{ color: 'var(--text-secondary)' }}>
