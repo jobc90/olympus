@@ -231,10 +231,17 @@ echo ""
 # Node.js 확인
 if command -v node &> /dev/null; then
     NODE_VERSION=$(node --version)
-    success "Node.js 설치됨: $NODE_VERSION"
+    NODE_MAJOR=$(node -e "process.stdout.write(String(process.versions.node.split('.')[0]))")
+    if [ "$NODE_MAJOR" -lt 22 ] 2>/dev/null; then
+        warn "Node.js $NODE_VERSION 감지 — Node.js 22 이상이 필요합니다."
+        echo "    업그레이드: https://nodejs.org/ 또는 nvm use 22"
+        echo "    현재 버전으로 계속 진행하면 빌드 오류가 발생할 수 있습니다."
+    else
+        success "Node.js 설치됨: $NODE_VERSION"
+    fi
 else
     error "Node.js가 설치되어 있지 않습니다."
-    echo "    설치: https://nodejs.org/"
+    echo "    설치: https://nodejs.org/ (v22 LTS 권장)"
     exit 1
 fi
 

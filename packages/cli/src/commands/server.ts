@@ -161,7 +161,11 @@ serverCommand
         if (e.code === 'EADDRINUSE') {
           console.log(chalk.red(`\n  ❌ Gateway 포트 ${opts.port}이 이미 사용 중입니다.\n`));
           console.log(chalk.gray('  해결 방법:'));
-          console.log(chalk.gray(`  1. 기존 프로세스 종료: lsof -ti :${opts.port} | xargs kill`));
+          if (process.platform === 'win32') {
+            console.log(chalk.gray(`  1. 기존 프로세스 종료: netstat -ano | findstr :${opts.port}  → taskkill /PID <PID> /F`));
+          } else {
+            console.log(chalk.gray(`  1. 기존 프로세스 종료: lsof -ti :${opts.port} | xargs kill`));
+          }
           console.log(chalk.gray('  2. 다른 포트 사용: olympus server start -p 8202'));
           console.log(chalk.gray('  3. 이미 실행 중이면 대시보드를 바로 여세요: http://localhost:8201\n'));
         } else {

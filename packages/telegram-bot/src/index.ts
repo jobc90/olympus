@@ -1,4 +1,5 @@
 import { Telegraf, Context } from 'telegraf';
+import { homedir } from 'os';
 import { InlineQueryResult } from 'telegraf/types';
 import WebSocket from 'ws';
 import {
@@ -273,7 +274,7 @@ class OlympusBot {
     if (workers.length > 0) {
       for (const w of workers) {
         const icon = w.status === 'idle' ? '🟢' : w.status === 'busy' ? '🔴' : '⚫';
-        const shortPath = w.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
+        const shortPath = w.projectPath.replace(homedir(), '~');
         msg += `${icon} \`@${w.name}\` — \`${shortPath}\`\n`;
       }
       msg += '\n';
@@ -560,7 +561,7 @@ class OlympusBot {
             await ctx.reply('❌ Gateway에 연결할 수 없습니다. olympus server start로 서버를 시작하세요.');
           }
         } catch {
-          await ctx.reply('❌ 작업 목록을 가져올 수 없습니다.\n대시보드에서 확인하세요: http://localhost:8201');
+          await ctx.reply('❌ 작업 목록을 가져올 수 없습니다.\nGateway가 실행 중인지 확인하세요: `olympus server start`', { parse_mode: 'Markdown' });
         }
       }
     });
@@ -588,7 +589,7 @@ class OlympusBot {
 
         for (const w of workers) {
           const icon = w.status === 'idle' ? '🟢' : w.status === 'busy' ? '🔴' : '⚫';
-          const shortPath = w.projectPath.replace(/^\/Users\/[^/]+\//, '~/');
+          const shortPath = w.projectPath.replace(homedir(), '~');
           msg += `${icon} *${w.name}* — \`${shortPath}\`\n`;
           if (w.status === 'busy' && w.currentTaskPrompt) {
             msg += `  💬 ${w.currentTaskPrompt.slice(0, 60)}${w.currentTaskPrompt.length > 60 ? '...' : ''}\n`;
@@ -684,7 +685,7 @@ class OlympusBot {
           if (query && !w.name.toLowerCase().includes(query.toLowerCase())) {
             continue;
           }
-          const statusIcon = w.status === 'idle' ? '🟢' : '🔵';
+          const statusIcon = w.status === 'idle' ? '🟢' : w.status === 'busy' ? '🔴' : '⚫';
           results.push({
             type: 'article',
             id: w.id,
@@ -1033,6 +1034,13 @@ class OlympusBot {
             signal: AbortSignal.timeout(10_000),
           }
         );
+        if (!statusRes.ok) {
+          await ctx.telegram.editMessageText(
+            ctx.chat.id, statusMsgId, undefined,
+            `❌ Team API 오류 (${statusRes.status}) — Gateway가 실행 중인지 확인하세요.`
+          ).catch(() => {});
+          return;
+        }
         const data = await statusRes.json() as {
           teamId: string;
           phase: string;
