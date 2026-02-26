@@ -117,9 +117,13 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
   let ptyActive = false;
   const STREAM_FLUSH_MS = 30;
   const STREAM_FLUSH_SIZE = 2048;
-  // Guards against double-handling of local PTY input (race condition between
-  // WS broadcast and HTTP response — see onLocalInput handler below).
+  // Guards against concurrent HTTP task-creation requests (race window between
+  // onLocalInput HTTP POST and the subsequent monitorForCompletion call).
+  // Only true during the brief HTTP request; NOT held during monitoring.
   let localPtyTaskPending = false;
+  // Declared here (not after ptyWorker.start) to avoid TDZ if onLocalInput fires
+  // during the brief window between PTY ready and the rest of setup completing.
+  const handledTaskIds = new Set<string>();
 
   // shutdown 함수를 먼저 선언 (onExit에서 참조)
   let shutdownFn: ((signal: string) => Promise<void>) | null = null;
@@ -184,10 +188,15 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
     // for completion and report the result (same as dashboard terminal input).
     onLocalInput: async (line: string) => {
       if (shuttingDown || !workerId || localPtyTaskPending) return;
-      // Guard: don't create a new task if the PTY is already processing
+      // Guard: don't start monitoring if PTY is already processing a task
       if (ptyWorker.isProcessing) return;
 
+      // localPtyTaskPending guards only the brief HTTP registration window.
+      // Reset it right after the task is registered so that subsequent inputs
+      // typed *after* Claude finishes responding can also create task records.
+      // During monitorForCompletion, ptyWorker.isProcessing prevents re-entry.
       localPtyTaskPending = true;
+      let taskId = '';
       try {
         const taskRes = await fetch(`${gatewayUrl}/api/workers/${workerId}/task`, {
           method: 'POST',
@@ -200,30 +209,35 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
         });
         if (!taskRes.ok) return;
 
-        const { taskId } = await taskRes.json() as { taskId: string };
+        const data = await taskRes.json() as { taskId: string };
+        taskId = data.taskId;
         // Add to handledTaskIds before WS event is processed to prevent
         // the WS handler from calling executeTaskWithTimeout (re-writing prompt to PTY)
         handledTaskIds.add(taskId);
-
-        // Monitor completion — input already in PTY, don't write again
-        try {
-          const result = await ptyWorker.monitorForCompletion(line);
-          await reportResult(taskId, {
-            success: result.success,
-            text: result.text.slice(0, 50000),
-            durationMs: result.durationMs,
-          });
-        } catch (err) {
-          await reportResult(taskId, {
-            success: false,
-            error: (err as Error).message,
-            durationMs: 0,
-          });
-        }
       } catch {
         // Non-fatal — local PTY input sync is best-effort
+        return;
       } finally {
+        // Reset here (not after monitorForCompletion) so the next input typed
+        // after Claude responds can immediately create its own task record.
         localPtyTaskPending = false;
+      }
+
+      // Monitor completion — input already in PTY, don't write again.
+      // ptyWorker.isProcessing = true during this, blocking concurrent calls.
+      try {
+        const result = await ptyWorker.monitorForCompletion(line);
+        await reportResult(taskId, {
+          success: result.success,
+          text: result.text.slice(0, 50000),
+          durationMs: result.durationMs,
+        });
+      } catch (err) {
+        await reportResult(taskId, {
+          success: false,
+          error: (err as Error).message,
+          durationMs: 0,
+        });
       }
     },
   });
@@ -232,7 +246,7 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
     const regRes = await fetch(`${gatewayUrl}/api/workers/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ name: workerName, projectPath, pid: process.pid }),
+      body: JSON.stringify({ name: workerName, projectPath, pid: process.pid, hasLocalPty: true }),
     });
     if (!regRes.ok) throw new Error(`HTTP ${regRes.status}`);
     const data = await regRes.json() as { worker: { id: string; name: string } };
@@ -288,8 +302,6 @@ async function startWorker(opts: Record<string, unknown>, forceTrust: boolean): 
   }, 30_000);
 
   // ─── 결과 보고 ───
-
-  const handledTaskIds = new Set<string>();
 
   async function reportResult(taskId: string, result: Record<string, unknown>): Promise<void> {
     await fetch(`${gatewayUrl}/api/workers/tasks/${taskId}`, {

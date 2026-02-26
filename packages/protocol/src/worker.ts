@@ -21,6 +21,8 @@ export interface RegisteredWorker {
   lastHeartbeat: number;
   currentTaskId?: string;
   currentTaskPrompt?: string;
+  /** 로컬 PTY stdin이 연결된 워커 — 대시보드 resize를 무시해야 함 */
+  hasLocalPty?: boolean;
 }
 
 // ──────────────────────────────────────────────
@@ -31,6 +33,8 @@ export interface WorkerRegistration {
   name?: string;
   projectPath: string;
   pid: number;
+  /** true = `olympus start`로 시작된 로컬 PTY 워커 */
+  hasLocalPty?: boolean;
 }
 
 // ──────────────────────────────────────────────

@@ -38,6 +38,7 @@ export class WorkerRegistry extends EventEmitter {
       status: 'idle',
       registeredAt: now,
       lastHeartbeat: now,
+      ...(info.hasLocalPty ? { hasLocalPty: true } : {}),
     };
     this.workers.set(id, worker);
     this.emit('worker:registered', worker);

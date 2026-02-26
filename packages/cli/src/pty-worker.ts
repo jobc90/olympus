@@ -595,10 +595,10 @@ export class PtyWorker {
         const normalized = decoded.replace(/\r?\n/g, '\r');
         this.pty.write(normalized);
 
-        // Cross-channel sync: track local input when PTY is idle.
-        // Only capture when not processing a task — prevents interfering with
-        // interactive Claude prompts (approval dialogs, etc.).
-        if (this.options.onLocalInput && this.state.phase === 'idle') {
+        // Cross-channel sync: track local input to notify Telegram/Dashboard.
+        // Capture during idle AND during settle window (user moving to next task).
+        // Control sequences (arrow keys, etc.) reset the buffer to avoid garbage.
+        if (this.options.onLocalInput) {
           for (const ch of decoded) {
             const code = ch.codePointAt(0) ?? 0;
             if (ch === '\r' || ch === '\n') {
@@ -606,7 +606,14 @@ export class PtyWorker {
               this.localInputBuffer = '';
               // Only report meaningful commands (2+ chars, no escape sequences)
               if (trimmed.length >= 2 && !trimmed.startsWith('\x1b')) {
-                this.options.onLocalInput(trimmed);
+                // If settle timer is active, user has moved on — force-complete
+                // current task so the new input can be registered as a fresh task
+                if (this.state.phase === 'processing' && this.state.settleTimer !== null) {
+                  this.forceCompleteIfSettling();
+                }
+                if (this.state.phase === 'idle') {
+                  this.options.onLocalInput(trimmed);
+                }
               }
             } else if (ch === '\x7f' || ch === '\b') {
               // Backspace
@@ -864,28 +871,53 @@ export class PtyWorker {
     }
   }
 
-  private completeTask(): void {
+  /**
+   * Force-complete the current task if a settle timer is active.
+   * Called when the user presses Enter in the local terminal while Claude
+   * has already responded (settle window). Allows the new input to be
+   * tracked as a fresh task for cross-channel sync (Telegram/Dashboard).
+   * Returns true if the task was force-completed.
+   */
+  forceCompleteIfSettling(): boolean {
+    if (this.state.phase !== 'processing') return false;
+    if (!this.state.settleTimer) return false;
+    // Cancel settle timer and force-complete (skip quality checks —
+    // user moving on means whatever result we have is the final result)
+    clearTimeout(this.state.settleTimer);
+    this.state.settleTimer = null;
+    this.completeTask(true);
+    return this.state.phase === 'idle';
+  }
+
+  private completeTask(force = false): void {
     if (this.state.phase !== 'processing') return;
 
     const result = this.extractResult();
     const durationMs = Date.now() - this.state.startTime;
 
-    // 결과 품질 검증: 결과가 너무 짧고 실행 시간이 30초 미만이면 재대기
-    if (result.length < 20 && durationMs < 30_000) {
-      if (this.state.settleTimer) {
-        clearTimeout(this.state.settleTimer);
-        this.state.settleTimer = null;
+    // Quality checks — skip when forced (user explicitly moved on to next task)
+    if (!force) {
+      // 결과 품질 검증: 결과가 너무 짧고 실행 시간이 30초 미만이면 재대기
+      if (result.length < 20 && durationMs < 30_000) {
+        if (this.state.settleTimer) {
+          clearTimeout(this.state.settleTimer);
+          this.state.settleTimer = null;
+        }
+        // completionRecheck가 settleTimer 등록 시점에 중단되었으므로 재등록
+        this.armCompletionRecheck();
+        return;
       }
-      return;
-    }
 
-    // 추가: 백그라운드 에이전트가 있었는데 결과가 50자 미만이면 재대기
-    if (this.state.hasBackgroundAgents && result.length < 50) {
-      if (this.state.settleTimer) {
-        clearTimeout(this.state.settleTimer);
-        this.state.settleTimer = null;
+      // 추가: 백그라운드 에이전트가 있었는데 결과가 50자 미만이면 재대기
+      if (this.state.hasBackgroundAgents && result.length < 50) {
+        if (this.state.settleTimer) {
+          clearTimeout(this.state.settleTimer);
+          this.state.settleTimer = null;
+        }
+        // completionRecheck가 settleTimer 등록 시점에 중단되었으므로 재등록
+        this.armCompletionRecheck();
+        return;
       }
-      return;
     }
 
     const resolveRef = this.state.resolve;

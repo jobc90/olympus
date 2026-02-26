@@ -659,6 +659,13 @@ ${body.message}`;
           sendJson(res, 404, { error: 'Worker not found' });
           return;
         }
+        // 로컬 PTY가 붙어 있는 워커는 대시보드 resize를 무시한다.
+        // dashboard terminal의 크기(~200×50)로 PTY가 리사이즈되면
+        // 로컬 터미널 화면이 깨지기 때문이다.
+        if (worker.hasLocalPty) {
+          sendJson(res, 200, { ok: true, skipped: true });
+          return;
+        }
         const body = await parseBody<{ cols?: number; rows?: number }>(req);
         const cols = Number(body.cols);
         const rows = Number(body.rows);

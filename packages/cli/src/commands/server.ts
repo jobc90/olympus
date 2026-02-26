@@ -236,12 +236,14 @@ serverCommand
     console.log(chalk.gray('종료: Ctrl+C'));
 
     // Graceful shutdown
+    let isShuttingDown = false;
     const shutdown = async () => {
+      if (isShuttingDown) return;
+      isShuttingDown = true;
       console.log(chalk.yellow('\n\nShutting down...'));
       if (codexAdapter) {
         try {
-          const { CodexOrchestrator } = await import('@olympus-dev/codex');
-          // codexAdapter holds reference internally, but orchestrator shutdown is via the stored ref
+          await codexAdapter.shutdown();
         } catch { /* ignore */ }
       }
       if (gateway) {
@@ -255,6 +257,8 @@ serverCommand
 
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
+    process.on('SIGHUP', shutdown);
+    process.on('SIGQUIT', shutdown);
   });
 
 // server stop subcommand
@@ -566,12 +570,16 @@ async function startDashboardServer(port: string, gatewayConfig?: DashboardConfi
           apiKey: gatewayConfig.apiKey,
         })};</script>`;
         const html = content.toString().replace('</head>', `${configScript}</head>`);
-        res.writeHead(200, { 'Content-Type': contentType });
+        res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache', 'Expires': '0' });
         res.end(html);
         return;
       }
 
-      res.writeHead(200, { 'Content-Type': contentType });
+      // HTML files: never cache; assets (hashed filenames): cache for 1 year
+      const cacheHeader = ext === '.html'
+        ? 'no-cache, no-store, must-revalidate'
+        : 'public, max-age=31536000, immutable';
+      res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': cacheHeader });
       res.end(content);
     });
   });
@@ -771,12 +779,15 @@ async function updateCLITools(): Promise<void> {
       continue;
     }
 
-    // Get current version
+    // Get current version (cross-platform — no shell pipe or sed)
     let currentVersion = '';
     try {
-      currentVersion = execSync(`npm list -g ${tool.package} --depth=0 2>/dev/null | grep ${tool.package} | sed 's/.*@//'`, {
+      const listOutput = execSync(`npm list -g ${tool.package} --depth=0 --json`, {
         encoding: 'utf-8',
-      }).trim();
+        stdio: 'pipe',
+      });
+      const listJson = JSON.parse(listOutput) as { dependencies?: Record<string, { version?: string }> };
+      currentVersion = listJson.dependencies?.[tool.package]?.version ?? '';
     } catch {
       // Couldn't get version
     }
