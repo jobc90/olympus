@@ -152,9 +152,11 @@ Error log: PaymentService.processOrder() line 42"
 ```bash
 git clone https://github.com/jobc90/olympus.git
 cd olympus
-./install.sh --global
+./install.sh          # Interactive menu — choose mode (--commands recommended)
 olympus
 ```
+
+> **Mode options**: `--commands` (recommended, preserves existing `~/.claude/`) · `--global` (full install) · `--local` (this project only)
 
 ### Windows
 
@@ -163,10 +165,10 @@ git clone https://github.com/jobc90/olympus.git
 cd olympus
 
 # Git Bash / MINGW (recommended)
-./install-win.sh --global
+./install-win.sh      # Enter → commands-only (recommended)
 
 # PowerShell
-.\install.ps1 -Mode global
+.\install.ps1         # Enter → commands-only (recommended)
 ```
 
 ### Manual Installation (All Platforms)
@@ -321,7 +323,7 @@ olympus quickstart
 - **Completion Detection**: Prompt pattern (5s settle) → 30s inactivity → 60s forced completion
 - **Background Agent Detection**: 7 patterns + 30s cooldown
 - **Result Extraction**: ANSI stripping + TUI artifact filtering → 8000 character limit
-- **Fallback**: Automatically switches to spawn mode if PTY mode fails
+- **PTY Only**: No spawn fallback — PTY-exclusive from v1.0.0
 
 ### Worker Registry
 
@@ -329,11 +331,11 @@ Workers are registered in-memory on the Gateway with heartbeat-based health moni
 
 | API | Description |
 |-----|-------------|
-| `POST /api/workers/register` | Register worker (mode: `pty` \| `spawn`) |
+| `POST /api/workers/register` | Register worker (PTY mode) |
 | `DELETE /api/workers/:id` | Remove worker |
-| `POST /api/workers/:id/heartbeat` | Heartbeat (15s check, 60s timeout) |
+| `POST /api/workers/:id/heartbeat` | Heartbeat (60s check, 90s timeout) |
 | `POST /api/workers/:id/task` | Assign task |
-| `POST /api/workers/tasks/:taskId/result` | Report task result |
+| `POST /api/workers/tasks/:taskId` | Report task result |
 | `GET /api/workers/tasks/:taskId` | Query task status |
 
 ---
@@ -371,12 +373,14 @@ olympus server start
 
 | Command | Description |
 |---------|-------------|
-| `/start` | Show help |
-| `/health` | Check status |
-| `/workers` | List workers |
-| `/team <request>` | Run Team Engineering Protocol |
-| Plain message | Send to Claude CLI |
+| `/start` | Show help + worker status |
+| `/help` | Usage guide |
+| `/health` | Check Gateway connection |
+| `/workers` | Registered workers + status |
+| `/tasks` | In-progress task list |
+| Plain message | Codex orchestrator auto-routing |
 | `@worker-name task` | Direct task assignment to worker |
+| `@worker-name team task` | Run Team Protocol via specific worker |
 
 **Inline queries**: Type `@your-bot-name` in any chat to see available workers.
 
@@ -416,8 +420,8 @@ A team engineering framework where 19 specialized agents collaborate.
 | Agent | Model | Role |
 |-------|-------|------|
 | `explore` | Haiku | Fast codebase search |
-| `executor` | Sonnet | Focused execution, direct implementation |
-| `writer` | Haiku | Documentation |
+| `executor` | Opus | Focused execution, direct implementation |
+| `writer` | Sonnet | Documentation writing |
 
 **On-Demand Agents (Team Mode Only — 16)**:
 
@@ -429,7 +433,7 @@ A team engineering framework where 19 specialized agents collaborate.
 | `designer` | Sonnet | UI/UX design |
 | `researcher` | Sonnet | Documentation & research |
 | `code-reviewer` | Opus | Code review (2-stage) |
-| `verifier` | Sonnet | Visual analysis |
+| `verifier` | Sonnet | Implementation verification — spec-based automated checks |
 | `qa-tester` | Sonnet | Evidence-based testing |
 | `vision` | Sonnet | Screenshot/diagram analysis |
 | `test-engineer` | Sonnet | Test design/implementation |
@@ -437,24 +441,32 @@ A team engineering framework where 19 specialized agents collaborate.
 | `git-master` | Sonnet | Git workflow |
 | `api-reviewer` | Sonnet | API design review |
 | `performance-reviewer` | Sonnet | Performance optimization review |
-| `security-reviewer` | Sonnet | Security vulnerability review |
+| `security-reviewer` | Opus | Security vulnerability review |
 | `style-reviewer` | Haiku | Code style review |
 
 ### Verifying Installation
 
 ```bash
-# Global install
+# --commands mode (recommended)
+ls ~/.claude/commands/team.md   # exists = /team command registered
+
+# --global install
 ls ~/.claude/agents/    # 19 .md files
 
-# Local install
+# --local install
 ls .claude/agents/
+
+# /team required env var
+echo $CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS   # should be "1"
+# If empty: source ~/.zshrc or open a new terminal
+# (install.sh sets this automatically; manual: export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1)
 ```
 
 ---
 
 ## 🏗️ Architecture
 
-### Package Structure (9 Packages)
+### Package Structure (11 Packages)
 
 ```
 protocol → core → gateway ──→ cli
@@ -462,7 +474,9 @@ protocol → core → gateway ──→ cli
     ├→ client → tui ──┤─────────┤
     │        └→ web   │         │
     ├→ telegram-bot ──┘─────────┘
-    └→ codex (Codex Orchestrator)
+    ├→ codex (Codex Orchestrator)
+    ├→ claude-dashboard (Status Line)
+    └→ mcp (MCP Server)
 ```
 
 ### Gateway Internal Architecture
@@ -495,6 +509,8 @@ protocol → core → gateway ──→ cli
 | `telegram-bot` | Telegram bot (worker delegation, `/team`, `/workers`) |
 | `tui` | Terminal UI (React + Ink) |
 | `codex` | Codex Orchestrator (routing, session management) |
+| `claude-dashboard` | Status line plugin — token/cost display in Claude CLI status bar |
+| `mcp` | MCP server — `ai-agents` (Gemini/Codex/GPT routing) + `openapi` (Swagger loader) |
 
 ### Core Modules
 
@@ -502,7 +518,7 @@ protocol → core → gateway ──→ cli
 |--------|----------|-------------|
 | **CliRunner** | `gateway/src/cli-runner.ts` | CLI spawn → JSON/JSONL parse + real-time stdout streaming |
 | **PTY Worker** | `cli/src/pty-worker.ts` | Persistent CLI via node-pty — completion detection, result extraction |
-| **Worker Registry** | `gateway/src/worker-registry.ts` | In-memory worker registration + heartbeat (15s/60s) |
+| **Worker Registry** | `gateway/src/worker-registry.ts` | In-memory worker registration + heartbeat (60s check, 90s timeout) |
 | **Session Store** | `gateway/src/cli-session-store.ts` | SQLite session storage (token/cost accumulation) |
 | **LocalContextStore** | `core/src/local-context-store.ts` | SQLite hierarchical context (FTS5 full-text search) |
 | **GeminiAdvisor** | `gateway/src/gemini-advisor.ts` | Gemini CLI project analysis + work history synthesis (PTY + spawn fallback) |
@@ -528,7 +544,7 @@ protocol → core → gateway ──→ cli
 ```bash
 pnpm install && pnpm build    # Full build
 pnpm test                     # Run all tests
-pnpm lint                     # TypeScript type check (6 packages)
+pnpm lint                     # TypeScript type check (7 packages)
 pnpm dev                      # Development mode
 ```
 
@@ -604,8 +620,28 @@ olympus server start   # starts Gateway + Telegram together
 ### `/team` Command Not Recognized
 
 **Solution**:
-1. Verify global install: `ls ~/.claude/agents/` (19 files)
-2. Reinstall: `./install.sh --global`
+1. Verify install: `ls ~/.claude/commands/team.md` (for `--commands` mode) or `ls ~/.claude/agents/` (for `--global`)
+2. Reinstall: `./install.sh --commands`
+
+### MCP Tool Errors When Running `/team` in `--commands` Mode
+
+**Symptom**: `codex_analyze`, `ai_team_patch`, etc. fail with "tool not found"
+
+**Cause**: `--commands` mode does not modify `~/.claude/settings.json`, so MCP is not registered globally. MCP is only active inside the Olympus directory (via `.mcp.json`).
+
+**Options**:
+
+```bash
+# Option 1: Run claude from inside the Olympus directory (auto-detects .mcp.json)
+cd /path/to/olympus
+claude
+
+# Option 2: Switch to global install (includes MCP registration)
+./install.sh --global
+
+# Option 3: Manually add MCP to ~/.claude/settings.json
+# See Troubleshooting > Manual MCP setup
+```
 
 ---
 

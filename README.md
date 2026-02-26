@@ -537,10 +537,13 @@ Telegram에서 본인 봇에게 `/health` 전송 → `✅ Gateway 연결됨` 응
 ### 설치 확인
 
 ```bash
-# 전역 설치 시
+# --commands 모드 (권장)
+ls ~/.claude/commands/team.md   # 파일 존재 = /team 명령어 등록 완료
+
+# --global 설치 시
 ls ~/.claude/agents/    # 19개 .md 파일
 
-# 로컬 설치 시
+# --local 설치 시
 ls .claude/agents/
 
 # /team 명령어 필수 환경변수 확인
