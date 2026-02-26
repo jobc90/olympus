@@ -134,6 +134,11 @@ export class GeminiPty extends EventEmitter {
       // Mark as ready anyway — may work despite slow init
       this.ready = true;
     });
+
+    // Emit 'ready' so consumers (e.g. GeminiAdvisor) can resume queued work
+    if (this.alive) {
+      this.emit('ready');
+    }
   }
 
   private onPtyData(data: string): void {

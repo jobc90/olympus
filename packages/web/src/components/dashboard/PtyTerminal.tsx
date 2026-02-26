@@ -191,22 +191,25 @@ export function PtyTerminal({
     if (output === prev) return;
 
     if (output.startsWith(prev)) {
+      // Common case: pure append. Write only the new delta.
       const delta = output.slice(prev.length);
       if (delta) term.write(delta);
     } else {
-      // Handle front-trimmed ring buffer without resetting terminal each chunk.
-      const maxOverlap = Math.min(prev.length, output.length, 8192);
-      let overlap = 0;
-      for (let size = maxOverlap; size > 0; size--) {
-        if (prev.endsWith(output.slice(0, size))) {
-          overlap = size;
-          break;
-        }
-      }
-      if (overlap > 0) {
-        const delta = output.slice(overlap);
-        if (delta) term.write(delta);
+      // Ring buffer trimmed N chars from the front and appended N new chars.
+      // output = prev.slice(N) + chunk  →  prev.indexOf(output[0:K]) = N
+      //
+      // The old overlap scan (prev.endsWith(output[0:size])) only works when
+      // size = prev.length - N, but maxOverlap=8192 makes it unreachable for
+      // typical small chunks (N << 200000 - 8192). Use indexOf instead: O(n)
+      // average, works for any trim size.
+      const searchKey = output.slice(0, Math.min(256, output.length));
+      const trimPos = searchKey ? prev.indexOf(searchKey) : -1;
+      if (trimPos > 0) {
+        // Only write the tail that wasn't in prev (the new chunk).
+        const newData = output.slice(output.length - trimPos);
+        if (newData) term.write(newData);
       } else {
+        // True content desync (e.g. worker restarted): full reset. Rare.
         term.reset();
         if (output) term.write(output);
       }

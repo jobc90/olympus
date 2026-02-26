@@ -430,6 +430,7 @@ export class PtyWorker {
   private ttyAttached = false;
   /** Buffer for local stdin input tracking (cross-channel sync) */
   private localInputBuffer = '';
+  private inBracketPaste = false;
 
   constructor(private options: PtyWorkerOptions) {}
 
@@ -599,31 +600,44 @@ export class PtyWorker {
         // Capture during idle AND during settle window (user moving to next task).
         // Control sequences (arrow keys, etc.) reset the buffer to avoid garbage.
         if (this.options.onLocalInput) {
-          for (const ch of decoded) {
-            const code = ch.codePointAt(0) ?? 0;
-            if (ch === '\r' || ch === '\n') {
-              const trimmed = this.localInputBuffer.trim();
-              this.localInputBuffer = '';
-              // Only report meaningful commands (2+ chars, no escape sequences)
-              if (trimmed.length >= 2 && !trimmed.startsWith('\x1b')) {
-                // If settle timer is active, user has moved on — force-complete
-                // current task so the new input can be registered as a fresh task
-                if (this.state.phase === 'processing' && this.state.settleTimer !== null) {
-                  this.forceCompleteIfSettling();
+          // Bracket paste mode: \x1b[200~ starts, \x1b[201~ ends.
+          // Pasted text must never be treated as a user command.
+          if (decoded.includes('\x1b[200~')) {
+            this.inBracketPaste = true;
+            this.localInputBuffer = '';
+          }
+          if (decoded.includes('\x1b[201~')) {
+            this.inBracketPaste = false;
+            this.localInputBuffer = '';
+          }
+
+          if (!this.inBracketPaste) {
+            for (const ch of decoded) {
+              const code = ch.codePointAt(0) ?? 0;
+              if (ch === '\r' || ch === '\n') {
+                const trimmed = this.localInputBuffer.trim();
+                this.localInputBuffer = '';
+                // Only report meaningful commands (2+ chars, no escape sequences)
+                if (trimmed.length >= 2 && !trimmed.startsWith('\x1b')) {
+                  // If settle timer is active, user has moved on — force-complete
+                  // current task so the new input can be registered as a fresh task
+                  if (this.state.phase === 'processing' && this.state.settleTimer !== null) {
+                    this.forceCompleteIfSettling();
+                  }
+                  if (this.state.phase === 'idle') {
+                    this.options.onLocalInput(trimmed);
+                  }
                 }
-                if (this.state.phase === 'idle') {
-                  this.options.onLocalInput(trimmed);
-                }
+              } else if (ch === '\x7f' || ch === '\b') {
+                // Backspace
+                this.localInputBuffer = this.localInputBuffer.slice(0, -1);
+              } else if (code >= 32) {
+                // Printable character
+                this.localInputBuffer += ch;
+              } else {
+                // Control/escape sequence (arrow keys, etc.) — discard buffer
+                this.localInputBuffer = '';
               }
-            } else if (ch === '\x7f' || ch === '\b') {
-              // Backspace
-              this.localInputBuffer = this.localInputBuffer.slice(0, -1);
-            } else if (code >= 32) {
-              // Printable character
-              this.localInputBuffer += ch;
-            } else {
-              // Control/escape sequence (arrow keys, etc.) — discard buffer
-              this.localInputBuffer = '';
             }
           }
         }

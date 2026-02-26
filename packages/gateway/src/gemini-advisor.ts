@@ -37,6 +37,18 @@ class GeminiPromptQueue {
     this.pty = pty;
   }
 
+  /** Called when PTY becomes alive again — resumes stalled queue */
+  resume(): void {
+    this.processNext();
+  }
+
+  /** Drain all pending items with null — call on shutdown */
+  drain(): void {
+    while (this.queue.length > 0) {
+      this.queue.shift()!.resolve(null);
+    }
+  }
+
   async enqueue(prompt: string, priority: number, timeoutMs: number): Promise<string | null> {
     return new Promise((resolve) => {
       this.queue.push({ prompt, priority, timeoutMs, resolve });
@@ -49,10 +61,7 @@ class GeminiPromptQueue {
   private async processNext(): Promise<void> {
     if (this.processing || this.queue.length === 0) return;
     if (!this.pty?.isAlive()) {
-      // Drain queue with null
-      while (this.queue.length > 0) {
-        this.queue.shift()!.resolve(null);
-      }
+      // PTY offline — leave queue intact, resume() will be called when PTY recovers
       return;
     }
 
@@ -119,6 +128,9 @@ export class GeminiAdvisor extends EventEmitter {
     }
     this.promptQueue.setPty(this.pty);
 
+    // Resume queued work when PTY recovers from a crash/restart
+    this.pty.on('ready', () => this.promptQueue.resume());
+
     this.running = true;
     this.setBehavior('idle');
   }
@@ -146,6 +158,9 @@ export class GeminiAdvisor extends EventEmitter {
 
   async shutdown(): Promise<void> {
     this.running = false;
+
+    // Drain pending queue items before stopping PTY
+    this.promptQueue.drain();
 
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer);
