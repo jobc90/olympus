@@ -6,7 +6,7 @@ import type { GridPos } from './topdown';
 import { gridToScreen, getFootPos, TILE_PX, MAP_OFFSET_X, MAP_OFFSET_Y, depthOf } from './topdown';
 import { drawBackground, drawTempleGround, drawZoneLabel } from '../sprites/decorations';
 import { drawFurniture, drawRoomba } from '../sprites/furniture';
-import { drawWorker, drawCodex, drawGemini, drawNameTag, drawStatusAura, drawUnicorn, drawCupid } from '../sprites/characters';
+import { drawMapWorkerCharacter, drawNameTag, drawStatusAura, drawUnicorn, drawCupid } from '../sprites/characters';
 import { drawBubble, drawParticle } from '../sprites/effects';
 
 // ---------------------------------------------------------------------------
@@ -35,7 +35,7 @@ export type CharacterAnim =
   | 'nod'
   | 'wave';
 
-export type WorkerAvatar = 'athena' | 'poseidon' | 'ares' | 'apollo' | 'artemis' | 'hermes' | 'hephaestus' | 'dionysus' | 'demeter' | 'aphrodite' | 'hera' | 'hades' | 'persephone' | 'prometheus' | 'helios' | 'nike' | 'pan' | 'hecate' | 'iris' | 'heracles' | 'selene';
+export type WorkerAvatar = 'athena' | 'poseidon' | 'ares' | 'apollo' | 'artemis' | 'hermes' | 'hephaestus' | 'dionysus' | 'demeter' | 'aphrodite' | 'hera' | 'hades' | 'persephone' | 'prometheus' | 'helios' | 'nike' | 'pan' | 'hecate' | 'iris' | 'heracles' | 'selene' | 'hestia' | 'eros' | 'gaia' | 'nyx';
 export type CodexAvatar = 'zeus';
 export type GeminiAvatar = 'hera';
 const ALWAYS_LABELED_ZONE_IDS = new Set([
@@ -416,11 +416,11 @@ export function renderFrame(
     const capturedRuntime = { ...runtime };
     const capturedCfg = { ...workerCfg };
     drawables.push({
-      depth: depthOf(runtime.pos.col, runtime.pos.row) + 0.01,
+      depth: depthOf(runtime.pos.col, runtime.pos.row) + 0.5,
       draw: () => {
         const foot = getFootPos(capturedRuntime.pos);
         drawStatusAura(ctx, foot.x, foot.y, capturedCfg.behavior ?? '', state.tick);
-        drawWorker(ctx, foot.x, foot.y, capturedRuntime.anim, capturedRuntime.direction, state.tick, capturedCfg.avatar, capturedCfg.color, capturedCfg.emoji, capturedCfg.skinToneIndex);
+        drawMapWorkerCharacter(ctx, foot.x, foot.y, capturedCfg.avatar, state.tick, capturedRuntime.anim === 'walk_frame1' || capturedRuntime.anim === 'walk_frame2', capturedRuntime.direction);
         if (config.selectedWorkerId === capturedCfg.id) {
           drawNameTag(ctx, foot.x, foot.y, capturedCfg.name, capturedCfg.color);
         }
@@ -432,7 +432,7 @@ export function renderFrame(
   for (const npc of state.npcs) {
     const capturedNpc = { ...npc };
     drawables.push({
-      depth: depthOf(npc.pos.col, npc.pos.row) + 0.01,
+      depth: depthOf(npc.pos.col, npc.pos.row) + 0.5,
       draw: () => {
         const foot = getFootPos(capturedNpc.pos);
         if (capturedNpc.type === 'unicorn') {
@@ -454,7 +454,7 @@ export function renderFrame(
   const roombaIdx = Math.floor(state.tick / 60) % roombaPath.length;
   const roombaPos = roombaPath[roombaIdx];
   drawables.push({
-    depth: depthOf(roombaPos.col, roombaPos.row) + 0.01,
+    depth: depthOf(roombaPos.col, roombaPos.row) + 0.5,
     draw: () => {
       const foot = getFootPos(roombaPos);
       drawRoomba(ctx, foot.x, foot.y, state.tick);
@@ -464,11 +464,10 @@ export function renderFrame(
   // Codex (Zeus)
   const codexPos = getCodexPos(state.codex.anim, state.tick);
   drawables.push({
-    depth: depthOf(codexPos.col, codexPos.row) + 0.01,
+    depth: depthOf(codexPos.col, codexPos.row) + 0.5,
     draw: () => {
       const foot = getFootPos(codexPos);
-      // Keep Zeus appearance identical to character card style.
-      drawCodex(ctx, foot.x, foot.y, 'stand', state.tick, config.codex.avatar, config.codex.emoji);
+      drawMapWorkerCharacter(ctx, foot.x, foot.y, 'zeus', state.tick, state.codex.anim === 'walk_frame1' || state.codex.anim === 'walk_frame2');
       if (config.selectedWorkerId === 'codex') {
         drawNameTag(ctx, foot.x, foot.y, config.codex.name, '#FFD700');
       }
@@ -479,26 +478,21 @@ export function renderFrame(
   if (config.gemini && state.gemini && state.gemini.pos) {
     const geminiPos = state.gemini.pos;
     const capturedGeminiPos = { ...geminiPos };
+    const capturedGeminiAnim = state.gemini.anim;
+    const capturedGeminiDir = state.gemini.direction;
     drawables.push({
-      depth: depthOf(geminiPos.col, geminiPos.row) + 0.01,
+      depth: depthOf(geminiPos.col, geminiPos.row) + 0.5,
       draw: () => {
         const foot = getFootPos(capturedGeminiPos);
-        drawGemini(
-          ctx,
-          foot.x,
-          foot.y,
-          'stand',
-          state.tick,
-          config.gemini!.avatar,
-          config.gemini!.emoji,
-          's',
-        );
+        drawMapWorkerCharacter(ctx, foot.x, foot.y, 'hera', state.tick, capturedGeminiAnim === 'walk_frame1' || capturedGeminiAnim === 'walk_frame2', capturedGeminiDir);
         if (config.selectedWorkerId === 'gemini') {
           drawNameTag(ctx, foot.x, foot.y, config.gemini!.name, '#9C27B0');
         }
       },
     });
   }
+
+  // No background NPCs — only configured workers appear on the map.
 
   // Sort by depth (painter's algorithm — lower row draws first)
   drawables.sort((a, b) => a.depth - b.depth);

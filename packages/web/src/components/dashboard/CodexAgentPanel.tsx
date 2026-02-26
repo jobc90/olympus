@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { CodexConfig } from '../../lib/types';
-import { drawCodex } from '../../sprites/characters';
+import { drawDiversePortrait } from '../../sprites/characters';
 
 interface CodexAgentPanelProps {
   codexConfig: CodexConfig;
@@ -18,8 +18,7 @@ function PixelCodexAvatar({ size = 96 }: { size?: number }) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, size, size);
-    ctx.imageSmoothingEnabled = false;
-    drawCodex(ctx, size / 2, size - 6, 'stand', 0, 'zeus', '');
+    drawDiversePortrait(ctx, size, 'zeus', 0);
   };
 
   return (
@@ -72,12 +71,11 @@ export function CodexAgentPanel({ codexConfig, codexBehavior, connected, onChatC
 
   return (
     <div
-      className="group relative rounded-2xl p-2.5 transition-all duration-200 cursor-pointer h-[172px] overflow-hidden"
+      className="group relative rounded-2xl p-2.5 transition-all duration-200 h-[172px] overflow-hidden"
       style={{
         background: 'linear-gradient(150deg, rgba(20, 17, 8, 0.95), rgba(30, 26, 11, 0.9))',
         border: '1px solid #FFD7004a',
       }}
-      onClick={onChatClick}
     >
       <div
         className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"
@@ -92,6 +90,16 @@ export function CodexAgentPanel({ codexConfig, codexBehavior, connected, onChatC
           Orchestrator / Codex
         </h3>
       </div>
+
+      {onChatClick && (
+        <button
+          className="absolute bottom-2.5 right-2.5 text-[11px] font-mono px-2 py-0.5 rounded-md border hover:bg-white/10 transition-colors"
+          style={{ color: '#FFF2C4', borderColor: '#FFD70066' }}
+          onClick={(e) => { e.stopPropagation(); onChatClick(); }}
+        >
+          Chat
+        </button>
+      )}
 
       <div className="flex items-start gap-2.5">
         <PixelCodexAvatar size={96} />

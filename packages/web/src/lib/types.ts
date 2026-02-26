@@ -246,7 +246,7 @@ export interface OlympusMountainState {
 // ---------------------------------------------------------------------------
 
 /** Avatar preset for workers */
-export type WorkerAvatar = 'athena' | 'poseidon' | 'ares' | 'apollo' | 'artemis' | 'hermes' | 'hephaestus' | 'dionysus' | 'demeter' | 'aphrodite' | 'hera' | 'hades' | 'persephone' | 'prometheus' | 'helios' | 'nike' | 'pan' | 'hecate' | 'iris' | 'heracles' | 'selene';
+export type WorkerAvatar = 'athena' | 'poseidon' | 'ares' | 'apollo' | 'artemis' | 'hermes' | 'hephaestus' | 'dionysus' | 'demeter' | 'aphrodite' | 'hera' | 'hades' | 'persephone' | 'hestia' | 'helios' | 'eros' | 'pan' | 'gaia' | 'nyx' | 'heracles' | 'selene';
 
 /** Avatar preset for the codex (orchestrator) */
 export type CodexAvatar = 'zeus';

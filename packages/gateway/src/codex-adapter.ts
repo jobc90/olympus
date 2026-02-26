@@ -187,6 +187,13 @@ export class CodexAdapter {
   private cachedProjectCount = 0;
 
   /**
+   * Shutdown the underlying Codex Orchestrator and release resources.
+   */
+  async shutdown(): Promise<void> {
+    await this.codex.shutdown();
+  }
+
+  /**
    * Register RPC methods — add Codex methods to RpcRouter
    */
   registerRpcMethods(rpcRouter: RpcRouter): void {

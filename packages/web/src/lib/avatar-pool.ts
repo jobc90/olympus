@@ -1,6 +1,7 @@
 import type { WorkerAvatar } from './types';
 
 // 20 worker avatars (Zeus/Hera excluded from worker pool)
+// Must align with DIVERSE_AVATAR_ORDER_V2[2-21] in sprites/characters.ts
 export const WORKER_AVATAR_POOL: WorkerAvatar[] = [
   'athena',
   'poseidon',
@@ -14,12 +15,12 @@ export const WORKER_AVATAR_POOL: WorkerAvatar[] = [
   'aphrodite',
   'hades',
   'persephone',
-  'prometheus',
+  'hestia',    // replaces: prometheus (no v2 sprite)
   'helios',
-  'nike',
+  'eros',      // replaces: nike (no v2 sprite)
   'pan',
-  'hecate',
-  'iris',
+  'gaia',      // replaces: hecate (no v2 sprite)
+  'nyx',       // replaces: iris (no v2 sprite)
   'heracles',
   'selene',
 ];

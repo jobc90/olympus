@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { drawCodex, drawGemini, drawWorker } from '../../sprites/characters';
+import { drawDiversePortrait } from '../../sprites/characters';
 import { BEHAVIOR_INFO, formatRelativeTime as defaultFormatRelativeTime } from '../../lib/state-mapper';
 import type {
   WorkerConfig,
@@ -71,28 +71,21 @@ const ACTIVE_ZONE_BEHAVIORS = new Set([
 ]);
 
 function WorkerPortrait({ worker, size = 98 }: { worker: WorkerConfig; size?: number }) {
-  const detailScale = 1;
-  const renderSize = size * detailScale;
   const canvasRef = (canvas: HTMLCanvasElement | null) => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.setTransform(detailScale, 0, 0, detailScale, 0, 0);
     ctx.clearRect(0, 0, size, size);
-    ctx.imageSmoothingEnabled = false;
-    // HD char 45×90px (64×128 upscaled @ 0.7): footY=size-5=93, hdDrawY=93-90-2=1 → fits in 98px
-    drawWorker(ctx, size / 2, size - 5, 'stand', 's', 0, worker.avatar as WorkerAvatar, worker.color, '');
+    drawDiversePortrait(ctx, size, worker.avatar as WorkerAvatar, 0, true);
   };
 
   return (
     <canvas
       ref={canvasRef}
-      width={renderSize}
-      height={renderSize}
+      width={size}
+      height={size}
       className="rounded-xl"
       style={{
-        width: size,
-        height: size,
         imageRendering: 'pixelated',
         backgroundColor: `${worker.color}1a`,
         border: `1px solid ${worker.color}40`,
@@ -102,27 +95,21 @@ function WorkerPortrait({ worker, size = 98 }: { worker: WorkerConfig; size?: nu
 }
 
 function ZeusPortrait({ size = 98 }: { size?: number }) {
-  const detailScale = 1;
-  const renderSize = size * detailScale;
   const canvasRef = (canvas: HTMLCanvasElement | null) => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.setTransform(detailScale, 0, 0, detailScale, 0, 0);
     ctx.clearRect(0, 0, size, size);
-    ctx.imageSmoothingEnabled = false;
-    drawCodex(ctx, size / 2, size - 13, 'stand', 0, 'zeus', '');
+    drawDiversePortrait(ctx, size, 'zeus', 0);
   };
 
   return (
     <canvas
       ref={canvasRef}
-      width={renderSize}
-      height={renderSize}
+      width={size}
+      height={size}
       className="rounded-xl"
       style={{
-        width: size,
-        height: size,
         imageRendering: 'pixelated',
         backgroundColor: '#FFD7001c',
         border: '1px solid #FFD70050',
@@ -132,27 +119,21 @@ function ZeusPortrait({ size = 98 }: { size?: number }) {
 }
 
 function HeraPortrait({ size = 98 }: { size?: number }) {
-  const detailScale = 1;
-  const renderSize = size * detailScale;
   const canvasRef = (canvas: HTMLCanvasElement | null) => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.setTransform(detailScale, 0, 0, detailScale, 0, 0);
     ctx.clearRect(0, 0, size, size);
-    ctx.imageSmoothingEnabled = false;
-    drawGemini(ctx, size / 2, size - 13, 'stand', 0, 'hera', '');
+    drawDiversePortrait(ctx, size, 'hera', 0);
   };
 
   return (
     <canvas
       ref={canvasRef}
-      width={renderSize}
-      height={renderSize}
+      width={size}
+      height={size}
       className="rounded-xl"
       style={{
-        width: size,
-        height: size,
         imageRendering: 'pixelated',
         backgroundColor: '#AB47BC1c',
         border: '1px solid #AB47BC50',

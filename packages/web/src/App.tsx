@@ -35,6 +35,9 @@ import type { WorkerConfig, WorkerDashboardState, CodexConfig, GeminiConfig, Wor
 import { DEFAULT_GEMINI } from './lib/config';
 import { assignWorkerAvatars, WORKER_AVATAR_POOL } from './lib/avatar-pool';
 import { BEHAVIOR_INFO, formatTokens, formatRelativeTime } from './lib/state-mapper';
+import { preloadPortraits } from './sprites/portrait-loader';
+import { DIVERSE_AVATAR_ORDER_V2 } from './sprites/characters';
+import { preloadSpriteSheets } from './sprites/sprite-sheet-loader';
 
 // ---------------------------------------------------------------------------
 // localStorage 마이그레이션 — 낡은 키 일괄 정리 (버전 기반, 1회 실행)
@@ -227,6 +230,12 @@ export default function App() {
   useEffect(() => {
     const savedTheme = localStorage.getItem('olympus-theme') || 'midnight';
     document.documentElement.dataset.theme = savedTheme;
+  }, []);
+
+  // Preload portrait PNGs and sprite sheets for all 22 characters on mount.
+  useEffect(() => {
+    void preloadPortraits(DIVERSE_AVATAR_ORDER_V2 as unknown as string[]);
+    void preloadSpriteSheets(DIVERSE_AVATAR_ORDER_V2 as unknown as string[]);
   }, []);
 
   // Track first successful connection so we can distinguish "initial loading" vs "reconnecting"
@@ -508,7 +517,6 @@ export default function App() {
   const handleChatClick = useCallback((workerId: string) => {
     const w = workerConfigs.find(w => w.id === workerId);
     setMonitorSelectedWorkerId(workerId);
-    setSelectedWorkerId(workerId); // keep Console tab in sync
     setChatTarget(w ? { id: w.id, name: w.name, emoji: w.emoji, color: w.color } : { id: workerId, name: workerId });
   }, [workerConfigs]);
 

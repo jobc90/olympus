@@ -99,12 +99,12 @@ const AVATAR_MOTION: Record<WorkerAvatar, MotionProfile> = {
   hera:       { work: ['point', 'sit_typing'], think: ['nod', 'sit_idle'], idle: ['stand', 'wave'], social: ['raise_hand', 'point'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['thumbs_up', 'celebrate'], move: ['walk_frame1', 'walk_frame2'] },
   hades:      { work: ['keyboard_mash', 'hand_task'], think: ['stand', 'sit_idle'], idle: ['stand', 'nod'], social: ['point', 'raise_hand'], rest: ['sit_idle', 'drink_coffee'], celebrate: ['thumbs_up', 'celebrate'], move: ['walk_frame1', 'walk_frame2'] },
   persephone: { work: ['sit_typing', 'hand_task'], think: ['nod', 'sit_idle'], idle: ['wave', 'stand'], social: ['wave', 'raise_hand'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['celebrate', 'thumbs_up'], move: ['walk_frame1', 'walk_frame2'] },
-  prometheus: { work: ['keyboard_mash', 'sit_typing'], think: ['stand', 'nod'], idle: ['stretch', 'stand'], social: ['raise_hand', 'point'], rest: ['sit_idle', 'drink_coffee'], celebrate: ['celebrate', 'thumbs_up'], move: ['run', 'walk_frame1', 'walk_frame2'] },
+  hestia:     { work: ['keyboard_mash', 'sit_typing'], think: ['stand', 'nod'], idle: ['stretch', 'stand'], social: ['raise_hand', 'point'], rest: ['sit_idle', 'drink_coffee'], celebrate: ['celebrate', 'thumbs_up'], move: ['run', 'walk_frame1', 'walk_frame2'] },
   helios:     { work: ['point', 'sit_typing'], think: ['nod', 'sit_idle'], idle: ['wave', 'stand'], social: ['raise_hand', 'wave'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['celebrate', 'thumbs_up'], move: ['run', 'walk_frame1', 'walk_frame2'] },
-  nike:       { work: ['hand_task', 'sit_typing'], think: ['nod', 'stand'], idle: ['stand', 'wave'], social: ['raise_hand', 'wave'], rest: ['sit_idle', 'drink_coffee'], celebrate: ['celebrate', 'thumbs_up'], move: ['run', 'walk_frame1', 'walk_frame2'] },
+  eros:       { work: ['hand_task', 'sit_typing'], think: ['nod', 'stand'], idle: ['stand', 'wave'], social: ['raise_hand', 'wave'], rest: ['sit_idle', 'drink_coffee'], celebrate: ['celebrate', 'thumbs_up'], move: ['run', 'walk_frame1', 'walk_frame2'] },
   pan:        { work: ['keyboard_mash', 'hand_task'], think: ['sit_idle', 'nod'], idle: ['stand', 'stretch'], social: ['wave', 'raise_hand'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['thumbs_up', 'celebrate'], move: ['walk_frame1', 'walk_frame2'] },
-  hecate:     { work: ['sit_typing', 'point'], think: ['sit_idle', 'nod'], idle: ['stand', 'stretch'], social: ['point', 'raise_hand'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['celebrate', 'thumbs_up'], move: ['walk_frame1', 'walk_frame2'] },
-  iris:       { work: ['point', 'sit_typing'], think: ['nod', 'stand'], idle: ['wave', 'stand'], social: ['wave', 'raise_hand'], rest: ['sit_idle', 'drink_coffee'], celebrate: ['celebrate', 'thumbs_up'], move: ['run', 'walk_frame1', 'walk_frame2'] },
+  gaia:       { work: ['sit_typing', 'point'], think: ['sit_idle', 'nod'], idle: ['stand', 'stretch'], social: ['point', 'raise_hand'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['celebrate', 'thumbs_up'], move: ['walk_frame1', 'walk_frame2'] },
+  nyx:        { work: ['point', 'sit_typing'], think: ['nod', 'stand'], idle: ['wave', 'stand'], social: ['wave', 'raise_hand'], rest: ['sit_idle', 'drink_coffee'], celebrate: ['celebrate', 'thumbs_up'], move: ['run', 'walk_frame1', 'walk_frame2'] },
   heracles:   { work: ['hand_task', 'keyboard_mash'], think: ['stand', 'nod'], idle: ['stretch', 'stand'], social: ['raise_hand', 'point'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['celebrate', 'thumbs_up'], move: ['run', 'walk_frame1', 'walk_frame2'] },
   selene:     { work: ['sit_typing', 'point'], think: ['sit_idle', 'nod'], idle: ['stand', 'wave'], social: ['wave', 'raise_hand'], rest: ['drink_coffee', 'sit_idle'], celebrate: ['thumbs_up', 'celebrate'], move: ['walk_frame1', 'walk_frame2'] },
 };
@@ -589,7 +589,7 @@ export function useOlympusMountain({ workers, workerStates, codexBehavior, gemin
 
         // Move along path
         if (updated.path.length > 0) {
-          const moveStride = 4 + (workerSeed % 5); // 4..8 tick cadence — slower, more relaxed pace
+          const moveStride = 5; // uniform cadence — all workers same speed
           if (newTick % moveStride === 0) {
             const next = updated.path[0];
 
