@@ -194,7 +194,7 @@ cd olympus
 
 **설치 확인** (새 터미널 창에서):
 ```bash
-olympus --version   # 1.0.0 이 출력되면 성공
+olympus --version   # 1.0.1 이 출력되면 성공
 ```
 
 ---
