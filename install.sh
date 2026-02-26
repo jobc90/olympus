@@ -351,24 +351,38 @@ else
 fi
 success "Olympus CLI 설치 완료"
 
-# Gemini CLI 확인 (Devil's Advocate - FE)
-echo -e "${CYAN}😈 Gemini CLI (Devil's Advocate - Frontend):${NC}"
+# Gemini CLI 확인 (선택 — Multi-AI 협업 시 필요)
+echo -e "${CYAN}😈 Gemini CLI (선택 — Multi-AI 협업):${NC}"
 if command -v gemini &> /dev/null; then
     success "Gemini CLI 설치됨"
 else
-    warn "Gemini CLI가 설치되어 있지 않습니다."
-    step "Gemini CLI 설치 중..."
-    npm install -g @google/gemini-cli 2>/dev/null || warn "Gemini CLI 설치 실패 - 수동 설치 필요: npm install -g @google/gemini-cli"
+    info "Gemini CLI 미설치 (Gemini Advisor 기능을 사용하려면 필요)"
+    read -r -p "   Gemini CLI를 전역 설치하시겠습니까? (y/N): " yn_gemini
+    if [[ "${yn_gemini,,}" == "y" ]]; then
+        step "Gemini CLI 설치 중..."
+        npm install -g @google/gemini-cli 2>/dev/null \
+            && success "Gemini CLI 설치 완료" \
+            || warn "Gemini CLI 설치 실패 — 수동 설치: npm install -g @google/gemini-cli"
+    else
+        info "건너뜀 — 나중에 설치: npm install -g @google/gemini-cli"
+    fi
 fi
 
-# Codex CLI 확인 (Devil's Advocate - BE)
-echo -e "${CYAN}😈 Codex CLI (Devil's Advocate - Backend):${NC}"
+# Codex CLI 확인 (선택 — Multi-AI 협업 시 필요)
+echo -e "${CYAN}😈 Codex CLI (선택 — Multi-AI 협업):${NC}"
 if command -v codex &> /dev/null; then
     success "Codex CLI 설치됨"
 else
-    warn "Codex CLI가 설치되어 있지 않습니다."
-    step "Codex CLI 설치 중..."
-    npm install -g @openai/codex 2>/dev/null || warn "Codex CLI 설치 실패 - 수동 설치 필요: npm install -g @openai/codex"
+    info "Codex CLI 미설치 (Codex Orchestrator 기능을 사용하려면 필요)"
+    read -r -p "   Codex CLI를 전역 설치하시겠습니까? (y/N): " yn_codex
+    if [[ "${yn_codex,,}" == "y" ]]; then
+        step "Codex CLI 설치 중..."
+        npm install -g @openai/codex 2>/dev/null \
+            && success "Codex CLI 설치 완료" \
+            || warn "Codex CLI 설치 실패 — 수동 설치: npm install -g @openai/codex"
+    else
+        info "건너뜀 — 나중에 설치: npm install -g @openai/codex"
+    fi
 fi
 
 echo ""

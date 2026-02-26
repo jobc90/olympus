@@ -5,6 +5,7 @@ import {
   loadConfig,
   updateConfig,
   getConfigPath,
+  generateApiKey,
 } from '@olympus-dev/gateway';
 import { getCoreModelPrefs, syncModelPrefs, type ModelPrefs } from '../model-sync.js';
 
@@ -45,12 +46,19 @@ export const setupCommand = new Command('setup')
     try {
       if (opts.reset) {
         console.log(chalk.yellow('Resetting configuration...'));
-        updateConfig({
+        const resetUpdates: Parameters<typeof updateConfig>[0] = {
           gatewayHost: '127.0.0.1',
           gatewayPort: 8200,
           gatewayUrl: 'http://127.0.0.1:8200',
           telegram: undefined,
-        });
+        };
+        // Optionally rotate API key
+        const rotateKey = await ask(rl, 'API Key도 재생성하시겠습니까? (기존 연결이 끊어집니다) (y/N): ');
+        if (rotateKey.toLowerCase() === 'y') {
+          resetUpdates.apiKey = generateApiKey();
+          console.log(chalk.yellow('  ⚠ API Key가 재생성됩니다. 워커와 대시보드 재연결 필요.'));
+        }
+        updateConfig(resetUpdates);
         console.log(chalk.green('✓ Configuration reset to defaults'));
         console.log(chalk.gray(`  Config file: ${getConfigPath()}`));
         rl.close();
@@ -72,6 +80,11 @@ export const setupCommand = new Command('setup')
         const host = await askWithDefault(rl, '   Host', config.gatewayHost);
         const portStr = await askWithDefault(rl, '   Port', String(config.gatewayPort));
         const port = parseInt(portStr, 10);
+        if (isNaN(port) || port < 1 || port > 65535) {
+          console.log(chalk.red(`   ✗ 포트 '${portStr}'가 유효하지 않습니다 (1–65535 범위).`));
+          rl.close();
+          return;
+        }
 
         updateConfig({
           gatewayHost: host,
@@ -110,7 +123,7 @@ export const setupCommand = new Command('setup')
       console.log(chalk.cyan.bold('\n📋 설정 완료!\n'));
       console.log(chalk.white('Gateway:'));
       console.log(chalk.gray(`  URL: ${finalConfig.gatewayUrl}`));
-      console.log(chalk.gray(`  API Key: ${finalConfig.apiKey}`));
+      console.log(chalk.gray(`  API Key: ${finalConfig.apiKey.slice(0, 12)}... (${getConfigPath()}에 저장됨)`));
 
       if (finalConfig.telegram) {
         console.log(chalk.white('\nTelegram:'));

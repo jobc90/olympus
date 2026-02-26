@@ -1,6 +1,6 @@
 {
   "name": "@olympus-dev/protocol",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "Shared protocol types and WebSocket message schemas for Olympus",
   "main": "dist/index.js",

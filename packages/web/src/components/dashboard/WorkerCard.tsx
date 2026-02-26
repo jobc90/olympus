@@ -41,7 +41,11 @@ function PixelAvatar({ worker, size = 98 }: { worker: WorkerConfig; size?: numbe
 export function WorkerCard({ worker, state, onChatClick, onDetailClick }: WorkerCardProps) {
   const behavior = state?.behavior ?? 'idle';
   const info = BEHAVIOR_INFO[behavior];
-  const projectPath = worker.projectPath ? worker.projectPath.replace(/^\/Users\/[^/]+\//, '~/') : worker.id;
+  const projectPath = worker.projectPath
+    ? worker.projectPath
+        .replace(/^\/Users\/[^/]+\//, '~/')      // macOS/Linux
+        .replace(/^[A-Za-z]:\\Users\\[^\\]+\\/, '~\\')  // Windows
+    : worker.id;
   const statusText = `${info.emoji} ${info.label}`;
   const taskLabel = state?.currentTask?.title ?? 'No active task';
   const lastActivity = state?.lastActivity ? formatRelativeTime(state.lastActivity) : 'no activity';

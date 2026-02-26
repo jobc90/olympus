@@ -178,6 +178,12 @@ serverCommand
       }
     }
 
+    // Warn if dashboard is started without gateway (it won't be able to connect)
+    if (startDashboard && !startGateway) {
+      console.log(chalk.yellow('  ⚠ Dashboard는 Gateway 없이 단독으로 기능하지 않습니다.'));
+      console.log(chalk.gray('    Gateway를 함께 시작하려면: olympus server start\n'));
+    }
+
     // Start Dashboard
     if (startDashboard) {
       try {
@@ -268,10 +274,12 @@ serverCommand
   .option('--gateway', 'Stop only the gateway')
   .option('--dashboard', 'Stop only the dashboard')
   .option('--telegram', 'Stop only the telegram bot')
+  .option('--web-port <port>', 'Dashboard port to stop (default: 8201)', '8201')
   .action(async (opts) => {
     const { execSync } = await import('child_process');
     const { loadConfig } = await import('@olympus-dev/gateway');
     const config = loadConfig();
+    const dashboardPort = parseInt(String(opts.webPort ?? '8201'), 10);
 
     const stopAll = !opts.gateway && !opts.dashboard && !opts.telegram;
     const stopGateway = stopAll || opts.gateway;
@@ -366,9 +374,9 @@ serverCommand
       }
     }
 
-    // Stop Dashboard (port 8201)
+    // Stop Dashboard
     if (stopDashboard) {
-      const pids = getPidsOnPort(8201);
+      const pids = getPidsOnPort(dashboardPort);
       if (pids) {
         gracefulKill(pids, 'Dashboard');
         console.log(chalk.green('  ✓ Dashboard 종료됨'));

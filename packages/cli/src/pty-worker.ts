@@ -886,7 +886,10 @@ export class PtyWorker {
     clearTimeout(this.state.settleTimer);
     this.state.settleTimer = null;
     this.completeTask(true);
-    return this.state.phase === 'idle';
+    // After completeTask(force=true), phase has transitioned to 'idle'.
+    // TypeScript cannot track the mutation inside the called method,
+    // so we avoid the narrowing error by not comparing the narrowed type.
+    return true;
   }
 
   private completeTask(force = false): void {

@@ -145,13 +145,19 @@ echo ""
 phase "Phase 2: MCP 서버 의존성 설치"
 echo ""
 
-step "ai-agents MCP..."
-cd "$ORCHESTRATION_DIR/mcps/ai-agents" && npm install --silent
-success "ai-agents MCP 설치 완료"
+if [ "$INSTALL_MODE" = "commands" ]; then
+    info "commands 모드: MCP 의존성 생략 (명령어 전역 등록만 사용)"
+    info "  → /team의 MCP 도구(codex_analyze, ai_team_patch 등)를 사용하려면"
+    info "    local 또는 global 모드로 재설치하세요: ./install-win.sh --local"
+else
+    step "ai-agents MCP..."
+    cd "$ORCHESTRATION_DIR/mcps/ai-agents" && npm install --silent
+    success "ai-agents MCP 설치 완료"
 
-step "openapi MCP..."
-cd "$ORCHESTRATION_DIR/mcps/openapi" && npm install --silent
-success "openapi MCP 설치 완료"
+    step "openapi MCP..."
+    cd "$ORCHESTRATION_DIR/mcps/openapi" && npm install --silent
+    success "openapi MCP 설치 완료"
+fi
 
 cd "$SCRIPT_DIR"
 echo ""
@@ -337,8 +343,13 @@ else
 fi
 
 echo ""
-info "PowerShell 사용자는 추가로 [System Environment]에 설정하세요:"
+info "Git Bash 재시작 후 적용됩니다."
+echo ""
+info "PowerShell에서 영속 설정:"
 echo "    [System.Environment]::SetEnvironmentVariable('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS','1','User')"
+echo ""
+info "cmd.exe에서 영속 설정 (관리자 권한 명령 프롬프트):"
+echo "    setx CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS 1"
 echo ""
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

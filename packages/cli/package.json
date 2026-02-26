@@ -1,6 +1,6 @@
 {
   "name": "olympus-dev",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "AI-powered development platform - Multi-agent orchestration CLI",
   "bin": {
@@ -50,7 +50,7 @@
     "vitest": "^3.0.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "keywords": [
     "ai",

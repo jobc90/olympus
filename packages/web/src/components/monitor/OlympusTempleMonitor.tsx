@@ -144,7 +144,9 @@ function HeraPortrait({ size = 98 }: { size?: number }) {
 
 function trimPath(path?: string): string {
   if (!path) return '-';
-  return path.replace(/^\/Users\/[^/]+\//, '~/');
+  return path
+    .replace(/^\/Users\/[^/]+\//, '~/')            // macOS/Linux
+    .replace(/^[A-Za-z]:\\Users\\[^\\]+\\/, '~\\'); // Windows
 }
 
 export function OlympusTempleMonitor({

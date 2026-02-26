@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <b>Claude CLI Enhanced Platform v1.0.0</b> — Team Engineering + Gateway + Dashboard
+  <b>Claude CLI Enhanced Platform v1.0.1</b> — Team Engineering + Gateway + Dashboard
 </p>
 
 <p align="center">
@@ -211,6 +211,10 @@ export TELEGRAM_BOT_TOKEN="7123456789:AAHxxxxxx..."
 export ALLOWED_USERS="123456789"          # 내 Telegram User ID (여러 명: "111,222,333")
 ```
 
+> **⚠️ 보안**: `ALLOWED_USERS` 를 설정하지 않으면 봇이 모든 요청을 조용히 거부합니다. [@userinfobot](https://t.me/userinfobot) 에서 본인 ID를 확인 후 반드시 설정하세요.
+
+> **API Key**: 첫 실행 시 자동 생성되어 `~/.olympus/config.json` 에 저장됩니다. `olympus setup` 으로 확인 가능.
+
 > Telegram을 사용하지 않는다면 이 단계는 건너뜁니다. 환경변수 전체 목록은 `.env.example` 참조.
 
 ---
@@ -223,6 +227,8 @@ olympus server start
 ```
 
 브라우저에서 `http://localhost:8201` 접속 시 실시간 대시보드가 열립니다.
+
+> **포트**: Gateway `8200`, Dashboard `8201`. 충돌 시 `olympus server start -p 8202 --web-port 8203`으로 변경 가능.
 
 ---
 
@@ -312,13 +318,18 @@ olympus start-trust
 # 전체 서버 시작 (Gateway + Dashboard + Telegram)
 olympus server start
 
-# 개별 서비스만 시작
+# 개별 서비스만 시작 (주의: --dashboard는 --gateway 없이 단독 실행 불가)
 olympus server start --gateway
-olympus server start --dashboard
 olympus server start --telegram
 
-# 서버 종료 / 상태 확인
+# 포트 지정
+olympus server start -p 8202 --web-port 8203
+
+# 서버 종료 (비기본 포트 사용 시 --web-port 지정)
 olympus server stop
+olympus server stop --web-port 8203
+
+# 상태 확인
 olympus server status
 ```
 
@@ -327,6 +338,9 @@ olympus server status
 ```bash
 # 초기 설정 마법사 (Gateway + Telegram + 모델 설정)
 olympus setup
+
+# 설정 초기화 (API Key 재생성 선택 가능)
+olympus setup --reset
 
 # 빠른 설정 + 시작
 olympus quickstart
@@ -339,6 +353,8 @@ olympus quickstart
 | **명령어만 전역 (권장)** | `--commands` | `commands/`만 symlink | 기존 Claude 설정 보존하면서 `/team` 사용 |
 | **전역 설치** | `--global` | `agents/` + `commands/` + `settings.json` | 새 사용자, 다른 프로젝트에서도 에이전트 사용 |
 | **로컬 설치** | `--local` | 전혀 건드리지 않음 | Olympus 디렉토리 안에서만 사용 |
+
+> **`--commands` 모드 제한**: `/team` 슬래시 명령은 작동하지만 MCP 도구(`codex_analyze`, `ai_team_patch` 등)는 비활성화됩니다. MCP 도구가 필요하면 `--local` 또는 `--global` 모드를 사용하세요.
 
 **macOS / Linux:**
 
@@ -697,10 +713,21 @@ pnpm build && olympus server start
 
 ### Telegram 봇 응답 없음
 
-**해결**:
-1. `TELEGRAM_BOT_TOKEN`, `ALLOWED_USERS` 환경 변수 확인
-2. `olympus server start --telegram`
-3. `/health` 명령어로 상태 확인
+**원인 1 — `ALLOWED_USERS` 미설정**: 등록된 사용자가 없으면 모든 요청이 조용히 거부됩니다 (에러 없음).
+
+```bash
+# 내 User ID 확인: @userinfobot 에게 /start 전송
+export ALLOWED_USERS="123456789"   # ~/.zshrc에 추가 후 source ~/.zshrc
+```
+
+**원인 2 — DM 정책**: `.env.example`을 복사한 경우 `TELEGRAM_DM_POLICY=allowlist`가 기본값입니다. `allow`로 변경하면 누구나 접근 가능하므로 주의.
+
+**원인 3 — 서버 미실행**:
+```bash
+olympus server start --telegram   # 또는 olympus server start (전체)
+```
+
+**확인**: `/health` 전송 → `✅ Gateway 연결됨` 응답이 오면 정상.
 
 ### `/team` 명령어가 인식되지 않음
 
@@ -737,5 +764,5 @@ MIT
 ---
 
 <p align="center">
-  <b>Olympus v1.0.0</b> — Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 플랫폼
+  <b>Olympus v1.0.1</b> — Claude CLI의 개발 생산성을 위한 Multi-AI 협업 개발 플랫폼
 </p>

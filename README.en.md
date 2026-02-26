@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <b>Claude CLI Enhanced Platform v1.0.0</b> — Team Engineering + Gateway + Dashboard
+  <b>Claude CLI Enhanced Platform v1.0.1</b> — Team Engineering + Gateway + Dashboard
 </p>
 
 <p align="center">
@@ -235,15 +235,22 @@ olympus start-trust
 # Start all services (Gateway + Dashboard + Telegram)
 olympus server start
 
-# Start individual services only
+# Start individual services (note: --dashboard requires --gateway to be useful)
 olympus server start --gateway
-olympus server start --dashboard
 olympus server start --telegram
 
-# Stop server / Check status
+# Custom ports
+olympus server start -p 8202 --web-port 8203
+
+# Stop server (use --web-port if Dashboard runs on non-default port)
 olympus server stop
+olympus server stop --web-port 8203
+
+# Check status
 olympus server status
 ```
+
+> **Ports**: Gateway `8200`, Dashboard `8201` by default.
 
 ### 4. Initial Setup
 
@@ -251,40 +258,56 @@ olympus server status
 # Setup wizard (Gateway + Telegram + model configuration)
 olympus setup
 
+# Reset all settings (with optional API Key rotation)
+olympus setup --reset
+
 # Quick setup + start
 olympus quickstart
 ```
 
 ### Installation Mode Options
 
+| Mode | Flag | `~/.claude/` Impact | Recommended For |
+|------|------|---------------------|-----------------|
+| **Commands only (recommended)** | `--commands` | `commands/` symlink only | Keep existing Claude settings, just use `/team` |
+| **Global install** | `--global` | `agents/` + `commands/` + `settings.json` | New users, use agents across all projects |
+| **Local install** | `--local` | Not touched at all | Use only inside the Olympus directory |
+
+> **`--commands` mode limitation**: `/team` slash commands work, but MCP tools (`codex_analyze`, `ai_team_patch`, etc.) are disabled. For MCP tools, use `--local` or `--global` mode.
+
 **macOS / Linux:**
 
 ```bash
-# Global install (recommended) — installs to ~/.claude/, /team available everywhere
+# Recommended — commands only (preserves existing ~/.claude/)
+./install.sh --commands
+
+# Global install — agents + commands to ~/.claude/
 ./install.sh --global
 
-# Local install — installs to .claude/ in the project, available only in this directory
+# Local install — only works inside this project
 ./install.sh --local
 
-# Optionally add Olympus managed block to CLAUDE.md
-./install.sh --global --with-claude-md
+# Optionally add Olympus managed block to CLAUDE.md (combinable with any mode)
+./install.sh --commands --with-claude-md
 ```
 
 **Windows (Git Bash / PowerShell):**
 
 ```bash
 # Git Bash
+./install-win.sh --commands
 ./install-win.sh --global
 ```
 
 ```powershell
 # PowerShell
+.\install.ps1 -Mode commands
 .\install.ps1 -Mode global
 .\install.ps1 -Mode local
-.\install.ps1 -Mode global -WithClaudeMd
+.\install.ps1 -Mode commands -WithClaudeMd
 ```
 
-> **Default behavior is non-invasive.** `~/.claude/CLAUDE.md` is not modified unless explicitly requested.
+> **Default behavior is non-invasive.** `~/.claude/CLAUDE.md` is not modified unless explicitly requested. `--commands` mode does not touch `~/.claude/agents/`, `settings.json`, or any existing configuration.
 
 ---
 
@@ -332,6 +355,10 @@ Control Claude CLI remotely via Telegram bot.
 export TELEGRAM_BOT_TOKEN="7123456789:AAHxxxxxx..."
 export ALLOWED_USERS="123456789"  # Comma-separated for multiple users
 ```
+
+> **⚠️ Security**: If `ALLOWED_USERS` is not set, the bot silently rejects all requests. Get your ID from [@userinfobot](https://t.me/userinfobot) and set it before starting the server.
+
+> **API Key**: Auto-generated on first run and stored in `~/.olympus/config.json`. View with `olympus setup`.
 
 **Step 4**: Start the server
 
@@ -558,10 +585,21 @@ olympus --version
 
 ### Telegram Bot Not Responding
 
-**Solution**:
-1. Verify `TELEGRAM_BOT_TOKEN` and `ALLOWED_USERS` environment variables
-2. Run `olympus server start --telegram`
-3. Check status with the `/health` command
+**Cause 1 — `ALLOWED_USERS` not set**: All requests are silently rejected when no users are registered.
+
+```bash
+# Get your ID: send /start to @userinfobot
+export ALLOWED_USERS="123456789"   # Add to ~/.zshrc then source it
+```
+
+**Cause 2 — DM policy**: If you copied `.env.example`, `TELEGRAM_DM_POLICY=allowlist` is the default. Changing to `allow` opens the bot to anyone — use with caution.
+
+**Cause 3 — Server not running**:
+```bash
+olympus server start   # starts Gateway + Telegram together
+```
+
+**Verify**: Send `/health` to your bot → `✅ Gateway connected` means everything is working.
 
 ### `/team` Command Not Recognized
 
@@ -578,5 +616,5 @@ MIT
 ---
 
 <p align="center">
-  <b>Olympus v1.0.0</b> — A Multi-AI collaborative development platform for supercharging Claude CLI productivity
+  <b>Olympus v1.0.1</b> — A Multi-AI collaborative development platform for supercharging Claude CLI productivity
 </p>
