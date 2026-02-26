@@ -1,6 +1,11 @@
 <h1 align="center">Olympus</h1>
 
 <p align="center">
+  <img src="docs/image/dashboard.png" alt="Olympus Dashboard Console Tab" width="48%" />
+  <img src="docs/image/monitor.png" alt="Olympus Dashboard Monitor Tab" width="48%" />
+</p>
+
+<p align="center">
   <a href="./README.md"><img src="https://img.shields.io/badge/Language-한국어-lightgrey?style=for-the-badge" alt="Korean"/></a>
   <a href="./README.en.md"><img src="https://img.shields.io/badge/Language-English-blue?style=for-the-badge" alt="English"/></a>
 </p>
@@ -26,7 +31,6 @@
 - [Why Olympus?](#-why-olympus)
 - [Claude CLI vs Olympus](#-claude-cli-vs-olympus)
 - [Quick Start](#-quick-start)
-- [Dashboard Screenshots](#-dashboard-screenshots)
 - [Key Features](#-key-features)
 - [Usage](#-usage)
 - [Worker System](#-worker-system)
@@ -35,15 +39,6 @@
 - [Architecture](#-architecture)
 - [Development](#-development)
 - [Troubleshooting](#-troubleshooting)
-
----
-
-## 🖼️ Dashboard Screenshots
-
-<p align="center">
-  <img src="docs/image/dashboard.png" alt="Olympus Dashboard Console Tab" width="48%" />
-  <img src="docs/image/monitor.png" alt="Olympus Dashboard Monitor Tab" width="48%" />
-</p>
 
 ---
 
