@@ -1,0 +1,83 @@
+# Tasks
+
+## 2026-03-25
+
+- [x] `packages/codex/src/task-planner.ts`를 추가해 explicit project target 검증, multi-project decomposition, worker-name-first fallback 축소를 위한 planning 경계를 도입
+- [x] `packages/gateway/src/terminal-projection-service.ts`를 추가해 tmux/pty runtime snapshot, input lock, active terminal metadata를 공식 projection view 모델로 정리
+- [x] `packages/gateway/src/reporting/task-summary-service.ts`를 추가해 Task Authority 및 worker/runtime 상태를 project-centric summary로 집계
+- [x] `packages/gateway/src/api.ts`, `packages/gateway/src/server.ts`, `packages/gateway/src/codex-adapter.ts`를 새 planner/projection/reporting 경계와 연결
+- [x] `packages/web/src/hooks/useOlympus.ts`, `packages/web/src/components/ProjectedTerminalPanel.tsx`, `packages/web/src/App.tsx`를 projection/task-summary 기반 대시보드 상태로 확장
+- [x] `packages/cli/src/pty-worker.ts`의 PTY output status heuristic을 compatibility fallback으로 더 낮추고 authoritative truth가 아님을 코드 경계에서 명확히 정리
+- [x] 실제 tmux smoke에서 드러난 false-positive completion / trust prompt startup / short response extraction blocker를 `packages/cli/src/tmux-task-runner.ts`, `packages/cli/src/tmux-worker-runtime.ts`, `packages/cli/src/pty-worker.ts` 및 회귀 테스트로 수정하고 `SMOKE_OK` end-to-end 결과를 재검증
+- [x] 재설계 후속 확장 범위에 대해 `pnpm --filter @olympus-dev/codex test`, `pnpm --filter @olympus-dev/gateway test`, `pnpm --filter @olympus-dev/web build`, `pnpm --filter olympus-dev test`, `pnpm lint`, `pnpm build` 검증과 backlog 상태 갱신
+
+## 2026-03-24
+
+- [x] Olympus 저장소의 현재 코드 기준 구조, 패키지, CLI, API, 운영 설정 조사
+- [x] `docs/README.md`, `docs/architecture.md`, `docs/api-reference.md`, `docs/RUNBOOK.md` 작성
+- [x] 문서 내 패키지 수, 포트, 주요 명령, HTTP/WebSocket 경로를 코드 기준으로 재검증
+- [x] Codex 중심 Control Plane 재설계 요구사항 인터뷰 및 설계 방향 합의
+- [x] `docs/superpowers/specs/2026-03-24-codex-control-plane-redesign-design.md` 작성
+- [x] `docs/superpowers/plans/2026-03-24-codex-control-plane-redesign.md` 작성
+- [x] 재설계 전제를 `macOS only + tmux 기반 병렬 워커 가시화`로 수정
+- [x] 기존 레거시 문서/README/설치 스크립트 제거
+- [x] 최소 규칙 문서 `AGENTS.md`, `CLAUDE.md` 재작성
+- [x] `packages/protocol`에 Task Authority 상태 전이/아티팩트 계약 및 테스트 추가
+- [x] `packages/core`에 SQLite 기반 `TaskAuthorityStore`, `TaskArtifactStore` 및 테스트 추가
+- [x] `packages/cli`에 초기 `WorkerHost` 스캐폴드와 테스트 추가
+- [x] `packages/cli`의 `WorkerHost` 스캐폴드를 tmux 기반 세션/레이아웃 모델로 전환
+- [x] `packages/cli`에 실제 tmux session/layout/attach 어댑터 및 테스트 추가
+- [x] `packages/cli`에 tmux pane capture 기반 `TmuxTaskRunner` 및 완료 감지 테스트 추가
+- [x] `packages/cli/src/commands/start.ts`에 tmux 기본 런타임 선택과 `TmuxWorkerRuntime` 통합 추가
+- [x] `packages/protocol`에 `runtime-control` 계약, `packages/cli`에 Unix socket 기반 `runtime-socket` 추가
+- [x] `packages/cli`의 `TmuxWorkerRuntime`에 runtime socket server 연결 및 `start.ts` 기본 socket root 전달 추가
+- [x] `packages/gateway`에 `runtimeKind` 메타데이터, `WorkerRuntimeClient`, worker runtime API 경로 추가
+- [x] `packages/gateway`에 `ProjectScheduler`, `ProjectRuntimeAdapter`, project runtime worktree wrapper 및 테스트 추가
+- [x] `packages/gateway/src/api.ts`에 프로젝트 단위 dispatch 경로 `/api/projects/:id/tasks` 추가
+- [x] `packages/gateway/src/server.ts`에 project runtime adapter 연결 및 worker authority task 메타데이터 확장
+- [x] `packages/gateway/src/api.ts`의 `POST /api/workers/:id/task`, `POST /api/codex/chat` @mention 경로를 `ProjectRuntimeAdapter` 경유로 전환
+- [x] `packages/protocol`/`packages/cli`/`packages/gateway`에 `send_input` runtime-control 계약과 tmux worker input socket 경로 추가
+- [x] `packages/gateway/src/api.ts`의 `POST /api/workers/:id/input`를 tmux worker에 대해 runtime socket 우선 경로로 전환
+- [x] `worker:input:submitted`를 Codex manual input interpretation 경로로 연결하고 `codex:manual-input-interpreted` 브로드캐스트 추가
+- [x] `packages/gateway/src/__tests__/gemini-advisor.test.ts`의 GeminiPty mock 계약을 실제 `EventEmitter` 구현과 맞춰 gateway 전체 테스트 green 복구
+- [x] `packages/cli/src/tmux-worker-runtime.ts`의 tmux target/session lifecycle을 `WorkerHost`로 이관해 host-backed resident boot/assign/input/capture/stop 경로 추가
+- [x] `packages/cli/src/worker-runtime.ts`를 추가해 공용 runtime 타입/팩토리를 분리하고 `start.ts`의 direct runtime import 분기 축소
+- [x] `packages/cli/src/local-pty-task-bridge.ts`를 추가해 `start.ts`의 로컬 PTY input -> task 생성/완료 감시/결과 보고 결합을 별도 브리지로 분리
+- [x] `packages/cli/src/pty-local-input-tracker.ts`를 추가해 `pty-worker.ts`의 bracket paste/backspace/control-sequence 기반 로컬 입력 추적 책임을 별도 tracker로 분리
+- [x] `packages/cli/src/pty-stdin-bridge.ts`를 추가해 `pty-worker.ts`의 raw stdin decode/exit-key/CR 정규화 책임을 별도 bridge로 분리
+- [x] `packages/cli/src/pty-worker-runtime.ts`를 추가해 `PtyWorker`를 공용 runtime 경계 뒤로 감싸고 `start.ts`의 pty/tmux 런타임 생성 분기를 단일 팩토리 호출로 단순화
+- [x] `packages/cli/src/pty-session-adapter.ts`를 추가해 `pty-worker.ts`의 node-pty spawn/onData/onExit/initial resize 저수준 lifecycle을 별도 adapter로 분리
+- [x] `packages/gateway/src/api.ts`의 worker assignment/@mention legacy fallback을 제거해 `ProjectRuntimeAdapter`를 해당 경로의 필수 디스패치 계층으로 강제
+- [x] `packages/gateway/src/codex-adapter.ts`에 `@mention` delegation 경로를 추가하고 `packages/gateway/src/api.ts`가 CodexAdapter 우선, local fallback 보조 구조를 따르도록 정리
+- [x] `packages/gateway/src/api.ts`의 local `@mention` fallback을 제거해 Codex chat 경로를 `CodexAdapter` 우선 구조로 완전히 고정
+- [x] `packages/gateway/src/project-runtime/project-runtime-adapter.ts`에 worker result -> authority task 완료/실패 반영 메서드를 추가하고 `packages/gateway/src/api.ts`의 worker result 경로에서 이를 호출하도록 연결
+- [x] `packages/gateway/src/server.ts`의 `worker:died` 경로가 `ProjectRuntimeAdapter.finalizeWorkerTask(..., success: false)`를 호출해 authority task 실패를 함께 반영하도록 연결
+- [x] `packages/gateway/src/project-runtime/project-runtime-adapter.ts`가 soft preempt 시 `packages/gateway/src/worker-runtime-client.ts`의 `soft_preempt` runtime control을 best-effort로 호출하도록 연결
+- [x] `packages/gateway/src/project-runtime/project-runtime-adapter.ts`와 `packages/gateway/src/api.ts`에 blocked authority task resume 경로를 추가하고 이전 worker prompt를 기준으로 재할당 가능하게 연결
+- [x] `packages/gateway/src/project-runtime/project-runtime-adapter.ts`, `packages/gateway/src/api.ts`, `packages/gateway/src/worker-registry.ts`에 authority task cancel 경로를 추가하고 tmux runtime reset 힌트 및 worker task 취소 상태를 함께 반영
+- [x] `packages/gateway/src/project-runtime/project-runtime-adapter.ts`와 `packages/gateway/src/api.ts`에 queued authority task auto-dispatch 경로를 추가해 worker completion 후 다음 대기 작업을 자동 재배정
+- [x] `packages/gateway/src/server.ts`와 `packages/gateway/src/project-runtime/project-runtime-adapter.ts`에 worker 비정상 종료 후 queued authority task recovery 경로를 추가해 다른 idle worker로 후속 작업 재배정
+- [x] `packages/cli/src/worker-task-orchestrator.ts`를 추가해 `packages/cli/src/commands/start.ts`의 worker task 실행/복구/input/resize orchestration을 분리하고 live terminal ownership 상태 조회로 진단 경계를 고정
+- [x] `packages/cli/src/worker-gateway-session.ts`를 추가해 `packages/cli/src/commands/start.ts`의 WebSocket 연결, heartbeat, recovery polling, stream relay, result reporting 책임을 별도 gateway session 경계로 분리
+- [x] `packages/cli/src/worker-control-plane-client.ts`를 추가해 `packages/cli/src/commands/start.ts`의 gateway health check, worker name collision 해소, worker register/deregister 책임을 별도 control plane client 경계로 분리
+- [x] `packages/cli/src/worker-runtime-lifecycle.ts`를 추가해 `packages/cli/src/commands/start.ts`의 runtime boot timeout, graceful shutdown, start failure handling, process signal wiring 책임을 별도 lifecycle 경계로 분리
+- [x] `packages/cli/src/worker-bootstrap.ts`를 추가해 `packages/cli/src/commands/start.ts`의 남은 worker bootstrap 조립 코드를 별도 모듈로 이동하고 command 파일은 엔트리 정의와 얇은 재수출만 남기도록 정리
+- [x] `packages/cli/src/pty-terminal-bridge.ts`를 추가해 `packages/cli/src/pty-worker.ts`의 로컬 터미널 attach/raw-mode/resize/output 복원 책임을 별도 bridge로 분리
+- [x] `packages/cli/src/pty-worker-host.ts`를 추가해 `packages/cli/src/pty-worker-runtime.ts`가 `pty runtime -> pty host -> pty worker` 경계를 따르도록 정리
+- [x] `packages/cli/src/pty-worker-runtime.ts`, `packages/gateway/src/api.ts`, `packages/gateway/src/worker-runtime-client.ts`에 pty runtime socket 제어 경로를 추가해 `send_input/reset/snapshot/lock/unlock/soft_preempt`의 공식 제어 기반을 tmux 외 pty 경로까지 확장
+- [x] `packages/protocol/src/worker.ts`에 runtime-control capability helper를 추가하고 `packages/gateway/src/api.ts`, `packages/gateway/src/worker-runtime-client.ts`, `packages/gateway/src/project-runtime/project-runtime-adapter.ts`가 이를 공용으로 사용하도록 정리
+- [x] `packages/cli/src/worker-runtime-hooks.ts`를 추가해 `packages/cli/src/worker-bootstrap.ts`의 pty 전용 runtime callback 조립 책임을 별도 helper로 분리
+- [x] `packages/cli/src/runtime-control-host.ts`를 추가해 tmux `WorkerHost`와 pty `PtyWorkerHost`가 공통 runtime-control contract를 공유하고 각 runtime이 해당 contract만 사용하도록 정리
+- [x] `packages/cli/src/worker-runtime.ts`에 공용 runtime input shaping helper를 추가해 `packages/cli/src/worker-bootstrap.ts`가 runtime 생성용 세부 payload를 직접 조립하지 않도록 정리
+- [x] `packages/cli/src/worker-runtime-bridge.ts`를 추가해 `packages/cli/src/worker-bootstrap.ts`의 local PTY bridge + runtime hook 조립 책임을 별도 helper로 이동하고 tmux 경로에서는 해당 bridge를 만들지 않도록 정리
+- [x] `packages/cli/src/worker-runtime-state.ts`를 추가해 `packages/cli/src/worker-bootstrap.ts`의 runtime terminal ownership / exit handler 상태를 별도 helper로 이동
+- [x] `packages/cli/src/worker-runtime-state.ts`, `packages/cli/src/worker-runtime-lifecycle.ts`를 확장해 shutdown 상태도 helper 경계로 이동하고 bootstrap의 local input gating이 실제 shutdown 시작과 연결되도록 정리
+- [x] `packages/cli/src/worker-runtime-assembly.ts`를 추가해 `packages/cli/src/worker-bootstrap.ts`의 gateway session / runtime / orchestrator / lifecycle 조립 책임을 별도 helper로 이동
+- [x] `packages/cli/src/worker-bootstrap-context.ts`를 추가해 `packages/cli/src/worker-bootstrap.ts`의 gateway 설정 해석, worker name 충돌 처리, worker 등록 책임을 별도 helper로 이동
+- [x] `packages/cli/src/commands/start.ts`, `packages/cli/src/pty-worker.ts`를 포함한 CLI 진입 경로가 `start -> bootstrap context -> runtime assembly -> pty/tmux host` 흐름으로 정리되도록 마감
+- [x] Gateway 프로젝트 스케줄러/런타임 어댑터가 기존 worker assignment / Codex chat delegation 경로의 필수 계층으로 동작하는 상태를 코드 검색과 전체 gateway 검증으로 재확인하고 stale todo를 정리
+- [x] `packages/cli/src/worker-host/tmux-layout-manager.ts`에 same-project multi-worker startup race 대응 fallback을 추가해 `duplicate session` 경쟁 시 `new-window` 재시도로 회복되도록 수정
+- [x] `packages/cli/src/tmux-task-runner.ts`에 baseline snapshot 기반 runtime activity gate를 추가해 wrapped/enriched prompt 환경에서도 pane completion과 API 상태가 함께 `completed`로 닫히도록 수정
+- [x] `packages/gateway/src/project-runtime/project-runtime-adapter.ts`에 queued auto-dispatch idempotency guard를 추가해 이미 `in_progress`인 authority task를 다시 `in_progress`로 전이하려다 실패하지 않도록 수정
+- [x] 실제 multi-worker soak를 다시 실행해 same-project 동시 worker 기동, wrapped prompt completion, queued auto-dispatch completion이 API/authority까지 정상 반영되는지 재검증
+- [x] `packages/cli/src/tmux-task-runner.ts`, `packages/cli/src/tmux-worker-runtime.ts`, `packages/gateway/src/project-runtime/project-runtime-adapter.ts`의 preempt handoff 경계를 정리해 runtime starting 상태도 busy로 취급하고 soft-preempt 후 urgent task가 실제 pane/API 모두에서 `completed`로 수렴하도록 수정 및 실전 soak 재검증
