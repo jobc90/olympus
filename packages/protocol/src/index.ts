@@ -150,6 +150,8 @@ export type {
   CodexInputSource,
   CodexUserInput,
   CodexRoutingType,
+  CodexTaskPlanningKind,
+  CodexTaskPlanningDecision,
   CodexRoutingDecision,
   CodexResponseType,
   CodexProcessedResponse,
@@ -160,6 +162,8 @@ export type {
   CodexSessionCmdPayload,
   CodexSessionEventPayload,
   CodexStatusPayload,
+  CodexManualInputClassification,
+  CodexManualInputInterpretationPayload,
   CodexRouteParams,
   CodexSearchParams,
   CodexSessionInfo,
@@ -188,7 +192,80 @@ export type {
   RegisteredWorker,
   WorkerRegistration,
   WorkerTaskRecord,
+  WorkerRuntimeKind,
 } from './worker.js';
+export {
+  WORKER_RUNTIME_KINDS,
+  supportsWorkerRuntimeControl,
+} from './worker.js';
+
+// Task Authority types
+export type {
+  TaskAuthorityStatus,
+  TaskAuthorityTaskKind,
+  TaskDependencyType,
+  TaskAuthorityTask,
+  CreateTaskAuthorityTaskInput,
+  UpdateTaskAuthorityTaskInput,
+  TaskDependencyEdge,
+  TaskQueueEntry,
+  TaskExecutionLock,
+  TaskPreemptionEvent,
+} from './task-authority.js';
+
+export {
+  TASK_AUTHORITY_STATUSES,
+  TASK_STATUS_TRANSITIONS,
+  canTransitionTaskStatus,
+  assertTaskStatusTransition,
+} from './task-authority.js';
+
+// Task Artifact types
+export type {
+  TaskArtifactKind,
+  InstructionArtifactMetadata,
+  StartAckArtifact,
+  VerificationResult,
+  AutonomousDecision,
+  FinalReportArtifact,
+  TaskArtifactFileSet,
+  TaskArtifactPaths,
+  ResolveTaskArtifactPathsParams,
+} from './task-artifacts.js';
+
+export {
+  TASK_ARTIFACT_FILE_NAMES,
+  resolveTaskArtifactPaths,
+} from './task-artifacts.js';
+
+// Runtime Control types
+export type {
+  RuntimeControlCommand,
+  AssignInstructionCommandPayload,
+  SendInputCommandPayload,
+  SoftPreemptCommandPayload,
+  LockInputCommandPayload,
+  UnlockInputCommandPayload,
+  ResetSessionCommandPayload,
+  CaptureTerminalSnapshotCommandPayload,
+  RuntimeControlRequestMap,
+  RuntimeControlRequest,
+  RuntimeAcceptedResult,
+  RuntimeTerminalSnapshotResult,
+  RuntimeStateResult,
+  RuntimeControlSuccessResult,
+  RuntimeControlSuccessResponse,
+  RuntimeControlError,
+  RuntimeControlErrorResponse,
+  RuntimeControlResponse,
+} from './runtime-control.js';
+
+export {
+  RUNTIME_CONTROL_COMMANDS,
+  createRuntimeControlRequest,
+  createRuntimeControlSuccess,
+  createRuntimeControlError,
+} from './runtime-control.js';
 
 // Local Context types
 export type {

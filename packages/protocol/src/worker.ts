@@ -11,15 +11,28 @@ import type { CliRunResult } from './cli-runner.js';
 // Registered Worker
 // ──────────────────────────────────────────────
 
+export const WORKER_RUNTIME_KINDS = ['tmux', 'pty'] as const;
+
+export type WorkerRuntimeKind = (typeof WORKER_RUNTIME_KINDS)[number];
+
+export function supportsWorkerRuntimeControl(worker: { runtimeKind?: WorkerRuntimeKind }): boolean {
+  return worker.runtimeKind === 'tmux' || worker.runtimeKind === 'pty';
+}
+
 export interface RegisteredWorker {
   id: string;
   name: string;
   projectPath: string;
+  runtimeKind?: WorkerRuntimeKind;
+  roleTags?: string[];
+  skills?: string[];
+  isEphemeral?: boolean;
   pid: number;
   status: 'idle' | 'busy' | 'offline';
   registeredAt: number;
   lastHeartbeat: number;
   currentTaskId?: string;
+  currentAuthorityTaskId?: string;
   currentTaskPrompt?: string;
   /** 로컬 PTY stdin이 연결된 워커 — 대시보드 resize를 무시해야 함 */
   hasLocalPty?: boolean;
@@ -32,6 +45,10 @@ export interface RegisteredWorker {
 export interface WorkerRegistration {
   name?: string;
   projectPath: string;
+  runtimeKind?: WorkerRuntimeKind;
+  roleTags?: string[];
+  skills?: string[];
+  isEphemeral?: boolean;
   pid: number;
   /** true = `olympus start`로 시작된 로컬 PTY 워커 */
   hasLocalPty?: boolean;
@@ -45,8 +62,9 @@ export interface WorkerTaskRecord {
   taskId: string;
   workerId: string;
   workerName: string;
+  authorityTaskId?: string;
   prompt: string;
-  status: 'running' | 'completed' | 'failed' | 'timeout';
+  status: 'running' | 'completed' | 'failed' | 'timeout' | 'cancelled';
   startedAt: number;
   completedAt?: number;
   result?: CliRunResult;

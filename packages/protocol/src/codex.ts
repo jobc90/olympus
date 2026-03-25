@@ -16,7 +16,8 @@ export type CodexMessageType =
   | 'codex:answer'          // Codex → Gateway: 자체 답변 (SELF_ANSWER)
   | 'codex:status'          // 양방향: 상태 조회/응답
   | 'codex:session-cmd'     // Gateway → Codex: 세션 관리 명령
-  | 'codex:session-event';  // Codex → Gateway: 세션 상태 변경
+  | 'codex:session-event'   // Codex → Gateway: 세션 상태 변경
+  | 'codex:manual-input-interpreted'; // Codex → Gateway: 수동 입력 해석 결과
 
 // ──────────────────────────────────────────────
 // Input Types
@@ -40,6 +41,21 @@ export type CodexRoutingType =
   | 'MULTI_SESSION'
   | 'CONTEXT_QUERY';
 
+export type CodexTaskPlanningKind =
+  | 'single_project'
+  | 'multi_project'
+  | 'worker_fallback';
+
+export interface CodexTaskPlanningDecision {
+  kind: CodexTaskPlanningKind;
+  targetSessionIds: string[];
+  targetProjectNames: string[];
+  processedInput: string;
+  manualPath: boolean;
+  confidence: number;
+  reason: string;
+}
+
 export interface CodexRoutingDecision {
   type: CodexRoutingType;
   targetSessions: string[];
@@ -47,6 +63,7 @@ export interface CodexRoutingDecision {
   confidence: number;
   reason: string;
   contextToInject?: unknown;
+  planning?: CodexTaskPlanningDecision;
 }
 
 // ──────────────────────────────────────────────
@@ -120,6 +137,25 @@ export interface CodexStatusPayload {
   initialized: boolean;
   sessionCount: number;
   projectCount: number;
+}
+
+export type CodexManualInputClassification = 'task_intervention' | 'new_task_candidate';
+
+export interface CodexManualInputInterpretationPayload {
+  workerId: string;
+  workerName: string;
+  projectId: string;
+  projectPath: string;
+  prompt: string;
+  source: string;
+  timestamp: number;
+  classification: CodexManualInputClassification;
+  reason: string;
+  workerStatus?: 'idle' | 'busy' | 'offline';
+  currentTaskId?: string;
+  currentAuthorityTaskId?: string;
+  currentTaskPrompt?: string;
+  matchedSessionId?: string;
 }
 
 // ──────────────────────────────────────────────

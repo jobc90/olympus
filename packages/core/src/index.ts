@@ -35,6 +35,8 @@ export { OlympusBus } from './events.js';
 
 // Task Store
 export { TaskStore } from './taskStore.js';
+export { TaskAuthorityStore, type RegisterTaskArtifactInput, type RegisteredTaskArtifact, type SoftPreemptTaskInput } from './task-authority-store.js';
+export { TaskArtifactStore, type ResolveTaskPathsInput, type WriteMirroredArtifactInput, type WrittenMirroredArtifact } from './task-artifact-store.js';
 
 // Context Store
 export { ContextStore } from './contextStore.js';
