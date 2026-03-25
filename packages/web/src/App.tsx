@@ -23,6 +23,7 @@ import { CodexAgentPanel } from './components/dashboard/CodexAgentPanel';
 import { GeminiAdvisorPanel } from './components/dashboard/GeminiAdvisorPanel';
 import UsageBar from './components/dashboard/UsageBar';
 import { WorkerTaskBoard } from './components/WorkerTaskBoard';
+import { ProjectedTerminalPanel } from './components/ProjectedTerminalPanel';
 import { MiniOlympusMountain } from './components/olympus-mountain/MiniOlympusMountain';
 import { OlympusTempleMonitor } from './components/monitor/OlympusTempleMonitor';
 import ChatWindow from './components/chat/ChatWindow';
@@ -213,8 +214,11 @@ export default function App() {
     usageData,
     workers,
     workerTasks,
+    workerProjections,
+    projectSummaries,
     sendWorkerInput,
     resizeWorkerTerminal,
+    refreshWorkerProjection,
     lastWorkerCompletion,
     lastWorkerAssignment,
     lastWorkerSummary,
@@ -306,6 +310,16 @@ export default function App() {
     : [];
 
   const workerStates: Record<string, WorkerDashboardState> = connected ? polledWorkerStates : {};
+  const projectionWorkerId = monitorSelectedWorkerId ?? selectedWorkerId ?? workerConfigs[0]?.id ?? null;
+  const projectionWorker = projectionWorkerId
+    ? workerConfigs.find((worker) => worker.id === projectionWorkerId)
+    : undefined;
+  const selectedProjection = projectionWorkerId
+    ? workerProjections.get(projectionWorkerId) ?? null
+    : null;
+  const selectedLiveOutput = projectionWorkerId
+    ? workers.get(projectionWorkerId)?.output ?? ''
+    : '';
 
   const codexConfig: CodexConfig = { name: 'Zeus', emoji: '\u26A1', avatar: 'zeus' };
   const geminiConfig: GeminiConfig = DEFAULT_GEMINI;
@@ -491,6 +505,17 @@ export default function App() {
     }));
   }, [lastWorkerFailure?.timestamp]);
 
+  useEffect(() => {
+    if (!projectionWorkerId) return;
+
+    void refreshWorkerProjection(projectionWorkerId);
+    const interval = setInterval(() => {
+      void refreshWorkerProjection(projectionWorkerId);
+    }, 5_000);
+
+    return () => clearInterval(interval);
+  }, [projectionWorkerId, refreshWorkerProjection]);
+
   // Codex greeting → ChatWindow message for Zeus
   useEffect(() => {
     if (!codexGreeting) return;
@@ -655,6 +680,66 @@ export default function App() {
 
                   <div className="min-h-[420px] h-[clamp(420px,52vh,620px)]">
                     <WorkerTaskBoard tasks={workerTasks} />
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
+                    <ProjectedTerminalPanel
+                      workerId={projectionWorkerId}
+                      workerName={projectionWorker?.name}
+                      connected={connected}
+                      liveOutput={selectedLiveOutput}
+                      projection={selectedProjection}
+                      onRefresh={() => {
+                        if (projectionWorkerId) {
+                          void refreshWorkerProjection(projectionWorkerId);
+                        }
+                      }}
+                    />
+
+                    <Card className="flex min-h-[360px] flex-col">
+                      <div className="mb-3 flex items-center justify-between">
+                        <h3 className="text-lg font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                          Project Summaries
+                        </h3>
+                        <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
+                          authority-first
+                        </span>
+                      </div>
+
+                      <div className="flex-1 space-y-3 overflow-y-auto">
+                        {projectSummaries.length === 0 ? (
+                          <div className="flex h-full min-h-[240px] items-center justify-center rounded-xl border border-dashed border-border/60 text-sm text-text-secondary">
+                            No project summaries yet.
+                          </div>
+                        ) : (
+                          projectSummaries.map((summary) => (
+                            <div
+                              key={summary.projectId}
+                              className="rounded-xl border p-3"
+                              style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(8, 13, 26, 0.45)' }}
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                                  {summary.projectId}
+                                </div>
+                                <div className="text-[11px] font-mono" style={{ color: 'var(--text-secondary)' }}>
+                                  total {summary.counts.total}
+                                </div>
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-mono">
+                                <span style={{ color: 'var(--accent-warning)' }}>blocked {summary.counts.blocked}</span>
+                                <span style={{ color: 'var(--accent-danger)' }}>failed {summary.counts.failed}</span>
+                                <span style={{ color: 'var(--accent-secondary)' }}>risky {summary.counts.risky}</span>
+                                <span style={{ color: 'var(--accent-success)' }}>completed {summary.counts.completed}</span>
+                              </div>
+                              <div className="mt-3 text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                                {summary.summary || 'No summary available.'}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </Card>
                   </div>
                 </div>
 

@@ -135,6 +135,45 @@ export interface SyncStatusEntry {
   lastPollError: string | null;
 }
 
+export interface ProjectTaskSummaryEntry {
+  projectId: string;
+  counts: {
+    blocked: number;
+    failed: number;
+    risky: number;
+    completed: number;
+    total: number;
+  };
+  summary: string;
+}
+
+export interface WorkerProjectionTaskEntry {
+  taskId: string;
+  authorityTaskId: string | null;
+  displayLabel: string | null;
+  title: string | null;
+  status: string | null;
+  projectId: string | null;
+  parentTaskId: string | null;
+  assignedWorkerId: string | null;
+  priority: number | null;
+  prompt: string | null;
+  source: 'authority' | 'worker' | 'runtime';
+}
+
+export interface WorkerTerminalProjection {
+  workerId: string;
+  workerName: string;
+  projectPath: string;
+  runtimeKind: string;
+  snapshotText: string;
+  inputLocked: boolean;
+  activeTask: WorkerProjectionTaskEntry | null;
+  payload: {
+    generatedAt: number;
+  };
+}
+
 export interface OlympusState {
   connected: boolean;
   phase: PhasePayload | null;
@@ -211,6 +250,8 @@ export interface OlympusState {
   } | null;
   // Worker log panel
   workerLogs: Map<string, WorkerLogEntry[]>;
+  workerProjections: Map<string, WorkerTerminalProjection>;
+  projectSummaries: ProjectTaskSummaryEntry[];
   selectedWorkerId: string | null;
   syncStatus: SyncStatusEntry;
 }
@@ -448,6 +489,8 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     lastWorkerSummary: null,
     lastWorkerFailure: null,
     workerLogs: loadWorkerLogsFromStorage(),
+    workerProjections: new Map(),
+    projectSummaries: [],
     selectedWorkerId: null,
     syncStatus: {
       lastPollAt: null,
@@ -1741,6 +1784,31 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       }
     };
 
+    const pollProjectSummaries = async () => {
+      try {
+        const res = await fetch(`http://${host}:${port}/api/projects/summaries`, {
+          cache: 'no-store',
+          headers: apiKey ? { 'x-api-key': apiKey } : {},
+        });
+        if (!res.ok) {
+          markPollFailure(`/api/projects/summaries ${res.status}`);
+          return;
+        }
+        const data = await res.json() as { summaries?: ProjectTaskSummaryEntry[] };
+        setState((s) => ({
+          ...s,
+          projectSummaries: data.summaries ?? [],
+          syncStatus: {
+            ...s.syncStatus,
+            lastPollAt: Date.now(),
+            lastPollError: null,
+          },
+        }));
+      } catch (err) {
+        markPollFailure((err as Error).message);
+      }
+    };
+
     const pollWorkerTasks = async () => {
       try {
         const res = await fetch(`http://${host}:${port}/api/workers/tasks`, {
@@ -1802,8 +1870,16 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     pollGemini();
     pollUsage();
     pollCliSessions();
+    pollProjectSummaries();
     pollWorkerTasks();
-    const interval = setInterval(() => { pollWorkers(); pollGemini(); pollUsage(); pollCliSessions(); pollWorkerTasks(); }, 10_000);
+    const interval = setInterval(() => {
+      pollWorkers();
+      pollGemini();
+      pollUsage();
+      pollCliSessions();
+      pollProjectSummaries();
+      pollWorkerTasks();
+    }, 10_000);
     return () => {
       clearInterval(interval);
       pollWorkersRef.current = null;
@@ -2057,6 +2133,41 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     }
   }, [host, port, apiKey]);
 
+  const refreshWorkerProjection = useCallback(async (workerId: string, lines = 200): Promise<boolean> => {
+    if (!workerId) return false;
+    try {
+      const res = await fetch(
+        `http://${host}:${port}/api/workers/${encodeURIComponent(workerId)}/projection?lines=${Math.max(20, Math.floor(lines))}`,
+        {
+          cache: 'no-store',
+          headers: apiKey ? { 'x-api-key': apiKey } : {},
+        },
+      );
+      if (!res.ok) {
+        return false;
+      }
+      const data = await res.json() as { projection?: WorkerTerminalProjection };
+      if (!data.projection) return false;
+
+      setState((s) => {
+        const workerProjections = new Map(s.workerProjections);
+        workerProjections.set(workerId, data.projection!);
+        return {
+          ...s,
+          workerProjections,
+          syncStatus: {
+            ...s.syncStatus,
+            lastPollAt: Date.now(),
+            lastPollError: null,
+          },
+        };
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }, [host, port, apiKey]);
+
   const sendWorkerInput = useCallback(async (workerId: string, input: string): Promise<boolean> => {
     if (!workerId || !input) return false;
     try {
@@ -2112,11 +2223,14 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     deleteCliSession,
     sendWorkerInput,
     resizeWorkerTerminal,
+    refreshWorkerProjection,
     lastWorkerCompletion: state.lastWorkerCompletion,
     lastWorkerAssignment: state.lastWorkerAssignment,
     lastWorkerSummary: state.lastWorkerSummary,
     lastWorkerFailure: state.lastWorkerFailure,
     workerLogs: state.workerLogs,
+    workerProjections: state.workerProjections,
+    projectSummaries: state.projectSummaries,
     selectedWorkerId: state.selectedWorkerId,
     setSelectedWorkerId,
   };
