@@ -2,6 +2,15 @@
 
 Check and manage agent activation policy.
 
+## Scope Note
+
+`/agents` covers only custom subagents.
+
+- Shared workflow commands such as `/check`, `/cowork`, `/super`, `/docs`, `/design`
+  are sourced from `https://github.com/jobc90/claudex-power-commands`.
+- Codex should use the matching `codex-skills/` from the same upstream repository.
+- Those shared workflows are not managed through `/agents`.
+
 ## Usage
 
 ```

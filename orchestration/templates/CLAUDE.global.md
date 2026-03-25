@@ -158,3 +158,11 @@ Mistake: … | Root Cause: … | Rule: … | Scope: …
 - [ ] Completion based on facts, not speculation?
 
 The standard is not "do more." It is "finish accurately."
+
+## External Workflow Source
+
+- Shared workflow commands and skills are sourced from `https://github.com/jobc90/claudex-power-commands`.
+- Claude should use that repository's slash commands and rules for `/check`, `/cowork`, `/super`, `/docs`, `/design`.
+- Codex should use that repository's `codex-skills/` for `$check`, `$cowork`, `$super`, `$docs`, `$design`.
+- Do not recreate repo-local copies under `orchestration/skills/`.
+- Use `scripts/sync-claudex-power-commands.sh` from the Olympus repo to sync the current upstream versions into `~/.claude` and `${CODEX_HOME:-$HOME/.codex}`.

@@ -2,6 +2,9 @@
 
 ## 2026-03-25
 
+- [x] `orchestration/skills/`의 로컬 workflow skill 복사본을 제거하고 `https://github.com/jobc90/claudex-power-commands`를 Claude/Codex 공용 source of truth로 문서화
+- [x] `scripts/sync-claudex-power-commands.sh`를 추가해 `~/.claude`의 slash command/rules와 `${CODEX_HOME:-$HOME/.codex}`의 5개 핵심 skill을 외부 저장소 기준으로 동기화
+- [x] `orchestration/commands/team.md`, `orchestration/commands/agents.md`의 local skill 전제(`dogfood`, `agent-browser`, `frontend-ui-ux`, `~/.claude/skills`)를 제거하고 external workflow(`/check`, `/design`, `webapp-testing`, Playwright) 기준으로 정리
 - [x] `packages/codex/src/task-planner.ts`를 추가해 explicit project target 검증, multi-project decomposition, worker-name-first fallback 축소를 위한 planning 경계를 도입
 - [x] `packages/gateway/src/terminal-projection-service.ts`를 추가해 tmux/pty runtime snapshot, input lock, active terminal metadata를 공식 projection view 모델로 정리
 - [x] `packages/gateway/src/reporting/task-summary-service.ts`를 추가해 Task Authority 및 worker/runtime 상태를 project-centric summary로 집계

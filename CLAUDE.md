@@ -34,3 +34,11 @@ Before making architectural or workflow changes, read:
 - tmux is a required runtime dependency for worker session management and parallel visibility.
 - Native terminal interaction remains a first-class requirement through tmux attach flows.
 - Web console accuracy should be readable and useful, but does not need to be a perfect mirror.
+
+## Command And Skill Source Of Truth
+
+- Do not maintain repo-local workflow skills under `orchestration/skills/`.
+- For Claude slash commands, use `https://github.com/jobc90/claudex-power-commands` as the source of truth.
+- For Codex skills, use the same repository's `codex-skills/` as the source of truth.
+- Keep `/check`, `/cowork`, `/super`, `/docs`, `/design` aligned across Claude and Codex.
+- Use `scripts/sync-claudex-power-commands.sh` to sync the current upstream files into `~/.claude` and `${CODEX_HOME:-$HOME/.codex}`.
