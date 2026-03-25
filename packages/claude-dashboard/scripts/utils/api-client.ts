@@ -138,6 +138,9 @@ async function fetchFromApi(token: string, tokenHash: string): Promise<UsageLimi
     clearTimeout(timeout);
 
     if (!response.ok) {
+      // On 429 or other errors, try to return stale cache as fallback
+      const staleCache = await loadFileCache(tokenHash, CACHE_MAX_AGE_SECONDS);
+      if (staleCache) return staleCache;
       return null;
     }
 

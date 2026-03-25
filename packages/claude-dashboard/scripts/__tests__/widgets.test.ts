@@ -653,7 +653,7 @@ describe('widgets', () => {
       const result = codexUsageWidget.render(data, ctx);
 
       expect(result).toContain('🔷');
-      expect(result).toContain('gpt-5.2-codex');
+      expect(result).toContain('5.2-codex');
       expect(result).toContain('5h:');
       expect(result).toContain('25%');
       expect(result).toContain('7d:');
@@ -795,7 +795,7 @@ describe('widgets', () => {
       const result = geminiUsageWidget.render(data, ctx);
 
       expect(result).toContain('💎');
-      expect(result).toContain('gemini-2.5-pro');
+      expect(result).toContain('2.5-pro');
       expect(result).toContain('35%');
     });
 
@@ -824,7 +824,7 @@ describe('widgets', () => {
       const result = geminiUsageWidget.render(data, ctx);
 
       expect(result).toContain('💎');
-      expect(result).toContain('gemini-3-pro-preview');
+      expect(result).toContain('3-pro');
       expect(result).not.toContain('%');
     });
 

@@ -72,7 +72,9 @@ export const codexUsageWidget: Widget<CodexUsageData> = {
     const { translations: t } = ctx;
     const parts: string[] = [];
 
-    parts.push(`${colorize('🔷', COLORS.blue)} ${data.model}`);
+    // Shorten model name: "gpt-5.4" -> "5.4", "o3-pro" -> "o3-pro"
+    const shortModel = data.model.startsWith('gpt-') ? data.model.slice(4) : data.model;
+    parts.push(`${colorize('🔷', COLORS.blue)} ${shortModel}`);
 
     // Show error indicator or usage percentages
     if (data.isError) {

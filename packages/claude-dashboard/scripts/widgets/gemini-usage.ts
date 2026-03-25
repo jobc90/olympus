@@ -66,8 +66,12 @@ export const geminiUsageWidget: Widget<GeminiUsageData> = {
     const { translations: t } = ctx;
     const parts: string[] = [];
 
-    // Gemini icon (diamond) + model name
-    parts.push(`${colorize('💎', COLORS.cyan)} ${data.model}`);
+    // Gemini icon (diamond) + shortened model name
+    // "gemini-3.1-pro-preview" -> "3.1-pro", "gemini-2.5-flash" -> "2.5-flash"
+    const shortModel = data.model
+      .replace(/^gemini-/, '')
+      .replace(/-preview$/, '');
+    parts.push(`${colorize('💎', COLORS.cyan)} ${shortModel}`);
 
     // Show error indicator or usage percentage
     if (data.isError) {
