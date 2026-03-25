@@ -8,9 +8,44 @@ import type {
   CodexSearchResult,
 } from '@olympus-dev/protocol';
 import type { RpcRouter } from './rpc/handler.js';
-import type { LocalContextStoreManager } from '@olympus-dev/core';
+import type { LocalContextStoreManager, TaskAuthorityStore } from '@olympus-dev/core';
 import type { GeminiAdvisor } from './gemini-advisor.js';
 import type { WorkerRegistry } from './worker-registry.js';
+import type { ProjectRuntimeAdapter } from './project-runtime/project-runtime-adapter.js';
+import type { TaskSummaryService } from './reporting/task-summary-service.js';
+
+export interface CodexManualInputInterpretationPayload {
+  workerId: string;
+  workerName: string;
+  projectId: string;
+  projectPath: string;
+  prompt: string;
+  source: string;
+  timestamp: number;
+  classification: 'task_intervention' | 'new_task_candidate';
+  reason: string;
+  workerStatus?: 'idle' | 'busy' | 'offline';
+  currentTaskId?: string;
+  currentAuthorityTaskId?: string;
+  currentTaskPrompt?: string;
+  matchedSessionId?: string;
+}
+
+export interface CodexMentionDelegationResult {
+  httpStatus: number;
+  body:
+    | {
+        type: 'delegation';
+        taskId: string | null;
+        authorityTaskId: string;
+        response: string;
+      }
+    | {
+        type: 'chat' | 'error';
+        response?: string;
+        error?: string;
+      };
+}
 
 /**
  * CodexAdapter — Gateway ↔ Codex Orchestrator adapter
@@ -33,6 +68,9 @@ export class CodexAdapter {
   private localContextManager: LocalContextStoreManager | null;
   private geminiAdvisor: GeminiAdvisor | null;
   private workerRegistry: WorkerRegistry | null;
+  private projectRuntimeAdapter: Pick<ProjectRuntimeAdapter, 'dispatchTask'> | null;
+  private taskAuthorityStore: Pick<TaskAuthorityStore, 'listTasks'> | null;
+  private taskSummaryService: TaskSummaryService | null;
   private workspaceRoot: string;
 
   constructor(
@@ -45,6 +83,9 @@ export class CodexAdapter {
     this.localContextManager = localContextManager ?? null;
     this.geminiAdvisor = geminiAdvisor ?? null;
     this.workerRegistry = null;
+    this.projectRuntimeAdapter = null;
+    this.taskAuthorityStore = null;
+    this.taskSummaryService = null;
     this.workspaceRoot = process.cwd();
 
     // Codex events → Gateway broadcast
@@ -110,6 +151,18 @@ export class CodexAdapter {
     this.workerRegistry = registry;
   }
 
+  setProjectRuntimeAdapter(adapter: Pick<ProjectRuntimeAdapter, 'dispatchTask'>): void {
+    this.projectRuntimeAdapter = adapter;
+  }
+
+  setTaskReportingContext(
+    taskAuthorityStore: Pick<TaskAuthorityStore, 'listTasks'>,
+    taskSummaryService: TaskSummaryService,
+  ): void {
+    this.taskAuthorityStore = taskAuthorityStore;
+    this.taskSummaryService = taskSummaryService;
+  }
+
   /**
    * Set workspace root used for root-level context queries.
    */
@@ -142,6 +195,107 @@ export class CodexAdapter {
     };
   }
 
+  interpretManualInput(input: {
+    workerId: string;
+    workerName: string;
+    projectId: string;
+    projectPath: string;
+    prompt: string;
+    source: string;
+    timestamp: number;
+  }): CodexManualInputInterpretationPayload {
+    const worker = this.workerRegistry?.getAll().find(item => item.id === input.workerId);
+    const interpreted = this.codex.interpretManualInput({
+      ...input,
+      workerStatus: worker?.status ?? 'offline',
+      currentTaskId: worker?.currentTaskId,
+      currentAuthorityTaskId: worker?.currentAuthorityTaskId,
+      currentTaskPrompt: worker?.currentTaskPrompt,
+    });
+
+    this.broadcast('codex:manual-input-interpreted', interpreted);
+    return interpreted;
+  }
+
+  async tryDelegateMention(input: {
+    message: string;
+    source: string;
+    chatId?: number;
+  }): Promise<CodexMentionDelegationResult | null> {
+    const mentionMatch = input.message.match(/^@(\S+)\s+([\s\S]+)/);
+    if (!mentionMatch) return null;
+
+    if (!this.workerRegistry) {
+      return {
+        httpStatus: 503,
+        body: { type: 'error', error: 'Worker registry not available' },
+      };
+    }
+
+    const [, workerName, taskPrompt] = mentionMatch;
+    const worker = this.workerRegistry.getAll().find(item => item.name === workerName);
+
+    if (!worker) {
+      return {
+        httpStatus: 200,
+        body: {
+          type: 'error',
+          response: `❌ 워커 "${workerName}"을(를) 찾을 수 없습니다. /workers 명령으로 등록된 워커를 확인하세요.`,
+        },
+      };
+    }
+
+    if (worker.status === 'busy') {
+      return {
+        httpStatus: 200,
+        body: {
+          type: 'chat',
+          response: `⏳ ${worker.name}은(는) 현재 작업 중입니다. 잠시 후 다시 시도해 주세요.`,
+        },
+      };
+    }
+
+    if (worker.status === 'offline') {
+      return {
+        httpStatus: 200,
+        body: {
+          type: 'error',
+          response: `⚠️ ${worker.name}은(는) 현재 오프라인입니다. 워커를 재시작해 주세요.`,
+        },
+      };
+    }
+
+    if (!this.projectRuntimeAdapter) {
+      return {
+        httpStatus: 503,
+        body: { type: 'error', error: 'Project runtime adapter not available' },
+      };
+    }
+
+    const trimmedPrompt = taskPrompt.trim();
+    const dispatched = await this.projectRuntimeAdapter.dispatchTask({
+      projectId: this.resolveProjectIdForWorker(worker),
+      prompt: trimmedPrompt,
+      projectPath: worker.projectPath,
+      title: trimmedPrompt.slice(0, 120),
+      chatId: input.chatId,
+      source: input.source,
+      provider: 'claude',
+      dangerouslySkipPermissions: true,
+      preferredWorkerId: worker.id,
+    });
+
+    return {
+      httpStatus: 200,
+      body: {
+        type: 'delegation',
+        taskId: dispatched.workerTask?.taskId ?? null,
+        authorityTaskId: dispatched.task.id,
+        response: `✅ ${worker.name}에게 작업을 전달했습니다: "${trimmedPrompt.slice(0, 50)}..."`,
+      },
+    };
+  }
+
   /**
    * Get Codex status (sync — projectCount from cache or 0)
    */
@@ -157,7 +311,10 @@ export class CodexAdapter {
   /**
    * Get full Codex status with async project count + worker snapshot
    */
-  async getFullStatus(): Promise<CodexStatusPayload & { workers?: Array<{ id: string; name: string; status: string; projectPath: string }> }> {
+  async getFullStatus(): Promise<CodexStatusPayload & {
+    workers?: Array<{ id: string; name: string; status: string; projectPath: string }>;
+    projectSummaries?: Array<{ projectId: string; summary: string; counts: { blocked: number; failed: number; risky: number; completed: number; total: number } }>;
+  }> {
     const sessions = this.codex.getSessions();
     let projectCount = 0;
     try {
@@ -166,7 +323,10 @@ export class CodexAdapter {
       this.cachedProjectCount = projectCount;
     } catch { /* fallback to 0 */ }
 
-    const result: CodexStatusPayload & { workers?: Array<{ id: string; name: string; status: string; projectPath: string }> } = {
+    const result: CodexStatusPayload & {
+      workers?: Array<{ id: string; name: string; status: string; projectPath: string }>;
+      projectSummaries?: Array<{ projectId: string; summary: string; counts: { blocked: number; failed: number; risky: number; completed: number; total: number } }>;
+    } = {
       initialized: this.codex.initialized,
       sessionCount: sessions.length,
       projectCount,
@@ -181,10 +341,26 @@ export class CodexAdapter {
       }));
     }
 
+    if (this.taskAuthorityStore && this.taskSummaryService && this.workerRegistry) {
+      result.projectSummaries = this.taskSummaryService.buildProjectSummaries({
+        authorityTasks: this.taskAuthorityStore.listTasks(),
+        workerTaskRecords: this.workerRegistry.getAllTaskRecords(),
+      }).map((summary) => ({
+        projectId: summary.projectId,
+        summary: summary.summary,
+        counts: summary.counts,
+      }));
+    }
+
     return result;
   }
 
   private cachedProjectCount = 0;
+
+  private resolveProjectIdForWorker(worker: { name: string; projectPath: string }): string {
+    const segments = worker.projectPath.split(/[\\/]/).filter(Boolean);
+    return segments.at(-1) ?? worker.name;
+  }
 
   /**
    * Shutdown the underlying Codex Orchestrator and release resources.
@@ -281,6 +457,15 @@ export interface CodexOrchestratorLike {
       processedInput: string;
       confidence: number;
       reason: string;
+      planning?: {
+        kind: string;
+        targetSessionIds: string[];
+        targetProjectNames: string[];
+        processedInput: string;
+        manualPath: boolean;
+        confidence: number;
+        reason: string;
+      };
     };
     response?: {
       type: string;
@@ -309,4 +494,17 @@ export interface CodexOrchestratorLike {
     startedAt: number;
     status: 'running' | 'completed' | 'failed';
   }>;
+  interpretManualInput(input: {
+    workerId: string;
+    workerName: string;
+    projectId: string;
+    projectPath: string;
+    prompt: string;
+    source: string;
+    timestamp: number;
+    workerStatus?: 'idle' | 'busy' | 'offline';
+    currentTaskId?: string;
+    currentAuthorityTaskId?: string;
+    currentTaskPrompt?: string;
+  }): CodexManualInputInterpretationPayload;
 }

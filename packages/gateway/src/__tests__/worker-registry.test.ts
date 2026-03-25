@@ -28,11 +28,16 @@ describe('WorkerRegistry', () => {
 
   describe('register', () => {
     it('returns worker with id, name, projectPath, status=idle', () => {
-      const worker = registry.register({ projectPath: '/home/user/my-project', pid: 1234 });
+      const worker = registry.register({
+        projectPath: '/home/user/my-project',
+        pid: 1234,
+        runtimeKind: 'tmux',
+      });
       expect(worker.id).toBeDefined();
       expect(worker.name).toBe('my-project');
       expect(worker.projectPath).toBe('/home/user/my-project');
       expect(worker.pid).toBe(1234);
+      expect(worker.runtimeKind).toBe('tmux');
       expect(worker.status).toBe('idle');
       expect(worker.registeredAt).toBeGreaterThan(0);
       expect(worker.lastHeartbeat).toBeGreaterThan(0);
@@ -176,6 +181,15 @@ describe('WorkerRegistry', () => {
       expect(found).not.toBeNull();
       expect(found!.id).toBe(w2.id);
     });
+
+    it('lists workers by project id', () => {
+      const server = registry.register({ projectPath: '/workspace/server', pid: 1 });
+      registry.register({ projectPath: '/workspace/web', pid: 2 });
+
+      const workers = registry.listByProject('server');
+      expect(workers).toHaveLength(1);
+      expect(workers[0]?.id).toBe(server.id);
+    });
   });
 
   // ── markBusy / markIdle ──
@@ -203,16 +217,18 @@ describe('WorkerRegistry', () => {
   describe('createTask / completeTask', () => {
     it('creates task and marks worker busy', () => {
       const worker = registry.register({ projectPath: '/p', pid: 1 });
-      const task = registry.createTask(worker.id, 'fix bug');
+      const task = registry.createTask(worker.id, 'fix bug', undefined, 'authority-1');
 
       expect(task.taskId).toBeDefined();
       expect(task.workerId).toBe(worker.id);
       expect(task.workerName).toBe('p');
+      expect(task.authorityTaskId).toBe('authority-1');
       expect(task.prompt).toBe('fix bug');
       expect(task.status).toBe('running');
 
       const w = registry.getAll()[0];
       expect(w.status).toBe('busy');
+      expect(w.currentAuthorityTaskId).toBe('authority-1');
     });
 
     it('completes task and marks worker idle', () => {
@@ -238,6 +254,18 @@ describe('WorkerRegistry', () => {
 
       const completed = registry.getTask(task.taskId);
       expect(completed?.status).toBe('failed');
+    });
+
+    it('cancels task and marks worker idle', () => {
+      const worker = registry.register({ projectPath: '/p', pid: 1 });
+      const task = registry.createTask(worker.id, 'cancel me');
+
+      registry.cancelTask(task.taskId);
+
+      const cancelled = registry.getTask(task.taskId);
+      expect(cancelled?.status).toBe('cancelled');
+      expect(cancelled?.completedAt).toBeGreaterThan(0);
+      expect(registry.getAll()[0]?.status).toBe('idle');
     });
 
     it('self-heals stale busy state when current task is already completed', () => {

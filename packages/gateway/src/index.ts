@@ -1,4 +1,5 @@
 export { Gateway, type GatewayOptions } from './server.js';
+export { reconcileWorkerDiedPayload } from './server.js';
 export { RunManager, type RunOptions, type RunInstance, type RunManagerOptions } from './run-manager.js';
 export { SessionManager, type Session, type SessionManagerOptions, type SessionEvent } from './session-manager.js';
 export { createApiHandler, type ApiHandlerOptions } from './api.js';
@@ -33,6 +34,13 @@ export type { CodexOrchestratorLike } from './codex-adapter.js';
 export { runCli, buildCliArgs, parseClaudeJson, classifyError } from './cli-runner.js';
 export { CliSessionStore } from './cli-session-store.js';
 export { WorkerRegistry } from './worker-registry.js';
+export { WorkerRuntimeClient, resolveGatewayRuntimeSocketsRoot } from './worker-runtime-client.js';
+export { ProjectScheduler } from './project-runtime/project-scheduler.js';
+export { ProjectRuntimeAdapter } from './project-runtime/project-runtime-adapter.js';
+export type { ProjectRuntimeWorktreePort } from './project-runtime/project-runtime-adapter.js';
+export { ProjectRuntimeWorktreeManager } from './project-runtime/worktree-manager.js';
+export { TerminalProjectionService } from './terminal-projection-service.js';
+export { TaskSummaryService } from './reporting/task-summary-service.js';
 export { GeminiAdvisor } from './gemini-advisor.js';
 export { GeminiPty } from './gemini-pty.js';
 export {

@@ -1,15 +1,29 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { basename } from 'node:path';
 import { authMiddleware, loadConfig, validateApiKey } from './auth.js';
 import { handleCorsPrefllight, setCorsHeaders } from './cors.js';
 import type { RunManager, RunOptions } from './run-manager.js';
 import { SessionManager, type SessionEvent } from './session-manager.js';
-import { runParallel, GeminiExecutor, TaskStore, ContextStore, ContextService, type LocalContextStoreManager } from '@olympus-dev/core';
+import {
+  runParallel,
+  GeminiExecutor,
+  TaskStore,
+  ContextStore,
+  ContextService,
+  type LocalContextStoreManager,
+  type TaskAuthorityStore,
+} from '@olympus-dev/core';
 import type { CreateTaskInput, UpdateTaskInput, CreateContextInput, UpdateContextInput, ContextScope, CreateMergeInput, ReportUpstreamInput } from '@olympus-dev/protocol';
+import { supportsWorkerRuntimeControl } from '@olympus-dev/protocol';
 import type { CodexAdapter } from './codex-adapter.js';
 import type { GeminiAdvisor } from './gemini-advisor.js';
 import { filterForApi, filterForTelegram, filterStreamChunk } from './response-filter.js';
 import { extractContextWithLlm } from './llm-context-extractor.js';
+import { WorkerRuntimeClient } from './worker-runtime-client.js';
+import type { ProjectRuntimeAdapter } from './project-runtime/project-runtime-adapter.js';
+import { TerminalProjectionService } from './terminal-projection-service.js';
+import { TaskSummaryService } from './reporting/task-summary-service.js';
 
 /** Build worker status section for Codex system prompt (R1) */
 function buildWorkerStatusSection(
@@ -61,6 +75,7 @@ export interface ApiHandlerOptions {
   codexAdapter?: CodexAdapter;
   geminiAdvisor?: GeminiAdvisor;
   workerRegistry?: import('./worker-registry.js').WorkerRegistry;
+  projectRuntimeAdapter?: ProjectRuntimeAdapter;
   server?: import('./server.js').Gateway;
   onRunCreated?: () => void;  // Callback to broadcast runs:list
   onSessionEvent?: (sessionId: string, event: SessionEvent) => void;
@@ -70,6 +85,10 @@ export interface ApiHandlerOptions {
   onCliStream?: (chunk: import('@olympus-dev/protocol').CliStreamChunk) => void;
   onWorkerEvent?: (eventType: string, payload: unknown) => void;
   localContextManager?: LocalContextStoreManager;
+  taskAuthorityStore?: Pick<TaskAuthorityStore, 'getTask' | 'listTasks'>;
+  terminalProjectionService?: TerminalProjectionService;
+  taskSummaryService?: TaskSummaryService;
+  workerRuntimeClient?: Pick<WorkerRuntimeClient, 'captureSnapshot' | 'getState' | 'lockInput' | 'unlockInput' | 'resetSession' | 'sendInput'>;
   workspaceRoot?: string;
   teamOrchestrator?: import('./team-orchestrator.js').TeamOrchestrator;
 }
@@ -285,6 +304,21 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
     if (parts[2] && parts[3] === 'resize') {
       return { path: '/api/workers/:id/resize', id: parts[2], query };
     }
+    if (parts[2] && parts[3] === 'runtime' && parts[4] === 'snapshot') {
+      return { path: '/api/workers/:id/runtime/snapshot', id: parts[2], query };
+    }
+    if (parts[2] && parts[3] === 'runtime' && parts[4] === 'lock') {
+      return { path: '/api/workers/:id/runtime/lock', id: parts[2], query };
+    }
+    if (parts[2] && parts[3] === 'runtime' && parts[4] === 'unlock') {
+      return { path: '/api/workers/:id/runtime/unlock', id: parts[2], query };
+    }
+    if (parts[2] && parts[3] === 'runtime' && parts[4] === 'reset') {
+      return { path: '/api/workers/:id/runtime/reset', id: parts[2], query };
+    }
+    if (parts[2] && parts[3] === 'projection') {
+      return { path: '/api/workers/:id/projection', id: parts[2], query };
+    }
     // /api/workers/:id/task — assign task to worker
     if (parts[2] && parts[3] === 'task') {
       return { path: '/api/workers/:id/task', id: parts[2], query };
@@ -293,6 +327,30 @@ function parseRoute(url: string): { path: string; id?: string; query?: Record<st
       return { path: '/api/workers/:id', id: parts[2], query };
     }
     return { path: '/api/workers', query };
+  }
+
+  // /api/projects routes
+  if (parts[0] === 'api' && parts[1] === 'projects') {
+    if (parts[2] === 'summaries') {
+      return { path: '/api/projects/summaries', query };
+    }
+    if (parts[2] && parts[3] === 'tasks' && parts[4] && parts[5] === 'cancel') {
+      return {
+        path: '/api/projects/:id/tasks/:taskId/cancel',
+        id: parts[2],
+        query: { ...query, taskId: parts[4] },
+      };
+    }
+    if (parts[2] && parts[3] === 'tasks' && parts[4] && parts[5] === 'resume') {
+      return {
+        path: '/api/projects/:id/tasks/:taskId/resume',
+        id: parts[2],
+        query: { ...query, taskId: parts[4] },
+      };
+    }
+    if (parts[2] && parts[3] === 'tasks') {
+      return { path: '/api/projects/:id/tasks', id: parts[2], query };
+    }
   }
 
   // /api/local-context routes
@@ -366,6 +424,7 @@ export function createApiHandler(options: ApiHandlerOptions) {
     codexAdapter,
     geminiAdvisor,
     workerRegistry,
+    projectRuntimeAdapter,
     server,
     onRunCreated,
     onSessionEvent,
@@ -375,15 +434,73 @@ export function createApiHandler(options: ApiHandlerOptions) {
     onCliStream,
     onWorkerEvent,
     localContextManager,
+    taskAuthorityStore,
+    terminalProjectionService,
+    taskSummaryService,
     teamOrchestrator,
   } = options;
   const workspaceRoot = options.workspaceRoot ?? process.cwd();
+  const workerRuntimeClient = options.workerRuntimeClient ?? new WorkerRuntimeClient({
+    socketsRoot: process.env.OLYMPUS_RUNTIME_SOCKETS_ROOT,
+  });
+  const resolvedProjectionService = terminalProjectionService ?? new TerminalProjectionService();
+  const resolvedTaskSummaryService = taskSummaryService ?? new TaskSummaryService();
 
   // Terminal input buffer per worker — accumulates keystrokes, creates task on Enter (\r)
   const terminalInputBuffers = new Map<string, string>();
 
   // Async CLI task store (in-memory, 1-hour TTL)
   const asyncTasks = new Map<string, { status: 'running' | 'completed' | 'failed'; result?: import('@olympus-dev/protocol').CliRunResult; error?: string; startedAt: number }>();
+
+  const resolveProjectPath = (projectId: string, explicitProjectPath?: string): string | undefined => {
+    if (explicitProjectPath) return explicitProjectPath;
+    const worker = workerRegistry?.listByProject(projectId)[0];
+    return worker?.projectPath;
+  };
+
+  const resolveProjectIdForWorker = (worker: { name: string; projectPath: string }): string =>
+    basename(worker.projectPath) || worker.name;
+
+  const enrichProjectPrompt = async (projectPath: string | undefined, prompt: string): Promise<string> => {
+    let enrichedPrompt = prompt;
+
+    if (localContextManager && projectPath) {
+      try {
+        const store = await localContextManager.getProjectStore(projectPath);
+        const injection = store.buildContextInjection({ maxTokens: 2000 });
+        if (injection.projectSummary) {
+          enrichedPrompt = `## Project Context\n${injection.projectSummary}\n\n## Recent Activity\n${injection.recentActivity}\n\n---\n\n${enrichedPrompt}`;
+        }
+      } catch {
+        // ignore context injection failures
+      }
+    }
+
+    if (geminiAdvisor && projectPath) {
+      try {
+        const geminiContext = geminiAdvisor.buildProjectContext(projectPath, { maxLength: 2000 });
+        if (geminiContext) {
+          enrichedPrompt = `## Project Analysis (Gemini)\n${geminiContext}\n\n${enrichedPrompt}`;
+        }
+      } catch {
+        // Gemini context is optional
+      }
+    }
+
+    return enrichedPrompt;
+  };
+
+  const maybeDispatchNextQueuedTask = async (projectId: string | null | undefined, workerId: string): Promise<void> => {
+    if (!projectRuntimeAdapter || !projectId) return;
+    try {
+      await projectRuntimeAdapter.dispatchNextQueuedTask({
+        projectId,
+        workerId,
+      });
+    } catch (error) {
+      console.warn('[project-runtime] queued auto-dispatch failed:', (error as Error).message);
+    }
+  };
 
   const emitDashboardChatMirror = (
     agent: 'codex' | 'gemini',
@@ -519,7 +636,15 @@ ${body.message}`;
           sendJson(res, 503, { error: 'Worker registry not available' });
           return;
         }
-        const body = await parseBody<{ name?: string; projectPath: string; pid: number }>(req);
+        const body = await parseBody<{
+          name?: string;
+          projectPath: string;
+          pid: number;
+          runtimeKind?: 'tmux' | 'pty';
+          roleTags?: string[];
+          skills?: string[];
+          isEphemeral?: boolean;
+        }>(req);
         if (!body.projectPath || !body.pid) {
           sendJson(res, 400, { error: 'projectPath and pid required' });
           return;
@@ -544,6 +669,49 @@ ${body.message}`;
       if (path === '/api/workers' && method === 'GET') {
         const workers = workerRegistry?.getAll() ?? [];
         sendJson(res, 200, { workers });
+        return;
+      }
+
+      // GET /api/workers/:id/projection — authoritative-ish terminal projection view
+      if (path === '/api/workers/:id/projection' && method === 'GET' && id) {
+        if (!workerRegistry) {
+          sendJson(res, 503, { error: 'Worker registry not available' });
+          return;
+        }
+        if (!taskAuthorityStore) {
+          sendJson(res, 503, { error: 'Task authority store not available' });
+          return;
+        }
+
+        const worker = workerRegistry.getAll().find((candidate) => candidate.id === id);
+        if (!worker) {
+          sendJson(res, 404, { error: 'Worker not found' });
+          return;
+        }
+
+        const requestedLines = Number.parseInt(query?.lines ?? '200', 10);
+        const lines = Number.isFinite(requestedLines)
+          ? Math.min(Math.max(requestedLines, 20), 1000)
+          : 200;
+
+        const runtimeState = supportsWorkerRuntimeControl(worker)
+          ? await workerRuntimeClient.getState(worker).catch(() => null)
+          : null;
+        const snapshot = supportsWorkerRuntimeControl(worker)
+          ? await workerRuntimeClient.captureSnapshot(worker, lines).catch(() => null)
+          : null;
+        const activeTask = worker.currentAuthorityTaskId
+          ? taskAuthorityStore.getTask(worker.currentAuthorityTaskId)
+          : null;
+
+        const projection = resolvedProjectionService.project({
+          worker,
+          runtimeState,
+          snapshot,
+          activeTask,
+        });
+
+        sendJson(res, 200, { projection });
         return;
       }
 
@@ -604,17 +772,26 @@ ${body.message}`;
           return;
         }
 
-        // Always forward raw input to PTY
-        onWorkerEvent?.('worker:input', {
-          workerId: worker.id,
-          workerName: worker.name,
-          input,
-          timestamp: Date.now(),
-        });
-
-        // Buffer input to detect Enter (\r or \n) — then create a task for tracking
+        // Buffer input to detect Enter (\r or \n) — then emit a manual input event for Codex interpretation
         const isCtrlChar = input.length === 1 && input.charCodeAt(0) < 32
           && input !== '\r' && input !== '\n';
+
+        const runtimeSocketCapable = supportsWorkerRuntimeControl(worker) && !isCtrlChar;
+
+        if (runtimeSocketCapable) {
+          const submit = input.includes('\r') || input.includes('\n');
+          const printableInput = submit ? input.replace(/[\r\n]+$/, '') : input;
+          await workerRuntimeClient.sendInput(worker, printableInput, submit, 'dashboard');
+        } else {
+          // Always forward raw input to PTY / fallback WS path
+          onWorkerEvent?.('worker:input', {
+            workerId: worker.id,
+            workerName: worker.name,
+            input,
+            timestamp: Date.now(),
+          });
+        }
+
         if (isCtrlChar) {
           // Control characters (Ctrl+C etc.) — clear buffer, don't create task
           terminalInputBuffers.delete(worker.id);
@@ -623,20 +800,26 @@ ${body.message}`;
           const fullInput = prev + input.replace(/[\r\n]+$/, '');
           terminalInputBuffers.delete(worker.id);
 
-          // Only create task if there's meaningful text (not just Enter)
+          // Record meaningful terminal input as an official event; task promotion is handled later by Codex.
           const prompt = fullInput.trim();
-          if (prompt.length >= 2 && worker.status !== 'busy') {
-            const task = workerRegistry.createTask(worker.id, prompt);
-            onWorkerEvent?.('worker:task:assigned', {
-              taskId: task.taskId,
+          if (prompt.length >= 2) {
+            const manualInputEvent = {
               workerId: worker.id,
               workerName: worker.name,
               prompt,
-              provider: 'claude',
-              dangerouslySkipPermissions: true,
+              projectId: basename(worker.projectPath) || worker.name,
               projectPath: worker.projectPath,
-              source: 'terminal',
-            });
+              source: 'dashboard',
+              timestamp: Date.now(),
+            };
+            onWorkerEvent?.('worker:input:submitted', manualInputEvent);
+            if (codexAdapter) {
+              try {
+                codexAdapter.interpretManualInput(manualInputEvent);
+              } catch (error) {
+                console.warn('[worker:input:submitted] codex interpretation failed:', (error as Error).message);
+              }
+            }
           }
         } else {
           // Accumulate printable characters
@@ -644,7 +827,11 @@ ${body.message}`;
           terminalInputBuffers.set(worker.id, prev + input);
         }
 
-        sendJson(res, 200, { ok: true });
+        sendJson(res, 200, {
+          ok: true,
+          deliveredVia: runtimeSocketCapable ? 'runtime-socket' : 'worker-event',
+          trackedAs: !isCtrlChar && (input.includes('\r') || input.includes('\n')) ? 'manual-input-event' : 'raw-input',
+        });
         return;
       }
 
@@ -684,6 +871,90 @@ ${body.message}`;
         return;
       }
 
+      // POST /api/workers/:id/runtime/snapshot — runtime snapshot relay
+      if (path === '/api/workers/:id/runtime/snapshot' && method === 'POST' && id) {
+        if (!workerRegistry) {
+          sendJson(res, 503, { error: 'Worker registry not available' });
+          return;
+        }
+        const worker = workerRegistry.getAll().find(w => w.id === id);
+        if (!worker) {
+          sendJson(res, 404, { error: 'Worker not found' });
+          return;
+        }
+        if (!supportsWorkerRuntimeControl(worker)) {
+          sendJson(res, 409, { error: 'Worker does not support runtime snapshot control' });
+          return;
+        }
+        const body = await parseBody<{ lines?: number }>(req);
+        const snapshot = await workerRuntimeClient.captureSnapshot(worker, body.lines ?? 200);
+        sendJson(res, 200, { ok: true, snapshot });
+        return;
+      }
+
+      // POST /api/workers/:id/runtime/lock
+      if (path === '/api/workers/:id/runtime/lock' && method === 'POST' && id) {
+        if (!workerRegistry) {
+          sendJson(res, 503, { error: 'Worker registry not available' });
+          return;
+        }
+        const worker = workerRegistry.getAll().find(w => w.id === id);
+        if (!worker) {
+          sendJson(res, 404, { error: 'Worker not found' });
+          return;
+        }
+        if (!supportsWorkerRuntimeControl(worker)) {
+          sendJson(res, 409, { error: 'Worker does not support runtime input locking' });
+          return;
+        }
+        const body = await parseBody<{ reason?: string }>(req);
+        const state = await workerRuntimeClient.lockInput(worker, body.reason ?? 'manual lock');
+        sendJson(res, 200, { ok: true, state });
+        return;
+      }
+
+      // POST /api/workers/:id/runtime/unlock
+      if (path === '/api/workers/:id/runtime/unlock' && method === 'POST' && id) {
+        if (!workerRegistry) {
+          sendJson(res, 503, { error: 'Worker registry not available' });
+          return;
+        }
+        const worker = workerRegistry.getAll().find(w => w.id === id);
+        if (!worker) {
+          sendJson(res, 404, { error: 'Worker not found' });
+          return;
+        }
+        if (!supportsWorkerRuntimeControl(worker)) {
+          sendJson(res, 409, { error: 'Worker does not support runtime input locking' });
+          return;
+        }
+        const body = await parseBody<{ reason?: string }>(req);
+        const state = await workerRuntimeClient.unlockInput(worker, body.reason);
+        sendJson(res, 200, { ok: true, state });
+        return;
+      }
+
+      // POST /api/workers/:id/runtime/reset
+      if (path === '/api/workers/:id/runtime/reset' && method === 'POST' && id) {
+        if (!workerRegistry) {
+          sendJson(res, 503, { error: 'Worker registry not available' });
+          return;
+        }
+        const worker = workerRegistry.getAll().find(w => w.id === id);
+        if (!worker) {
+          sendJson(res, 404, { error: 'Worker not found' });
+          return;
+        }
+        if (!supportsWorkerRuntimeControl(worker)) {
+          sendJson(res, 409, { error: 'Worker does not support runtime reset control' });
+          return;
+        }
+        const body = await parseBody<{ reason?: string }>(req);
+        const result = await workerRuntimeClient.resetSession(worker, body.reason);
+        sendJson(res, 200, { ok: true, result });
+        return;
+      }
+
       // POST /api/workers/:id/task — Assign task to worker (worker executes CLI directly)
       if (path === '/api/workers/:id/task' && method === 'POST' && id) {
         if (!workerRegistry) {
@@ -708,43 +979,32 @@ ${body.message}`;
         }
 
         // Inject project context
-        let enrichedPrompt = body.prompt;
-        if (localContextManager && worker.projectPath) {
-          try {
-            const store = await localContextManager.getProjectStore(worker.projectPath);
-            const injection = store.buildContextInjection({ maxTokens: 2000 });
-            if (injection.projectSummary) {
-              enrichedPrompt = `## Project Context\n${injection.projectSummary}\n\n## Recent Activity\n${injection.recentActivity}\n\n---\n\n${body.prompt}`;
-            }
-          } catch { /* injection failed — use original prompt */ }
+        const enrichedPrompt = await enrichProjectPrompt(worker.projectPath, body.prompt);
+
+        if (!projectRuntimeAdapter) {
+          sendJson(res, 503, { error: 'Project runtime adapter not available' });
+          return;
         }
 
-        // Inject Gemini Advisor project analysis
-        if (geminiAdvisor && worker.projectPath) {
-          try {
-            const geminiContext = geminiAdvisor.buildProjectContext(worker.projectPath, { maxLength: 2000 });
-            if (geminiContext) {
-              enrichedPrompt = `## Project Analysis (Gemini)\n${geminiContext}\n\n${enrichedPrompt}`;
-            }
-          } catch { /* Gemini not available */ }
-        }
-
-        // 1. Create task in WorkerRegistry (worker → busy)
-        const task = workerRegistry.createTask(worker.id, enrichedPrompt, body.chatId);
-
-        // 2. Broadcast worker:task:assigned → Worker receives and executes CLI directly
-        onWorkerEvent?.('worker:task:assigned', {
-          taskId: task.taskId,
-          workerId: worker.id,
-          workerName: worker.name,
-          prompt: body.prompt,
-          provider: body.provider ?? 'claude',
-          dangerouslySkipPermissions: body.dangerouslySkipPermissions ?? true,
+        const dispatched = await projectRuntimeAdapter.dispatchTask({
+          projectId: resolveProjectIdForWorker(worker),
+          prompt: enrichedPrompt,
           projectPath: worker.projectPath,
+          title: body.prompt.slice(0, 120),
+          chatId: body.chatId,
           source: body.source,
+          provider: body.provider,
+          dangerouslySkipPermissions: body.dangerouslySkipPermissions,
+          preferredWorkerId: worker.id,
         });
 
-        sendJson(res, 202, { taskId: task.taskId, status: 'running', workerName: worker.name });
+        sendJson(res, 202, {
+          taskId: dispatched.workerTask?.taskId ?? null,
+          authorityTaskId: dispatched.task.id,
+          status: dispatched.task.status,
+          workerName: worker.name,
+          disposition: dispatched.disposition,
+        });
 
         // Fire-and-forget pre-review
         if (geminiAdvisor && worker.projectPath) {
@@ -753,9 +1013,179 @@ ${body.message}`;
             workerName: worker.name,
             projectPath: worker.projectPath,
           }).then(review => {
-            if (review) onWorkerEvent?.('gemini:pre-review', { taskId: task.taskId, review });
+            if (review) onWorkerEvent?.('gemini:pre-review', {
+              taskId: dispatched.workerTask?.taskId ?? null,
+              authorityTaskId: dispatched.task.id,
+              review,
+            });
           }).catch(() => {});
         }
+        return;
+      }
+
+      // POST /api/projects/:id/tasks — project-scoped dispatch via ProjectRuntimeAdapter
+      if (path === '/api/projects/summaries' && method === 'GET') {
+        if (!taskAuthorityStore || !workerRegistry) {
+          sendJson(res, 503, { error: 'Project summary services not available' });
+          return;
+        }
+
+        const projectId = typeof query?.projectId === 'string' && query.projectId.trim()
+          ? query.projectId.trim()
+          : undefined;
+        const authorityTasks = taskAuthorityStore.listTasks(projectId);
+        const workerTaskRecords = workerRegistry.getAllTaskRecords();
+        const summaries = resolvedTaskSummaryService.buildProjectSummaries({
+          authorityTasks,
+          workerTaskRecords,
+        });
+
+        sendJson(res, 200, {
+          summaries,
+          generatedAt: Date.now(),
+        });
+        return;
+      }
+
+      // POST /api/projects/:id/tasks — project-scoped dispatch via ProjectRuntimeAdapter
+      if (path === '/api/projects/:id/tasks' && method === 'POST' && id) {
+        if (!projectRuntimeAdapter) {
+          sendJson(res, 503, { error: 'Project runtime adapter not available' });
+          return;
+        }
+
+        const body = await parseBody<{
+          prompt: string;
+          title?: string;
+          displayLabel?: string;
+          priority?: number;
+          metadata?: Record<string, unknown>;
+          chatId?: number;
+          source?: string;
+          provider?: string;
+          dangerouslySkipPermissions?: boolean;
+          projectPath?: string;
+          preferredWorkerId?: string | null;
+          requiredRoleTags?: string[];
+          requiredSkills?: string[];
+          preemptRunningWorker?: boolean;
+          allowEphemeralWorkspace?: boolean;
+        }>(req);
+
+        if (!body.prompt) {
+          sendJson(res, 400, { error: 'prompt is required' });
+          return;
+        }
+
+        const projectPath = resolveProjectPath(id, body.projectPath);
+        const enrichedPrompt = await enrichProjectPrompt(projectPath, body.prompt);
+        const dispatched = await projectRuntimeAdapter.dispatchTask({
+          projectId: id,
+          prompt: enrichedPrompt,
+          projectPath,
+          displayLabel: body.displayLabel,
+          title: body.title,
+          priority: body.priority,
+          metadata: body.metadata ?? null,
+          chatId: body.chatId,
+          source: body.source,
+          provider: body.provider,
+          dangerouslySkipPermissions: body.dangerouslySkipPermissions,
+          preferredWorkerId: body.preferredWorkerId,
+          requiredRoleTags: body.requiredRoleTags,
+          requiredSkills: body.requiredSkills,
+          preemptRunningWorker: body.preemptRunningWorker,
+          allowEphemeralWorkspace: body.allowEphemeralWorkspace,
+        });
+
+        sendJson(res, 202, {
+          projectId: id,
+          authorityTaskId: dispatched.task.id,
+          workerTaskId: dispatched.workerTask?.taskId ?? null,
+          disposition: dispatched.disposition,
+          status: dispatched.task.status,
+          workerId: dispatched.worker?.id ?? null,
+          workerName: dispatched.worker?.name ?? null,
+          ephemeralWorkspace: dispatched.ephemeralWorkspace,
+        });
+        return;
+      }
+
+      // POST /api/projects/:id/tasks/:taskId/resume — resume a blocked authority task
+      if (path === '/api/projects/:id/tasks/:taskId/resume' && method === 'POST' && id) {
+        if (!projectRuntimeAdapter) {
+          sendJson(res, 503, { error: 'Project runtime adapter not available' });
+          return;
+        }
+
+        const taskId = query?.taskId;
+        if (!taskId) {
+          sendJson(res, 400, { error: 'taskId is required' });
+          return;
+        }
+
+        const body = await parseBody<{
+          projectPath?: string;
+          preferredWorkerId?: string | null;
+          requiredRoleTags?: string[];
+          requiredSkills?: string[];
+          chatId?: number;
+          source?: string;
+          provider?: string;
+          dangerouslySkipPermissions?: boolean;
+        }>(req);
+
+        const resumed = await projectRuntimeAdapter.resumeBlockedTask({
+          taskId,
+          projectId: id,
+          projectPath: resolveProjectPath(id, body.projectPath),
+          preferredWorkerId: body.preferredWorkerId,
+          requiredRoleTags: body.requiredRoleTags,
+          requiredSkills: body.requiredSkills,
+          chatId: body.chatId,
+          source: body.source,
+          provider: body.provider,
+          dangerouslySkipPermissions: body.dangerouslySkipPermissions,
+        });
+
+        sendJson(res, 202, {
+          taskId: resumed.workerTask?.taskId ?? null,
+          authorityTaskId: resumed.task.id,
+          disposition: resumed.disposition,
+          status: resumed.task.status,
+          workerName: resumed.worker?.name ?? null,
+        });
+        return;
+      }
+
+      // POST /api/projects/:id/tasks/:taskId/cancel — cancel an authority task
+      if (path === '/api/projects/:id/tasks/:taskId/cancel' && method === 'POST' && id) {
+        if (!projectRuntimeAdapter) {
+          sendJson(res, 503, { error: 'Project runtime adapter not available' });
+          return;
+        }
+
+        const taskId = query?.taskId;
+        if (!taskId) {
+          sendJson(res, 400, { error: 'taskId is required' });
+          return;
+        }
+
+        const body = await parseBody<{ reason?: string }>(req);
+        const cancelled = await projectRuntimeAdapter.cancelTask({
+          taskId,
+          projectId: id,
+          reason: body.reason,
+        });
+
+        sendJson(res, 202, {
+          authorityTaskId: cancelled.task.id,
+          status: cancelled.task.status,
+          workerName: cancelled.worker?.name ?? null,
+          taskId: cancelled.workerTask?.taskId ?? null,
+          workerTaskStatus: cancelled.workerTask?.status ?? null,
+          runtimeResetRequested: cancelled.runtimeResetRequested,
+        });
         return;
       }
 
@@ -836,6 +1266,15 @@ ${body.message}`;
         if (body.isFinalAfterTimeout) {
           // Final completion after timeout
           workerRegistry.completeTask(id, result);
+          const finalized = projectRuntimeAdapter?.finalizeWorkerTask({
+            workerTaskId: id,
+            success: body.success,
+          });
+          const finalizedWorker = workerRegistry?.getAll().find((candidate) => candidate.id === task.workerId);
+          await maybeDispatchNextQueuedTask(
+            finalized?.task?.projectId ?? (finalizedWorker ? resolveProjectIdForWorker(finalizedWorker) : null),
+            task.workerId,
+          );
           onCliComplete?.(result);
 
           const filteredFinal = filterForTelegram(result.text ?? '');
@@ -938,6 +1377,15 @@ ${body.message}`;
 
         // ── Normal completion ──
         workerRegistry.completeTask(id, result);
+        const finalized = projectRuntimeAdapter?.finalizeWorkerTask({
+          workerTaskId: id,
+          success: body.success,
+        });
+        const finalizedWorker = workerRegistry?.getAll().find((candidate) => candidate.id === task.workerId);
+        await maybeDispatchNextQueuedTask(
+          finalized?.task?.projectId ?? (finalizedWorker ? resolveProjectIdForWorker(finalizedWorker) : null),
+          task.workerId,
+        );
         onCliComplete?.(result);
 
         const filteredResult = filterForTelegram(result.text ?? '');
@@ -1248,65 +1696,23 @@ ${workers.length > 0 ? '- Worker list:\n' + workerListStr : ''}${workerRegistry 
           finalSystemPrompt = finalSystemPrompt.replace(fullSection, statusOnlySection);
         }
 
-        // @mention detection → worker delegation
-        const mentionMatch = body.message.match(/^@(\S+)\s+([\s\S]+)/);
-        if (mentionMatch && workerRegistry) {
-          const [, workerName, taskPrompt] = mentionMatch;
-          const worker = workers.find(w => w.name === workerName);
-
-          if (worker && worker.status === 'idle') {
-            // Assign task to worker
-            const task = workerRegistry.createTask(worker.id, taskPrompt.trim(), body.chatId);
-            onWorkerEvent?.('worker:task:assigned', {
-              taskId: task.taskId,
-              workerId: worker.id,
-              workerName: worker.name,
-              prompt: taskPrompt.trim(),
-              provider: 'claude',
-              dangerouslySkipPermissions: true,
-              projectPath: worker.projectPath,
-              chatId: body.chatId,
-            });
-
-            sendJson(res, 200, {
-              type: 'delegation',
-              taskId: task.taskId,
-              response: `✅ ${worker.name}에게 작업을 전달했습니다: "${taskPrompt.trim().slice(0, 50)}..."`,
-            });
-            // delegation completion is already delivered via worker events
-            return;
-          } else if (worker && worker.status === 'busy') {
-            const response = `⏳ ${worker.name}은(는) 현재 작업 중입니다. 잠시 후 다시 시도해 주세요.`;
-            sendJson(res, 200, {
-              type: 'chat',
-              response,
-            });
-            if (source === 'dashboard') {
-              emitDashboardChatMirror('codex', body.message, response, body.chatId);
-            }
-            return;
-          } else if (worker && worker.status === 'offline') {
-            const response = `⚠️ ${worker.name}은(는) 현재 오프라인입니다. 워커를 재시작해 주세요.`;
-            sendJson(res, 200, {
-              type: 'error',
-              response,
-            });
-            if (source === 'dashboard') {
-              emitDashboardChatMirror('codex', body.message, response, body.chatId);
-            }
-            return;
-          } else {
-            // R6: worker not found
-            const response = `❌ 워커 "${workerName}"을(를) 찾을 수 없습니다. /workers 명령으로 등록된 워커를 확인하세요.`;
-            sendJson(res, 200, {
-              type: 'error',
-              response,
-            });
-            if (source === 'dashboard') {
-              emitDashboardChatMirror('codex', body.message, response, body.chatId);
-            }
-            return;
+        const delegation = await codexAdapter?.tryDelegateMention({
+          message: body.message,
+          source,
+          chatId: body.chatId,
+        });
+        if (delegation) {
+          sendJson(res, delegation.httpStatus, delegation.body);
+          if (source === 'dashboard' && 'response' in delegation.body && delegation.body.response) {
+            emitDashboardChatMirror('codex', body.message, delegation.body.response, body.chatId);
           }
+          return;
+        }
+
+        const mentionMatch = body.message.match(/^@(\S+)\s+([\s\S]+)/);
+        if (mentionMatch) {
+          sendJson(res, 503, { error: 'Codex adapter mention delegation not available' });
+          return;
         }
 
         try {

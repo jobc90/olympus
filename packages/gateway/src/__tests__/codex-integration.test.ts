@@ -65,6 +65,11 @@ function createFullOrchestrator(): CodexOrchestratorLike & {
     trackTask: vi.fn(),
     completeTask: vi.fn(),
     getActiveTasks: vi.fn(() => []),
+    interpretManualInput: vi.fn((input) => ({
+      ...input,
+      classification: 'new_task_candidate',
+      reason: 'no active task context',
+    })),
   };
 }
 

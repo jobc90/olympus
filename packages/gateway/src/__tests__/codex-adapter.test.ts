@@ -45,6 +45,11 @@ function createMockOrchestrator(): CodexOrchestratorLike {
     trackTask: vi.fn(),
     completeTask: vi.fn(),
     getActiveTasks: vi.fn(() => []),
+    interpretManualInput: vi.fn((input) => ({
+      ...input,
+      classification: 'new_task_candidate',
+      reason: 'no active task context',
+    })),
   } as CodexOrchestratorLike & { emit: (...args: unknown[]) => void };
 }
 
@@ -104,6 +109,37 @@ describe('CodexAdapter', () => {
       expect(result.requestId).toHaveLength(12);
     });
 
+    it('should preserve planner metadata from the orchestrator decision', async () => {
+      (mockOrchestrator.processInput as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        decision: {
+          type: 'MULTI_SESSION',
+          targetSessions: ['sess-1', 'sess-2'],
+          processedInput: '상태 확인',
+          confidence: 0.9,
+          reason: 'planner decision',
+          planning: {
+            kind: 'multi_project',
+            targetSessionIds: ['sess-1', 'sess-2'],
+            targetProjectNames: ['console', 'user-next'],
+            processedInput: '상태 확인',
+            manualPath: false,
+            confidence: 0.9,
+            reason: 'multiple explicit project targets detected',
+          },
+        },
+      });
+
+      const result = await adapter.handleInput({
+        text: '@console @user-next 상태 확인',
+        source: 'dashboard',
+      });
+
+      expect(result.decision.planning).toMatchObject({
+        kind: 'multi_project',
+        targetSessionIds: ['sess-1', 'sess-2'],
+      });
+    });
+
     it('should forward source correctly', async () => {
       await adapter.handleInput({
         text: 'test',
@@ -130,11 +166,170 @@ describe('CodexAdapter', () => {
     });
   });
 
+  describe('interpretManualInput', () => {
+    it('should broadcast Codex manual input interpretation using worker context', async () => {
+      const { WorkerRegistry } = await import('../worker-registry.js');
+      const registry = new WorkerRegistry();
+      const worker = registry.register({
+        name: 'server-worker',
+        projectPath: '/workspace/server',
+        pid: 101,
+        runtimeKind: 'tmux',
+      });
+      registry.markBusy(worker.id, 'worker-task-1', '로그인 API 수정', 'authority-task-1');
+      adapter.setWorkerRegistry(registry);
+
+      const result = await adapter.interpretManualInput({
+        workerId: worker.id,
+        workerName: worker.name,
+        projectId: 'server',
+        projectPath: worker.projectPath,
+        prompt: '이 경고 무시하고 계속 진행해',
+        source: 'dashboard',
+        timestamp: 1_717_000_000_000,
+      });
+
+      expect(mockOrchestrator.interpretManualInput).toHaveBeenCalledWith({
+        workerId: worker.id,
+        workerName: worker.name,
+        projectId: 'server',
+        projectPath: worker.projectPath,
+        prompt: '이 경고 무시하고 계속 진행해',
+        source: 'dashboard',
+        timestamp: 1_717_000_000_000,
+        workerStatus: 'busy',
+        currentTaskId: 'worker-task-1',
+        currentAuthorityTaskId: 'authority-task-1',
+        currentTaskPrompt: '로그인 API 수정',
+      });
+      expect(result).toMatchObject({
+        classification: 'new_task_candidate',
+        workerId: worker.id,
+      });
+      expect(broadcastSpy).toHaveBeenCalledWith('codex:manual-input-interpreted', expect.objectContaining({
+        workerId: worker.id,
+        classification: 'new_task_candidate',
+      }));
+    });
+  });
+
+  describe('tryDelegateMention', () => {
+    it('should delegate @mention through ProjectRuntimeAdapter', async () => {
+      const { WorkerRegistry } = await import('../worker-registry.js');
+      const registry = new WorkerRegistry();
+      const worker = registry.register({
+        name: 'server-worker',
+        projectPath: '/workspace/server',
+        pid: 101,
+        runtimeKind: 'tmux',
+      });
+      const dispatchTask = vi.fn(async () => ({
+        disposition: 'assigned' as const,
+        task: { id: 'authority-1', status: 'in_progress' },
+        worker,
+        workerTask: { taskId: 'worker-task-1' },
+        ephemeralWorkspace: null,
+      }));
+
+      adapter.setWorkerRegistry(registry);
+      adapter.setProjectRuntimeAdapter({ dispatchTask } as never);
+
+      const result = await adapter.tryDelegateMention({
+        message: '@server-worker 로그인 API 수정해',
+        source: 'dashboard',
+        chatId: 7,
+      });
+
+      expect(dispatchTask).toHaveBeenCalledWith(expect.objectContaining({
+        projectId: 'server',
+        preferredWorkerId: worker.id,
+        provider: 'claude',
+      }));
+      expect(result).toMatchObject({
+        httpStatus: 200,
+        body: {
+          type: 'delegation',
+          authorityTaskId: 'authority-1',
+          taskId: 'worker-task-1',
+        },
+      });
+    });
+
+    it('should return busy chat response when mentioned worker is busy', async () => {
+      const { WorkerRegistry } = await import('../worker-registry.js');
+      const registry = new WorkerRegistry();
+      const worker = registry.register({
+        name: 'server-worker',
+        projectPath: '/workspace/server',
+        pid: 101,
+        runtimeKind: 'tmux',
+      });
+      registry.markBusy(worker.id, 'task-1', 'existing task', 'authority-1');
+      adapter.setWorkerRegistry(registry);
+
+      const result = await adapter.tryDelegateMention({
+        message: '@server-worker 로그인 API 수정해',
+        source: 'dashboard',
+      });
+
+      expect(result).toMatchObject({
+        httpStatus: 200,
+        body: {
+          type: 'chat',
+          response: expect.stringContaining('현재 작업 중입니다'),
+        },
+      });
+    });
+  });
+
   describe('getStatus', () => {
     it('should return status', () => {
       const status = adapter.getStatus();
       expect(status.initialized).toBe(true);
       expect(status.sessionCount).toBe(1);
+    });
+
+    it('should include project summaries in full status when reporting context is available', async () => {
+      const { WorkerRegistry } = await import('../worker-registry.js');
+      const { TaskSummaryService } = await import('../reporting/task-summary-service.js');
+      const registry = new WorkerRegistry();
+      registry.register({
+        name: 'server-default',
+        projectPath: '/workspace/server',
+        pid: 101,
+        runtimeKind: 'tmux',
+      });
+
+      adapter.setWorkerRegistry(registry);
+      adapter.setTaskReportingContext(
+        {
+          listTasks: () => [
+            {
+              id: 'authority-1',
+              displayLabel: 'server-risk',
+              title: 'Fix deploy',
+              kind: 'project',
+              status: 'blocked',
+              projectId: 'server',
+              parentTaskId: null,
+              assignedWorkerId: null,
+              priority: 1,
+              metadata: null,
+              createdAt: 1,
+              updatedAt: 1,
+            },
+          ],
+        } as never,
+        new TaskSummaryService(),
+      );
+
+      const status = await adapter.getFullStatus();
+      expect(status.projectSummaries).toEqual([
+        expect.objectContaining({
+          projectId: 'server',
+          summary: 'Blocked: Fix deploy',
+        }),
+      ]);
     });
   });
 

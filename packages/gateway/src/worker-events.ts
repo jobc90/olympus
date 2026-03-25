@@ -104,6 +104,38 @@ export function deriveWorkerEvents(eventType: string, payload: unknown, now = Da
     ];
   }
 
+  if (eventType === 'worker:task:cancelled') {
+    const p = payload as WorkerTaskCompletedPayload;
+    if (!p.workerId) return [];
+    return [
+      {
+        type: 'worker:status',
+        payload: {
+          workerId: p.workerId,
+          behavior: 'completed',
+          lastActivityAt: now,
+          activeTaskId: null,
+          activeTaskPrompt: null,
+          sourceEvent: eventType,
+        },
+      },
+      {
+        type: 'activity:event',
+        payload: {
+          id: randomUUID(),
+          type: 'summary',
+          severity: 'warn',
+          workerId: p.workerId,
+          workerName: p.workerName ?? p.workerId,
+          taskId: p.taskId ?? null,
+          message: shortText(p.summary, 120) || '작업 취소',
+          timestamp: now,
+          sourceEvent: eventType,
+        },
+      },
+    ];
+  }
+
   if (eventType === 'worker:task:timeout') {
     const p = payload as WorkerTaskTimeoutPayload;
     if (!p.workerId) return [];
@@ -183,6 +215,27 @@ export function deriveWorkerEvents(eventType: string, payload: unknown, now = Da
           workerName: p.workerName ?? p.workerId,
           taskId: p.taskId ?? null,
           message: shortText(p.summary, 120) || '작업 요약 업데이트',
+          timestamp: now,
+          sourceEvent: eventType,
+        },
+      },
+    ];
+  }
+
+  if (eventType === 'worker:input:submitted') {
+    const p = payload as { workerId?: string; workerName?: string; prompt?: string };
+    if (!p.workerId) return [];
+    return [
+      {
+        type: 'activity:event',
+        payload: {
+          id: randomUUID(),
+          type: 'manual_input',
+          severity: 'info',
+          workerId: p.workerId,
+          workerName: p.workerName ?? p.workerId,
+          taskId: null,
+          message: shortText(p.prompt, 120) ? `수동 입력: ${shortText(p.prompt, 120)}` : '수동 입력 감지',
           timestamp: now,
           sourceEvent: eventType,
         },

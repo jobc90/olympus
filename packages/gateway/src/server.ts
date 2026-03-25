@@ -35,12 +35,53 @@ import { MemoryStore } from './memory/store.js';
 import { CliSessionStore } from './cli-session-store.js';
 import type { CodexAdapter } from './codex-adapter.js';
 import { WorkerRegistry } from './worker-registry.js';
-import { LocalContextStoreManager } from '@olympus-dev/core';
+import { LocalContextStoreManager, TaskAuthorityStore } from '@olympus-dev/core';
 import type { GeminiAdvisor } from './gemini-advisor.js';
 import { UsageMonitor } from './usage-monitor.js';
 import { deriveWorkerEvents } from './worker-events.js';
 import { TeamOrchestrator } from './team-orchestrator.js';
 import { filterForTelegram, sanitizeBriefing } from './response-filter.js';
+import { WorkerRuntimeClient } from './worker-runtime-client.js';
+import { ProjectScheduler } from './project-runtime/project-scheduler.js';
+import { ProjectRuntimeAdapter } from './project-runtime/project-runtime-adapter.js';
+import { ProjectRuntimeWorktreeManager } from './project-runtime/worktree-manager.js';
+import { TerminalProjectionService } from './terminal-projection-service.js';
+import { TaskSummaryService } from './reporting/task-summary-service.js';
+
+export function reconcileWorkerDiedOutcome(
+  projectRuntimeAdapter: Pick<ProjectRuntimeAdapter, 'finalizeWorkerTask'>,
+  payload: { workerId: string; taskIds: string[] },
+) {
+  const finalized = payload.taskIds.map((taskId) => projectRuntimeAdapter.finalizeWorkerTask({
+      workerTaskId: taskId,
+      success: false,
+    }));
+  const authorityTaskIds = finalized
+    .map((result) => result.authorityTaskId)
+    .filter((taskId): taskId is string => Boolean(taskId));
+  const projectIds = Array.from(new Set(
+    finalized
+      .map((result) => result.task?.projectId)
+      .filter((projectId): projectId is string => Boolean(projectId)),
+  ));
+
+  return {
+    payload: authorityTaskIds.length === 0
+      ? payload
+      : {
+          ...payload,
+          authorityTaskIds,
+        },
+    projectIds,
+  };
+}
+
+export function reconcileWorkerDiedPayload(
+  projectRuntimeAdapter: Pick<ProjectRuntimeAdapter, 'finalizeWorkerTask'>,
+  payload: { workerId: string; taskIds: string[] },
+): { workerId: string; taskIds: string[]; authorityTaskIds?: string[] } {
+  return reconcileWorkerDiedOutcome(projectRuntimeAdapter, payload).payload;
+}
 
 export interface GatewayOptions {
   port?: number;
@@ -78,6 +119,11 @@ export class Gateway {
   private codexAdapter: CodexAdapter | null = null;
   private geminiAdvisor: GeminiAdvisor | null = null;
   private workerRegistry: WorkerRegistry;
+  private taskAuthorityStore: TaskAuthorityStore;
+  private workerRuntimeClient: WorkerRuntimeClient;
+  private projectRuntimeAdapter: ProjectRuntimeAdapter;
+  private terminalProjectionService: TerminalProjectionService;
+  private taskSummaryService: TaskSummaryService;
   private localContextManager: LocalContextStoreManager;
   private usageMonitor: UsageMonitor | null = null;
   private teamOrchestrator: TeamOrchestrator;
@@ -115,6 +161,20 @@ export class Gateway {
 
     // Initialize Worker Registry
     this.workerRegistry = new WorkerRegistry();
+    this.taskAuthorityStore = TaskAuthorityStore.getInstance();
+    this.workerRuntimeClient = new WorkerRuntimeClient({
+      socketsRoot: process.env.OLYMPUS_RUNTIME_SOCKETS_ROOT,
+    });
+    this.terminalProjectionService = new TerminalProjectionService();
+    this.taskSummaryService = new TaskSummaryService();
+    this.projectRuntimeAdapter = new ProjectRuntimeAdapter({
+      taskAuthorityStore: this.taskAuthorityStore,
+      workerRegistry: this.workerRegistry,
+      scheduler: new ProjectScheduler(this.workerRegistry),
+      runtimeControl: this.workerRuntimeClient,
+      worktreeManager: new ProjectRuntimeWorktreeManager(),
+      onWorkerEvent: (eventType, payload) => this.broadcastWorkerEvent(eventType, payload),
+    });
 
     // Initialize LocalContextStoreManager
     this.localContextManager = new LocalContextStoreManager();
@@ -260,7 +320,9 @@ export class Gateway {
       this.codexAdapter.setBroadcast((eventType, payload) => this.broadcastToAll(eventType, payload));
       this.codexAdapter.setLocalContextManager(this.localContextManager);
       this.codexAdapter.setWorkerRegistry(this.workerRegistry);
+      this.codexAdapter.setProjectRuntimeAdapter(this.projectRuntimeAdapter);
       this.codexAdapter.setWorkspaceRoot(this.workspaceRoot);
+      this.codexAdapter.setTaskReportingContext(this.taskAuthorityStore, this.taskSummaryService);
       this.codexAdapter.registerRpcMethods(this.rpcRouter);
     }
 
@@ -286,7 +348,19 @@ export class Gateway {
 
     // Wire worker:died event from WorkerRegistry
     this.workerRegistry.on('worker:died', (payload: { workerId: string; taskIds: string[] }) => {
-      this.broadcastWorkerEvent('worker:task:failed', payload);
+      const reconciled = reconcileWorkerDiedOutcome(this.projectRuntimeAdapter, payload);
+      this.broadcastWorkerEvent('worker:task:failed', reconciled.payload);
+      void Promise.all(
+        reconciled.projectIds.map(async (projectId) => {
+          try {
+            await this.projectRuntimeAdapter.dispatchNextQueuedTask({ projectId });
+          } catch (error) {
+            console.warn(
+              `[Gateway] queued recovery after worker death failed for ${projectId}: ${(error as Error).message}`,
+            );
+          }
+        }),
+      );
     });
 
     // Usage monitor — polls statusline sidecar JSON
@@ -333,6 +407,11 @@ export class Gateway {
         codexAdapter: this.codexAdapter ?? undefined,
         geminiAdvisor: this.geminiAdvisor ?? undefined,
         workerRegistry: this.workerRegistry,
+        taskAuthorityStore: this.taskAuthorityStore,
+        projectRuntimeAdapter: this.projectRuntimeAdapter,
+        terminalProjectionService: this.terminalProjectionService,
+        taskSummaryService: this.taskSummaryService,
+        workerRuntimeClient: this.workerRuntimeClient,
         localContextManager: this.localContextManager,
         workspaceRoot: this.workspaceRoot,
         server: this,

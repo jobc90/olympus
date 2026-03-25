@@ -34,6 +34,10 @@ export class WorkerRegistry extends EventEmitter {
       id,
       name: this.deduplicateName(info.name || basename(info.projectPath)),
       projectPath: info.projectPath,
+      ...(info.runtimeKind ? { runtimeKind: info.runtimeKind } : {}),
+      ...(info.roleTags ? { roleTags: [...info.roleTags] } : {}),
+      ...(info.skills ? { skills: [...info.skills] } : {}),
+      ...(info.isEphemeral ? { isEphemeral: true } : {}),
       pid: info.pid,
       status: 'idle',
       registeredAt: now,
@@ -83,11 +87,22 @@ export class WorkerRegistry extends EventEmitter {
     return null;
   }
 
-  markBusy(id: string, taskId: string, prompt: string): void {
+  listByProject(projectId: string): RegisteredWorker[] {
+    const lower = projectId.trim().toLowerCase();
+    if (!lower) return [];
+    return this.getAll().filter(worker => {
+      if (worker.name.toLowerCase() === lower) return true;
+      if (basename(worker.projectPath).toLowerCase() === lower) return true;
+      return worker.projectPath.toLowerCase().includes(lower);
+    });
+  }
+
+  markBusy(id: string, taskId: string, prompt: string, authorityTaskId?: string): void {
     const worker = this.workers.get(id);
     if (!worker) return;
     worker.status = 'busy';
     worker.currentTaskId = taskId;
+    worker.currentAuthorityTaskId = authorityTaskId;
     worker.currentTaskPrompt = prompt;
   }
 
@@ -96,10 +111,11 @@ export class WorkerRegistry extends EventEmitter {
     if (!worker) return;
     worker.status = 'idle';
     worker.currentTaskId = undefined;
+    worker.currentAuthorityTaskId = undefined;
     worker.currentTaskPrompt = undefined;
   }
 
-  createTask(workerId: string, prompt: string, chatId?: number): WorkerTaskRecord {
+  createTask(workerId: string, prompt: string, chatId?: number, authorityTaskId?: string): WorkerTaskRecord {
     // 같은 워커의 기존 running 작업 정리
     for (const [, t] of this.tasks) {
       if (t.workerId === workerId && t.status === 'running') {
@@ -114,13 +130,14 @@ export class WorkerRegistry extends EventEmitter {
       taskId,
       workerId,
       workerName: worker?.name ?? 'unknown',
+      ...(authorityTaskId ? { authorityTaskId } : {}),
       prompt,
       status: 'running',
       startedAt: Date.now(),
       chatId,            // 텔레그램 chat ID 저장
     };
     this.tasks.set(taskId, task);
-    this.markBusy(workerId, taskId, prompt);
+    this.markBusy(workerId, taskId, prompt, authorityTaskId);
     this.emit('task:assigned', task);
     this.saveTasksToFile();
     return task;
@@ -156,9 +173,25 @@ export class WorkerRegistry extends EventEmitter {
     this.pruneCompletedTasks();
   }
 
+  cancelTask(taskId: string): WorkerTaskRecord | null {
+    const task = this.tasks.get(taskId);
+    if (!task) {
+      console.warn('[WorkerRegistry] Unknown task cancellation:', taskId);
+      return null;
+    }
+
+    task.status = 'cancelled';
+    task.completedAt = Date.now();
+    this.markIdle(task.workerId);
+    this.emit('task:cancelled', task);
+    this.saveTasksToFile();
+    this.pruneCompletedTasks();
+    return task;
+  }
+
   private pruneCompletedTasks(): void {
     const completed = Array.from(this.tasks.entries())
-      .filter(([, t]) => t.status === 'completed' || t.status === 'failed')
+      .filter(([, t]) => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled')
       .sort((a, b) => (a[1].completedAt ?? 0) - (b[1].completedAt ?? 0));
 
     while (completed.length > 200) {
@@ -169,6 +202,14 @@ export class WorkerRegistry extends EventEmitter {
 
   getTask(taskId: string): WorkerTaskRecord | null {
     return this.tasks.get(taskId) ?? null;
+  }
+
+  findTaskByAuthorityTaskId(authorityTaskId: string): WorkerTaskRecord | null {
+    const matches = Array.from(this.tasks.values())
+      .filter((task) => task.authorityTaskId === authorityTaskId)
+      .sort((left, right) => right.startedAt - left.startedAt);
+
+    return matches[0] ?? null;
   }
 
   getActiveTasks(): WorkerTaskRecord[] {
@@ -224,6 +265,7 @@ export class WorkerRegistry extends EventEmitter {
             }
           }
           worker.currentTaskId = undefined;
+          worker.currentAuthorityTaskId = undefined;
           worker.currentTaskPrompt = undefined;
           if (failedTaskIds.length > 0) {
             this.emit('worker:died', { workerId: worker.id, taskIds: failedTaskIds });
@@ -241,6 +283,9 @@ export class WorkerRegistry extends EventEmitter {
       const ONE_HOUR = 60 * 60 * 1000;
       for (const [taskId, t] of this.tasks) {
         if ((t.status === 'completed' || t.status === 'failed') && t.completedAt && now - t.completedAt > ONE_HOUR) {
+          this.tasks.delete(taskId);
+        }
+        if (t.status === 'cancelled' && t.completedAt && now - t.completedAt > ONE_HOUR) {
           this.tasks.delete(taskId);
         }
       }
@@ -275,6 +320,7 @@ export class WorkerRegistry extends EventEmitter {
     if (!worker.currentTaskId) {
       worker.status = 'idle';
       worker.currentTaskPrompt = undefined;
+      worker.currentAuthorityTaskId = undefined;
       return;
     }
 

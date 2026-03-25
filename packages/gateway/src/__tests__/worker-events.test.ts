@@ -92,4 +92,26 @@ describe('deriveWorkerEvents', () => {
   it('returns empty for unrelated events', () => {
     expect(deriveWorkerEvents('usage:update', {}, 4_000)).toEqual([]);
   });
+
+  it('derives activity for submitted manual worker input', () => {
+    const events = deriveWorkerEvents('worker:input:submitted', {
+      workerId: 'worker-d',
+      workerName: 'server-default',
+      prompt: '로그인 API 수정해',
+      source: 'dashboard',
+    }, 5_000);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: 'activity:event',
+      payload: {
+        type: 'manual_input',
+        severity: 'info',
+        workerId: 'worker-d',
+        workerName: 'server-default',
+        message: '수동 입력: 로그인 API 수정해',
+        sourceEvent: 'worker:input:submitted',
+      },
+    });
+  });
 });

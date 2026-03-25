@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ── Mock GeminiPty ── (vi.mock 호이스팅 — mock* 접두사 변수만 참조 가능)
@@ -12,7 +13,11 @@ const mockSendPrompt = vi.fn().mockResolvedValue(JSON.stringify({
 }));
 
 vi.mock('../gemini-pty.js', () => ({
-  GeminiPty: class MockGeminiPty {
+  GeminiPty: class MockGeminiPty extends EventEmitter {
+    constructor() {
+      super();
+    }
+
     start = vi.fn().mockResolvedValue(undefined);
     stop = vi.fn().mockResolvedValue(undefined);
     isAlive = vi.fn().mockReturnValue(true);
