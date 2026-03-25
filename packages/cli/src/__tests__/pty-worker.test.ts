@@ -609,6 +609,20 @@ describe('extractResultFromBuffer', () => {
     expect(result).not.toContain('─────');
   });
 
+  it('짧은 정상 응답은 footer chrome 없이 보존', () => {
+    const buffer = [
+      'prompt',
+      '',
+      '⏺ SMOKE_OK',
+      '──────────────────────────────────────────────────────────────────────────────',
+      '❯ ',
+      '──────────────────────────────────────────────────────────────────────────────',
+      '⏵⏵ bypass permissions on (shift+tab to cycle)',
+    ].join('\n');
+
+    expect(extractResultFromBuffer(buffer, 'prompt')).toBe('SMOKE_OK');
+  });
+
   it('TUI 아티팩트 (thinking 진행형/완료형) 필터링', () => {
     const buffer = [
       'prompt',

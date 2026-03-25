@@ -1,5 +1,5 @@
 /**
- * PTY Worker — node-pty를 통한 상주 Claude CLI 관리
+ * PTY Worker — 상주 Claude CLI PTY 세션 관리
  *
  * Claude CLI를 대화형 모드(Ink TUI)로 실행하고,
  * 프로그래밍적으로 명령을 입력하여 작업을 처리합니다.
@@ -9,33 +9,13 @@
  * - destroy(): PTY 종료
  */
 
-import { chmodSync, accessSync, constants } from 'fs';
-import { join, dirname } from 'path';
-import { createRequire } from 'module';
-import { StringDecoder } from 'string_decoder';
 import { stripAnsi } from './utils/strip-ansi.js';
-
-/**
- * node-pty의 spawn-helper 바이너리에 실행 권한을 부여한다.
- * pnpm/npm이 prebuild를 설치할 때 실행 권한이 빠지는 경우가 있음.
- */
-function ensureSpawnHelperPermissions(): void {
-  try {
-    const require = createRequire(import.meta.url);
-    const ptyPath = dirname(require.resolve('node-pty/package.json'));
-    const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
-    const platform = process.platform;
-    const helperPath = join(ptyPath, 'prebuilds', `${platform}-${arch}`, 'spawn-helper');
-
-    try {
-      accessSync(helperPath, constants.X_OK);
-    } catch {
-      chmodSync(helperPath, 0o755);
-    }
-  } catch {
-    // node-pty 경로 해석 실패 시 무시
-  }
-}
+import type { TaskResult, TimeoutAwareResult } from './worker-runtime.js';
+import { PtyLocalInputTracker } from './pty-local-input-tracker.js';
+import { PtySessionAdapter, type PtySessionAdapterLike, type PtySessionHandle } from './pty-session-adapter.js';
+import { PtyStdinBridge } from './pty-stdin-bridge.js';
+import { PtyTerminalBridge } from './pty-terminal-bridge.js';
+export type { TaskResult, TimeoutAwareResult } from './worker-runtime.js';
 
 // ──────────────────────────────────────────────
 // Types
@@ -56,12 +36,8 @@ export interface PtyWorkerOptions {
    * Only fires when the PTY is not already processing a task.
    */
   onLocalInput?: (line: string) => void;
-}
-
-export interface TaskResult {
-  success: boolean;
-  text: string;
-  durationMs: number;
+  sessionAdapter?: PtySessionAdapterLike;
+  terminalBridge?: PtyTerminalBridge;
 }
 
 interface ProcessingState {
@@ -102,11 +78,6 @@ const TIME_BASED_READY_MS = 15_000;
 
 /** 텍스트 입력 후 Enter 전송까지 대기 (Ink가 텍스트를 처리할 시간) */
 const SUBMIT_DELAY_MS = 150;
-
-/** Ctrl+C (0x03): worker escape key (terminates worker + Claude PTY) */
-const CTRL_C_BYTE = 0x03;
-/** Ctrl+] (0x1D): alternate worker escape key */
-const WORKER_ESCAPE_BYTE = 0x1d;
 
 /** 출력이 멈춘 뒤 완료 재검사 지연 */
 const QUIET_RECHECK_MS = 2_500;
@@ -209,8 +180,13 @@ export function hasBackgroundAgentActivity(data: string): boolean {
 }
 
 // ──────────────────────────────────────────────
-// Standalone Detection Functions (테스트용 export)
+// Compatibility Completion Heuristics (테스트용 export)
 // ──────────────────────────────────────────────
+//
+// Important:
+// These helpers are intentionally retained only as compatibility fallbacks for
+// interactive PTY/tmux flows. Authoritative task truth now lives in task
+// state, runtime-control state, and task artifacts, not in terminal text.
 
 /** 유휴 프롬프트 감지 (standalone) */
 export function detectIdlePrompt(cleanText: string): boolean {
@@ -366,8 +342,9 @@ export function extractResultFromBuffer(buffer: string, prompt: string): string 
 
   let result = lines.join('\n').trim();
 
-  // 결과가 너무 짧으면 TUI 필터 없이 fallback
-  if (result.length < 10) {
+  // 결과가 비어 있을 때만 TUI 필터 없는 marker fallback을 사용한다.
+  // 짧지만 유효한 응답(SMOKE_OK 등)을 footer chrome으로 오염시키지 않기 위함이다.
+  if (result.length === 0) {
     const fallbackClean = stripAnsi(buffer);
     const mi = fallbackClean.lastIndexOf('⏺');
     if (mi >= 0) {
@@ -410,248 +387,129 @@ export function extractResultFromBuffer(buffer: string, prompt: string): string 
 // PtyWorker Class
 // ──────────────────────────────────────────────
 
-export interface TimeoutAwareResult {
-  result: TaskResult;
-  finalResult?: Promise<TaskResult>;
-}
-
 export class PtyWorker {
-  private pty: { write: (data: string) => void; kill: () => void; onData: { (handler: (data: string) => void): { dispose: () => void } }; onExit: { (handler: (e: { exitCode: number }) => void): { dispose: () => void } }; resize: (cols: number, rows: number) => void } | null = null;
+  private pty: PtySessionHandle | null = null;
   private state: { phase: 'idle' } | ProcessingState = { phase: 'idle' };
   private idleBuffer = '';
   private ready = false;
   private readyResolve: (() => void) | null = null;
-  private stdinHandler: ((data: Buffer) => void) | null = null;
-  private resizeHandler: (() => void) | null = null;
-  private originalRawMode: boolean | undefined;
-  private stdinDecoder = new StringDecoder('utf8');
   private initFallbackTimer: ReturnType<typeof setTimeout> | null = null;
-  /** When true, suppress stderr diagnostic messages to avoid TUI corruption */
-  private ttyAttached = false;
-  /** Buffer for local stdin input tracking (cross-channel sync) */
-  private localInputBuffer = '';
-  private inBracketPaste = false;
+  private localInputTracker = new PtyLocalInputTracker();
+  private stdinBridge: PtyStdinBridge;
+  private readonly sessionAdapter: PtySessionAdapterLike;
+  private readonly terminalBridge: PtyTerminalBridge;
 
-  constructor(private options: PtyWorkerOptions) {}
+  constructor(private options: PtyWorkerOptions) {
+    this.sessionAdapter = options.sessionAdapter ?? new PtySessionAdapter();
+    this.terminalBridge = options.terminalBridge ?? new PtyTerminalBridge();
+    this.stdinBridge = new PtyStdinBridge({
+      writeToPty: (data: string) => {
+        this.pty?.write(data);
+      },
+      exitWorker: () => {
+        if (this.options.onExit) {
+          this.options.onExit();
+        } else {
+          process.exit(0);
+        }
+      },
+      handleLocalInput: this.options.onLocalInput
+        ? (decoded: string) => {
+            this.localInputTracker.consume(decoded, {
+              isIdle: () => this.state.phase === 'idle',
+              forceCompleteIfSettling: () => this.forceCompleteIfSettling(),
+              onCommand: (line: string) => {
+                this.options.onLocalInput?.(line);
+              },
+            });
+          }
+        : undefined,
+    });
+  }
 
   // ──────────────────────────────────────
   // Public API
   // ──────────────────────────────────────
 
   async start(): Promise<void> {
-    ensureSpawnHelperPermissions();
+    const { cols, rows } = this.terminalBridge.getInitialSize(this.options.cols, this.options.rows);
 
-    const ptyModule = await import('node-pty');
-    const pty = (ptyModule as Record<string, unknown>).default ?? ptyModule;
-    const spawn = (pty as { spawn: typeof import('node-pty')['spawn'] }).spawn;
-
-    const claudeArgs: string[] = [];
-    if (this.options.trustMode) {
-      claudeArgs.push('--dangerously-skip-permissions');
-    }
-
-    // Do NOT send any terminal mode sequences (alternate screen, mouse tracking).
-    // Let Claude Code manage all terminal state via its own PTY output, which
-    // flows transparently through to the host terminal — identical to running
-    // `claude` directly. This preserves scroll, mouse, and cursor behaviour
-    // exactly as Claude Code intends across all terminals (iTerm2, Ghostty, Warp).
-    if (process.stdout.isTTY) {
-      this.ttyAttached = true; // marks that we should clean up on destroy()
-    }
-
-    // Clamp PTY dimensions to a valid range to prevent EINVAL on resize.
-    const cols = Math.max(40, Math.min(500, this.options.cols ?? process.stdout.columns ?? 220));
-    const rows = Math.max(10, Math.min(200, this.options.rows ?? process.stdout.rows ?? 50));
-
-    this.pty = spawn('claude', claudeArgs, {
-      name: 'xterm-256color',
+    this.pty = await this.sessionAdapter.startSession({
+      projectPath: this.options.projectPath,
+      trustMode: this.options.trustMode,
       cols,
       rows,
-      cwd: this.options.projectPath,
-      env: { ...process.env } as Record<string, string>,
-    });
+      onData: (data: string) => {
+        this.terminalBridge.writeOutput(data);
+        this.options.onData?.(data);
+        this.idleBuffer += data;
 
-    // Immediately sync to actual terminal dimensions after spawn.
-    // process.stdout.columns may be more accurate post-spawn than at PtyWorker construction.
-    if (process.stdout.isTTY && process.stdout.columns && process.stdout.rows) {
-      const actualCols = Math.max(40, Math.min(500, process.stdout.columns));
-      const actualRows = Math.max(10, Math.min(200, process.stdout.rows));
-      if (actualCols !== cols || actualRows !== rows) {
-        this.pty.resize(actualCols, actualRows);
-      }
-    }
+        if (this.state.phase === 'processing' && this.state.submitted) {
+          this.state.buffer += data;
+          this.state.lastOutputAt = Date.now();
 
-    // PTY 출력 핸들러
-    this.pty.onData((data: string) => {
-      process.stdout.write(data);
-      this.options.onData?.(data);
-      this.idleBuffer += data;
-
-      if (this.state.phase === 'processing' && this.state.submitted) {
-        this.state.buffer += data;
-        this.state.lastOutputAt = Date.now();
-
-        // 백그라운드 에이전트 활동 감지
-        if (hasBackgroundAgentActivity(data)) {
-          this.state.hasBackgroundAgents = true;
-          this.state.lastAgentActivityAt = Date.now();
-          // settle 타이머가 있으면 취소 (아직 작업 중)
-          if (this.state.settleTimer) {
-            clearTimeout(this.state.settleTimer);
-            this.state.settleTimer = null;
-          }
-        }
-
-        this.checkCompletion();
-        this.armCompletionRecheck();
-      }
-
-      if (!this.ready) {
-        // Start time-based fallback on first data (fires after TIME_BASED_READY_MS)
-        if (!this.initFallbackTimer) {
-          this.initFallbackTimer = setTimeout(() => {
-            if (!this.ready) {
-              if (!this.ttyAttached) {
-                process.stderr.write('[PTY] Claude CLI active for 15s — marking ready (time-based fallback)\n');
-              }
-              this.ready = true;
-              this.readyResolve?.();
-              this.options.onReady?.();
+          if (hasBackgroundAgentActivity(data)) {
+            this.state.hasBackgroundAgents = true;
+            this.state.lastAgentActivityAt = Date.now();
+            if (this.state.settleTimer) {
+              clearTimeout(this.state.settleTimer);
+              this.state.settleTimer = null;
             }
-            this.initFallbackTimer = null;
-          }, TIME_BASED_READY_MS);
+          }
+
+          this.checkCompletion();
+          this.armCompletionRecheck();
         }
 
-        const clean = stripAnsi(this.idleBuffer);
-        if (this.detectIdlePrompt(clean)) {
-          // Pattern matched — cancel time-based fallback
-          if (this.initFallbackTimer) {
-            clearTimeout(this.initFallbackTimer);
-            this.initFallbackTimer = null;
-          }
-          if (!this.ttyAttached) {
-            process.stderr.write('[PTY] Idle prompt detected — ready (pattern match)\n');
-          }
-          this.ready = true;
-          this.readyResolve?.();
-          this.options.onReady?.();
-        }
-      }
-    });
-
-    // PTY 종료 핸들러
-    this.pty.onExit(({ exitCode }) => {
-      if (this.initFallbackTimer) {
-        clearTimeout(this.initFallbackTimer);
-        this.initFallbackTimer = null;
-      }
-      if (this.state.phase === 'processing') {
-        this.clearTimers();
-        this.state.reject(new Error(`Claude CLI가 예기치 않게 종료됨 (code: ${exitCode})`));
-        this.state = { phase: 'idle' };
-      }
-      this.restoreStdin();
-      this.pty = null;
-    });
-
-    // stdin → PTY 포워딩 (raw passthrough)
-    // - Ctrl+C exits worker process (and Claude PTY is terminated in shutdown).
-    // - Ctrl+] is an alternate exit key.
-    if (process.stdin.isTTY) {
-      this.originalRawMode = process.stdin.isRaw;
-      process.stdin.setRawMode(true);
-      process.stdin.resume();
-
-      this.stdinHandler = (data: Buffer) => {
-        if (!this.pty) return;
-
-        // Ctrl+C → worker exit
-        if (data.length === 1 && data[0] === CTRL_C_BYTE) {
-          if (this.options.onExit) {
-            this.options.onExit();
-          } else {
-            process.exit(0);
-          }
-          return;
-        }
-
-        // Ctrl+] → worker exit
-        if (data.length === 1 && data[0] === WORKER_ESCAPE_BYTE) {
-          if (this.options.onExit) {
-            this.options.onExit();
-          } else {
-            process.exit(0);
-          }
-          return;
-        }
-
-        // Decode with StringDecoder to preserve split UTF-8 sequences.
-        const decoded = this.stdinDecoder.write(data);
-        if (!decoded) return;
-
-        // Transparent passthrough — forward everything including mouse events.
-        // Claude Code enables/disables mouse tracking itself via PTY output,
-        // so mouse events only arrive when Claude is ready to handle them.
-        // Normalize Enter key to CR for Ink TUI compatibility.
-        const normalized = decoded.replace(/\r?\n/g, '\r');
-        this.pty.write(normalized);
-
-        // Cross-channel sync: track local input to notify Telegram/Dashboard.
-        // Capture during idle AND during settle window (user moving to next task).
-        // Control sequences (arrow keys, etc.) reset the buffer to avoid garbage.
-        if (this.options.onLocalInput) {
-          // Bracket paste mode: \x1b[200~ starts, \x1b[201~ ends.
-          // Pasted text must never be treated as a user command.
-          if (decoded.includes('\x1b[200~')) {
-            this.inBracketPaste = true;
-            this.localInputBuffer = '';
-          }
-          if (decoded.includes('\x1b[201~')) {
-            this.inBracketPaste = false;
-            this.localInputBuffer = '';
-          }
-
-          if (!this.inBracketPaste) {
-            for (const ch of decoded) {
-              const code = ch.codePointAt(0) ?? 0;
-              if (ch === '\r' || ch === '\n') {
-                const trimmed = this.localInputBuffer.trim();
-                this.localInputBuffer = '';
-                // Only report meaningful commands (2+ chars, no escape sequences)
-                if (trimmed.length >= 2 && !trimmed.startsWith('\x1b')) {
-                  // If settle timer is active, user has moved on — force-complete
-                  // current task so the new input can be registered as a fresh task
-                  if (this.state.phase === 'processing' && this.state.settleTimer !== null) {
-                    this.forceCompleteIfSettling();
-                  }
-                  if (this.state.phase === 'idle') {
-                    this.options.onLocalInput(trimmed);
-                  }
+        if (!this.ready) {
+          if (!this.initFallbackTimer) {
+            this.initFallbackTimer = setTimeout(() => {
+              if (!this.ready) {
+                if (!this.terminalBridge.isAttachedToTty()) {
+                  process.stderr.write('[PTY] Claude CLI active for 15s — marking ready (time-based fallback)\n');
                 }
-              } else if (ch === '\x7f' || ch === '\b') {
-                // Backspace
-                this.localInputBuffer = this.localInputBuffer.slice(0, -1);
-              } else if (code >= 32) {
-                // Printable character
-                this.localInputBuffer += ch;
-              } else {
-                // Control/escape sequence (arrow keys, etc.) — discard buffer
-                this.localInputBuffer = '';
+                this.ready = true;
+                this.readyResolve?.();
+                this.options.onReady?.();
               }
+              this.initFallbackTimer = null;
+            }, TIME_BASED_READY_MS);
+          }
+
+          const clean = stripAnsi(this.idleBuffer);
+          if (this.detectIdlePrompt(clean)) {
+            if (this.initFallbackTimer) {
+              clearTimeout(this.initFallbackTimer);
+              this.initFallbackTimer = null;
             }
+            if (!this.terminalBridge.isAttachedToTty()) {
+              process.stderr.write('[PTY] Idle prompt detected — ready (pattern match)\n');
+            }
+            this.ready = true;
+            this.readyResolve?.();
+            this.options.onReady?.();
           }
         }
-      };
-      process.stdin.on('data', this.stdinHandler);
-    }
+      },
+      onExit: ({ exitCode }) => {
+        if (this.initFallbackTimer) {
+          clearTimeout(this.initFallbackTimer);
+          this.initFallbackTimer = null;
+        }
+        if (this.state.phase === 'processing') {
+          this.clearTimers();
+          this.state.reject(new Error(`Claude CLI가 예기치 않게 종료됨 (code: ${exitCode})`));
+          this.state = { phase: 'idle' };
+        }
+        this.detachTerminal();
+        this.pty = null;
+      },
+    });
 
-    // 터미널 리사이즈 핸들링
-    this.resizeHandler = () => {
-      if (this.pty && process.stdout.columns && process.stdout.rows) {
-        this.pty.resize(process.stdout.columns, process.stdout.rows);
-      }
-    };
-    process.stdout.on('resize', this.resizeHandler);
+    this.terminalBridge.attach({
+      session: this.pty,
+      stdinBridge: this.stdinBridge,
+    });
 
     // 유휴 프롬프트가 나타날 때까지 대기 (무제한)
     await new Promise<void>((resolve) => {
@@ -785,49 +643,20 @@ export class PtyWorker {
       clearTimeout(this.initFallbackTimer);
       this.initFallbackTimer = null;
     }
-    if (this.resizeHandler) {
-      process.stdout.removeListener('resize', this.resizeHandler);
-      this.resizeHandler = null;
-    }
-    this.restoreStdin();
+    this.detachTerminal();
     this.pty?.kill();
     this.pty = null;
     this.state = { phase: 'idle' };
-
-    // Comprehensive terminal restore — send all cleanup sequences unconditionally.
-    // Because Claude Code manages its own terminal state, we don't know which
-    // modes are currently active. Sending disable sequences for inactive modes
-    // is a safe no-op in all terminal emulators.
-    if (this.ttyAttached) {
-      process.stdout.write(
-        '\x1b[?1006l'  // disable SGR mouse encoding
-        + '\x1b[?1002l' // disable button-event mouse tracking
-        + '\x1b[?1000l' // disable X10 mouse tracking
-        + '\x1b[?25h'   // show cursor
-        + '\x1b[?1049l' // leave alternate screen (no-op if not in one)
-      );
-      this.ttyAttached = false;
-    }
   }
 
   // ──────────────────────────────────────
   // Private: stdin management
   // ──────────────────────────────────────
 
-  private restoreStdin(): void {
-    if (this.stdinHandler) {
-      process.stdin.removeListener('data', this.stdinHandler);
-      this.stdinHandler = null;
-    }
-    if (process.stdin.isTTY && this.originalRawMode !== undefined) {
-      try {
-        process.stdin.setRawMode(this.originalRawMode);
-      } catch {
-        // stdin may already be destroyed
-      }
-    }
-    this.stdinDecoder.end();
-    this.stdinDecoder = new StringDecoder('utf8');
+  private detachTerminal(): void {
+    this.terminalBridge.detach();
+    this.stdinBridge.reset();
+    this.localInputTracker.reset();
   }
 
   // ──────────────────────────────────────
@@ -854,6 +683,8 @@ export class PtyWorker {
 
     const clean = stripAnsi(this.state.buffer);
 
+    // Terminal-text completion remains a compatibility fallback only.
+    // Structured task state/reporting is authoritative.
     // Check strict idle prompt patterns first, then allow quiet fallback.
     const hasIdlePrompt = detectIdlePromptForCompletion(clean);
     const hasCompletionText = detectCompletionPattern(clean);
