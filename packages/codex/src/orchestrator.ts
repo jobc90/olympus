@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { Router } from './router.js';
 import { CodexSessionManager } from './session-manager.js';
 import { AgentBrain } from './agent-brain.js';
+import { interpretManualInput } from './manual-input.js';
 import type {
   UserInput,
   CodexProcessResult,
@@ -9,6 +10,7 @@ import type {
   ManagedSession,
   ActiveCliTask,
   InputSource,
+  ManualInputInterpretation,
 } from './types.js';
 
 /**
@@ -132,6 +134,20 @@ export class CodexOrchestrator extends EventEmitter {
    */
   async createSession(projectPath: string, name?: string): Promise<ManagedSession> {
     return this.sessionManager.createSession(projectPath, name);
+  }
+
+  interpretManualInput(input: Omit<ManualInputInterpretation, 'classification' | 'reason' | 'matchedSessionId'>): ManualInputInterpretation {
+    const matchedSession = this.sessionManager.listSessions().find(session => session.projectPath === input.projectPath);
+    const interpreted = interpretManualInput({
+      ...input,
+      matchedSessionId: matchedSession?.id,
+    });
+
+    if (matchedSession && interpreted.classification === 'task_intervention') {
+      this.router.recordLastSession(input.source as InputSource, matchedSession.id);
+    }
+
+    return interpreted;
   }
 
   /**

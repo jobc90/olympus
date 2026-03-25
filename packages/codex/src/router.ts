@@ -1,4 +1,5 @@
 import type { CodexSessionManager } from './session-manager.js';
+import { TaskPlanner } from './task-planner.js';
 import type {
   UserInput,
   RoutingDecision,
@@ -19,6 +20,7 @@ import type {
 export class Router {
   private projectAliases: Map<string, string> = new Map();
   private lastActiveSession: Map<string, string> = new Map();
+  private taskPlanner = new TaskPlanner();
 
   constructor(
     private sessionManager: CodexSessionManager,
@@ -28,6 +30,30 @@ export class Router {
    * Make routing decision
    */
   async route(input: UserInput): Promise<RoutingDecision> {
+    const planning = this.taskPlanner.plan(input.text, this.sessionManager.listSessions());
+
+    if (planning?.kind === 'multi_project') {
+      return {
+        type: 'MULTI_SESSION',
+        targetSessions: planning.targetSessionIds,
+        processedInput: planning.processedInput,
+        planning,
+        confidence: planning.confidence,
+        reason: planning.reason,
+      };
+    }
+
+    if (planning?.kind === 'single_project') {
+      return {
+        type: 'SESSION_FORWARD',
+        targetSessions: planning.targetSessionIds,
+        processedInput: planning.processedInput,
+        planning,
+        confidence: planning.confidence,
+        reason: planning.reason,
+      };
+    }
+
     // Step 1: Parse @mention
     const mentionMatch = input.text.match(/^@(\S+)\s+(.+)/s);
     if (mentionMatch) {
@@ -38,6 +64,7 @@ export class Router {
           type: 'SESSION_FORWARD',
           targetSessions: [session.id],
           processedInput: command,
+          planning: planning ?? undefined,
           confidence: 1.0,
           reason: `Explicit @${target} mention`,
         };
@@ -52,6 +79,7 @@ export class Router {
         type: 'MULTI_SESSION',
         targetSessions: allSessions.map(s => s.id),
         processedInput: this.extractCommand(input.text),
+        planning: planning ?? undefined,
         confidence: 0.85,
         reason: 'Multi-session command detected',
       };
@@ -63,6 +91,7 @@ export class Router {
         type: 'SELF_ANSWER',
         targetSessions: [],
         processedInput: input.text,
+        planning: planning ?? undefined,
         confidence: 0.9,
         reason: 'Global project query pattern detected',
       };
@@ -75,6 +104,7 @@ export class Router {
         type: 'SESSION_FORWARD',
         targetSessions: [lastSession],
         processedInput: input.text,
+        planning: planning ?? undefined,
         confidence: 0.5,
         reason: 'Most recent active session (default)',
       };
@@ -85,6 +115,7 @@ export class Router {
       type: 'SELF_ANSWER',
       targetSessions: [],
       processedInput: input.text,
+      planning: planning ?? undefined,
       confidence: 0.3,
       reason: 'No active session — self-answer',
     };

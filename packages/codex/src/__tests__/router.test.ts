@@ -57,6 +57,22 @@ describe('Router', () => {
       expect(result.targetSessions).toEqual(['sess-1']);
       expect(result.processedInput).toBe('빌드해줘');
       expect(result.confidence).toBe(1.0);
+      expect(result.planning?.kind).toBe('single_project');
+    });
+
+    it('should expose planner-backed multi-project decisions', async () => {
+      const result = await router.route(input('@console @user-next 상태 확인'));
+      expect(result.type).toBe('MULTI_SESSION');
+      expect(result.targetSessions).toEqual(['sess-1', 'sess-2']);
+      expect(result.planning?.kind).toBe('multi_project');
+      expect(result.planning?.targetSessionIds).toEqual(['sess-1', 'sess-2']);
+    });
+
+    it('should reduce unresolved worker mentions to a manual path', async () => {
+      const result = await router.route(input('@worker-7 빌드해줘'));
+      expect(result.planning?.kind).toBe('worker_fallback');
+      expect(result.planning?.manualPath).toBe(true);
+      expect(result.type).not.toBe('SESSION_FORWARD');
     });
 
     it('should detect global query', async () => {

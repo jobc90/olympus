@@ -16,11 +16,24 @@ export interface UserInput {
 
 export type RoutingType = 'SESSION_FORWARD' | 'SELF_ANSWER' | 'MULTI_SESSION' | 'CONTEXT_QUERY';
 
+export type TaskPlanningKind = 'single_project' | 'multi_project' | 'worker_fallback';
+
+export interface TaskPlanningDecision {
+  kind: TaskPlanningKind;
+  targetSessionIds: string[];
+  targetProjectNames: string[];
+  processedInput: string;
+  manualPath: boolean;
+  confidence: number;
+  reason: string;
+}
+
 export interface RoutingDecision {
   type: RoutingType;
   targetSessions: string[];
   processedInput: string;
   contextToInject?: ProjectContext;
+  planning?: TaskPlanningDecision;
   confidence: number;
   reason: string;
 }
@@ -125,6 +138,25 @@ export interface CodexOrchestratorConfig {
 export interface CodexProcessResult {
   decision: RoutingDecision;
   response?: ProcessedResponse;
+}
+
+export type ManualInputClassification = 'task_intervention' | 'new_task_candidate';
+
+export interface ManualInputInterpretation {
+  workerId: string;
+  workerName: string;
+  projectId: string;
+  projectPath: string;
+  prompt: string;
+  source: string;
+  timestamp: number;
+  classification: ManualInputClassification;
+  reason: string;
+  workerStatus?: 'idle' | 'busy' | 'offline';
+  currentTaskId?: string;
+  currentAuthorityTaskId?: string;
+  currentTaskPrompt?: string;
+  matchedSessionId?: string;
 }
 
 // ── Session Manager Config ──
