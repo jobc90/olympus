@@ -2,17 +2,8 @@ import React, { useState, useCallback, useEffect, useRef, lazy, Suspense } from 
 import { useOlympus } from './hooks/useOlympus';
 import { useOlympusMountain } from './hooks/useOlympusMountain';
 
-// --- Existing components (preserved) ---
-import { SessionOutputPanel } from './components/SessionOutputPanel';
-// EmptyState removed — "Ready to Roll!" 불필요
-import { PhaseProgress } from './components/PhaseProgress';
-import { TaskList } from './components/TaskList';
-import { AgentStream } from './components/AgentStream';
-// CommandInput removed — Codex 직접 입력 불필요
 import { AgentApprovalDialog } from './components/AgentApprovalDialog';
 import { Card } from './components/Card';
-// ContextExplorer, CodexPanel removed — 불필요
-// useContextTree removed — ContextExplorer 삭제
 
 // --- New dashboard components ---
 import Navbar from './components/dashboard/Navbar';
@@ -174,24 +165,8 @@ export default function App() {
 
   const {
     connected,
-    phase,
-    tasks,
-    logs,
-    agentStreams,
-    runs,
-    sessions,
-    availableSessions,
-    currentRunId,
-    currentSessionId,
-    sessionOutputs,
-    sessionScreens,
     error,
     pendingApproval,
-    subscribe,
-    subscribeSession,
-    cancel,
-    connectAvailableSession,
-    sendAgentCommand,
     approveTask,
     rejectTask,
     codexRoute,
@@ -200,8 +175,6 @@ export default function App() {
     codexSearch,
     chatWithGemini,
     chatWithCodex,
-    cliHistory,
-    cliStreams,
     workerConfigs: polledWorkerConfigs,
     workerDashboardStates: polledWorkerStates,
     codexBehavior: polledCodexBehavior,
@@ -319,6 +292,12 @@ export default function App() {
     : null;
   const selectedLiveOutput = projectionWorkerId
     ? workers.get(projectionWorkerId)?.output ?? ''
+    : '';
+  const selectedModalProjection = selectedWorkerId
+    ? workerProjections.get(selectedWorkerId) ?? null
+    : null;
+  const selectedModalLiveOutput = selectedWorkerId
+    ? workers.get(selectedWorkerId)?.output ?? ''
     : '';
 
   const codexConfig: CodexConfig = { name: 'Zeus', emoji: '\u26A1', avatar: 'zeus' };
@@ -516,6 +495,17 @@ export default function App() {
     return () => clearInterval(interval);
   }, [projectionWorkerId, refreshWorkerProjection]);
 
+  useEffect(() => {
+    if (!selectedWorkerId) return;
+
+    void refreshWorkerProjection(selectedWorkerId, 300);
+    const interval = setInterval(() => {
+      void refreshWorkerProjection(selectedWorkerId, 300);
+    }, 1_000);
+
+    return () => clearInterval(interval);
+  }, [selectedWorkerId, refreshWorkerProjection]);
+
   // Codex greeting → ChatWindow message for Zeus
   useEffect(() => {
     if (!codexGreeting) return;
@@ -537,7 +527,10 @@ export default function App() {
     const next = selectedWorkerId === workerId ? null : workerId;
     setSelectedWorkerId(next);
     setMonitorSelectedWorkerId(next); // keep Monitor tab in sync
-  }, [selectedWorkerId, setSelectedWorkerId]);
+    if (next) {
+      void refreshWorkerProjection(next, 300);
+    }
+  }, [refreshWorkerProjection, selectedWorkerId, setSelectedWorkerId]);
 
   const handleChatClick = useCallback((workerId: string) => {
     const w = workerConfigs.find(w => w.id === workerId);
@@ -548,15 +541,18 @@ export default function App() {
   const handleWorkerTerminalInput = useCallback((data: string) => {
     if (!selectedWorkerId) return;
     void sendWorkerInput(selectedWorkerId, data);
-  }, [selectedWorkerId, sendWorkerInput]);
+    window.setTimeout(() => {
+      void refreshWorkerProjection(selectedWorkerId, 300);
+    }, 120);
+  }, [refreshWorkerProjection, selectedWorkerId, sendWorkerInput]);
 
   const handleWorkerTerminalResize = useCallback((cols: number, rows: number) => {
     if (!selectedWorkerId) return;
     void resizeWorkerTerminal(selectedWorkerId, cols, rows);
-  }, [selectedWorkerId, resizeWorkerTerminal]);
-
-  const currentRun = runs.find((r) => r.runId === currentRunId);
-  const currentSession = sessions.find((s) => s.id === currentSessionId);
+    window.setTimeout(() => {
+      void refreshWorkerProjection(selectedWorkerId, 300);
+    }, 120);
+  }, [refreshWorkerProjection, resizeWorkerTerminal, selectedWorkerId]);
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg-primary, #0A0F1C)' }}>
@@ -615,202 +611,175 @@ export default function App() {
               <UsageBar data={connected ? usageData : null} />
             </section>
 
-            {currentRunId && currentRun ? (
-              <section className="space-y-6">
-                <Card className="flex items-center justify-between py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                    <span className="font-mono text-sm text-primary">{currentRunId}</span>
-                    <span className="text-xs text-text-muted">
-                      Phase {currentRun.phase}: {currentRun.phaseName}
+            <section className="grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
+              <div ref={leftConsoleColumnRef} className="xl:col-span-3 space-y-6">
+                <Card className="rounded-2xl h-[248px] pb-2 flex flex-col">
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
+                      Olympian Command
+                    </h2>
+                    <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
+                      codex / gemini
                     </span>
                   </div>
-                  {currentRun.status === 'running' && (
-                    <button
-                      onClick={() => cancel(currentRunId)}
-                      className="text-xs text-error hover:text-error/80 transition-colors flex items-center gap-1"
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </Card>
-                <PhaseProgress phase={phase} />
-                <TaskList tasks={tasks} />
-                <AgentStream agentStreams={agentStreams} />
-              </section>
-            ) : currentSessionId && currentSession ? (
-              <SessionOutputPanel session={currentSession} outputs={sessionOutputs.filter(o => o.sessionId === currentSessionId)} screen={sessionScreens.get(currentSessionId!)} />
-            ) : (
-              <section className="grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
-                <div ref={leftConsoleColumnRef} className="xl:col-span-3 space-y-6">
-                  <Card className="rounded-2xl h-[248px] pb-2 flex flex-col">
-                    <div className="flex items-center justify-between mb-3">
-                      <h2 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
-                        Olympian Command
-                      </h2>
-                      <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
-                        codex / gemini
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-                      <CodexAgentPanel
-                        codexConfig={codexConfig}
-                        codexBehavior={connected ? polledCodexBehavior : 'supervising'}
-                        connected={connected}
-                        onChatClick={() => setChatTarget({ id: 'codex', name: 'Zeus', emoji: '\u26A1', color: '#FFD700' })}
-                      />
-                      <GeminiAdvisorPanel
-                        geminiConfig={geminiConfig}
-                        geminiBehavior={connected ? polledGeminiBehavior : 'offline'}
-                        cacheCount={polledGeminiCacheCount}
-                        lastAnalyzed={polledGeminiLastAnalyzed}
-                        currentTask={polledGeminiCurrentTask}
-                        formatRelativeTime={formatRelativeTime}
-                        onChatClick={() => setChatTarget({ id: 'gemini', name: 'Hera', emoji: '\uD83E\uDD89', color: '#CE93D8' })}
-                      />
-                    </div>
-                  </Card>
-
-                  <WorkerGrid
-                    workers={workerConfigs}
-                    workerStates={workerStates}
-                    onChatClick={handleChatClick}
-                    onDetailClick={handleDetailClick}
-                  />
-
-                  <div className="min-h-[420px] h-[clamp(420px,52vh,620px)]">
-                    <WorkerTaskBoard tasks={workerTasks} />
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
-                    <ProjectedTerminalPanel
-                      workerId={projectionWorkerId}
-                      workerName={projectionWorker?.name}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                    <CodexAgentPanel
+                      codexConfig={codexConfig}
+                      codexBehavior={connected ? polledCodexBehavior : 'supervising'}
                       connected={connected}
-                      liveOutput={selectedLiveOutput}
-                      projection={selectedProjection}
-                      onRefresh={() => {
-                        if (projectionWorkerId) {
-                          void refreshWorkerProjection(projectionWorkerId);
-                        }
-                      }}
+                      onChatClick={() => setChatTarget({ id: 'codex', name: 'Zeus', emoji: '\u26A1', color: '#FFD700' })}
                     />
-
-                    <Card className="flex min-h-[360px] flex-col">
-                      <div className="mb-3 flex items-center justify-between">
-                        <h3 className="text-lg font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>
-                          Project Summaries
-                        </h3>
-                        <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
-                          authority-first
-                        </span>
-                      </div>
-
-                      <div className="flex-1 space-y-3 overflow-y-auto">
-                        {projectSummaries.length === 0 ? (
-                          <div className="flex h-full min-h-[240px] items-center justify-center rounded-xl border border-dashed border-border/60 text-sm text-text-secondary">
-                            No project summaries yet.
-                          </div>
-                        ) : (
-                          projectSummaries.map((summary) => (
-                            <div
-                              key={summary.projectId}
-                              className="rounded-xl border p-3"
-                              style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(8, 13, 26, 0.45)' }}
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                                  {summary.projectId}
-                                </div>
-                                <div className="text-[11px] font-mono" style={{ color: 'var(--text-secondary)' }}>
-                                  total {summary.counts.total}
-                                </div>
-                              </div>
-                              <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-mono">
-                                <span style={{ color: 'var(--accent-warning)' }}>blocked {summary.counts.blocked}</span>
-                                <span style={{ color: 'var(--accent-danger)' }}>failed {summary.counts.failed}</span>
-                                <span style={{ color: 'var(--accent-secondary)' }}>risky {summary.counts.risky}</span>
-                                <span style={{ color: 'var(--accent-success)' }}>completed {summary.counts.completed}</span>
-                              </div>
-                              <div className="mt-3 text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                                {summary.summary || 'No summary available.'}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </Card>
+                    <GeminiAdvisorPanel
+                      geminiConfig={geminiConfig}
+                      geminiBehavior={connected ? polledGeminiBehavior : 'offline'}
+                      cacheCount={polledGeminiCacheCount}
+                      lastAnalyzed={polledGeminiLastAnalyzed}
+                      currentTask={polledGeminiCurrentTask}
+                      formatRelativeTime={formatRelativeTime}
+                      onChatClick={() => setChatTarget({ id: 'gemini', name: 'Hera', emoji: '\uD83E\uDD89', color: '#CE93D8' })}
+                    />
                   </div>
+                </Card>
+
+                <WorkerGrid
+                  workers={workerConfigs}
+                  workerStates={workerStates}
+                  onChatClick={handleChatClick}
+                  onDetailClick={handleDetailClick}
+                />
+
+                <div className="min-h-[420px] h-[clamp(420px,52vh,620px)]">
+                  <WorkerTaskBoard tasks={workerTasks} />
                 </div>
 
-                <aside
-                  className="xl:col-span-1 h-full min-h-0 flex flex-col gap-6"
-                  style={isXlLayout && leftConsoleHeight > 0 ? { height: leftConsoleHeight } : undefined}
-                >
-                  <Card className="rounded-2xl shrink-0">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <h2 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
-                          Olympus Live Preview
-                        </h2>
-                        <button
-                          type="button"
-                          className="text-[11px] font-mono px-2 py-1 rounded-md border hover:bg-white/10 transition-colors"
-                          style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
-                          onClick={() => setActiveTab('monitor')}
-                        >
-                          Open Monitor
-                        </button>
-                      </div>
-                      <div className="cursor-pointer h-[196px] xl:h-[208px]" onClick={() => setActiveTab('monitor')}>
-                        <MiniOlympusMountain
-                          workers={workerConfigs}
-                          workerStates={workerStates}
-                          codexConfig={codexConfig}
-                          olympusMountainState={olympusMountainState}
-                          onTick={tick}
-                        />
-                      </div>
+                <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
+                  <ProjectedTerminalPanel
+                    workerId={projectionWorkerId}
+                    workerName={projectionWorker?.name}
+                    connected={connected}
+                    liveOutput={selectedLiveOutput}
+                    projection={selectedProjection}
+                    onRefresh={() => {
+                      if (projectionWorkerId) {
+                        void refreshWorkerProjection(projectionWorkerId);
+                      }
+                    }}
+                  />
 
-                      <div
-                        className="rounded-xl border p-3"
-                        style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(8, 13, 26, 0.45)' }}
-                      >
-                        <h2 className="font-semibold text-lg mb-3" style={{ color: 'var(--text-primary)' }}>
-                          Overview
-                        </h2>
-                        <SystemStats stats={systemStats} />
-                      </div>
+                  <Card className="flex min-h-[360px] flex-col">
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-lg font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                        Project Summaries
+                      </h3>
+                      <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
+                        authority-first
+                      </span>
+                    </div>
+
+                    <div className="flex-1 space-y-3 overflow-y-auto">
+                      {projectSummaries.length === 0 ? (
+                        <div className="flex h-full min-h-[240px] items-center justify-center rounded-xl border border-dashed border-border/60 text-sm text-text-secondary">
+                          No project summaries yet.
+                        </div>
+                      ) : (
+                        projectSummaries.map((summary) => (
+                          <div
+                            key={summary.projectId}
+                            className="rounded-xl border p-3"
+                            style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(8, 13, 26, 0.45)' }}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                                {summary.projectId}
+                              </div>
+                              <div className="text-[11px] font-mono" style={{ color: 'var(--text-secondary)' }}>
+                                total {summary.counts.total}
+                              </div>
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-mono">
+                              <span style={{ color: 'var(--accent-warning)' }}>blocked {summary.counts.blocked}</span>
+                              <span style={{ color: 'var(--accent-danger)' }}>failed {summary.counts.failed}</span>
+                              <span style={{ color: 'var(--accent-secondary)' }}>risky {summary.counts.risky}</span>
+                              <span style={{ color: 'var(--accent-success)' }}>completed {summary.counts.completed}</span>
+                            </div>
+                            <div className="mt-3 text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                              {summary.summary || 'No summary available.'}
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </Card>
+                </div>
+              </div>
 
-                  <div className="flex-1 min-h-[220px] overflow-hidden">
-                    <ActivityFeed
-                      events={connected && polledActivityEvents.length > 0 ? polledActivityEvents.map(e => ({
-                        id: e.id,
-                        type: e.type,
-                        agentName: e.agentName,
-                        message: e.message,
-                        timestamp: e.timestamp,
-                        color: e.color,
-                      })) : []}
-                      height="100%"
-                    />
+              <aside
+                className="xl:col-span-1 h-full min-h-0 flex flex-col gap-6"
+                style={isXlLayout && leftConsoleHeight > 0 ? { height: leftConsoleHeight } : undefined}
+              >
+                <Card className="rounded-2xl shrink-0">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
+                        Olympus Live Preview
+                      </h2>
+                      <button
+                        type="button"
+                        className="text-[11px] font-mono px-2 py-1 rounded-md border hover:bg-white/10 transition-colors"
+                        style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+                        onClick={() => setActiveTab('monitor')}
+                      >
+                        Open Monitor
+                      </button>
+                    </div>
+                    <div className="cursor-pointer h-[196px] xl:h-[208px]" onClick={() => setActiveTab('monitor')}>
+                      <MiniOlympusMountain
+                        workers={workerConfigs}
+                        workerStates={workerStates}
+                        codexConfig={codexConfig}
+                        olympusMountainState={olympusMountainState}
+                        onTick={tick}
+                      />
+                    </div>
+
+                    <div
+                      className="rounded-xl border p-3"
+                      style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(8, 13, 26, 0.45)' }}
+                    >
+                      <h2 className="font-semibold text-lg mb-3" style={{ color: 'var(--text-primary)' }}>
+                        Overview
+                      </h2>
+                      <SystemStats stats={systemStats} />
+                    </div>
                   </div>
+                </Card>
 
-                  {syncStatus.lastPollError && (
-                    <Card>
-                      <h3 className="font-semibold text-sm mb-2" style={{ color: 'var(--text-primary)' }}>
-                        Sync Warning
-                      </h3>
-                      <p className="text-xs font-mono" style={{ color: 'var(--accent-warning)' }}>
-                        {syncStatus.lastPollError}
-                      </p>
-                    </Card>
-                  )}
-                </aside>
-              </section>
-            )}
+                <div className="flex-1 min-h-[220px] overflow-hidden">
+                  <ActivityFeed
+                    events={connected && polledActivityEvents.length > 0 ? polledActivityEvents.map(e => ({
+                      id: e.id,
+                      type: e.type,
+                      agentName: e.agentName,
+                      message: e.message,
+                      timestamp: e.timestamp,
+                      color: e.color,
+                    })) : []}
+                    height="100%"
+                  />
+                </div>
+
+                {syncStatus.lastPollError && (
+                  <Card>
+                    <h3 className="font-semibold text-sm mb-2" style={{ color: 'var(--text-primary)' }}>
+                      Sync Warning
+                    </h3>
+                    <p className="text-xs font-mono" style={{ color: 'var(--accent-warning)' }}>
+                      {syncStatus.lastPollError}
+                    </p>
+                  </Card>
+                )}
+              </aside>
+            </section>
           </div>
         )}
 
@@ -864,7 +833,8 @@ export default function App() {
             key={selectedWorkerId}
             workerId={selectedWorkerId}
             workerConfig={workerConfigs.find(w => w.id === selectedWorkerId)}
-            liveOutput={workers.get(selectedWorkerId)?.output ?? ''}
+            projection={selectedModalProjection}
+            liveOutput={selectedModalLiveOutput}
             connected={connected}
             onTerminalInput={handleWorkerTerminalInput}
             onTerminalResize={handleWorkerTerminalResize}

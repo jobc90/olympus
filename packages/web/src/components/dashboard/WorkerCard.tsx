@@ -111,7 +111,7 @@ export function WorkerCard({ worker, state, onChatClick, onDetailClick }: Worker
             style={{ color: info.neonColor, borderColor: `${info.neonColor}66` }}
             onClick={(e) => { e.stopPropagation(); onDetailClick(worker.id); }}
           >
-            Terminal
+            Console
           </button>
         )}
       </div>

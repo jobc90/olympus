@@ -338,7 +338,7 @@ export function OlympusTempleMonitor({
 
                     <div className="flex items-center gap-2">
                       <button className="temple-btn" onClick={() => onOpenWorkerChat(selectedWorker.id)}>Chat</button>
-                      <button className="temple-btn temple-btn-strong" onClick={() => onOpenWorkerTerminal(selectedWorker.id)}>Terminal</button>
+                      <button className="temple-btn temple-btn-strong" onClick={() => onOpenWorkerTerminal(selectedWorker.id)}>Console</button>
                     </div>
                   </div>
                 )}

@@ -5,25 +5,10 @@ import { behaviorToOlympusMountainState } from '../lib/state-mapper';
 import { WORKER_AVATAR_POOL } from '../lib/avatar-pool';
 import type { WorkerBehavior, WorkerDashboardState } from '../lib/types';
 import type {
-  PhasePayload,
-  TaskPayload,
-  AgentPayload,
-  LogPayload,
-  SnapshotPayload,
-  RunStatus,
-  SessionInfo,
-  AvailableSession,
   CliRunResult,
   RegisteredWorker,
   StatuslineUsageData,
-  CliSessionRecord,
 } from '@olympus-dev/protocol';
-
-export interface SessionOutput {
-  sessionId: string;
-  content: string;
-  timestamp: number;
-}
 
 export interface AgentProgress {
   taskId: string;
@@ -39,23 +24,6 @@ export interface WorkerInfo {
   projectPath: string;
   status: 'running' | 'completed' | 'failed';
   output: string;
-}
-
-export interface CliHistoryItem {
-  sessionKey: string;
-  prompt: string;
-  text: string;
-  usage: { inputTokens: number; outputTokens: number };
-  cost: number;
-  durationMs: number;
-  timestamp: number;
-}
-
-export interface CliStreamState {
-  sessionKey: string;
-  chunks: string[];
-  startedAt: number;
-  active: boolean;
 }
 
 export interface WorkerTaskEntry {
@@ -174,20 +142,8 @@ export interface WorkerTerminalProjection {
   };
 }
 
-export interface OlympusState {
+export interface OlympusDashboardState {
   connected: boolean;
-  phase: PhasePayload | null;
-  tasks: TaskPayload[];
-  logs: LogPayload[];
-  agentStreams: Map<string, string>;
-  runs: RunStatus[];
-  sessions: SessionInfo[];
-  availableSessions: AvailableSession[];
-  currentRunId: string | null;
-  currentSessionId: string | null;
-  sessionOutputs: SessionOutput[];
-  /** Terminal mirror: full screen snapshot per session (replace, not append) */
-  sessionScreens: Map<string, string>;
   error: string | null;
   // V2 Agent/Worker state
   agentState: string;
@@ -196,10 +152,7 @@ export interface OlympusState {
   workers: Map<string, WorkerInfo>;
   taskHistory: TaskHistoryItem[];
   pendingApproval: PendingApproval | null;
-  cliHistory: CliHistoryItem[];
-  cliStreams: Map<string, CliStreamState>;
   workerTasks: WorkerTaskEntry[];
-  cliSessions: CliSessionRecord[];
   // Olympus Mountain dashboard extensions
   workerConfigs: WorkerConfigEntry[];
   workerBehaviors: Record<string, string>;
@@ -256,6 +209,8 @@ export interface OlympusState {
   syncStatus: SyncStatusEntry;
 }
 
+type OlympusInternalState = OlympusDashboardState;
+
 export interface UseOlympusOptions {
   port?: number;
   host?: string;
@@ -306,7 +261,7 @@ function buildWorkerConfigs(workers: RegisteredWorker[]): WorkerConfigEntry[] {
     usedAvatars.add(avatarName);
     configMap.set(w.id, {
       id: w.id,
-      name: avatarName.charAt(0).toUpperCase() + avatarName.slice(1),
+      name: w.name,
       color: WORKER_COLORS[h % WORKER_COLORS.length],
       avatar: avatarName,
       projectPath: w.projectPath,
@@ -440,19 +395,8 @@ function saveWorkersToStorage(workers: Map<string, WorkerInfo>): void {
 
 export function useOlympus(options: UseOlympusOptions = {}) {
   const clientRef = useRef<OlympusClient | null>(null);
-  const [state, setState] = useState<OlympusState>({
+  const [state, setState] = useState<OlympusInternalState>({
     connected: false,
-    phase: null,
-    tasks: [],
-    logs: [],
-    agentStreams: new Map(),
-    runs: [],
-    sessions: [],
-    availableSessions: [],
-    currentRunId: null,
-    currentSessionId: null,
-    sessionOutputs: [],
-    sessionScreens: new Map(),
     error: null,
     agentState: 'IDLE',
     agentProgress: null,
@@ -460,10 +404,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     workers: loadWorkersFromStorage(),
     taskHistory: [],
     pendingApproval: null,
-    cliHistory: [],
-    cliStreams: new Map(),
     workerTasks: [],
-    cliSessions: [],
     // Olympus Mountain extensions
     workerConfigs: [],
     workerBehaviors: {},
@@ -538,132 +479,6 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       }));
     });
 
-    client.onRunsList((runs: RunStatus[]) => {
-      setState((s) => ({ ...s, runs }));
-    });
-
-    client.onSessionsList((payload: unknown) => {
-      const data = payload as { sessions?: SessionInfo[]; availableSessions?: AvailableSession[] };
-      // Handle both array (old format) and object (new format)
-      const newSessions = Array.isArray(data) ? data as SessionInfo[] : (data.sessions ?? []);
-      const newAvailable = Array.isArray(data) ? [] : (data.availableSessions ?? []);
-
-      setState((s) => {
-        const activeSessions = newSessions.filter(sess => sess.status === 'active');
-
-        // Auto-subscribe to first active session if none currently selected
-        if (!s.currentSessionId && !s.currentRunId && activeSessions.length > 0) {
-          const first = activeSessions[0];
-          client.subscribeSession(first.id);
-          return {
-            ...s,
-            sessions: newSessions,
-            availableSessions: newAvailable,
-            currentSessionId: first.id,
-          };
-        }
-
-        return {
-          ...s,
-          sessions: newSessions,
-          availableSessions: newAvailable,
-        };
-      });
-    });
-
-    client.onSnapshot((snap: SnapshotPayload) => {
-      setState((s) => ({
-        ...s,
-        connected: true,
-        phase: { phase: snap.phase, phaseName: snap.phaseName, status: 'started' },
-        tasks: snap.tasks,
-      }));
-    });
-
-    client.onPhase((p: PhasePayload) => {
-      setState((s) => ({ ...s, phase: p }));
-    });
-
-    client.onTask((t: TaskPayload) => {
-      setState((s) => {
-        const tasks = [...s.tasks];
-        const idx = tasks.findIndex((x) => x.taskId === t.taskId);
-        if (idx >= 0) tasks[idx] = t;
-        else tasks.push(t);
-        return { ...s, tasks };
-      });
-    });
-
-    client.onAgentChunk((a: AgentPayload) => {
-      setState((s) => {
-        const streams = new Map(s.agentStreams);
-        streams.set(a.agentId, (streams.get(a.agentId) ?? '') + (a.content ?? ''));
-        return { ...s, agentStreams: streams };
-      });
-    });
-
-    client.onAgentComplete(() => {
-      setState((s) => ({ ...s, agentStreams: new Map() }));
-    });
-
-    client.onLog((l: LogPayload) => {
-      setState((s) => ({
-        ...s,
-        logs: [...s.logs.slice(-99), l],
-        syncStatus: {
-          ...s.syncStatus,
-          lastWsEventAt: Date.now(),
-        },
-      }));
-    });
-
-    client.onSessionOutput((p) => {
-      const payload = p as { sessionId: string; content: string; timestamp?: number };
-      setState((s) => ({
-        ...s,
-        sessionOutputs: [...s.sessionOutputs.slice(-49), { sessionId: payload.sessionId, content: payload.content, timestamp: payload.timestamp ?? Date.now() }],
-        logs: [...s.logs.slice(-99), { level: 'info', message: `[session:screen] ${payload.content.slice(0, 200)}${payload.content.length > 200 ? '...' : ''}` }],
-      }));
-    });
-
-    client.onSessionScreen((p) => {
-      const payload = p as { sessionId: string; content: string };
-      setState((s) => {
-        const screens = new Map(s.sessionScreens);
-        screens.set(payload.sessionId, payload.content);
-        return { ...s, sessionScreens: screens };
-      });
-    });
-
-    client.onSessionError((p) => {
-      setState((s) => ({
-        ...s,
-        logs: [...s.logs.slice(-99), { level: 'error', message: `[session:error] ${p.error}` }],
-      }));
-    });
-
-    client.onSessionClosed((p) => {
-      setState((s) => {
-        const screens = new Map(s.sessionScreens);
-        screens.delete(p.sessionId);
-        return {
-          ...s,
-          currentSessionId: s.currentSessionId === p.sessionId ? null : s.currentSessionId,
-          sessionOutputs: s.sessionOutputs.filter(o => o.sessionId !== p.sessionId),
-          sessionScreens: screens,
-          logs: [...s.logs.slice(-99), { level: 'warn', message: `[session:closed] Session ${p.sessionId} ended` }],
-        };
-      });
-    });
-
-    // Codex session events
-    client.onCodexSessionEvent((p) => {
-      setState((s) => ({
-        ...s,
-        logs: [...s.logs.slice(-99), { level: 'info', message: `[codex:session] ${p.projectName ?? p.sessionId}: ${p.status}` }],
-      }));
-    });
-
     // V2 Agent events
     client.onAgentProgress((p) => {
       const progress = p as AgentProgress;
@@ -672,7 +487,6 @@ export function useOlympus(options: UseOlympusOptions = {}) {
         agentState: progress.state,
         agentProgress: progress,
         agentTaskId: progress.taskId,
-        logs: [...s.logs.slice(-99), { level: 'info', message: `[agent] ${progress.message}` }],
       }));
     });
 
@@ -695,7 +509,6 @@ export function useOlympus(options: UseOlympusOptions = {}) {
           agentTaskId: null,
           pendingApproval: null,
           taskHistory: [historyItem, ...s.taskHistory].slice(0, 50),
-          logs: [...s.logs.slice(-99), { level: report.status === 'success' ? 'info' : 'error', message: `[agent:result] ${report.summary}` }],
         };
       });
     });
@@ -705,7 +518,6 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       setState((s) => ({
         ...s,
         pendingApproval: { ...request, taskId },
-        logs: [...s.logs.slice(-99), { level: 'warn', message: `[agent:approval] 승인 대기: ${request.command}` }],
       }));
     });
 
@@ -1386,30 +1198,6 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       });
     });
 
-    // CLI stream chunks (real-time stdout)
-    client.on('cli:stream', (m) => {
-      const payload = m.payload as { sessionKey: string; chunk: string };
-      setState((s) => {
-        const now = Date.now();
-        const streams = new Map(s.cliStreams);
-        const existing = streams.get(payload.sessionKey);
-        if (existing) {
-          const chunks = [...existing.chunks, payload.chunk];
-          streams.set(payload.sessionKey, { ...existing, chunks: chunks.length > 100 ? chunks.slice(-100) : chunks });
-        } else {
-          streams.set(payload.sessionKey, { sessionKey: payload.sessionKey, chunks: [payload.chunk], startedAt: Date.now(), active: true });
-        }
-        return {
-          ...s,
-          cliStreams: streams,
-          syncStatus: {
-            ...s.syncStatus,
-            lastWsEventAt: now,
-          },
-        };
-      });
-    });
-
     // Usage data updates
     client.on('usage:update', (m) => {
       const data = m.payload as StatuslineUsageData;
@@ -1426,25 +1214,8 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     client.onCliComplete((result: CliRunResult) => {
       setState((s) => {
         const now = Date.now();
-        const item: CliHistoryItem = {
-          sessionKey: result.sessionId,
-          prompt: '',
-          text: result.text.slice(0, 2000),
-          usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
-          cost: result.cost,
-          durationMs: result.durationMs,
-          timestamp: now,
-        };
-        // Mark active stream as inactive (sessionKey != result.sessionId)
-        const streams = new Map(s.cliStreams);
-        for (const [key, stream] of streams) {
-          if (stream.active) {
-            streams.set(key, { ...stream, active: false });
-          }
-        }
-
         const matchingWorker = s.workerConfigs.find(cfg =>
-          sessionKeyMatchesWorker(item.sessionKey, cfg.id, cfg.registeredName),
+          sessionKeyMatchesWorker(result.sessionId, cfg.id, cfg.registeredName),
         );
         const workerDashboardStates = { ...s.workerDashboardStates };
         if (matchingWorker) {
@@ -1469,10 +1240,7 @@ export function useOlympus(options: UseOlympusOptions = {}) {
 
         return {
           ...s,
-          cliHistory: [item, ...s.cliHistory].slice(0, 100),
-          cliStreams: streams,
           workerDashboardStates,
-          logs: [...s.logs.slice(-99), { level: 'info', message: `[cli:complete] $${result.cost.toFixed(4)} / ${result.usage.inputTokens + result.usage.outputTokens} tokens` }],
           syncStatus: {
             ...s.syncStatus,
             lastWsEventAt: now,
@@ -1497,7 +1265,6 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       setState((s) => ({
         ...s,
         error: `${e.code}: ${e.message}`,
-        logs: [...s.logs.slice(-99), { level: 'error', message: `${e.code}: ${e.message}` }],
         syncStatus: {
           ...s.syncStatus,
           lastWsEventAt: Date.now(),
@@ -1547,14 +1314,9 @@ export function useOlympus(options: UseOlympusOptions = {}) {
           // Convert to workerConfigs
           const workerConfigs = buildWorkerConfigs(registeredWorkers);
 
-          // Derive behaviors from worker status + CLI streams
+          // Derive behaviors from worker registry truth and recent dashboard state.
           const workerBehaviors: Record<string, string> = {};
           for (const w of registeredWorkers) {
-            // Check CLI stream activity
-            const hasActiveStream = Array.from(s.cliStreams.values()).some(
-              stream => stream.active && sessionKeyMatchesWorker(stream.sessionKey, w.id, w.name),
-            );
-
             if (w.status === 'offline') {
               workerBehaviors[w.id] = 'offline';
             } else if (w.status === 'failed' as string) {
@@ -1562,23 +1324,14 @@ export function useOlympus(options: UseOlympusOptions = {}) {
             } else if (w.status === 'busy' && w.currentTaskId) {
               workerBehaviors[w.id] = 'working';
             } else if (w.status === 'busy') {
-              // Busy without taskId: still show active if stream is flowing.
-              workerBehaviors[w.id] = hasActiveStream ? 'working' : 'thinking';
+              workerBehaviors[w.id] = 'thinking';
             } else {
-              // When registry says idle, never pin to "working" only by CLI stream.
-              // Streams can be stale or unrelated to this worker.
-              if (hasActiveStream) {
-                workerBehaviors[w.id] = 'chatting';
-                continue;
-              }
-              // Check if recently completed (within last 30s via cliHistory)
-              const recentComplete = s.cliHistory.find(
-                h => sessionKeyMatchesWorker(h.sessionKey, w.id, w.name) && (now - h.timestamp) < 30000,
-              );
-              if (recentComplete) {
+              const existingDashboard = s.workerDashboardStates[w.id];
+              const recentlyCompleted = existingDashboard?.behavior === 'completed'
+                && (now - existingDashboard.lastActivity) < 30_000;
+              if (recentlyCompleted) {
                 workerBehaviors[w.id] = 'completed';
               } else {
-                // Check idle duration
                 const idleDuration = now - w.lastHeartbeat;
                 if (idleDuration > 60000 && w.lastHeartbeat > 0) {
                   workerBehaviors[w.id] = 'offline';
@@ -1759,31 +1512,6 @@ export function useOlympus(options: UseOlympusOptions = {}) {
       }
     };
 
-    const pollCliSessions = async () => {
-      try {
-        const res = await fetch(`http://${host}:${port}/api/cli/sessions?limit=20`, {
-          cache: 'no-store',
-          headers: apiKey ? { 'x-api-key': apiKey } : {},
-        });
-        if (!res.ok) {
-          markPollFailure(`/api/cli/sessions ${res.status}`);
-          return;
-        }
-        const data = await res.json() as { sessions: CliSessionRecord[] };
-        setState((s) => ({
-          ...s,
-          cliSessions: data.sessions ?? [],
-          syncStatus: {
-            ...s.syncStatus,
-            lastPollAt: Date.now(),
-            lastPollError: null,
-          },
-        }));
-      } catch (err) {
-        markPollFailure((err as Error).message);
-      }
-    };
-
     const pollProjectSummaries = async () => {
       try {
         const res = await fetch(`http://${host}:${port}/api/projects/summaries`, {
@@ -1869,14 +1597,12 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     pollWorkers();
     pollGemini();
     pollUsage();
-    pollCliSessions();
     pollProjectSummaries();
     pollWorkerTasks();
     const interval = setInterval(() => {
       pollWorkers();
       pollGemini();
       pollUsage();
-      pollCliSessions();
       pollProjectSummaries();
       pollWorkerTasks();
     }, 10_000);
@@ -1917,108 +1643,6 @@ export function useOlympus(options: UseOlympusOptions = {}) {
   // =========================================================================
   // Actions (existing)
   // =========================================================================
-
-  const subscribe = useCallback((runId: string) => {
-    clientRef.current?.subscribe(runId);
-    setState((s) => ({ ...s, currentRunId: runId, currentSessionId: null, tasks: [], phase: null, agentStreams: new Map(), sessionOutputs: [] }));
-  }, []);
-
-  const unsubscribe = useCallback((runId: string) => {
-    clientRef.current?.unsubscribe(runId);
-    setState((s) => ({
-      ...s,
-      currentRunId: s.currentRunId === runId ? null : s.currentRunId,
-    }));
-  }, []);
-
-  const subscribeSession = useCallback((sessionId: string) => {
-    clientRef.current?.subscribeSession(sessionId);
-    setState((s) => ({ ...s, currentSessionId: sessionId, currentRunId: null, tasks: [], phase: null, agentStreams: new Map() }));
-  }, []);
-
-  const unsubscribeSession = useCallback((sessionId: string) => {
-    clientRef.current?.unsubscribeSession(sessionId);
-    setState((s) => ({
-      ...s,
-      currentSessionId: s.currentSessionId === sessionId ? null : s.currentSessionId,
-    }));
-  }, []);
-
-  const cancel = useCallback((runId?: string, taskId?: string) => {
-    clientRef.current?.cancel(runId, taskId);
-  }, []);
-
-  const connectAvailableSession = useCallback(async (tmuxSession: string) => {
-    try {
-      const baseUrl = `http://${host ?? DEFAULT_GATEWAY_HOST}:${port ?? DEFAULT_GATEWAY_PORT}`;
-      const res = await fetch(`${baseUrl}/api/sessions/connect`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-        },
-        body: JSON.stringify({ chatId: 0, tmuxSession }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
-        setState(s => ({ ...s, error: err.message || 'Failed to connect session' }));
-        return;
-      }
-      const data = await res.json();
-      const session = data.session;
-      if (session?.id) {
-        // Subscribe to the newly connected session
-        clientRef.current?.subscribeSession(session.id);
-        setState(s => ({
-          ...s,
-          currentSessionId: session.id,
-          currentRunId: null,
-          tasks: [],
-          phase: null,
-          agentStreams: new Map(),
-          sessionOutputs: [],
-          error: null,
-        }));
-      }
-    } catch (e) {
-      setState(s => ({ ...s, error: `Failed to connect: ${(e as Error).message}` }));
-    }
-  }, [host, port, apiKey]);
-
-  const sendAgentCommand = useCallback(async (command: string) => {
-    try {
-      const gatewayUrl = `http://${host}:${port}`;
-      const res = await fetch(`${gatewayUrl}/api/cli/run`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-        },
-        body: JSON.stringify({
-          prompt: command,
-          provider: 'claude',
-          dangerouslySkipPermissions: true,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json() as { message?: string };
-        throw new Error(err.message ?? `HTTP ${res.status}`);
-      }
-      const { result } = await res.json() as { result: { text: string; success: boolean } };
-      return result;
-    } catch (e) {
-      setState(s => ({ ...s, error: `Agent error: ${(e as Error).message}` }));
-      return null;
-    }
-  }, [host, port, apiKey]);
-
-  const cancelAgentTask = useCallback(async () => {
-    try {
-      await clientRef.current?.cancelAgent();
-    } catch (e) {
-      setState(s => ({ ...s, error: `Cancel error: ${(e as Error).message}` }));
-    }
-  }, []);
 
   const approveTask = useCallback(async (taskId: string) => {
     try {
@@ -2119,20 +1743,6 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     setState(s => ({ ...s, selectedWorkerId: workerId }));
   }, []);
 
-  const deleteCliSession = useCallback(async (key: string): Promise<void> => {
-    try {
-      const res = await fetch(`http://${host}:${port}/api/cli/sessions/${encodeURIComponent(key)}`, {
-        method: 'DELETE',
-        headers: apiKey ? { 'x-api-key': apiKey } : {},
-      });
-      if (res.ok) {
-        setState(s => ({ ...s, cliSessions: s.cliSessions.filter(sess => sess.key !== key) }));
-      }
-    } catch {
-      // Silently fail
-    }
-  }, [host, port, apiKey]);
-
   const refreshWorkerProjection = useCallback(async (workerId: string, lines = 200): Promise<boolean> => {
     if (!workerId) return false;
     try {
@@ -2202,16 +1812,33 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     }
   }, [host, port, apiKey]);
 
+  // Expose only the active dashboard read model and actions used by the current UI.
   return {
-    ...state,
-    subscribe,
-    unsubscribe,
-    subscribeSession,
-    unsubscribeSession,
-    cancel,
-    connectAvailableSession,
-    sendAgentCommand,
-    cancelAgentTask,
+    connected: state.connected,
+    error: state.error,
+    pendingApproval: state.pendingApproval,
+    workerConfigs: state.workerConfigs,
+    workerDashboardStates: state.workerDashboardStates,
+    codexBehavior: state.codexBehavior,
+    geminiBehavior: state.geminiBehavior,
+    geminiCurrentTask: state.geminiCurrentTask,
+    geminiCacheCount: state.geminiCacheCount,
+    geminiLastAnalyzed: state.geminiLastAnalyzed,
+    activityEvents: state.activityEvents,
+    systemStats: state.systemStats,
+    usageData: state.usageData,
+    workers: state.workers,
+    workerTasks: state.workerTasks,
+    workerProjections: state.workerProjections,
+    projectSummaries: state.projectSummaries,
+    lastWorkerCompletion: state.lastWorkerCompletion,
+    lastWorkerAssignment: state.lastWorkerAssignment,
+    lastWorkerSummary: state.lastWorkerSummary,
+    lastWorkerFailure: state.lastWorkerFailure,
+    workerLogs: state.workerLogs,
+    selectedWorkerId: state.selectedWorkerId,
+    codexGreeting: state.codexGreeting,
+    syncStatus: state.syncStatus,
     approveTask,
     rejectTask,
     codexRoute,
@@ -2220,18 +1847,9 @@ export function useOlympus(options: UseOlympusOptions = {}) {
     codexSearch,
     chatWithGemini,
     chatWithCodex,
-    deleteCliSession,
     sendWorkerInput,
     resizeWorkerTerminal,
     refreshWorkerProjection,
-    lastWorkerCompletion: state.lastWorkerCompletion,
-    lastWorkerAssignment: state.lastWorkerAssignment,
-    lastWorkerSummary: state.lastWorkerSummary,
-    lastWorkerFailure: state.lastWorkerFailure,
-    workerLogs: state.workerLogs,
-    workerProjections: state.workerProjections,
-    projectSummaries: state.projectSummaries,
-    selectedWorkerId: state.selectedWorkerId,
     setSelectedWorkerId,
   };
 }

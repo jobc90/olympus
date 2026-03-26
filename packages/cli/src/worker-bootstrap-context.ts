@@ -62,7 +62,7 @@ export async function prepareWorkerBootstrapContext(
   const projectPath = resolve(input.opts.project as string);
   const runtimeKind = resolveWorkerRuntimeKind(input.opts.runtime);
   const runtimeSocketsRoot = resolveRuntimeSocketsRoot(input.envRuntimeSocketsRoot);
-  let workerName = (input.opts.name as string) || basename(projectPath);
+  let workerName = basename(projectPath);
 
   const loadGatewayConfig = input.loadGatewayConfig ?? (async () => {
     const { loadConfig } = await import('@olympus-dev/gateway');
@@ -88,15 +88,12 @@ export async function prepareWorkerBootstrapContext(
     return exit(1);
   }
 
-  if (!input.opts.name) {
-    const resolved = await controlPlaneClient.resolveAvailableWorkerName(workerName);
-    if (resolved.conflicted) {
-      const base = workerName;
-      workerName = resolved.workerName;
-      input.logBrief(chalk.yellow(`  ⚠ '${base}' 이름 충돌 → '${workerName}'으로 자동 변경`));
-      input.logBrief(chalk.gray('    직접 지정: olympus start --name <이름>'));
-      input.logBrief('');
-    }
+  const resolved = await controlPlaneClient.resolveAvailableWorkerName(workerName);
+  if (resolved.conflicted) {
+    const base = workerName;
+    workerName = resolved.workerName;
+    input.logBrief(chalk.yellow(`  ⚠ '${base}' 이름 충돌 → '${workerName}'으로 자동 변경`));
+    input.logBrief('');
   }
 
   let worker: RegisteredWorker;

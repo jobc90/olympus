@@ -28,7 +28,7 @@ export function resolveAvailableWorkerNameFromSet(
     };
   }
 
-  let suffix = 2;
+  let suffix = 1;
   while (existingNames.has(`${desiredName}-${suffix}`)) {
     suffix++;
   }

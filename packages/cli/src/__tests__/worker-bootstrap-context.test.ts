@@ -6,11 +6,11 @@ describe('prepareWorkerBootstrapContext', () => {
     const ensureGatewayHealthy = vi.fn(async () => {});
     const resolveAvailableWorkerName = vi.fn(async () => ({
       conflicted: true,
-      workerName: 'server-2',
+      workerName: 'server-1',
     }));
     const registerWorker = vi.fn(async () => ({
       id: 'worker-1',
-      name: 'server-2',
+      name: 'server-1',
     }));
     const deregisterWorker = vi.fn(async () => {});
     const logBrief = vi.fn();
@@ -35,14 +35,14 @@ describe('prepareWorkerBootstrapContext', () => {
     });
 
     expect(result.runtimeKind).toBe('tmux');
-    expect(result.workerName).toBe('server-2');
+    expect(result.workerName).toBe('server-1');
     expect(result.workerId).toBe('worker-1');
     expect(result.gatewayUrl).toBe('http://localhost:4000');
     expect(result.apiKey).toBe('secret');
     expect(ensureGatewayHealthy).toHaveBeenCalledTimes(1);
     expect(resolveAvailableWorkerName).toHaveBeenCalledWith('server');
     expect(registerWorker).toHaveBeenCalledWith({
-      name: 'server-2',
+      name: 'server-1',
       projectPath: '/workspace/server',
       pid: process.pid,
       runtimeKind: 'tmux',
@@ -65,7 +65,6 @@ describe('prepareWorkerBootstrapContext', () => {
       opts: {
         project: '/workspace/server',
         runtime: 'pty',
-        name: 'server',
       },
       forceTrust: false,
       envRuntimeSocketsRoot: '/tmp/sockets',

@@ -308,7 +308,7 @@ export class WorkerRegistry extends EventEmitter {
       Array.from(this.workers.values()).map(w => w.name.toLowerCase()),
     );
     if (!names.has(baseName.toLowerCase())) return baseName;
-    let n = 2;
+    let n = 1;
     while (names.has(`${baseName.toLowerCase()}-${n}`)) n++;
     return `${baseName}-${n}`;
   }

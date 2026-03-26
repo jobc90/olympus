@@ -45,6 +45,9 @@ export function ProjectedTerminalPanel({
 
   const activeTask = projection?.activeTask ?? null;
   const projectionAge = formatProjectionAge(projection?.payload.generatedAt);
+  const contractNote = tab === 'projected'
+    ? 'Authoritative worker projection from gateway snapshots.'
+    : 'Best-effort live output buffer. Use native tmux attach for a full interactive terminal.';
 
   return (
     <Card className="flex h-full min-h-[360px] flex-col">
@@ -82,12 +85,12 @@ export function ProjectedTerminalPanel({
           </div>
         )}
       >
-        Project Console
+        Projected Console
       </CardHeader>
 
       {!workerId ? (
         <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-border/60 text-sm text-text-secondary">
-          Select a worker to inspect the projected terminal view.
+          Select a worker to inspect the projected worker console.
         </div>
       ) : (
         <>
@@ -110,6 +113,13 @@ export function ProjectedTerminalPanel({
             <span className="rounded-full border px-2 py-1" style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
               snapshot: {projectionAge}
             </span>
+          </div>
+
+          <div
+            className="mb-3 rounded-xl border px-3 py-2 text-xs"
+            style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(8, 13, 26, 0.32)', color: 'var(--text-secondary)' }}
+          >
+            {contractNote}
           </div>
 
           {activeTask && (

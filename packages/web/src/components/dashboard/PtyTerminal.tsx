@@ -6,6 +6,7 @@ import 'xterm/css/xterm.css';
 interface PtyTerminalProps {
   workerName: string;
   output: string;
+  snapshot?: string;
   connected: boolean;
   accentColor?: string;
   heightClass?: string;
@@ -18,6 +19,7 @@ const FONT_FAMILY = '"JetBrains Mono", SFMono-Regular, Menlo, Monaco, Consolas, 
 export function PtyTerminal({
   workerName,
   output,
+  snapshot = '',
   connected,
   accentColor,
   heightClass = 'h-[260px]',
@@ -28,6 +30,7 @@ export function PtyTerminal({
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const previousOutputRef = useRef('');
+  const previousSnapshotRef = useRef('');
   const connectedRef = useRef(connected);
   const onInputRef = useRef(onInput);
   const onResizeRef = useRef(onResize);
@@ -59,6 +62,7 @@ export function PtyTerminal({
     const host = hostRef.current;
     if (!host) return;
     previousOutputRef.current = '';
+    previousSnapshotRef.current = '';
     lastSizeRef.current = null;
 
     const term = new Terminal({
@@ -139,7 +143,11 @@ export function PtyTerminal({
     const delayedFitTimer = setTimeout(sendResize, 250);
 
     // Render already-buffered output on first mount.
-    if (output) {
+    if (snapshot) {
+      term.write(snapshot);
+      previousSnapshotRef.current = snapshot;
+      previousOutputRef.current = output;
+    } else if (output) {
       term.write(output);
       previousOutputRef.current = output;
     } else {
@@ -182,12 +190,27 @@ export function PtyTerminal({
     return () => clearTimeout(timer);
   }, [connected]);
 
+  // ─── Authoritative snapshot resync ─────────────────────────────────────────
+  useEffect(() => {
+    const term = terminalRef.current;
+    if (!term) return;
+
+    const prevSnapshot = previousSnapshotRef.current;
+    if (!snapshot || snapshot === prevSnapshot) return;
+
+    term.reset();
+    term.write(snapshot);
+    previousSnapshotRef.current = snapshot;
+    previousOutputRef.current = output;
+  }, [output, snapshot]);
+
   // ─── Delta output writer ──────────────────────────────────────────────────
   useEffect(() => {
     const term = terminalRef.current;
     if (!term) return;
 
     const prev = previousOutputRef.current;
+    if (snapshot && previousSnapshotRef.current === snapshot && output === prev) return;
     if (output === prev) return;
 
     if (output.startsWith(prev)) {

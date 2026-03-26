@@ -58,15 +58,15 @@ describe('WorkerRegistry', () => {
       const w2 = registry.register({ projectPath: '/home/user/olympus', pid: 2 });
       const w3 = registry.register({ projectPath: '/home/user/olympus', pid: 3 });
       expect(w1.name).toBe('olympus');
-      expect(w2.name).toBe('olympus-2');
-      expect(w3.name).toBe('olympus-3');
+      expect(w2.name).toBe('olympus-1');
+      expect(w3.name).toBe('olympus-2');
     });
 
     it('deduplicates explicit names too', () => {
       const w1 = registry.register({ name: 'my-worker', projectPath: '/a', pid: 1 });
       const w2 = registry.register({ name: 'my-worker', projectPath: '/b', pid: 2 });
       expect(w1.name).toBe('my-worker');
-      expect(w2.name).toBe('my-worker-2');
+      expect(w2.name).toBe('my-worker-1');
     });
 
     it('reuses name after worker unregistered', () => {
@@ -177,7 +177,7 @@ describe('WorkerRegistry', () => {
     it('finds deduplicated worker by suffixed name', () => {
       registry.register({ projectPath: '/home/user/olympus', pid: 1 });
       const w2 = registry.register({ projectPath: '/home/user/olympus', pid: 2 });
-      const found = registry.findByProject('olympus-2');
+      const found = registry.findByProject('olympus-1');
       expect(found).not.toBeNull();
       expect(found!.id).toBe(w2.id);
     });

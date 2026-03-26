@@ -13,8 +13,15 @@ describe('resolveAvailableWorkerNameFromSet', () => {
   });
 
   it('increments the suffix until an available worker name is found', () => {
-    expect(resolveAvailableWorkerNameFromSet('server', new Set(['server', 'server-2', 'server-3']))).toEqual({
-      workerName: 'server-4',
+    expect(resolveAvailableWorkerNameFromSet('server', new Set(['server', 'server-1', 'server-2']))).toEqual({
+      workerName: 'server-3',
+      conflicted: true,
+    });
+  });
+
+  it('uses -1 for the first duplicate worker name', () => {
+    expect(resolveAvailableWorkerNameFromSet('server', new Set(['server']))).toEqual({
+      workerName: 'server-1',
       conflicted: true,
     });
   });
@@ -71,7 +78,7 @@ describe('WorkerControlPlaneClient', () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       workers: [
         { name: 'server' },
-        { name: 'server-2' },
+        { name: 'server-1' },
       ],
     }), {
       status: 200,
@@ -85,7 +92,7 @@ describe('WorkerControlPlaneClient', () => {
     });
 
     await expect(client.resolveAvailableWorkerName('server')).resolves.toEqual({
-      workerName: 'server-3',
+      workerName: 'server-2',
       conflicted: true,
     });
   });

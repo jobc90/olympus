@@ -1,97 +1,79 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-/**
- * Test the WebSocket message routing logic from handleWebSocketMessage.
- * Since OlympusBot has heavy Telegraf dependencies, we replicate the routing
- * logic here to verify the sessions:list handling and sessionId guard.
- */
-
-// Replicated routing logic (matches handleWebSocketMessage in index.ts)
 type RouteResult =
-  | { route: 'sessions:list' }
-  | { route: 'session-event'; sessionId: string; type: string }
-  | { route: 'dropped'; reason: 'no-sessionId' | 'no-chatId' };
+  | { route: 'rpc'; requestId?: string }
+  | { route: 'worker-task'; type: string }
+  | { route: 'broadcast'; type: string }
+  | { route: 'ignored'; type: string };
 
-function routeMessage(
-  msg: { type: string; payload: unknown },
-  subscribedRuns: Map<string, number>,
-): RouteResult {
-  // Handle broadcast events (no sessionId) before the sessionId guard
-  if (msg.type === 'sessions:list') {
-    return { route: 'sessions:list' };
+function routeMessage(msg: { type: string; payload: unknown }): RouteResult {
+  if (msg.type === 'rpc:result' || msg.type === 'rpc:error' || msg.type === 'rpc:ack') {
+    return {
+      route: 'rpc',
+      requestId: (msg.payload as { requestId?: string }).requestId,
+    };
   }
 
-  const payload = msg.payload as { sessionId?: string; runId?: string };
-  const sessionId = payload.sessionId ?? payload.runId;
+  if (
+    msg.type === 'worker:task:assigned' ||
+    msg.type === 'worker:task:completed' ||
+    msg.type === 'worker:task:failed' ||
+    msg.type === 'worker:task:timeout' ||
+    msg.type === 'worker:task:final_after_timeout' ||
+    msg.type === 'worker:task:summary'
+  ) {
+    return { route: 'worker-task', type: msg.type };
+  }
 
-  if (!sessionId) return { route: 'dropped', reason: 'no-sessionId' };
+  if (
+    msg.type === 'dashboard:chat:mirror' ||
+    msg.type === 'codex:greeting' ||
+    msg.type === 'gemini:alert' ||
+    msg.type === 'gemini:review'
+  ) {
+    return { route: 'broadcast', type: msg.type };
+  }
 
-  const chatId = subscribedRuns.get(sessionId);
-  if (!chatId) return { route: 'dropped', reason: 'no-chatId' };
-
-  return { route: 'session-event', sessionId, type: msg.type };
+  return { route: 'ignored', type: msg.type };
 }
 
 describe('WebSocket message routing', () => {
-  const subscribedRuns = new Map<string, number>([
-    ['session-abc', 123456],
-    ['session-def', 789012],
-  ]);
-
-  it('should route sessions:list before sessionId guard', () => {
-    const result = routeMessage(
-      { type: 'sessions:list', payload: { sessions: [], availableSessions: [] } },
-      subscribedRuns,
-    );
-    expect(result).toEqual({ route: 'sessions:list' });
+  it('routes rpc messages before any event handling', () => {
+    expect(routeMessage({
+      type: 'rpc:result',
+      payload: { requestId: 'req-1', result: [] },
+    })).toEqual({ route: 'rpc', requestId: 'req-1' });
   });
 
-  it('should route sessions:list even with no payload', () => {
-    const result = routeMessage(
-      { type: 'sessions:list', payload: {} },
-      subscribedRuns,
-    );
-    expect(result).toEqual({ route: 'sessions:list' });
+  it('routes current worker task events as control-plane task updates', () => {
+    expect(routeMessage({
+      type: 'worker:task:summary',
+      payload: { taskId: 'task-1', workerName: 'olympus', summary: 'ok' },
+    })).toEqual({ route: 'worker-task', type: 'worker:task:summary' });
   });
 
-  it('should drop messages without sessionId (not sessions:list)', () => {
-    const result = routeMessage(
-      { type: 'unknown:event', payload: {} },
-      subscribedRuns,
-    );
-    expect(result).toEqual({ route: 'dropped', reason: 'no-sessionId' });
+  it('routes dashboard and advisor broadcasts without relying on session ids', () => {
+    expect(routeMessage({
+      type: 'dashboard:chat:mirror',
+      payload: { answer: '요약' },
+    })).toEqual({ route: 'broadcast', type: 'dashboard:chat:mirror' });
+
+    expect(routeMessage({
+      type: 'codex:greeting',
+      payload: { text: '브리핑', timestamp: Date.now() },
+    })).toEqual({ route: 'broadcast', type: 'codex:greeting' });
   });
 
-  it('should drop messages with unknown sessionId', () => {
-    const result = routeMessage(
-      { type: 'session:screen', payload: { sessionId: 'unknown-id' } },
-      subscribedRuns,
-    );
-    expect(result).toEqual({ route: 'dropped', reason: 'no-chatId' });
-  });
+  it('ignores legacy session events after the refactor', () => {
+    expect(routeMessage({
+      type: 'session:screen',
+      payload: { sessionId: 'legacy-1', content: 'stale' },
+    })).toEqual({ route: 'ignored', type: 'session:screen' });
 
-  it('should route session:screen to subscribed session', () => {
-    const result = routeMessage(
-      { type: 'session:screen', payload: { sessionId: 'session-abc' } },
-      subscribedRuns,
-    );
-    expect(result).toEqual({ route: 'session-event', sessionId: 'session-abc', type: 'session:screen' });
-  });
-
-  it('should route session:closed to subscribed session', () => {
-    const result = routeMessage(
-      { type: 'session:closed', payload: { sessionId: 'session-def' } },
-      subscribedRuns,
-    );
-    expect(result).toEqual({ route: 'session-event', sessionId: 'session-def', type: 'session:closed' });
-  });
-
-  it('should use runId as fallback for sessionId', () => {
-    const result = routeMessage(
-      { type: 'run:complete', payload: { runId: 'session-abc' } },
-      subscribedRuns,
-    );
-    expect(result).toEqual({ route: 'session-event', sessionId: 'session-abc', type: 'run:complete' });
+    expect(routeMessage({
+      type: 'run:complete',
+      payload: { runId: 'legacy-1' },
+    })).toEqual({ route: 'ignored', type: 'run:complete' });
   });
 });
 
@@ -104,7 +86,7 @@ describe('throttledSyncAllChats logic', () => {
     vi.useRealTimers();
   });
 
-  it('should coalesce rapid sessions:list events into one sync', () => {
+  it('coalesces rapid reconnect-triggered sync requests into one batch', () => {
     const syncCalls: number[] = [];
     let throttleTimer: NodeJS.Timeout | null = null;
     const chatIds = new Set([111, 222]);
@@ -119,44 +101,12 @@ describe('throttledSyncAllChats logic', () => {
       }, 1000);
     }
 
-    // Rapid fire 5 events
-    throttledSync();
-    throttledSync();
     throttledSync();
     throttledSync();
     throttledSync();
 
-    // Before timer fires: no sync calls
     expect(syncCalls).toEqual([]);
-
-    // After 1 second: exactly one batch
     vi.advanceTimersByTime(1000);
     expect(syncCalls).toEqual([111, 222]);
-  });
-
-  it('should allow new sync after throttle period', () => {
-    const syncCalls: number[] = [];
-    let throttleTimer: NodeJS.Timeout | null = null;
-    const chatIds = new Set([111]);
-
-    function throttledSync() {
-      if (throttleTimer) return;
-      throttleTimer = setTimeout(() => {
-        throttleTimer = null;
-        for (const chatId of chatIds) {
-          syncCalls.push(chatId);
-        }
-      }, 1000);
-    }
-
-    // First batch
-    throttledSync();
-    vi.advanceTimersByTime(1000);
-    expect(syncCalls).toEqual([111]);
-
-    // Second batch (after throttle reset)
-    throttledSync();
-    vi.advanceTimersByTime(1000);
-    expect(syncCalls).toEqual([111, 111]);
   });
 });

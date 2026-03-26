@@ -5,15 +5,10 @@ import WebSocket from 'ws';
 import {
   parseMessage,
   createMessage,
-  type PhasePayload,
-  type AgentPayload,
-  type LogPayload,
 } from '@olympus-dev/protocol';
-import type { CliRunResult } from '@olympus-dev/protocol';
 import { classifyError, structuredLog } from './error-utils.js';
 import { TelegramSecurity } from './security.js';
-import { DraftStream, DraftStreamManager } from './draft-stream.js';
-import type { CliStreamChunk, FilterResult, FilterStage } from '@olympus-dev/protocol';
+import type { FilterResult, FilterStage } from '@olympus-dev/protocol';
 import { TELEGRAM_FILTER_CONFIG } from '@olympus-dev/protocol';
 
 // --- Lightweight Telegram filter (mirrors gateway/response-filter.ts) ---
@@ -190,25 +185,14 @@ class OlympusBot {
   private bot: Telegraf;
   private config: BotConfig;
   private ws: WebSocket | null = null;
-  private subscribedRuns = new Map<string, number>(); // runId/sessionId -> chatId
   private reconnectTimer: NodeJS.Timeout | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
   private isConnected = false;
-  // Per-session message queue to prevent interleaving
-  private sendQueues = new Map<string, Promise<void>>(); // sessionId -> queue chain
   // Pending RPC calls (requestId -> resolve/reject)
   private pendingRpc = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   private static readonly RPC_TIMEOUT_MS = 30000;
   // Security module (3-layer: DM/Group/Command)
   private security: TelegramSecurity;
-  // Draft streaming manager (real-time editMessageText updates)
-  private draftManager = new DraftStreamManager();
-  // Session key → chatId mapping for stream routing
-  private streamChatMap = new Map<string, number>(); // sessionKey → chatId
-  // WI-4.4: Track delivered task IDs to prevent duplicate result messages
-  private deliveredTasks = new Set<string>();
-  // Periodic cleanup timer for deliveredTasks (prevent unbounded growth)
-  private deliveredTasksCleanupTimer: NodeJS.Timeout | null = null;
   // WI-4.5: Timestamp of last seen worker task for catch-up after reconnect
   private lastSeenTaskTimestamp = Date.now();
 
@@ -286,7 +270,7 @@ class OlympusBot {
       msg += `/workers — 워커 목록 · /help — 사용법`;
     } else {
       msg += `워커가 없습니다. 터미널에서 직접 실행하세요:\n`;
-      msg += `\`olympus start-trust --name 워커이름\`\n\n`;
+      msg += `\`olympus start-trust\`\n\n`;
       msg += `워커가 등록되면 \`@워커이름 작업내용\`으로 지시할 수 있습니다.\n\n`;
       msg += `/help — 사용법 안내`;
     }
@@ -527,7 +511,7 @@ class OlympusBot {
           await ctx.reply(
             '워커가 없습니다.\n\n' +
             '터미널에서 직접 실행하세요:\n' +
-            '```\ncd ~/dev/프로젝트\nolympus start-trust --name 워커이름\n```',
+            '```\ncd ~/dev/프로젝트\nolympus start-trust\n```',
             { parse_mode: 'Markdown' }
           );
           return;
@@ -581,21 +565,7 @@ class OlympusBot {
       await ctx.sendChatAction('typing');
 
       try {
-        const chatRes = await fetch(`${this.config.gatewayUrl}/api/codex/chat`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.config.apiKey}`,
-          },
-          body: JSON.stringify({ message: text, chatId: ctx.chat.id, source: 'telegram' }),
-          signal: AbortSignal.timeout(1_800_000),
-        });
-
-        if (!chatRes.ok) {
-          throw new Error(`Codex chat failed: ${chatRes.status}`);
-        }
-
-        const data = await chatRes.json() as { type: string; response?: string; taskId?: string; workerName?: string };
+        const data = await this.submitCodexChat(text, ctx.chat.id);
         if (data.type === 'delegation') {
           // Show brief confirmation — detailed result arrives via worker:task:summary event
           const workerLabel = data.workerName ? `\`@${data.workerName}\`` : '워커';
@@ -604,16 +574,7 @@ class OlympusBot {
           await this.sendLongMessage(ctx.chat.id, data.response);
         }
       } catch (err) {
-        structuredLog('warn', 'telegram-bot', 'codex_chat_fallback', { error: (err as Error).message });
-        try {
-          await this.forwardToCli(ctx, text, `telegram:${ctx.chat.id}`);
-        } catch (fallbackErr) {
-          if ((fallbackErr as Error).name === 'TimeoutError') {
-            await this.safeReply(ctx, '응답 시간 초과', undefined);
-          } else {
-            await this.safeReply(ctx, `오류: ${(fallbackErr as Error).message}`, undefined);
-          }
-        }
+        await this.safeReply(ctx, `오류: ${(err as Error).message}`, undefined);
       }
     });
 
@@ -719,13 +680,45 @@ class OlympusBot {
     return `${Math.floor(hours / 24)}일 전 시작`;
   }
 
+  private async submitCodexChat(message: string, chatId: number): Promise<
+    | { type: 'delegation'; workerName?: string }
+    | { type: 'chat'; response: string }
+  > {
+    const chatRes = await fetch(`${this.config.gatewayUrl}/api/codex/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.config.apiKey}`,
+      },
+      body: JSON.stringify({ message, chatId, source: 'telegram' }),
+      signal: AbortSignal.timeout(1_800_000),
+    });
+
+    if (!chatRes.ok) {
+      let detail = `Codex chat failed: ${chatRes.status}`;
+      try {
+        const payload = await chatRes.json() as { error?: string; message?: string };
+        detail = payload.message ?? payload.error ?? detail;
+      } catch {
+        // Keep status-based fallback message.
+      }
+      throw new Error(detail);
+    }
+
+    const data = await chatRes.json() as { type: string; response?: string; workerName?: string };
+    if (data.type === 'delegation') {
+      return { type: 'delegation', workerName: data.workerName };
+    }
+
+    return { type: 'chat', response: data.response ?? '' };
+  }
+
   /**
    * Handle @worker message — route via Codex
    */
   private async handleDirectMessage(ctx: Context & { chat: { id: number }; message: { text: string } }, text: string): Promise<void> {
     // Check for @sessionName prefix: @name message
     const atMatch = text.match(/^@(\S+)\s+(.+)$/s);
-    let sessionKey: string;
     let message: string;
     let displayName: string;
 
@@ -754,14 +747,12 @@ class OlympusBot {
           // Gateway unreachable — proceed anyway (don't block on validation failure)
         }
       }
-      sessionKey = `telegram:${ctx.chat.id}:${workerName}`;
       message = atMatch[2];
       displayName = workerName;
       // Immediate acknowledgment — before async routing (avoids silent delay)
       await ctx.sendChatAction('typing');
     } else {
       displayName = 'default';
-      sessionKey = `telegram:${ctx.chat.id}:${displayName}`;
       message = text;
     }
 
@@ -806,155 +797,18 @@ class OlympusBot {
     await ctx.sendChatAction('typing');
 
     try {
-      // Step 1: Codex에 라우팅 요청
-      const routeRes = await fetch(`${this.config.gatewayUrl}/api/codex/route`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.config.apiKey}`,
-        },
-        body: JSON.stringify({ text: message, source: 'telegram', chatId: ctx.chat.id }),
-        signal: AbortSignal.timeout(10_000),
-      });
+      const data = await this.submitCodexChat(text, ctx.chat.id);
 
-      if (!routeRes.ok) throw new Error('Codex route failed');
-
-      const { decision, response: codexResponse } = await routeRes.json() as {
-        decision: { type: string; targetSessions: string[]; processedInput: string; confidence: number; reason: string };
-        response?: { type: string; content: string; metadata: Record<string, unknown>; rawOutput?: string; agentInsight?: string };
-      };
-
-      if (codexResponse && decision.confidence > 0.5) {
-        const insight = codexResponse.agentInsight ? `\n\n💡 ${codexResponse.agentInsight}` : '';
-        await this.sendLongMessage(ctx.chat.id, `📩 [${displayName}]\n\n${codexResponse.content}${insight}`);
-      } else if (codexResponse) {
-        // 낮은 confidence SELF_ANSWER → Claude CLI fallback
-        await this.forwardToCli(ctx, message, sessionKey, `📩 [${displayName}]`);
-      } else if (decision.type === 'MULTI_SESSION') {
-        const sessions = decision.targetSessions;
-        await this.safeReply(ctx, `🔄 ${sessions.length}개 작업을 병렬로 실행합니다...`, undefined);
-        const promises = sessions.map((sid: string, idx: number) =>
-          this.forwardToCliAsync(ctx, decision.processedInput, `parallel:${sid}`, `[작업 ${idx + 1}/${sessions.length}]`)
-            .catch((err: Error) => this.safeReply(ctx, `❌ 작업 ${idx + 1} 실패: ${err.message}`, undefined))
-        );
-        await Promise.allSettled(promises);
-      } else if (decision.type === 'SESSION_FORWARD') {
-        await this.forwardToCli(ctx, decision.processedInput, sessionKey, `📩 [${displayName}]`);
+      if (data.type === 'delegation') {
+        const workerLabel = data.workerName ? `\`@${data.workerName}\`` : `\`${displayName}\``;
+        await this.safeReply(ctx, `🔄 ${workerLabel}에게 작업을 위임했습니다. 완료 시 결과를 알려드립니다.`, 'Markdown');
+      } else if (data.response) {
+        await this.sendLongMessage(ctx.chat.id, `📩 [${displayName}]\n\n${data.response}`);
       } else {
         await this.safeReply(ctx, '🤔 요청을 처리할 수 없습니다.', undefined);
       }
-    } catch {
-      // Codex route 실패 시 fallback: 기존 방식으로 직접 Claude 호출
-      try {
-        await this.forwardToCli(ctx, message, sessionKey, `📩 [${displayName}]`);
-      } catch (err) {
-        if ((err as Error).name === 'TimeoutError') {
-          await ctx.reply('⏰ 응답 시간 초과 (10분)');
-        } else {
-          await ctx.reply(`❌ 오류: ${(err as Error).message}`);
-        }
-      }
-    }
-  }
-
-  /**
-   * Forward a prompt to Claude CLI via async API.
-   * R2: Non-blocking — starts async task, returns immediately after initial message,
-   * then polls for completion in the background.
-   */
-  private async forwardToCli(
-    ctx: Context & { chat: { id: number } },
-    prompt: string,
-    sessionKey: string,
-    prefix?: string,
-  ): Promise<void> {
-    // Register DraftStream for real-time Telegram message streaming via editMessageText
-    this.streamChatMap.set(sessionKey, ctx.chat.id);
-    const draft = this.draftManager.create(this.bot.telegram, ctx.chat.id, sessionKey);
-
-    // Step 1: Start async CLI execution
-    const startRes = await fetch(`${this.config.gatewayUrl}/api/cli/run/async`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify({
-        prompt,
-        sessionKey,
-        provider: 'claude',
-        dangerouslySkipPermissions: true,
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
-
-    if (!startRes.ok) {
-      const error = await startRes.json() as { message: string };
-      await draft.cancel(error.message);
-      this.draftManager.remove(sessionKey);
-      this.streamChatMap.delete(sessionKey);
-      throw new Error(error.message);
-    }
-
-    const { taskId } = await startRes.json() as { taskId: string };
-
-    // Track this task for duplicate prevention (WI-4.4)
-    this.deliveredTasks.add(taskId);
-
-    // Step 2: Fire-and-forget background polling + result delivery
-    // Handler returns immediately — DraftStream handles real-time streaming via cli:stream events
-    this.pollAndDeliverResult(ctx.chat.id, taskId, sessionKey, draft, prefix).catch(err => {
-      structuredLog('error', 'telegram-bot', 'poll_deliver_error', { taskId, error: (err as Error).message });
-    });
-  }
-
-  /**
-   * Background polling: wait for CLI task completion, then deliver final result.
-   * Called fire-and-forget from forwardToCli.
-   */
-  private async pollAndDeliverResult(
-    chatId: number,
-    taskId: string,
-    sessionKey: string,
-    draft: DraftStream,
-    prefix?: string,
-  ): Promise<void> {
-    try {
-      const result = await this.pollTaskStatus(taskId);
-
-      // Flush any remaining streamed content
-      await this.draftManager.handleComplete(sessionKey);
-      this.streamChatMap.delete(sessionKey);
-
-      if (!result) {
-        await this.bot.telegram.sendMessage(chatId, '⏰ 응답 시간 초과 (30분)');
-        return;
-      }
-
-      if (!result.success) {
-        await this.bot.telegram.sendMessage(chatId, `❌ ${result.error?.type}: ${result.error?.message}`);
-        return;
-      }
-
-      const footer = result.usage
-        ? `\n\n📊 ${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4)} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
-        : '';
-
-      const draftState = draft.getState();
-      // If DraftStream sent real-time updates, just append footer
-      if (draftState.messageId) {
-        if (footer.trim()) {
-          await this.bot.telegram.sendMessage(chatId, footer.trim());
-        }
-      } else {
-        // No streaming received — fallback to full message send
-        const text = prefix ? `${prefix}\n\n${result.text}${footer}` : `${result.text}${footer}`;
-        await this.sendLongMessage(chatId, text);
-      }
     } catch (err) {
-      this.draftManager.remove(sessionKey);
-      this.streamChatMap.delete(sessionKey);
-      structuredLog('error', 'telegram-bot', 'poll_deliver_error', { taskId, error: (err as Error).message });
+      await ctx.reply(`❌ 오류: ${(err as Error).message}`);
     }
   }
 
@@ -1071,107 +925,6 @@ class OlympusBot {
   }
 
   /**
-   * Forward a prompt to Claude CLI via async API (non-blocking).
-   * Used for parallel/long-running tasks.
-   */
-  private async forwardToCliAsync(
-    ctx: Context & { chat: { id: number } },
-    prompt: string,
-    sessionKey: string,
-    prefix?: string,
-  ): Promise<void> {
-    const startRes = await fetch(`${this.config.gatewayUrl}/api/cli/run/async`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify({
-        prompt,
-        sessionKey,
-        provider: 'claude',
-        dangerouslySkipPermissions: true,
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
-
-    if (!startRes.ok) {
-      const error = await startRes.json() as { message: string };
-      throw new Error(error.message);
-    }
-
-    const { taskId } = await startRes.json() as { taskId: string };
-    await this.safeReply(ctx, `${prefix ? prefix + ' ' : ''}⏳ 작업 시작 (${taskId.slice(0, 8)})`, undefined);
-
-    const result = await this.pollTaskStatus(taskId);
-
-    if (!result) {
-      await this.safeReply(ctx, `${prefix ? prefix + ' ' : ''}⏰ 작업 시간 초과 (30분)`, undefined);
-      return;
-    }
-
-    if (!result.success) {
-      await this.safeReply(ctx, `${prefix ? prefix + ' ' : ''}❌ ${result.error?.type}: ${result.error?.message}`, undefined);
-      return;
-    }
-
-    const footer = result.usage
-      ? `\n\n📊 ${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4)} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
-      : '';
-
-    const text = prefix ? `${prefix}\n\n${result.text}${footer}` : `${result.text}${footer}`;
-    await this.sendLongMessage(ctx.chat.id, text);
-  }
-
-  /**
-   * Poll async task status until completion (sleep-last pattern: check first, sleep after).
-   */
-  private async pollTaskStatus(taskId: string): Promise<CliRunResult | null> {
-    const maxPolls = 180;
-    const pollInterval = 10_000;
-
-    for (let i = 0; i < maxPolls; i++) {
-      try {
-        const res = await fetch(
-          `${this.config.gatewayUrl}/api/cli/run/${taskId}/status`,
-          {
-            headers: { Authorization: `Bearer ${this.config.apiKey}` },
-            signal: AbortSignal.timeout(10_000),
-          },
-        );
-
-        if (res.ok) {
-          const data = await res.json() as { status: string; result?: CliRunResult; error?: string };
-
-          if (data.status === 'completed' && data.result) {
-            return data.result;
-          }
-          if (data.status === 'failed') {
-            return {
-              success: false,
-              text: '',
-              sessionId: '',
-              model: '',
-              usage: { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
-              cost: 0,
-              durationMs: 0,
-              numTurns: 0,
-              error: { type: 'unknown', message: data.error ?? 'Task failed' },
-            };
-          }
-        }
-      } catch {
-        // Network error -> continue polling
-      }
-
-      // Sleep after check (sleep-last pattern)
-      await new Promise(r => setTimeout(r, pollInterval));
-    }
-
-    return null;
-  }
-
-  /**
    * Generate Olympus banner for session connection
    */
   private getOlympusBanner(sessionName: string, projectPath: string): string {
@@ -1277,24 +1030,6 @@ class OlympusBot {
   }
 
   /**
-   * Enqueue a message for a session to prevent interleaving across sessions.
-   * Messages for the same session are sent sequentially.
-   */
-  private enqueueSessionMessage(sessionId: string, chatId: number, text: string, sessionPrefix?: string): void {
-    const prev = this.sendQueues.get(sessionId) ?? Promise.resolve();
-    const next = prev.then(() =>
-      this.sendLongMessage(chatId, text, sessionPrefix).catch(console.error)
-    );
-    this.sendQueues.set(sessionId, next);
-    // Clean up resolved promise to prevent memory leak
-    next.then(() => {
-      if (this.sendQueues.get(sessionId) === next) {
-        this.sendQueues.delete(sessionId);
-      }
-    });
-  }
-
-  /**
    * Send an RPC call via WebSocket and wait for result.
    */
   private rpc(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
@@ -1338,11 +1073,6 @@ class OlympusBot {
         protocolVersion: '0.2.0',
         apiKey: this.config.apiKey,
       })));
-
-      // Re-subscribe to all sessions
-      for (const sessionId of this.subscribedRuns.keys()) {
-        this.ws?.send(JSON.stringify(createMessage('subscribe', { sessionId })));
-      }
 
       // Start ping interval to keep connection alive
       this.startPing();
@@ -1422,29 +1152,6 @@ class OlympusBot {
       return;
     }
 
-    // Handle CLI stream chunks — route to DraftStream for real-time Telegram updates
-    if (msg.type === 'cli:stream') {
-      const chunk = msg.payload as { sessionKey: string; chunk: string };
-      if (chunk.sessionKey && this.streamChatMap.has(chunk.sessionKey)) {
-        this.draftManager.handleStreamChunk(chunk.sessionKey, chunk.chunk).catch(err => {
-          structuredLog('error', 'telegram-bot', 'draft_stream_error', { error: (err as Error).message });
-        });
-      }
-      return;
-    }
-
-    // Handle CLI complete — flush DraftStream
-    if (msg.type === 'cli:complete') {
-      const completePayload = msg.payload as { sessionKey?: string };
-      if (completePayload.sessionKey && this.streamChatMap.has(completePayload.sessionKey)) {
-        this.draftManager.handleComplete(completePayload.sessionKey).catch(err => {
-          structuredLog('error', 'telegram-bot', 'draft_complete_error', { error: (err as Error).message });
-        });
-        this.streamChatMap.delete(completePayload.sessionKey);
-      }
-      return;
-    }
-
     // Handle worker task:assigned — 작업 시작 알림 (R1, R3)
     if (msg.type === 'worker:task:assigned') {
       const taskPayload = msg.payload as {
@@ -1473,24 +1180,8 @@ class OlympusBot {
     // Telegram UX rule: do NOT send raw completion body here.
     // Users should receive only worker:task:summary (Codex summary).
     if (msg.type === 'worker:task:completed') {
-      const taskPayload = msg.payload as {
-        taskId: string;
-        workerName: string;
-        chatId?: number;
-        summary?: string;
-        filteredText?: string;
-        success: boolean;
-        durationMs?: number;
-        geminiReview?: { quality: string; summary: string; concerns: string[] };
-      };
-
-      // WI-4.5: Update last seen task timestamp for catch-up
+      // Update last seen task timestamp for catch-up and rely on summary events for delivery.
       this.lastSeenTaskTimestamp = Date.now();
-
-      // WI-4.4: Skip if already delivered via forwardToCli polling
-      if (this.deliveredTasks.has(taskPayload.taskId)) {
-        this.deliveredTasks.delete(taskPayload.taskId);
-      }
       return;
     }
 
@@ -1611,83 +1302,6 @@ class OlympusBot {
       }
       return;
     }
-
-    const payload = msg.payload as { sessionId?: string; runId?: string };
-    const sessionId = payload.sessionId ?? payload.runId;
-
-    if (!sessionId) return;
-
-    const chatId = this.subscribedRuns.get(sessionId);
-    if (!chatId) return;
-
-    switch (msg.type) {
-      case 'session:screen': {
-        const content = (payload as { content?: string }).content;
-        if (content && content.trim()) {
-          const displayName = sessionId.slice(0, 8);
-          const prefix = `📩 [${displayName}]`;
-          this.enqueueSessionMessage(sessionId, chatId, `${prefix}\n\n${content}`, prefix);
-        }
-        break;
-      }
-
-      case 'session:error': {
-        const error = (payload as { error?: string }).error;
-        if (error) {
-          this.enqueueSessionMessage(sessionId, chatId, `❌ 오류: ${error}`);
-        }
-        break;
-      }
-
-      case 'session:closed': {
-        this.subscribedRuns.delete(sessionId);
-        this.sendQueues.delete(sessionId);
-
-        const displayClosed = sessionId.slice(0, 8);
-        this.bot.telegram.sendMessage(
-          chatId,
-          `🛑 세션 '${displayClosed}' 종료됨`
-        ).catch(console.error);
-        break;
-      }
-
-      // Legacy support for existing run events (for team protocol)
-      case 'phase:change': {
-        const p = payload as PhasePayload;
-        if (p.status === 'completed') {
-          this.enqueueSessionMessage(sessionId, chatId, `📍 Phase ${p.phase} 완료: ${p.phaseName}`);
-        }
-        break;
-      }
-
-      case 'agent:complete': {
-        const a = payload as AgentPayload;
-        const content = a.content ?? '';
-        // Agent results: show brief summary only
-        const summary = content.length > 200 ? safeSlice(content, 200) + '...' : content;
-        this.enqueueSessionMessage(sessionId, chatId, `✅ *${a.agentId}* 완료\n\n${summary}`);
-        break;
-      }
-
-      case 'agent:error': {
-        const a = payload as AgentPayload;
-        this.enqueueSessionMessage(sessionId, chatId, `❌ ${a.agentId} 오류: ${safeSlice(a.error ?? '', 200)}`);
-        break;
-      }
-
-      case 'run:complete': {
-        this.enqueueSessionMessage(sessionId, chatId, `🎉 작업 완료!`);
-        break;
-      }
-
-      case 'log': {
-        const l = payload as LogPayload;
-        if (l.level === 'error') {
-          this.enqueueSessionMessage(sessionId, chatId, `⚠️ ${safeSlice(l.message, 300)}`);
-        }
-        break;
-      }
-    }
   }
 
   async start(): Promise<{ success: boolean; error?: string }> {
@@ -1709,11 +1323,6 @@ class OlympusBot {
 
     // Connect to Gateway WebSocket
     this.connectWebSocket();
-
-    // Periodic cleanup of deliveredTasks set (every 30 minutes)
-    this.deliveredTasksCleanupTimer = setInterval(() => {
-      this.deliveredTasks.clear();
-    }, 30 * 60_000);
 
     // Start Telegram bot
     console.log('Starting Olympus Telegram Bot...');
@@ -1773,7 +1382,6 @@ class OlympusBot {
     console.log(`\nReceived ${signal}, shutting down...`);
     this.stopPing();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    if (this.deliveredTasksCleanupTimer) clearInterval(this.deliveredTasksCleanupTimer);
     // Reject all pending RPC calls
     for (const [id, pending] of this.pendingRpc) {
       clearTimeout(pending.timer);

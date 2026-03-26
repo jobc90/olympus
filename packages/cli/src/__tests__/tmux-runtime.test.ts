@@ -266,9 +266,34 @@ describe('TmuxSessionAdapter', () => {
 });
 
 describe('NativeTerminalLauncher', () => {
-  it('uses osascript to attach Terminal.app to the tmux session on macOS', async () => {
+  it('attaches the current terminal to the tmux session when stdin/stdout are interactive', async () => {
     const run = vi.fn().mockResolvedValue('');
-    const launcher = new NativeTerminalLauncher(run);
+    const spawnProcess = vi.fn().mockResolvedValue(undefined);
+    const launcher = new NativeTerminalLauncher(run, 'darwin', spawnProcess, () => true);
+
+    const result = await launcher.launch({
+      projectId: 'server',
+      workerId: 'worker-1',
+      sessionName: 'olympus_server',
+      paneId: '%11',
+    });
+
+    expect(spawnProcess).toHaveBeenCalledWith('tmux', [
+      'attach-session',
+      '-t',
+      '=olympus_server',
+    ]);
+    expect(run).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      platform: 'darwin',
+      terminal: 'current-terminal',
+    });
+  });
+
+  it('falls back to Terminal.app attach when no interactive terminal is available', async () => {
+    const run = vi.fn().mockResolvedValue('');
+    const spawnProcess = vi.fn().mockResolvedValue(undefined);
+    const launcher = new NativeTerminalLauncher(run, 'darwin', spawnProcess, () => false);
 
     const result = await launcher.launch({
       projectId: 'server',
@@ -283,6 +308,7 @@ describe('NativeTerminalLauncher', () => {
       '-e',
       'tell application "Terminal" to activate',
     ]);
+    expect(spawnProcess).not.toHaveBeenCalled();
     expect(result).toEqual({
       platform: 'darwin',
       terminal: 'tmux-attach',

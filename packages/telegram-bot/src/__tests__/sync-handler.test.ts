@@ -1,466 +1,65 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { CliRunResult } from '@olympus-dev/protocol';
-
-/**
- * Phase 2 동기 HTTP 핸들러 테스트.
- *
- * OlympusBot은 Telegraf에 강결합되어 직접 인스턴스화가 어려우므로,
- * 핵심 핸들러 로직을 함수로 추출하여 단위 테스트합니다.
- * (ws-routing.test.ts와 동일한 패턴)
- */
-
-// ──────────────────────────────────────────────
-// 1. isAllowed 로직 추출
-// ──────────────────────────────────────────────
-
-function isAllowed(userId: number | undefined, allowedUsers: number[]): boolean {
-  if (!userId) return false;
-  if (allowedUsers.length === 0) return true; // No restriction
-  return allowedUsers.includes(userId);
-}
-
-describe('isAllowed (인증 미들웨어)', () => {
-  it('userId가 없으면 거부', () => {
-    expect(isAllowed(undefined, [123])).toBe(false);
-  });
-
-  it('allowedUsers가 비어있으면 모두 허용', () => {
-    expect(isAllowed(999, [])).toBe(true);
-  });
-
-  it('allowedUsers에 포함된 사용자 허용', () => {
-    expect(isAllowed(123, [123, 456])).toBe(true);
-  });
-
-  it('allowedUsers에 없는 사용자 거부', () => {
-    expect(isAllowed(789, [123, 456])).toBe(false);
-  });
-});
-
-// ──────────────────────────────────────────────
-// 2. 오케스트레이터 모드 텍스트 핸들러 로직 추출
-// ──────────────────────────────────────────────
+import { describe, expect, it } from 'vitest';
 
 interface FetchCallRecord {
   url: string;
   init: RequestInit;
 }
 
-interface HandlerResult {
-  type: 'success' | 'error' | 'timeout';
-  message: string;
-}
+type CodexChatResult =
+  | { type: 'delegation'; workerName?: string }
+  | { type: 'chat'; response: string };
 
-/**
- * 오케스트레이터 모드 텍스트 핸들러의 핵심 로직을 추출.
- * fetch 호출 → 응답 처리 → 결과 반환.
- */
-async function handleOrchestratorText(
-  text: string,
+async function submitCodexChat(
+  message: string,
   chatId: number,
   gatewayUrl: string,
   apiKey: string,
   fetchFn: (url: string, init: RequestInit) => Promise<Response>,
-): Promise<HandlerResult> {
-  try {
-    const response = await fetchFn(`${gatewayUrl}/api/cli/run`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        prompt: text,
-        sessionKey: `telegram:${chatId}`,
-        provider: 'claude',
-      }),
-      signal: AbortSignal.timeout(600_000),
-    });
+): Promise<CodexChatResult> {
+  const response = await fetchFn(`${gatewayUrl}/api/codex/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ message, chatId, source: 'telegram' }),
+    signal: AbortSignal.timeout(1_800_000),
+  });
 
-    if (!response.ok) {
-      const error = await response.json() as { message: string };
-      throw new Error(error.message);
+  if (!response.ok) {
+    let detail = `Codex chat failed: ${response.status}`;
+    try {
+      const payload = await response.json() as { error?: string; message?: string };
+      detail = payload.message ?? payload.error ?? detail;
+    } catch {
+      // Keep the status-derived fallback.
     }
-
-    const { result } = await response.json() as { result: CliRunResult };
-
-    if (!result.success) {
-      return { type: 'error', message: `❌ ${result.error?.type}: ${result.error?.message}` };
-    }
-
-    const footer = result.usage
-      ? `\n\n📊 ${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4)} | ${Math.round((result.durationMs ?? 0) / 1000)}초`
-      : '';
-
-    return { type: 'success', message: `${result.text}${footer}` };
-  } catch (err) {
-    if ((err as Error).name === 'TimeoutError') {
-      return { type: 'timeout', message: '⏰ 응답 시간 초과 (10분)' };
-    }
-    return { type: 'error', message: `❌ 오류: ${(err as Error).message}` };
+    throw new Error(detail);
   }
-}
 
-describe('handleOrchestratorText (오케스트레이터 모드)', () => {
-  const GATEWAY = 'http://127.0.0.1:8200';
-  const API_KEY = 'test-key';
-  const CHAT_ID = 12345;
+  const data = await response.json() as { type: string; response?: string; workerName?: string };
+  if (data.type === 'delegation') {
+    return { type: 'delegation', workerName: data.workerName };
+  }
 
-  it('올바른 URL, 헤더, 바디로 fetch 호출', async () => {
-    let captured: FetchCallRecord | null = null;
-
-    const mockFetch = async (url: string, init: RequestInit) => {
-      captured = { url, init };
-      return new Response(JSON.stringify({
-        result: {
-          success: true,
-          text: '응답',
-          sessionId: 's1',
-          model: 'sonnet',
-          usage: { inputTokens: 100, outputTokens: 50, cacheCreationTokens: 0, cacheReadTokens: 0 },
-          cost: 0.01,
-          durationMs: 3000,
-          numTurns: 1,
-        },
-      }), { status: 200 });
-    };
-
-    await handleOrchestratorText('안녕하세요', CHAT_ID, GATEWAY, API_KEY, mockFetch);
-
-    expect(captured).not.toBeNull();
-    expect(captured!.url).toBe('http://127.0.0.1:8200/api/cli/run');
-    expect(captured!.init.method).toBe('POST');
-    expect((captured!.init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
-    expect((captured!.init.headers as Record<string, string>)['Authorization']).toBe('Bearer test-key');
-
-    const body = JSON.parse(captured!.init.body as string);
-    expect(body.prompt).toBe('안녕하세요');
-    expect(body.sessionKey).toBe('telegram:12345');
-    expect(body.provider).toBe('claude');
-  });
-
-  it('성공 응답 → 텍스트 + 사용량 footer', async () => {
-    const mockFetch = async () => new Response(JSON.stringify({
-      result: {
-        success: true,
-        text: '결과입니다',
-        sessionId: 's1',
-        model: 'sonnet',
-        usage: { inputTokens: 200, outputTokens: 100, cacheCreationTokens: 0, cacheReadTokens: 0 },
-        cost: 0.0234,
-        durationMs: 5000,
-        numTurns: 1,
-      },
-    }), { status: 200 });
-
-    const result = await handleOrchestratorText('질문', CHAT_ID, GATEWAY, API_KEY, mockFetch);
-
-    expect(result.type).toBe('success');
-    expect(result.message).toContain('결과입니다');
-    expect(result.message).toContain('300 토큰');
-    expect(result.message).toContain('$0.0234');
-    expect(result.message).toContain('5초');
-  });
-
-  it('CliRunResult.success=false → 에러 메시지', async () => {
-    const mockFetch = async () => new Response(JSON.stringify({
-      result: {
-        success: false,
-        text: '',
-        sessionId: '',
-        model: '',
-        usage: { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
-        cost: 0,
-        durationMs: 0,
-        numTurns: 0,
-        error: { type: 'api_error', message: 'Rate limit exceeded' },
-      },
-    }), { status: 200 });
-
-    const result = await handleOrchestratorText('질문', CHAT_ID, GATEWAY, API_KEY, mockFetch);
-
-    expect(result.type).toBe('error');
-    expect(result.message).toContain('api_error');
-    expect(result.message).toContain('Rate limit exceeded');
-  });
-
-  it('HTTP 에러 (response.ok=false) → 에러 메시지', async () => {
-    const mockFetch = async () => new Response(
-      JSON.stringify({ message: 'prompt is required' }),
-      { status: 400 },
-    );
-
-    const result = await handleOrchestratorText('', CHAT_ID, GATEWAY, API_KEY, mockFetch);
-
-    expect(result.type).toBe('error');
-    expect(result.message).toContain('prompt is required');
-  });
-
-  it('TimeoutError → 타임아웃 메시지', async () => {
-    const mockFetch = async () => {
-      const err = new DOMException('The operation was aborted', 'TimeoutError');
-      throw err;
-    };
-
-    const result = await handleOrchestratorText('질문', CHAT_ID, GATEWAY, API_KEY, mockFetch);
-
-    expect(result.type).toBe('timeout');
-    expect(result.message).toContain('시간 초과');
-  });
-
-  it('네트워크 에러 → 오류 메시지', async () => {
-    const mockFetch = async () => {
-      throw new Error('connect ECONNREFUSED 127.0.0.1:8200');
-    };
-
-    const result = await handleOrchestratorText('질문', CHAT_ID, GATEWAY, API_KEY, mockFetch);
-
-    expect(result.type).toBe('error');
-    expect(result.message).toContain('ECONNREFUSED');
-  });
-});
-
-// ──────────────────────────────────────────────
-// 3. 직접 모드 핸들러 로직 추출
-// ──────────────────────────────────────────────
-
-interface DirectHandlerResult extends HandlerResult {
-  displayName: string;
+  return { type: 'chat', response: data.response ?? '' };
 }
 
 function parseDirectMessage(
   text: string,
   chatId: number,
-  activeSessionName: string | null,
-): { sessionKey: string; message: string; displayName: string } {
+): { message: string; displayName: string; teamPrompt?: string } {
   const atMatch = text.match(/^@(\S+)\s+(.+)$/s);
+  const displayName = atMatch ? atMatch[1] : 'default';
+  const message = atMatch ? atMatch[2] : text;
+  const teamMatch = message.match(/^team[:\s]\s*(.+)$/is);
 
-  if (atMatch) {
-    return {
-      sessionKey: `telegram:${chatId}:${atMatch[1]}`,
-      message: atMatch[2],
-      displayName: atMatch[1],
-    };
-  }
-
-  const displayName = activeSessionName?.replace(/^olympus-/, '') ?? 'default';
   return {
-    sessionKey: `telegram:${chatId}:${displayName}`,
-    message: text,
+    message,
     displayName,
+    teamPrompt: teamMatch?.[1]?.trim(),
   };
 }
-
-describe('parseDirectMessage (직접 모드 라우팅)', () => {
-  it('@세션 메시지 형식 파싱', () => {
-    const result = parseDirectMessage('@dev 빌드해줘', 12345, null);
-
-    expect(result.sessionKey).toBe('telegram:12345:dev');
-    expect(result.message).toBe('빌드해줘');
-    expect(result.displayName).toBe('dev');
-  });
-
-  it('@세션 없으면 activeSession 사용', () => {
-    const result = parseDirectMessage('그냥 메시지', 12345, 'olympus-main');
-
-    expect(result.sessionKey).toBe('telegram:12345:main');
-    expect(result.message).toBe('그냥 메시지');
-    expect(result.displayName).toBe('main');
-  });
-
-  it('activeSession 없으면 default 사용', () => {
-    const result = parseDirectMessage('메시지', 12345, null);
-
-    expect(result.sessionKey).toBe('telegram:12345:default');
-    expect(result.message).toBe('메시지');
-    expect(result.displayName).toBe('default');
-  });
-
-  it('@세션 뒤에 여러 줄 메시지', () => {
-    const result = parseDirectMessage('@project 줄1\n줄2\n줄3', 12345, null);
-
-    expect(result.sessionKey).toBe('telegram:12345:project');
-    expect(result.message).toBe('줄1\n줄2\n줄3');
-  });
-});
-
-// ──────────────────────────────────────────────
-// 4. /orchestration 커맨드 fetch 파라미터
-// ──────────────────────────────────────────────
-
-function buildOrchestrationBody(prompt: string, chatId: number) {
-  return {
-    prompt: `/orchestration "${prompt}"`,
-    sessionKey: `telegram:${chatId}:orchestration`,
-    provider: 'claude',
-    timeoutMs: 1_800_000,
-  };
-}
-
-describe('buildOrchestrationBody', () => {
-  it('프롬프트 래핑 및 30분 타임아웃 설정', () => {
-    const body = buildOrchestrationBody('로그인 UI 개선', 12345);
-
-    expect(body.prompt).toBe('/orchestration "로그인 UI 개선"');
-    expect(body.sessionKey).toBe('telegram:12345:orchestration');
-    expect(body.provider).toBe('claude');
-    expect(body.timeoutMs).toBe(1_800_000); // 30분
-  });
-});
-
-// ──────────────────────────────────────────────
-// 5. 응답 포맷팅 (usage footer)
-// ──────────────────────────────────────────────
-
-function formatResultFooter(result: CliRunResult): string {
-  if (!result.usage) return '';
-  return `\n\n📊 ${result.usage.inputTokens + result.usage.outputTokens} 토큰 | $${result.cost?.toFixed(4)} | ${Math.round((result.durationMs ?? 0) / 1000)}초`;
-}
-
-describe('formatResultFooter', () => {
-  it('usage가 있으면 토큰/비용/시간 포맷팅', () => {
-    const result: CliRunResult = {
-      success: true,
-      text: 'ok',
-      sessionId: 's',
-      model: 'm',
-      usage: { inputTokens: 1000, outputTokens: 500, cacheCreationTokens: 0, cacheReadTokens: 0 },
-      cost: 0.1234,
-      durationMs: 12500,
-      numTurns: 1,
-    };
-
-    const footer = formatResultFooter(result);
-    expect(footer).toContain('1500 토큰');
-    expect(footer).toContain('$0.1234');
-    expect(footer).toContain('13초'); // Math.round(12500/1000)
-  });
-
-  it('durationMs가 0이면 0초', () => {
-    const result: CliRunResult = {
-      success: true,
-      text: '',
-      sessionId: '',
-      model: '',
-      usage: { inputTokens: 10, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 0 },
-      cost: 0.001,
-      durationMs: 0,
-      numTurns: 0,
-    };
-
-    expect(formatResultFooter(result)).toContain('0초');
-  });
-});
-
-// ──────────────────────────────────────────────
-// 6. sendLongMessage 분할 로직 추출
-// ──────────────────────────────────────────────
-
-const TELEGRAM_MSG_LIMIT = 4000;
-
-function splitLongMessage(text: string, sessionPrefix?: string): string[] {
-  if (text.length <= TELEGRAM_MSG_LIMIT) {
-    return [text];
-  }
-
-  const lines = text.split('\n');
-  const chunks: string[] = [];
-  let chunk = '';
-  let partNum = 1;
-
-  for (const line of lines) {
-    if (chunk.length + line.length + 1 > TELEGRAM_MSG_LIMIT) {
-      if (chunk) {
-        chunks.push(chunk.trimEnd());
-        partNum++;
-        chunk = '';
-        if (sessionPrefix) {
-          chunk = `${sessionPrefix} (${partNum}부)\n\n`;
-        }
-      }
-      // Single line exceeds limit - force split
-      if (line.length > TELEGRAM_MSG_LIMIT) {
-        for (let i = 0; i < line.length; i += TELEGRAM_MSG_LIMIT) {
-          chunks.push(line.slice(i, i + TELEGRAM_MSG_LIMIT));
-          partNum++;
-        }
-        continue;
-      }
-    }
-    chunk += (chunk ? '\n' : '') + line;
-  }
-  if (chunk.trim()) {
-    chunks.push(chunk.trimEnd());
-  }
-
-  return chunks;
-}
-
-describe('splitLongMessage (메시지 분할)', () => {
-  it('짧은 메시지는 분할하지 않음', () => {
-    const result = splitLongMessage('짧은 메시지');
-    expect(result).toEqual(['짧은 메시지']);
-  });
-
-  it('긴 메시지를 여러 청크로 분할', () => {
-    // 4000자 이상의 메시지 생성
-    const longText = Array.from({ length: 100 }, (_, i) => `줄 ${i}: ${'가'.repeat(50)}`).join('\n');
-    expect(longText.length).toBeGreaterThan(TELEGRAM_MSG_LIMIT);
-
-    const chunks = splitLongMessage(longText);
-    expect(chunks.length).toBeGreaterThan(1);
-
-    // 각 청크가 제한 이내
-    for (const chunk of chunks) {
-      expect(chunk.length).toBeLessThanOrEqual(TELEGRAM_MSG_LIMIT);
-    }
-
-    // 원본 내용이 보존됨
-    const reconstructed = chunks.join('\n');
-    expect(reconstructed).toContain('줄 0:');
-    expect(reconstructed).toContain('줄 99:');
-  });
-
-  it('sessionPrefix가 있으면 2번째 청크부터 접두사 추가', () => {
-    const longText = Array.from({ length: 100 }, (_, i) => `줄 ${i}: ${'가'.repeat(50)}`).join('\n');
-    const chunks = splitLongMessage(longText, '📩 [dev]');
-
-    expect(chunks.length).toBeGreaterThan(1);
-    // 첫 번째 청크는 접두사 없음
-    expect(chunks[0]).not.toContain('📩 [dev] (');
-    // 두 번째 청크부터 접두사
-    expect(chunks[1]).toContain('📩 [dev] (2부)');
-  });
-
-  it('단일 행이 제한 초과 시 강제 분할', () => {
-    const longLine = '가'.repeat(TELEGRAM_MSG_LIMIT + 1000);
-    const chunks = splitLongMessage(longLine);
-
-    expect(chunks.length).toBeGreaterThan(1);
-    // 모든 내용이 보존됨
-    expect(chunks.join('').length).toBe(longLine.length);
-  });
-});
-
-// ──────────────────────────────────────────────
-// 7. /start 명령어 unknown command 분기
-// ──────────────────────────────────────────────
-
-describe('텍스트 핸들러 명령어 감지', () => {
-  it('/ 로 시작하는 메시지는 unknown command', () => {
-    const text = '/unknown_cmd';
-    expect(text.startsWith('/')).toBe(true);
-  });
-
-  it('일반 텍스트는 CLI 실행으로 라우팅', () => {
-    const text = '안녕하세요 도움이 필요합니다';
-    expect(text.startsWith('/')).toBe(false);
-  });
-});
-
-// ──────────────────────────────────────────────
-// 8. formatAge 유틸 추출
-// ──────────────────────────────────────────────
 
 function formatAge(createdAt: number): string {
   const diff = Date.now() - createdAt;
@@ -472,270 +71,103 @@ function formatAge(createdAt: number): string {
   return `${Math.floor(hours / 24)}일 전 시작`;
 }
 
-describe('formatAge', () => {
-  it('1분 미만 → "방금 전"', () => {
-    expect(formatAge(Date.now() - 30_000)).toBe('방금 전');
-  });
-
-  it('5분 전 → "5분 전 시작"', () => {
-    expect(formatAge(Date.now() - 5 * 60_000)).toBe('5분 전 시작');
-  });
-
-  it('2시간 전 → "2시간 전 시작"', () => {
-    expect(formatAge(Date.now() - 2 * 60 * 60_000)).toBe('2시간 전 시작');
-  });
-
-  it('3일 전 → "3일 전 시작"', () => {
-    expect(formatAge(Date.now() - 3 * 24 * 60 * 60_000)).toBe('3일 전 시작');
-  });
-});
-
-// ──────────────────────────────────────────────
-// 9. Codex 라우팅 경유 핸들러 (v0.5.0)
-// ──────────────────────────────────────────────
-
-/**
- * 오케스트레이터 모드의 새로운 Codex 라우팅 로직.
- *
- * 흐름:
- * 1. POST /api/codex/route → { decision, response? }
- * 2. response 있으면 → SELF_ANSWER (Claude 비용 0)
- * 3. decision.type === SESSION_FORWARD|MULTI_SESSION → Claude CLI 호출
- * 4. Codex route 실패 → fallback 직접 Claude CLI 호출
- */
-
-interface CodexRouteDecision {
-  type: string;
-  targetSessions: string[];
-  processedInput: string;
-  confidence: number;
-  reason: string;
-}
-
-interface CodexRouteResponse {
-  type: string;
-  content: string;
-  metadata: Record<string, unknown>;
-  rawOutput?: string;
-  agentInsight?: string;
-}
-
-type CodexRoutingResult =
-  | { type: 'self_answer'; message: string }
-  | { type: 'forward'; prompt: string; sessionKey: string }
-  | { type: 'unknown'; message: string }
-  | { type: 'fallback'; originalText: string; sessionKey: string };
-
-/**
- * Codex 라우팅 분기 로직 추출.
- * 텔레그램 봇 index.ts의 orchestrator text handler 핵심 로직 재현.
- */
-async function routeViaCodex(
-  text: string,
-  chatId: number,
-  gatewayUrl: string,
-  apiKey: string,
-  fetchFn: (url: string, init: RequestInit) => Promise<Response>,
-): Promise<CodexRoutingResult> {
-  const sessionKey = `telegram:${chatId}`;
-
-  try {
-    const routeRes = await fetchFn(`${gatewayUrl}/api/codex/route`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({ text, source: 'telegram', chatId }),
-      signal: AbortSignal.timeout(10_000),
-    });
-
-    if (!routeRes.ok) throw new Error('Codex route failed');
-
-    const { decision, response: codexResponse } = await routeRes.json() as {
-      decision: CodexRouteDecision;
-      response?: CodexRouteResponse;
-    };
-
-    if (codexResponse) {
-      // SELF_ANSWER, CONTEXT_QUERY → Codex가 직접 답변
-      const insight = codexResponse.agentInsight ? `\n\n💡 ${codexResponse.agentInsight}` : '';
-      return { type: 'self_answer', message: `${codexResponse.content}${insight}` };
-    } else if (decision.type === 'SESSION_FORWARD' || decision.type === 'MULTI_SESSION') {
-      return { type: 'forward', prompt: decision.processedInput, sessionKey };
-    } else {
-      return { type: 'unknown', message: '🤔 요청을 처리할 수 없습니다.' };
-    }
-  } catch {
-    // Codex route 실패 → fallback
-    return { type: 'fallback', originalText: text, sessionKey };
-  }
-}
-
-describe('routeViaCodex (Codex 라우팅 경유 핸들러)', () => {
+describe('submitCodexChat', () => {
   const GATEWAY = 'http://127.0.0.1:8200';
   const API_KEY = 'test-key';
   const CHAT_ID = 12345;
 
-  it('SELF_ANSWER: Codex가 직접 답변 (response 있음)', async () => {
-    const mockFetch = async () => new Response(JSON.stringify({
-      decision: {
-        type: 'SELF_ANSWER',
-        targetSessions: [],
-        processedInput: '',
-        confidence: 0.95,
-        reason: '프로젝트 상태 요약 가능',
-      },
-      response: {
-        type: 'summary',
-        content: '현재 3개 프로젝트가 활성 상태입니다.',
-        metadata: {},
-        agentInsight: 'Codex 내부 캐시 사용',
-      },
-    }), { status: 200 });
-
-    const result = await routeViaCodex('상태 확인', CHAT_ID, GATEWAY, API_KEY, mockFetch);
-
-    expect(result.type).toBe('self_answer');
-    expect((result as { message: string }).message).toContain('3개 프로젝트가 활성 상태');
-    expect((result as { message: string }).message).toContain('Codex 내부 캐시 사용');
-  });
-
-  it('SELF_ANSWER: agentInsight 없으면 insight 미포함', async () => {
-    const mockFetch = async () => new Response(JSON.stringify({
-      decision: {
-        type: 'CONTEXT_QUERY',
-        targetSessions: [],
-        processedInput: '',
-        confidence: 0.9,
-        reason: '컨텍스트 조회',
-      },
-      response: {
-        type: 'context',
-        content: '최근 빌드 결과: 성공',
-        metadata: {},
-      },
-    }), { status: 200 });
-
-    const result = await routeViaCodex('빌드 결과', CHAT_ID, GATEWAY, API_KEY, mockFetch);
-
-    expect(result.type).toBe('self_answer');
-    expect((result as { message: string }).message).toBe('최근 빌드 결과: 성공');
-    expect((result as { message: string }).message).not.toContain('💡');
-  });
-
-  it('SESSION_FORWARD: Claude CLI로 포워딩', async () => {
-    const mockFetch = async () => new Response(JSON.stringify({
-      decision: {
-        type: 'SESSION_FORWARD',
-        targetSessions: ['main'],
-        processedInput: '빌드 실행해줘',
-        confidence: 0.85,
-        reason: 'CLI 작업 필요',
-      },
-    }), { status: 200 });
-
-    const result = await routeViaCodex('빌드해줘', CHAT_ID, GATEWAY, API_KEY, mockFetch);
-
-    expect(result.type).toBe('forward');
-    expect((result as { prompt: string }).prompt).toBe('빌드 실행해줘');
-    expect((result as { sessionKey: string }).sessionKey).toBe('telegram:12345');
-  });
-
-  it('MULTI_SESSION: 여러 세션으로 포워딩', async () => {
-    const mockFetch = async () => new Response(JSON.stringify({
-      decision: {
-        type: 'MULTI_SESSION',
-        targetSessions: ['alpha', 'beta'],
-        processedInput: '전체 프로젝트 테스트',
-        confidence: 0.8,
-        reason: '다중 세션 작업',
-      },
-    }), { status: 200 });
-
-    const result = await routeViaCodex('전체 테스트', CHAT_ID, GATEWAY, API_KEY, mockFetch);
-
-    expect(result.type).toBe('forward');
-    expect((result as { prompt: string }).prompt).toBe('전체 프로젝트 테스트');
-  });
-
-  it('unknown decision type → 처리 불가 메시지', async () => {
-    const mockFetch = async () => new Response(JSON.stringify({
-      decision: {
-        type: 'UNKNOWN_TYPE',
-        targetSessions: [],
-        processedInput: '',
-        confidence: 0.3,
-        reason: '분류 불가',
-      },
-    }), { status: 200 });
-
-    const result = await routeViaCodex('???', CHAT_ID, GATEWAY, API_KEY, mockFetch);
-
-    expect(result.type).toBe('unknown');
-    expect((result as { message: string }).message).toContain('처리할 수 없습니다');
-  });
-
-  it('Codex route HTTP 에러 → fallback', async () => {
-    const mockFetch = async () => new Response(
-      JSON.stringify({ message: 'Service Unavailable' }),
-      { status: 503 },
-    );
-
-    const result = await routeViaCodex('질문', CHAT_ID, GATEWAY, API_KEY, mockFetch);
-
-    expect(result.type).toBe('fallback');
-    expect((result as { originalText: string }).originalText).toBe('질문');
-    expect((result as { sessionKey: string }).sessionKey).toBe('telegram:12345');
-  });
-
-  it('Codex route 네트워크 에러 → fallback', async () => {
-    const mockFetch = async () => {
-      throw new Error('connect ECONNREFUSED');
-    };
-
-    const result = await routeViaCodex('질문', CHAT_ID, GATEWAY, API_KEY, mockFetch);
-
-    expect(result.type).toBe('fallback');
-    expect((result as { originalText: string }).originalText).toBe('질문');
-  });
-
-  it('Codex route 타임아웃 → fallback', async () => {
-    const mockFetch = async () => {
-      throw new DOMException('The operation was aborted', 'TimeoutError');
-    };
-
-    const result = await routeViaCodex('질문', CHAT_ID, GATEWAY, API_KEY, mockFetch);
-
-    expect(result.type).toBe('fallback');
-  });
-
-  it('올바른 URL, 헤더, 바디로 Codex route fetch 호출', async () => {
+  it('calls /api/codex/chat with the telegram payload', async () => {
     let captured: FetchCallRecord | null = null;
 
     const mockFetch = async (url: string, init: RequestInit) => {
       captured = { url, init };
-      return new Response(JSON.stringify({
-        decision: {
-          type: 'SELF_ANSWER',
-          targetSessions: [],
-          processedInput: '',
-          confidence: 0.9,
-          reason: 'test',
-        },
-        response: { type: 'text', content: 'ok', metadata: {} },
-      }), { status: 200 });
+      return new Response(JSON.stringify({ type: 'chat', response: 'ok' }), { status: 200 });
     };
 
-    await routeViaCodex('테스트', CHAT_ID, GATEWAY, API_KEY, mockFetch);
+    await submitCodexChat('안녕하세요', CHAT_ID, GATEWAY, API_KEY, mockFetch);
 
     expect(captured).not.toBeNull();
-    expect(captured!.url).toBe('http://127.0.0.1:8200/api/codex/route');
+    expect(captured!.url).toBe('http://127.0.0.1:8200/api/codex/chat');
     expect(captured!.init.method).toBe('POST');
-
     const body = JSON.parse(captured!.init.body as string);
-    expect(body.text).toBe('테스트');
-    expect(body.source).toBe('telegram');
-    expect(body.chatId).toBe(12345);
+    expect(body).toEqual({
+      message: '안녕하세요',
+      chatId: CHAT_ID,
+      source: 'telegram',
+    });
+  });
+
+  it('returns delegation responses 그대로', async () => {
+    const mockFetch = async () => new Response(JSON.stringify({
+      type: 'delegation',
+      workerName: 'olympus-1',
+    }), { status: 200 });
+
+    await expect(submitCodexChat('@olympus-1 빌드', CHAT_ID, GATEWAY, API_KEY, mockFetch)).resolves.toEqual({
+      type: 'delegation',
+      workerName: 'olympus-1',
+    });
+  });
+
+  it('returns chat responses 그대로', async () => {
+    const mockFetch = async () => new Response(JSON.stringify({
+      type: 'chat',
+      response: '현재 워커 2개가 idle 상태입니다.',
+    }), { status: 200 });
+
+    await expect(submitCodexChat('상태 알려줘', CHAT_ID, GATEWAY, API_KEY, mockFetch)).resolves.toEqual({
+      type: 'chat',
+      response: '현재 워커 2개가 idle 상태입니다.',
+    });
+  });
+
+  it('prefers API error/message payload when the request fails', async () => {
+    const mockFetch = async () => new Response(JSON.stringify({ message: 'Codex adapter mention delegation not available' }), { status: 503 });
+
+    await expect(submitCodexChat('@olympus 빌드', CHAT_ID, GATEWAY, API_KEY, mockFetch)).rejects.toThrow(
+      'Codex adapter mention delegation not available',
+    );
+  });
+
+  it('falls back to status text when error payload is unreadable', async () => {
+    const mockFetch = async () => new Response('bad gateway', { status: 502 });
+
+    await expect(submitCodexChat('질문', CHAT_ID, GATEWAY, API_KEY, mockFetch)).rejects.toThrow(
+      'Codex chat failed: 502',
+    );
+  });
+});
+
+describe('parseDirectMessage', () => {
+  it('extracts worker display name and message body from @mention format', () => {
+    expect(parseDirectMessage('@olympus-2 테스트 돌려줘', 123)).toEqual({
+      displayName: 'olympus-2',
+      message: '테스트 돌려줘',
+      teamPrompt: undefined,
+    });
+  });
+
+  it('detects team mode prompt after stripping the worker mention', () => {
+    expect(parseDirectMessage('@olympus team API 엔드포인트 추가', 123)).toEqual({
+      displayName: 'olympus',
+      message: 'team API 엔드포인트 추가',
+      teamPrompt: 'API 엔드포인트 추가',
+    });
+  });
+
+  it('uses default display name for non-mention text', () => {
+    expect(parseDirectMessage('그냥 질문', 123)).toEqual({
+      displayName: 'default',
+      message: '그냥 질문',
+      teamPrompt: undefined,
+    });
+  });
+});
+
+describe('formatAge', () => {
+  it('formats recent timestamps in Korean relative style', () => {
+    expect(formatAge(Date.now() - 30_000)).toBe('방금 전');
+    expect(formatAge(Date.now() - 5 * 60_000)).toBe('5분 전 시작');
+    expect(formatAge(Date.now() - 2 * 60 * 60_000)).toBe('2시간 전 시작');
   });
 });
